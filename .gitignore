@@ -1,0 +1,5 @@
+*.exe
+*.dat
+*.profile
+storage/
+test/

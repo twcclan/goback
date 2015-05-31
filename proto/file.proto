@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package proto;
+
+import "chunk.proto";
+
+// this contains file metadata, which can be different
+// accross backups, even if file content is the same
+message FileInfo {
+	string name = 1;
+	uint32 mode = 2;
+	string user = 3;
+	string group = 4;
+	int64 timestamp = 5;
+	ChunkRef data = 6;
+}
+
+// this is based on the file contents
+message File {
+	bytes sum = 1;
+	int64 size = 2;
+	repeated  ChunkRef chunks = 3;
+}

@@ -1,0 +1,19 @@
+CREATE TABLE IF NOT EXISTS `chunks`(
+	`sum`	BLOB NOT NULL,
+	PRIMARY KEY(sum)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS `fileinfo`(
+	`name` TEXT NOT NULL,
+	`mod` INTEGER NOT NULL,
+	'chunk' BLOB NOT NULL,
+	PRIMARY KEY(name, mod),
+	FOREIGN KEY(chunk) REFERENCES chunks(sum)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS `snapshots`(
+	`time` INTEGER NOT NULL,
+	'chunk' BLOB NOT NULL,
+	PRIMARY KEY(time),
+	FOREIGN KEY(chunk) REFERENCES chunks(sum)
+) WITHOUT ROWID;
