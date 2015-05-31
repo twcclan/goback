@@ -117,7 +117,7 @@ func (s *snapshot) shouldInclude(fName string) bool {
 		}
 
 		if match {
-			log.Printf("Whitelisted file: %s", fName)
+			//log.Printf("Whitelisted file: %s", fName)
 			return true
 		}
 	}
@@ -130,7 +130,7 @@ func (s *snapshot) shouldInclude(fName string) bool {
 		}
 
 		if match {
-			log.Printf("Blacklisted file: %s", fName)
+			//log.Printf("Blacklisted file: %s", fName)
 			return false
 		}
 	}
