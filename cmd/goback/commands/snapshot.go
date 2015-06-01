@@ -63,7 +63,7 @@ func (s *snapshot) readFile(fName string, fInfo os.FileInfo) (*proto.ChunkRef, e
 		return infoRef, nil
 	}
 
-	log.Printf("File modified: %s %s", fName, humanize.Bytes(uint64(fInfo.Size())))
+	log.Printf("File modified (%s ago): %s %s", humanize.Time(fInfo.ModTime().UTC()), fName, humanize.Bytes(uint64(fInfo.Size())))
 
 	// open input file for reading
 	file, err := os.Open(fName)
