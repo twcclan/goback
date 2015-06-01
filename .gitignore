@@ -1,5 +1,6 @@
 *.exe
 *.dat
 *.profile
+.env
 storage/
 test/

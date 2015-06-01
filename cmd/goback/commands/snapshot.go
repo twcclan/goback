@@ -62,6 +62,8 @@ func (s *snapshot) readFile(fName string, fInfo os.FileInfo) (*proto.ChunkRef, e
 		return infoRef, nil
 	}
 
+	log.Printf("File modified: %s", fName)
+
 	// open input file for reading
 	file, err := os.Open(fName)
 	if err != nil {
@@ -189,7 +191,7 @@ func snapshotCmd(c *cli.Context) {
 		base = c.Args().First()
 	}
 
-	idx := backup.NewSqliteIndex("storage")
+	idx := getIndex(c)
 
 	err := idx.Open()
 	if err != nil {

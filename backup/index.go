@@ -3,6 +3,7 @@ package backup
 import (
 	"database/sql"
 	"path"
+	"time"
 
 	"github.com/twcclan/goback/proto"
 
@@ -18,7 +19,7 @@ type Index interface {
 
 	HasChunk(*proto.ChunkRef) (bool, error)
 
-	Stat(string) (*proto.ChunkRef, *proto.FileInfo, error)
+	Stat(string, ...time.Time) (*proto.ChunkRef, *proto.FileInfo, error)
 }
 
 func NewSqliteIndex(base string) *SqliteIndex {
@@ -167,10 +168,16 @@ func (s *SqliteIndex) HasChunk(ref *proto.ChunkRef) (bool, error) {
 	return err == nil, err
 }
 
-func (s *SqliteIndex) Stat(name string) (*proto.ChunkRef, *proto.FileInfo, error) {
+func (s *SqliteIndex) Stat(name string, optionalTime ...time.Time) (*proto.ChunkRef, *proto.FileInfo, error) {
+	when := time.Unix(int64(^uint64(0)>>1), 0)
+	if len(optionalTime) > 0 {
+		when = optionalTime[0]
+	}
+
 	info := new(proto.FileInfo)
 	ref := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
-	err := s.db.QueryRow("SELECT name, mod, chunk FROM fileinfo WHERE name = ? ORDER BY mod DESC LIMIT 1;", name).Scan(&info.Name, &info.Timestamp, &ref.Sum)
+	err := s.db.QueryRow("SELECT name, mod, chunk FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
+		Scan(&info.Name, &info.Timestamp, &ref.Sum)
 
 	if err == sql.ErrNoRows {
 		return nil, nil, nil

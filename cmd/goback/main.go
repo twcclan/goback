@@ -39,6 +39,7 @@ func main() {
 	app.Usage = "Take snapshots of your files and restore them."
 	app.Commands = []cli.Command{
 		commands.Snapshot,
+		commands.Fetch,
 	}
 
 	app.Run(os.Args)
