@@ -35,6 +35,13 @@ func ReadMetaChunk(chunk *Chunk, msg proto.Message) {
 	}
 }
 
+func GetTypedRef(ref *ChunkRef, chunkType ChunkType) *ChunkRef {
+	return &ChunkRef{
+		Sum:  ref.Sum,
+		Type: chunkType,
+	}
+}
+
 func GetUntypedRef(ref *ChunkRef) *ChunkRef {
 	return &ChunkRef{
 		Sum: ref.Sum,
@@ -46,5 +53,6 @@ func GetFileInfo(info os.FileInfo) *FileInfo {
 		Name:      info.Name(),
 		Mode:      uint32(info.Mode()),
 		Timestamp: info.ModTime().UTC().Unix(),
+		Size:      info.Size(),
 	}
 }

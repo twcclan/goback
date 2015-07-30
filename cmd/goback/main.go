@@ -1,48 +1,34 @@
 package main
 
 import (
+	"log"
 	"os"
 	"runtime"
 
-	"github.com/codegangsta/cli"
 	"github.com/twcclan/goback/cmd/goback/commands"
+	"github.com/twcclan/goback/cmd/goback/commands/snapshot"
+
+	"github.com/codegangsta/cli"
 )
 
-func init() {
-
-	/*
-		metrics.RegisterRuntimeMemStats(metrics.DefaultRegistry)
-		metrics.DefaultRegistry.Unregister("runtime.MemStats.BuckHashSys")
-		metrics.DefaultRegistry.Unregister("runtime.MemStats.DebugGC")
-		metrics.DefaultRegistry.Unregister("runtime.MemStats.EnableGC")
-		metrics.DefaultRegistry.Unregister("runtime.MemStats.PauseNs")
-
-		go metrics.CaptureRuntimeMemStats(metrics.DefaultRegistry, time.Millisecond*500)
-
-
-			influxConfig := &influxdb.Config{
-				Host:     "localhost:8086",
-				Database: "goback",
-				Username: "root",
-				Password: "root",
-			}
-
-			go influxdb.Influxdb(metrics.DefaultRegistry, time.Second, influxConfig)
-	*/
-}
-
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	app := cli.NewApp()
 	app.Name = "goback"
 	app.Usage = "Take snapshots of your files and restore them."
 	app.Commands = []cli.Command{
-		commands.Snapshot,
+		snapshot.Command,
 		commands.Fetch,
+	}
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "storage",
+			Value: "storage",
+		},
 	}
 
 	app.Run(os.Args)
-
-	//metrics.WriteOnce(metrics.DefaultRegistry, os.Stdout)
 }

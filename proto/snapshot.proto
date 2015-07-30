@@ -5,6 +5,10 @@ package proto;
 import "chunk.proto";
 
 message Snapshot {
-	int64 timestamp = 1;
 	repeated ChunkRef files = 2;
+}
+
+message SnapshotInfo {
+		int64 timestamp = 1;
+		ChunkRef data = 2;
 }

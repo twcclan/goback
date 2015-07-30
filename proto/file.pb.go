@@ -17,7 +17,8 @@ type FileInfo struct {
 	User      string    `protobuf:"bytes,3,opt,name=user" json:"user,omitempty"`
 	Group     string    `protobuf:"bytes,4,opt,name=group" json:"group,omitempty"`
 	Timestamp int64     `protobuf:"varint,5,opt,name=timestamp" json:"timestamp,omitempty"`
-	Data      *ChunkRef `protobuf:"bytes,6,opt,name=data" json:"data,omitempty"`
+	Size      int64     `protobuf:"varint,6,opt,name=size" json:"size,omitempty"`
+	Data      *ChunkRef `protobuf:"bytes,7,opt,name=data" json:"data,omitempty"`
 }
 
 func (m *FileInfo) Reset()         { *m = FileInfo{} }
@@ -31,23 +32,38 @@ func (m *FileInfo) GetData() *ChunkRef {
 	return nil
 }
 
+// this describes a part of a file
+type FilePart struct {
+	Start  int64     `protobuf:"varint,1,opt,name=start" json:"start,omitempty"`
+	Length int64     `protobuf:"varint,2,opt,name=length" json:"length,omitempty"`
+	Chunk  *ChunkRef `protobuf:"bytes,3,opt,name=chunk" json:"chunk,omitempty"`
+}
+
+func (m *FilePart) Reset()         { *m = FilePart{} }
+func (m *FilePart) String() string { return proto1.CompactTextString(m) }
+func (*FilePart) ProtoMessage()    {}
+
+func (m *FilePart) GetChunk() *ChunkRef {
+	if m != nil {
+		return m.Chunk
+	}
+	return nil
+}
+
 // this is based on the file contents
 type File struct {
-	Sum    []byte      `protobuf:"bytes,1,opt,name=sum,proto3" json:"sum,omitempty"`
-	Size   int64       `protobuf:"varint,2,opt,name=size" json:"size,omitempty"`
-	Chunks []*ChunkRef `protobuf:"bytes,3,rep,name=chunks" json:"chunks,omitempty"`
+	Sum   []byte      `protobuf:"bytes,1,opt,name=sum,proto3" json:"sum,omitempty"`
+	Size  int64       `protobuf:"varint,2,opt,name=size" json:"size,omitempty"`
+	Parts []*FilePart `protobuf:"bytes,3,rep,name=parts" json:"parts,omitempty"`
 }
 
 func (m *File) Reset()         { *m = File{} }
 func (m *File) String() string { return proto1.CompactTextString(m) }
 func (*File) ProtoMessage()    {}
 
-func (m *File) GetChunks() []*ChunkRef {
+func (m *File) GetParts() []*FilePart {
 	if m != nil {
-		return m.Chunks
+		return m.Parts
 	}
 	return nil
-}
-
-func init() {
 }

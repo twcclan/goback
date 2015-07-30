@@ -10,27 +10,6 @@ import (
 	"camlistore.org/pkg/rollsum"
 )
 
-const (
-	// maxBlobSize is the largest blob we ever make when cutting up
-	// a file.
-	maxBlobSize = 1 << 20
-
-	// bufioReaderSize is an explicit size for our bufio.Reader,
-	// so we don't rely on NewReader's implicit size.
-	// We care about the buffer size because it affects how far
-	// in advance we can detect EOF from an io.Reader that doesn't
-	// know its size.  Detecting an EOF bufioReaderSize bytes early
-	// means we can plan for the final chunk.
-	bufioReaderSize = 32 << 10
-
-	// tooSmallThreshold is the threshold at which rolling checksum
-	// boundaries are ignored if the current chunk being built is
-	// smaller than this.
-	tooSmallThreshold = 64 << 10
-
-	inFlightChunks = 1
-)
-
 // copied from camlistore
 type noteEOFReader struct {
 	r      io.Reader

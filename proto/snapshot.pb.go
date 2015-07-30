@@ -10,8 +10,7 @@ import proto1 "github.com/golang/protobuf/proto"
 var _ = proto1.Marshal
 
 type Snapshot struct {
-	Timestamp int64       `protobuf:"varint,1,opt,name=timestamp" json:"timestamp,omitempty"`
-	Files     []*ChunkRef `protobuf:"bytes,2,rep,name=files" json:"files,omitempty"`
+	Files []*ChunkRef `protobuf:"bytes,2,rep,name=files" json:"files,omitempty"`
 }
 
 func (m *Snapshot) Reset()         { *m = Snapshot{} }
@@ -25,5 +24,18 @@ func (m *Snapshot) GetFiles() []*ChunkRef {
 	return nil
 }
 
-func init() {
+type SnapshotInfo struct {
+	Timestamp int64     `protobuf:"varint,1,opt,name=timestamp" json:"timestamp,omitempty"`
+	Data      *ChunkRef `protobuf:"bytes,2,opt,name=data" json:"data,omitempty"`
+}
+
+func (m *SnapshotInfo) Reset()         { *m = SnapshotInfo{} }
+func (m *SnapshotInfo) String() string { return proto1.CompactTextString(m) }
+func (*SnapshotInfo) ProtoMessage()    {}
+
+func (m *SnapshotInfo) GetData() *ChunkRef {
+	if m != nil {
+		return m.Data
+	}
+	return nil
 }

@@ -12,12 +12,20 @@ message FileInfo {
 	string user = 3;
 	string group = 4;
 	int64 timestamp = 5;
-	ChunkRef data = 6;
+	int64 size = 6;
+	ChunkRef data = 7;
+}
+
+// this describes a part of a file
+message FilePart {
+	int64 start = 1;
+	int64 length = 2;
+	ChunkRef chunk = 3;
 }
 
 // this is based on the file contents
 message File {
 	bytes sum = 1;
 	int64 size = 2;
-	repeated  ChunkRef chunks = 3;
+	repeated FilePart parts = 3;
 }

@@ -5,10 +5,16 @@ CREATE TABLE IF NOT EXISTS `chunks`(
 
 CREATE TABLE IF NOT EXISTS `fileinfo`(
 	`name` TEXT NOT NULL,
-	`mod` INTEGER NOT NULL,
+	`mode` INTEGER NOT NULL,
+	--`user` TEXT NOT NULL,
+	--`group` TEXT NOT NULL,
+	`timestamp` INTEGER NOT NULL,
+	`size` INTEGER NOT NULL,
 	'chunk' BLOB NOT NULL,
+	'data' BLOB NOT NULL,
 	PRIMARY KEY(name, mod),
-	FOREIGN KEY(chunk) REFERENCES chunks(sum)
+	FOREIGN KEY(chunk) REFERENCES chunks(sum),
+	FOREIGN KEY(data) REFERENCES chunks(sum)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS `snapshots`(

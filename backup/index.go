@@ -14,12 +14,14 @@ type Index interface {
 	Open() error
 	Close() error
 
+	// chunk related methods
 	ReIndex(ChunkStore) error
 	Index(*proto.Chunk) error
-
 	HasChunk(*proto.ChunkRef) (bool, error)
 
-	Stat(string, ...time.Time) (*proto.ChunkRef, *proto.FileInfo, error)
+	Snapshots(notAfter time.Time, count int) ([]*proto.Snapshot, error)
+
+	FileInfo(name string, notAfter time.Time, count int) ([]*proto.FileInfo, error)
 }
 
 func NewSqliteIndex(base string) *SqliteIndex {
@@ -74,7 +76,8 @@ func (s *SqliteIndex) index(chunk *proto.Chunk, tx *sql.Tx) (err error) {
 		info := new(proto.FileInfo)
 		proto.ReadMetaChunk(chunk, info)
 
-		_, err = tx.Exec("INSERT INTO fileinfo(name, mod, chunk) VALUES(?, ?, ?);", info.Name, info.Timestamp, chunk.Ref.Sum)
+		_, err = tx.Exec("INSERT INTO fileinfo(name, mod, chunk, data, size) VALUES(?, ?, ?, ?, ?);",
+			info.Name, info.Timestamp, chunk.Ref.Sum, info.Data.Sum, info.Size)
 		if err != nil {
 			return
 		}
@@ -174,14 +177,31 @@ func (s *SqliteIndex) Stat(name string, optionalTime ...time.Time) (*proto.Chunk
 		when = optionalTime[0]
 	}
 
-	info := new(proto.FileInfo)
-	ref := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
-	err := s.db.QueryRow("SELECT name, mod, chunk FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
-		Scan(&info.Name, &info.Timestamp, &ref.Sum)
+	infoRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
+	dataRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_DATA}
+
+	info := &proto.FileInfo{
+		Data: dataRef,
+	}
+
+	err := s.db.QueryRow("SELECT name, mod, chunk, data, size FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
+		Scan(&info.Name, &info.Timestamp, &infoRef.Sum, &dataRef.Sum, &info.Size)
 
 	if err == sql.ErrNoRows {
 		return nil, nil, nil
 	}
 
-	return ref, info, err
+	return infoRef, info, err
+}
+
+func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]*proto.FileInfo, error) {
+	infoRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
+	dataRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_DATA}
+
+	info := &proto.FileInfo{
+		Data: dataRef,
+	}
+
+	err := s.db.QueryRow("SELECT name, mod, chunk, data, size FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
+		Scan(&info.Name, &info.Timestamp, &infoRef.Sum, &dataRef.Sum, &info.Size)
 }
