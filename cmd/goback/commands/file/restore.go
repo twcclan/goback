@@ -1,4 +1,4 @@
-package commands
+package file
 
 import (
 	"io"
@@ -14,22 +14,8 @@ import (
 	"github.com/codegangsta/cli"
 )
 
-var Fetch = cli.Command{
-	Name:   "fetch",
-	Action: fetchCmd,
-}
-
-type fetch struct {
-	store backup.ChunkStore
-	index backup.Index
-	src   string
-	dst   string
-	when  time.Time
-}
-
-func (f *fetch) do() error {
-	reader := backup.NewBackupReader(f.index, f.store, f.when)
-	info, err := reader.Stat(f.src)
+func (f *file) restore() error {
+	info, err := f.reader.Stat(f.src)
 	if err != nil {
 		return err
 	}
@@ -42,7 +28,7 @@ func (f *fetch) do() error {
 	}
 	defer outFile.Close()
 
-	inFile, err := reader.Open(f.src)
+	inFile, err := f.reader.Open(f.src)
 	if err != nil {
 		return err
 	}
@@ -54,6 +40,16 @@ func (f *fetch) do() error {
 
 	outFile.Close()
 
+	err = os.Chtimes(outFile.Name(), time.Now(), info.ModTime())
+	if err != nil {
+		return err
+	}
+
+	err = os.Chmod(outFile.Name(), info.Mode())
+	if err != nil {
+		return err
+	}
+
 	err = os.Rename(outFile.Name(), f.dst)
 	if err != nil {
 		return err
@@ -62,7 +58,7 @@ func (f *fetch) do() error {
 	return nil
 }
 
-func fetchCmd(c *cli.Context) {
+func restoreAction(c *cli.Context) {
 	src := c.Args().Get(0)
 	dst := c.Args().Get(1)
 	age := c.Args().Get(2)
@@ -86,19 +82,23 @@ func fetchCmd(c *cli.Context) {
 		log.Fatal(err)
 	}
 
-	f := &fetch{
-		store: store,
-		index: idx,
-		src:   src,
-		dst:   dst,
-		when:  when,
+	f := &file{
+		reader: backup.NewBackupReader(idx, store, when),
+		src:    src,
+		dst:    dst,
 	}
 
-	if err := f.do(); err != nil {
+	if err := f.restore(); err != nil {
 		log.Fatal(err)
 	}
 
 	if err := idx.Close(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+var restoreCmd = cli.Command{
+	Name:        "restore",
+	Description: "Restore a file",
+	Action:      restoreAction,
 }

@@ -39,3 +39,6 @@ func (m *SnapshotInfo) GetData() *ChunkRef {
 	}
 	return nil
 }
+
+func init() {
+}

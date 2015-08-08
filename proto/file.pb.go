@@ -67,3 +67,6 @@ func (m *File) GetParts() []*FilePart {
 	}
 	return nil
 }
+
+func init() {
+}

@@ -8,7 +8,7 @@ import (
 
 type snapshot struct {
 	backup   *backup.BackupWriter
-	index    backup.Index
+	reader   *backup.BackupReader
 	base     string
 	includes []string
 	excludes []string

@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/twcclan/goback/cmd/goback/commands"
+	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/snapshot"
 
 	"github.com/codegangsta/cli"
@@ -21,7 +21,7 @@ func main() {
 	app.Usage = "Take snapshots of your files and restore them."
 	app.Commands = []cli.Command{
 		snapshot.Command,
-		commands.Fetch,
+		file.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

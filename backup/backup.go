@@ -114,7 +114,7 @@ func (bfw *backupFileWriter) Close() (err error) {
 	fileDataChunk := proto.GetMetaChunk(&proto.File{
 		Size:  bfw.info.Size(),
 		Parts: bfw.parts,
-	}, proto.ChunkType_FILE_DATA)
+	}, proto.ChunkType_FILE)
 
 	if err = bfw.backup.storeChunk(fileDataChunk); err != nil {
 		return
@@ -130,7 +130,7 @@ func (bfw *backupFileWriter) Close() (err error) {
 		return
 	}
 
-	bfw.backup.Add(infoChunk.Ref)
+	bfw.backup.add(infoChunk.Ref)
 
 	return
 }
@@ -158,17 +158,30 @@ func (bw *BackupWriter) storeChunk(chunk *proto.Chunk) error {
 	return bw.index.Index(chunk)
 }
 
-func (br *BackupWriter) Add(file *proto.ChunkRef) {
+func (br *BackupWriter) add(file *proto.ChunkRef) {
 	br.files = append(br.files, proto.GetUntypedRef(file))
 }
 
-func (br *BackupWriter) Create(name string, info os.FileInfo) (io.WriteCloser, error) {
+func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, error) {
+	// check if we have this file already
+	info, err := br.index.FileInfo(name, fInfo.ModTime(), 1)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(info) > 0 && info[0].Info.Timestamp <= fInfo.ModTime().UTC().Unix() {
+		br.add(info[0].Ref)
+
+		// signal that we have this file already
+		return nil, os.ErrExist
+	}
+
 	writer := &backupFileWriter{
 		store:  br.store,
 		index:  br.index,
 		rs:     rollsum.New(),
 		parts:  make([]*proto.FilePart, 0),
-		info:   info,
+		info:   fInfo,
 		name:   name,
 		backup: br,
 	}
@@ -177,10 +190,20 @@ func (br *BackupWriter) Create(name string, info os.FileInfo) (io.WriteCloser, e
 }
 
 func (br *BackupWriter) Close() error {
-	return br.storeChunk(proto.GetMetaChunk(&proto.Snapshot{
-		Files:     br.files,
+	snapshot := proto.GetMetaChunk(&proto.Snapshot{
+		Files: br.files,
+	}, proto.ChunkType_SNAPSHOT)
+
+	err := br.storeChunk(snapshot)
+
+	if err != nil {
+		return err
+	}
+
+	return br.storeChunk(proto.GetMetaChunk(&proto.SnapshotInfo{
+		Data:      snapshot.Ref,
 		Timestamp: time.Now().UTC().Unix(),
-	}, proto.ChunkType_SNAPSHOT))
+	}, proto.ChunkType_SNAPSHOT_INFO))
 }
 
 func NewBackupWriter(index Index, store ChunkStore) *BackupWriter {
@@ -346,19 +369,21 @@ type BackupReader struct {
 }
 
 func (b *BackupReader) Open(name string) (io.ReadSeeker, error) {
-	ref, info, err := b.index.Stat(name, b.when)
+	var info *proto.FileInfo
+	infoList, err := b.index.FileInfo(name, b.when, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	if ref != nil {
-		log.Printf("%s (%d): %x", info.Name, info.Timestamp, ref.Sum)
+	if len(infoList) > 0 {
+		info = infoList[0].Info
+		log.Printf("%s (%d)", info.Name, info.Timestamp)
 	} else {
 		log.Fatalf("File %s not found", name)
 		return nil, os.ErrNotExist
 	}
 
-	fileDataChunk, err := b.store.Read(proto.GetTypedRef(info.Data, proto.ChunkType_FILE_DATA))
+	fileDataChunk, err := b.store.Read(proto.GetTypedRef(info.Data, proto.ChunkType_FILE))
 	if err != nil {
 		return nil, err
 	}
@@ -373,14 +398,14 @@ func (b *BackupReader) Open(name string) (io.ReadSeeker, error) {
 }
 
 func (b *BackupReader) Stat(name string) (os.FileInfo, error) {
-	_, info, err := b.index.Stat(name, b.when)
+	infoList, err := b.index.FileInfo(name, b.when, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	if info == nil {
+	if len(infoList) == 0 {
 		return nil, os.ErrNotExist
 	}
 
-	return &backupFileInfo{info}, nil
+	return &backupFileInfo{infoList[0].Info}, nil
 }

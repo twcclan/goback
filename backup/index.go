@@ -7,6 +7,7 @@ import (
 
 	"github.com/twcclan/goback/proto"
 
+	// load sqlite3 driver
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -19,9 +20,19 @@ type Index interface {
 	Index(*proto.Chunk) error
 	HasChunk(*proto.ChunkRef) (bool, error)
 
-	Snapshots(notAfter time.Time, count int) ([]*proto.Snapshot, error)
+	SnapshotInfo(notAfter time.Time, count int) ([]SnapshotPointer, error)
 
-	FileInfo(name string, notAfter time.Time, count int) ([]*proto.FileInfo, error)
+	FileInfo(name string, notAfter time.Time, count int) ([]FilePointer, error)
+}
+
+type SnapshotPointer struct {
+	Info *proto.SnapshotInfo
+	Ref  *proto.ChunkRef
+}
+
+type FilePointer struct {
+	Info *proto.FileInfo
+	Ref  *proto.ChunkRef
 }
 
 func NewSqliteIndex(base string) *SqliteIndex {
@@ -76,17 +87,17 @@ func (s *SqliteIndex) index(chunk *proto.Chunk, tx *sql.Tx) (err error) {
 		info := new(proto.FileInfo)
 		proto.ReadMetaChunk(chunk, info)
 
-		_, err = tx.Exec("INSERT INTO fileinfo(name, mod, chunk, data, size) VALUES(?, ?, ?, ?, ?);",
-			info.Name, info.Timestamp, chunk.Ref.Sum, info.Data.Sum, info.Size)
+		_, err = tx.Exec("INSERT INTO fileInfo(name, timestamp, chunk, data, size, mode) VALUES(?, ?, ?, ?, ?, ?);",
+			info.Name, info.Timestamp, chunk.Ref.Sum, info.Data.Sum, info.Size, info.Mode)
 		if err != nil {
 			return
 		}
 
-	case proto.ChunkType_SNAPSHOT:
-		snapshot := new(proto.Snapshot)
+	case proto.ChunkType_SNAPSHOT_INFO:
+		snapshot := new(proto.SnapshotInfo)
 		proto.ReadMetaChunk(chunk, snapshot)
 
-		_, err = tx.Exec("INSERT INTO snapshots(time, chunk) VALUES(?, ?);", snapshot.Timestamp, chunk.Ref.Sum)
+		_, err = tx.Exec("INSERT INTO snapshotInfo(timestamp, data, chunk) VALUES(?, ?, ?);", snapshot.Timestamp, snapshot.Data.Sum, chunk.Ref.Sum)
 		if err != nil {
 			return
 		}
@@ -100,9 +111,10 @@ func (s *SqliteIndex) index(chunk *proto.Chunk, tx *sql.Tx) (err error) {
 func (s *SqliteIndex) ReIndex(store ChunkStore) (err error) {
 	types := []proto.ChunkType{
 		proto.ChunkType_DATA,
-		proto.ChunkType_FILE_DATA,
+		proto.ChunkType_FILE,
 		proto.ChunkType_FILE_INFO,
 		proto.ChunkType_SNAPSHOT,
+		proto.ChunkType_SNAPSHOT_INFO,
 	}
 
 	tx, err := s.db.Begin()
@@ -171,37 +183,72 @@ func (s *SqliteIndex) HasChunk(ref *proto.ChunkRef) (bool, error) {
 	return err == nil, err
 }
 
-func (s *SqliteIndex) Stat(name string, optionalTime ...time.Time) (*proto.ChunkRef, *proto.FileInfo, error) {
-	when := time.Unix(int64(^uint64(0)>>1), 0)
-	if len(optionalTime) > 0 {
-		when = optionalTime[0]
+func (s *SqliteIndex) SnapshotInfo(notAfter time.Time, count int) ([]SnapshotPointer, error) {
+	infoList := make([]SnapshotPointer, count)
+
+	rows, err := s.db.Query("SELECT timestamp, chunk, data FROM snapshotInfo WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counter := 0
+	for rows.Next() {
+
+		dataRef := &proto.ChunkRef{Type: proto.ChunkType_SNAPSHOT}
+		infoRef := &proto.ChunkRef{Type: proto.ChunkType_SNAPSHOT_INFO}
+
+		info := &proto.SnapshotInfo{
+			Data: dataRef,
+		}
+
+		err = rows.Scan(&info.Timestamp, &infoRef.Sum, &dataRef.Sum)
+		if err != nil {
+			return nil, err
+		}
+
+		infoList[counter] = SnapshotPointer{
+			Info: info,
+			Ref:  infoRef,
+		}
+
+		counter++
 	}
 
-	infoRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
-	dataRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_DATA}
-
-	info := &proto.FileInfo{
-		Data: dataRef,
-	}
-
-	err := s.db.QueryRow("SELECT name, mod, chunk, data, size FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
-		Scan(&info.Name, &info.Timestamp, &infoRef.Sum, &dataRef.Sum, &info.Size)
-
-	if err == sql.ErrNoRows {
-		return nil, nil, nil
-	}
-
-	return infoRef, info, err
+	return infoList[:counter], rows.Err()
 }
 
-func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]*proto.FileInfo, error) {
-	infoRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
-	dataRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_DATA}
+func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]FilePointer, error) {
+	infoList := make([]FilePointer, count)
 
-	info := &proto.FileInfo{
-		Data: dataRef,
+	rows, err := s.db.Query("SELECT name, timestamp, size, mode, data, chunk FROM fileInfo WHERE name = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.UTC().Unix(), count)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counter := 0
+	for rows.Next() {
+
+		dataRef := &proto.ChunkRef{Type: proto.ChunkType_FILE}
+		infoRef := &proto.ChunkRef{Type: proto.ChunkType_FILE_INFO}
+
+		info := &proto.FileInfo{
+			Data: dataRef,
+		}
+
+		err = rows.Scan(&info.Name, &info.Timestamp, &info.Size, &info.Mode, &dataRef.Sum, &infoRef.Sum)
+		if err != nil {
+			return nil, err
+		}
+
+		infoList[counter] = FilePointer{
+			Info: info,
+			Ref:  infoRef,
+		}
+
+		counter++
 	}
 
-	err := s.db.QueryRow("SELECT name, mod, chunk, data, size FROM fileinfo WHERE name = ? AND mod <= ? ORDER BY mod DESC LIMIT 1;", name, when.UTC().Unix()).
-		Scan(&info.Name, &info.Timestamp, &infoRef.Sum, &dataRef.Sum, &info.Size)
+	return infoList[:counter], rows.Err()
 }

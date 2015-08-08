@@ -14,15 +14,14 @@ import (
 )
 
 func (s *snapshot) readFile(fName string, fInfo os.FileInfo) error {
-	infoRef, fileInfo, err := s.index.Stat(fName)
+	writer, err := s.backup.Create(fName, fInfo)
 	if err != nil {
-		return err
-	}
+		if err == os.ErrExist {
+			//file exists already, skip it
+			return nil
+		}
 
-	// exit early if the file hasn't changed
-	if fileInfo != nil && fileInfo.Timestamp >= fInfo.ModTime().UTC().Unix() {
-		s.backup.Add(infoRef)
-		return nil
+		return err
 	}
 
 	// open input file for reading
@@ -32,11 +31,6 @@ func (s *snapshot) readFile(fName string, fInfo os.FileInfo) error {
 		return err
 	}
 	defer file.Close()
-
-	writer, err := s.backup.Create(fName, fInfo)
-	if err != nil {
-		return err
-	}
 
 	_, err = io.Copy(writer, file)
 	if err != nil {
@@ -130,7 +124,7 @@ func newAction(c *cli.Context) {
 
 	s := &snapshot{
 		backup:   backup.NewBackupWriter(idx, store),
-		index:    idx,
+		reader:   backup.NewBackupReader(idx, store),
 		base:     base,
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),

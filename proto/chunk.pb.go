@@ -24,23 +24,26 @@ var _ = proto1.Marshal
 type ChunkType int32
 
 const (
-	ChunkType_DATA      ChunkType = 0
-	ChunkType_FILE_DATA ChunkType = 1
-	ChunkType_FILE_INFO ChunkType = 2
-	ChunkType_SNAPSHOT  ChunkType = 3
+	ChunkType_DATA          ChunkType = 0
+	ChunkType_FILE          ChunkType = 1
+	ChunkType_FILE_INFO     ChunkType = 2
+	ChunkType_SNAPSHOT      ChunkType = 3
+	ChunkType_SNAPSHOT_INFO ChunkType = 4
 )
 
 var ChunkType_name = map[int32]string{
 	0: "DATA",
-	1: "FILE_DATA",
+	1: "FILE",
 	2: "FILE_INFO",
 	3: "SNAPSHOT",
+	4: "SNAPSHOT_INFO",
 }
 var ChunkType_value = map[string]int32{
-	"DATA":      0,
-	"FILE_DATA": 1,
-	"FILE_INFO": 2,
-	"SNAPSHOT":  3,
+	"DATA":          0,
+	"FILE":          1,
+	"FILE_INFO":     2,
+	"SNAPSHOT":      3,
+	"SNAPSHOT_INFO": 4,
 }
 
 func (x ChunkType) String() string {

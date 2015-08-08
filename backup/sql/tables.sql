@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS `chunks`(
 	PRIMARY KEY(sum)
 ) WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS `fileinfo`(
+CREATE TABLE IF NOT EXISTS `fileInfo`(
 	`name` TEXT NOT NULL,
 	`mode` INTEGER NOT NULL,
 	--`user` TEXT NOT NULL,
@@ -12,14 +12,16 @@ CREATE TABLE IF NOT EXISTS `fileinfo`(
 	`size` INTEGER NOT NULL,
 	'chunk' BLOB NOT NULL,
 	'data' BLOB NOT NULL,
-	PRIMARY KEY(name, mod),
+	PRIMARY KEY(name, timestamp),
 	FOREIGN KEY(chunk) REFERENCES chunks(sum),
 	FOREIGN KEY(data) REFERENCES chunks(sum)
 ) WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS `snapshots`(
-	`time` INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS `snapshotInfo`(
+	`timestamp` INTEGER NOT NULL,
 	'chunk' BLOB NOT NULL,
-	PRIMARY KEY(time),
-	FOREIGN KEY(chunk) REFERENCES chunks(sum)
+	'data' BLOB NOT NULL,
+	PRIMARY KEY(timestamp),
+	FOREIGN KEY(chunk) REFERENCES chunks(sum),
+	FOREIGN KEY(data) REFERENCES chunks(sum)
 ) WITHOUT ROWID;

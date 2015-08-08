@@ -35,7 +35,7 @@ func (n *NopStorage) Create(chunk *proto.Chunk) error {
 	case proto.ChunkType_SNAPSHOT:
 		n.snapshotSize.Update(int64(len(chunk.Data)))
 		fallthrough
-	case proto.ChunkType_FILE_INFO, proto.ChunkType_FILE_DATA:
+	case proto.ChunkType_FILE_INFO, proto.ChunkType_FILE:
 		n.metaBytes.Inc(int64(len(chunk.Data)))
 		n.metaChunks.Inc(1)
 	case proto.ChunkType_DATA:

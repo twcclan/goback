@@ -4,9 +4,10 @@ package proto;
 
 enum ChunkType {
 	DATA = 0;
-	FILE_DATA = 1;
+	FILE = 1;
 	FILE_INFO = 2;
 	SNAPSHOT = 3;
+	SNAPSHOT_INFO = 4;
 }
 
 // a reference to a self-describing chunk
