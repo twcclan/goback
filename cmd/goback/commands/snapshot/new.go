@@ -75,7 +75,7 @@ func (s *snapshot) take() {
 	err := filepath.Walk(s.base, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Print(err)
-			if info != nil && info.IsDir() {
+			if info != nil && info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 				return filepath.SkipDir
 			} else {
 				return nil
