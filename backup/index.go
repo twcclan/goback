@@ -3,6 +3,7 @@ package backup
 import (
 	"database/sql"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/twcclan/goback/proto"
@@ -36,7 +37,7 @@ type FilePointer struct {
 }
 
 func NewSqliteIndex(base string) *SqliteIndex {
-	idx := &SqliteIndex{base: base}
+	idx := &SqliteIndex{base: base, txMtx: new(sync.Mutex)}
 	return idx
 }
 
@@ -44,8 +45,9 @@ var _ Index = (*SqliteIndex)(nil)
 
 //go:generate go-bindata -pkg backup sql/
 type SqliteIndex struct {
-	base string
-	db   *sql.DB
+	base  string
+	db    *sql.DB
+	txMtx *sync.Mutex
 }
 
 func (s *SqliteIndex) Open() error {
@@ -152,6 +154,9 @@ func (s *SqliteIndex) ReIndex(store ChunkStore) (err error) {
 }
 
 func (s *SqliteIndex) Index(chunk *proto.Chunk) (err error) {
+	s.txMtx.Lock()
+	defer s.txMtx.Unlock()
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -172,6 +177,9 @@ func (s *SqliteIndex) Index(chunk *proto.Chunk) (err error) {
 }
 
 func (s *SqliteIndex) HasChunk(ref *proto.ChunkRef) (bool, error) {
+	s.txMtx.Lock()
+	defer s.txMtx.Unlock()
+
 	var unused int
 
 	err := s.db.QueryRow("SELECT 1 FROM chunks WHERE sum = ? LIMIT 1;", ref.Sum).Scan(&unused)

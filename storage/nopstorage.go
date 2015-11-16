@@ -1,8 +1,9 @@
-package backup
+package storage
 
 import (
 	"os"
 
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/rcrowley/go-metrics"
@@ -50,7 +51,7 @@ func (n *NopStorage) Delete(ref *proto.ChunkRef) error {
 	return nil
 }
 
-func (n *NopStorage) Walk(t proto.ChunkType, fn ChunkWalkFn) error {
+func (n *NopStorage) Walk(t proto.ChunkType, fn backup.ChunkWalkFn) error {
 	return nil
 }
 

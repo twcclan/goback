@@ -1,18 +1,21 @@
 package backup
 
 import (
+	"crypto/sha1"
 	"errors"
 	"io"
 	"log"
 	"os"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/proto"
 
-	"crypto/sha1"
+	"github.com/golang/groupcache/singleflight"
 
 	"camlistore.org/pkg/rollsum"
+	"camlistore.org/pkg/syncutil"
 )
 
 var (
@@ -38,23 +41,28 @@ const (
 	// smaller than this.
 	tooSmallThreshold = 64 << 10
 
-	inFlightChunks = 1
+	inFlightChunks = 128
 )
 
 type backupFileWriter struct {
-	store    ChunkStore
-	index    Index
-	backup   *BackupWriter
-	buf      [maxBlobSize]byte
-	blobSize int64
-	offset   int64
-	rs       *rollsum.RollSum
-	parts    []*proto.FilePart
-	info     os.FileInfo
-	name     string
+	store            ChunkStore
+	index            Index
+	backup           *BackupWriter
+	buf              [maxBlobSize]byte
+	blobSize         int64
+	offset           int64
+	rs               *rollsum.RollSum
+	parts            []*proto.FilePart
+	info             os.FileInfo
+	name             string
+	storageErr       *atomic.Value
+	storageGroup     syncutil.Group
+	storageSemaphore *syncutil.Gate
+
+	pending int32
 }
 
-func (bfw *backupFileWriter) split() error {
+func (bfw *backupFileWriter) split() {
 	chunkBytes := make([]byte, bfw.blobSize)
 	copy(chunkBytes, bfw.buf[:bfw.blobSize])
 	sum := sha1.Sum(chunkBytes)
@@ -77,10 +85,28 @@ func (bfw *backupFileWriter) split() error {
 
 	bfw.offset += length
 
-	return bfw.backup.storeChunk(chunk)
+	bfw.storageSemaphore.Start()
+	atomic.AddInt32(&bfw.pending, 1)
+
+	bfw.storageGroup.Go(func() error {
+		err := bfw.backup.storeChunk(chunk)
+		bfw.storageSemaphore.Done()
+		defer atomic.AddInt32(&bfw.pending, -1)
+		if err != nil {
+			// store the error here so future calls to write can exit early
+			bfw.storageErr.Store(err)
+		}
+		return err
+	})
 }
 
 func (bfw *backupFileWriter) Write(bytes []byte) (int, error) {
+	deferred := bfw.storageErr.Load()
+
+	if deferred != nil {
+		return 0, deferred.(error)
+	}
+
 	for _, b := range bytes {
 		bfw.rs.Roll(b)
 		bfw.buf[bfw.blobSize] = b
@@ -90,11 +116,7 @@ func (bfw *backupFileWriter) Write(bytes []byte) (int, error) {
 
 		//split if we found a border, or we reached maxBlobSize
 		if (onSplit && bfw.blobSize > tooSmallThreshold) || bfw.blobSize == maxBlobSize {
-			err := bfw.split()
-
-			if err != nil {
-				return int(bfw.blobSize), err
-			}
+			bfw.split()
 		}
 	}
 
@@ -102,12 +124,10 @@ func (bfw *backupFileWriter) Write(bytes []byte) (int, error) {
 }
 
 func (bfw *backupFileWriter) Close() (err error) {
-	if bfw.blobSize > 0 {
-		err = bfw.split()
-	}
+	log.Printf("Closing file")
 
-	if err != nil {
-		return
+	if bfw.blobSize > 0 {
+		bfw.split()
 	}
 
 	// store the file -> chunks mapping
@@ -132,7 +152,10 @@ func (bfw *backupFileWriter) Close() (err error) {
 
 	bfw.backup.add(infoChunk.Ref)
 
-	return
+	// wait for all chunk uploads to finish
+
+	log.Printf("Waiting for %d transfers to finish", atomic.LoadInt32(&bfw.pending))
+	return bfw.storageGroup.Err()
 }
 
 var _ io.WriteCloser = new(backupFileWriter)
@@ -141,21 +164,29 @@ type BackupWriter struct {
 	store ChunkStore
 	index Index
 	files []*proto.ChunkRef
+	group *singleflight.Group
 }
 
 func (bw *BackupWriter) storeChunk(chunk *proto.Chunk) error {
-	// don't store chunks that we know exist already
-	found, err := bw.index.HasChunk(chunk.Ref)
-	if err != nil || found {
-		return err
-	}
 
-	err = bw.store.Create(chunk)
-	if err != nil {
-		return err
-	}
+	// make sure that only a single goroutine is ever trying
+	// to store the same chunk
+	_, err := bw.group.Do(string(chunk.Ref.Sum), func() (interface{}, error) {
+		// don't store chunks that we know exist already
+		found, err := bw.index.HasChunk(chunk.Ref)
+		if err != nil || found {
+			return nil, err
+		}
 
-	return bw.index.Index(chunk)
+		err = bw.store.Create(chunk)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, bw.index.Index(chunk)
+	})
+
+	return err
 }
 
 func (br *BackupWriter) add(file *proto.ChunkRef) {
@@ -177,13 +208,15 @@ func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, 
 	}
 
 	writer := &backupFileWriter{
-		store:  br.store,
-		index:  br.index,
-		rs:     rollsum.New(),
-		parts:  make([]*proto.FilePart, 0),
-		info:   fInfo,
-		name:   name,
-		backup: br,
+		store:            br.store,
+		index:            br.index,
+		rs:               rollsum.New(),
+		parts:            make([]*proto.FilePart, 0),
+		info:             fInfo,
+		name:             name,
+		backup:           br,
+		storageErr:       new(atomic.Value),
+		storageSemaphore: syncutil.NewGate(inFlightChunks),
 	}
 
 	return writer, nil
@@ -211,6 +244,7 @@ func NewBackupWriter(index Index, store ChunkStore) *BackupWriter {
 		store: store,
 		index: index,
 		files: make([]*proto.ChunkRef, 0),
+		group: new(singleflight.Group),
 	}
 }
 

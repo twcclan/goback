@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/snapshot"
 
 	"github.com/codegangsta/cli"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
@@ -27,6 +28,10 @@ func main() {
 		cli.StringFlag{
 			Name:  "storage",
 			Value: "storage",
+		},
+		cli.StringFlag{
+			Name:  "index",
+			Value: "index",
 		},
 	}
 

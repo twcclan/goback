@@ -14,10 +14,12 @@ import (
 )
 
 func (s *snapshot) readFile(fName string, fInfo os.FileInfo) error {
+	log.Printf("reading file: %s", fName)
 	writer, err := s.backup.Create(fName, fInfo)
 	if err != nil {
 		if err == os.ErrExist {
 			//file exists already, skip it
+			log.Printf("file exists already: %s", fName)
 			return nil
 		}
 
@@ -34,9 +36,11 @@ func (s *snapshot) readFile(fName string, fInfo os.FileInfo) error {
 
 	_, err = io.Copy(writer, file)
 	if err != nil {
+		log.Printf("error writing file: %s %v", fName, err)
 		return err
 	}
 
+	log.Printf("closing file: %s", fName)
 	return writer.Close()
 }
 
