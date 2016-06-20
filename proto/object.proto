@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package proto;
+
+import "tree.proto";
+import "commit.proto";
+import "blob.proto";
+import "file.proto";
+
+enum ObjectType {
+  INVALID = 0;
+  COMMIT = 1;
+  TREE = 2;
+  FILE = 3;
+  BLOB = 4;
+}
+
+message Object {
+  oneof object {
+    Commit commit = 1;
+    Tree tree = 2;
+    File file = 3;
+    Blob blob = 4;
+  }
+}

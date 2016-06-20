@@ -18,8 +18,8 @@ type Index interface {
 
 	// chunk related methods
 	ReIndex(ChunkStore) error
-	Index(*proto.Chunk) error
-	HasChunk(*proto.ChunkRef) (bool, error)
+	Index(*proto.Object) error
+	HasChunk(*proto.Ref) (bool, error)
 
 	SnapshotInfo(notAfter time.Time, count int) ([]SnapshotPointer, error)
 
@@ -27,13 +27,13 @@ type Index interface {
 }
 
 type SnapshotPointer struct {
-	Info *proto.SnapshotInfo
-	Ref  *proto.ChunkRef
+	Info *proto.Commit
+	Ref  *proto.Ref
 }
 
 type FilePointer struct {
 	Info *proto.FileInfo
-	Ref  *proto.ChunkRef
+	Ref  *proto.Ref
 }
 
 func NewSqliteIndex(base string) *SqliteIndex {
@@ -83,7 +83,7 @@ func (s *SqliteIndex) Close() error {
 	return s.db.Close()
 }
 
-func (s *SqliteIndex) index(chunk *proto.Chunk, tx *sql.Tx) (err error) {
+func (s *SqliteIndex) index(chunk *proto.Blob, tx *sql.Tx) (err error) {
 	switch chunk.Ref.Type {
 	case proto.ChunkType_FILE_INFO:
 		info := new(proto.FileInfo)
@@ -153,7 +153,7 @@ func (s *SqliteIndex) ReIndex(store ChunkStore) (err error) {
 	return
 }
 
-func (s *SqliteIndex) Index(chunk *proto.Chunk) (err error) {
+func (s *SqliteIndex) Index(chunk *proto.Object) (err error) {
 	s.txMtx.Lock()
 	defer s.txMtx.Unlock()
 
@@ -176,13 +176,13 @@ func (s *SqliteIndex) Index(chunk *proto.Chunk) (err error) {
 	return
 }
 
-func (s *SqliteIndex) HasChunk(ref *proto.ChunkRef) (bool, error) {
+func (s *SqliteIndex) HasChunk(ref *proto.Ref) (bool, error) {
 	s.txMtx.Lock()
 	defer s.txMtx.Unlock()
 
 	var unused int
 
-	err := s.db.QueryRow("SELECT 1 FROM chunks WHERE sum = ? LIMIT 1;", ref.Sum).Scan(&unused)
+	err := s.db.QueryRow("SELECT 1 FROM chunks WHERE sum = ? LIMIT 1;", ref.Sha1).Scan(&unused)
 
 	if err == sql.ErrNoRows {
 		return false, nil

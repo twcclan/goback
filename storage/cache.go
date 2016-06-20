@@ -7,29 +7,29 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-func NewCache(upstream backup.ChunkStore) *Cache {
+func NewCache(upstream backup.ObjectStore) *Cache {
 	return nil
 }
 
-var _ backup.ChunkStore = (*Cache)(nil)
+var _ backup.ObjectStore = (*Cache)(nil)
 
 type Cache struct {
 	database *leveldb.DB
-	upstream backup.ChunkStore
+	upstream backup.ObjectStore
 }
 
-func (c *Cache) Create(chunk *proto.Chunk) error {
-	return c.upstream.Create(chunk)
+func (c *Cache) Put(obj *proto.Object) error {
+	return c.upstream.Put(obj)
 }
 
-func (c *Cache) Read(ref *proto.ChunkRef) (*proto.Chunk, error) {
-	return c.upstream.Read(ref)
+func (c *Cache) Get(ref *proto.Ref) (*proto.Object, error) {
+	return c.upstream.Get(ref)
 }
 
-func (c *Cache) Delete(ref *proto.ChunkRef) error {
+func (c *Cache) Delete(ref *proto.Ref) error {
 	return c.upstream.Delete(ref)
 }
 
-func (c *Cache) Walk(chunkType proto.ChunkType, fn backup.ChunkWalkFn) error {
+func (c *Cache) Walk(chunkType proto.ObjectType, fn backup.ChunkWalkFn) error {
 	return c.upstream.Walk(chunkType, fn)
 }

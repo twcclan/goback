@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package proto;
+
+import "file.proto";
+import "ref.proto";
+
+message Tree {
+  repeated TreeNode nodes = 1;
+}
+
+message TreeNode {
+    // contains info about whether this is a file or a directory (tree)
+    FileInfo stat = 1;
+    Ref ref = 2;
+}

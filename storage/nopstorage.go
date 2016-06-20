@@ -27,31 +27,22 @@ type NopStorage struct {
 	snapshotSize metrics.Gauge
 }
 
-func (n *NopStorage) Read(ref *proto.ChunkRef) (*proto.Chunk, error) {
+func (n *NopStorage) Read(ref *proto.Ref) (*proto.Object, error) {
 	return nil, nil
 }
 
-func (n *NopStorage) Create(chunk *proto.Chunk) error {
-	switch chunk.Ref.Type {
-	case proto.ChunkType_SNAPSHOT:
-		n.snapshotSize.Update(int64(len(chunk.Data)))
-		fallthrough
-	case proto.ChunkType_FILE_INFO, proto.ChunkType_FILE:
-		n.metaBytes.Inc(int64(len(chunk.Data)))
-		n.metaChunks.Inc(1)
-	case proto.ChunkType_DATA:
-		n.chunkBytes.Inc(int64(len(chunk.Data)))
-		n.chunks.Inc(1)
-	}
+func (n *NopStorage) Create(chunk *proto.Object) error {
+	n.chunkBytes.Inc(int64(proto.Size(chunk)))
+	n.chunks.Inc(1)
 
 	return nil
 }
 
-func (n *NopStorage) Delete(ref *proto.ChunkRef) error {
+func (n *NopStorage) Delete(ref *proto.Ref) error {
 	return nil
 }
 
-func (n *NopStorage) Walk(t proto.ChunkType, fn backup.ChunkWalkFn) error {
+func (n *NopStorage) Walk(t proto.ObjectType, fn backup.ChunkWalkFn) error {
 	return nil
 }
 

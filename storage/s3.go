@@ -16,37 +16,34 @@ func NewS3ChunkStore(auth aws.Auth, region aws.Region, bucket string) *S3ChunkSt
 	return &S3ChunkStore{bucket: s3.Bucket(bucket)}
 }
 
-var _ backup.ChunkStore = (*S3ChunkStore)(nil)
+var _ backup.ObjectStore = (*S3ChunkStore)(nil)
 
 type S3ChunkStore struct {
 	bucket *s3.Bucket
 }
 
-func (s *S3ChunkStore) chunkKey(ref *proto.ChunkRef) string {
-	return fmt.Sprintf("%d-%x", ref.Type, ref.Sum)
+func (s *S3ChunkStore) chunkKey(ref *proto.Ref) string {
+	return fmt.Sprintf("%x", ref.Sha1)
 }
 
-func (s *S3ChunkStore) Create(chunk *proto.Chunk) error {
-	return s.bucket.Put(s.chunkKey(chunk.Ref), chunk.Data, "application/octet-stream", s3.Private, s3.Options{})
+func (s *S3ChunkStore) Put(chunk *proto.Object) error {
+	return s.bucket.Put(s.chunkKey(chunk.Ref()), chunk.Bytes(), "application/octet-stream", s3.Private, s3.Options{})
 }
 
-func (s *S3ChunkStore) Delete(ref *proto.ChunkRef) error {
+func (s *S3ChunkStore) Delete(ref *proto.Ref) error {
 	return s.bucket.Del(s.chunkKey(ref))
 }
 
-func (s *S3ChunkStore) Read(ref *proto.ChunkRef) (*proto.Chunk, error) {
+func (s *S3ChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
 	data, err := s.bucket.Get(s.chunkKey(ref))
 	if err != nil {
 		return nil, err
 	}
 
-	return &proto.Chunk{
-		Ref:  ref,
-		Data: data,
-	}, nil
+	return proto.NewObjectFromBytes(data)
 }
 
-func (s *S3ChunkStore) Walk(chunkType proto.ChunkType, fn backup.ChunkWalkFn) error {
+func (s *S3ChunkStore) Walk(chunkType proto.ObjectType, fn backup.ChunkWalkFn) error {
 	resp, err := s.bucket.List(fmt.Sprintf("%d", chunkType), "", "", 1000)
 	if err != nil {
 		return err
@@ -55,9 +52,9 @@ func (s *S3ChunkStore) Walk(chunkType proto.ChunkType, fn backup.ChunkWalkFn) er
 	for _, key := range resp.Contents {
 		var hexSum []byte
 
-		fmt.Sscanf(filepath.Base(key.Key)[2:], "%x", &hexSum)
+		fmt.Sscanf(filepath.Base(key.Key), "%x", &hexSum)
 
-		err = fn(&proto.ChunkRef{Sum: hexSum, Type: chunkType})
+		err = fn(&proto.Ref{Sha1: hexSum})
 		if err != nil {
 			return err
 		}

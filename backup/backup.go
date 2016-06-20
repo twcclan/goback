@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"sort"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +14,8 @@ import (
 	"github.com/golang/groupcache/singleflight"
 
 	"camlistore.org/pkg/rollsum"
-	"camlistore.org/pkg/syncutil"
+
+	"go4.org/syncutil"
 )
 
 var (
@@ -24,10 +24,6 @@ var (
 )
 
 const (
-	// maxBlobSize is the largest blob we ever make when cutting up
-	// a file.
-	maxBlobSize = 1 << 20
-
 	// bufioReaderSize is an explicit size for our bufio.Reader,
 	// so we don't rely on NewReader's implicit size.
 	// We care about the buffer size because it affects how far
@@ -35,18 +31,10 @@ const (
 	// know its size.  Detecting an EOF bufioReaderSize bytes early
 	// means we can plan for the final chunk.
 	bufioReaderSize = 32 << 10
-
-	// tooSmallThreshold is the threshold at which rolling checksum
-	// boundaries are ignored if the current chunk being built is
-	// smaller than this.
-	tooSmallThreshold = 64 << 10
-
-	inFlightChunks = 128
 )
 
 type backupFileWriter struct {
-	store            ChunkStore
-	index            Index
+	store            ObjectStore
 	backup           *BackupWriter
 	buf              [maxBlobSize]byte
 	blobSize         int64
@@ -67,20 +55,16 @@ func (bfw *backupFileWriter) split() {
 	copy(chunkBytes, bfw.buf[:bfw.blobSize])
 	sum := sha1.Sum(chunkBytes)
 
-	chunk := &proto.Chunk{
-		Ref: &proto.ChunkRef{
-			Sum: sum[:],
-		},
+	obj := proto.NewObject(&proto.Blob{
 		Data: chunkBytes,
-	}
+	})
+
+	length := bfw.blobSize
 	bfw.blobSize = 0
 
-	length := int64(len(chunk.Data))
-
 	bfw.parts = append(bfw.parts, &proto.FilePart{
-		Chunk:  &proto.ChunkRef{Sum: chunk.Ref.Sum},
-		Start:  bfw.offset,
-		Length: length,
+		Ref:    obj.Ref(),
+		Offset: uint64(bfw.offset),
 	})
 
 	bfw.offset += length
@@ -89,7 +73,7 @@ func (bfw *backupFileWriter) split() {
 	atomic.AddInt32(&bfw.pending, 1)
 
 	bfw.storageGroup.Go(func() error {
-		err := bfw.backup.storeChunk(chunk)
+		err := bfw.backup.storeChunk(obj)
 		bfw.storageSemaphore.Done()
 		defer atomic.AddInt32(&bfw.pending, -1)
 		if err != nil {
@@ -131,10 +115,9 @@ func (bfw *backupFileWriter) Close() (err error) {
 	}
 
 	// store the file -> chunks mapping
-	fileDataChunk := proto.GetMetaChunk(&proto.File{
-		Size:  bfw.info.Size(),
+	fileDataChunk := proto.NewObject(&proto.File{
 		Parts: bfw.parts,
-	}, proto.ChunkType_FILE)
+	})
 
 	if err = bfw.backup.storeChunk(fileDataChunk); err != nil {
 		return
@@ -143,14 +126,14 @@ func (bfw *backupFileWriter) Close() (err error) {
 	// store the file info -> file mapping
 	info := proto.GetFileInfo(bfw.info)
 	info.Name = bfw.name
-	info.Data = proto.GetUntypedRef(fileDataChunk.Ref)
+	info.Tree = false
 
-	infoChunk := proto.GetMetaChunk(info, proto.ChunkType_FILE_INFO)
+	infoChunk := proto.NewObject(info)
 	if err = bfw.backup.storeChunk(infoChunk); err != nil {
 		return
 	}
 
-	bfw.backup.add(infoChunk.Ref)
+	bfw.backup.add(infoChunk.Ref())
 
 	// wait for all chunk uploads to finish
 
@@ -161,36 +144,10 @@ func (bfw *backupFileWriter) Close() (err error) {
 var _ io.WriteCloser = new(backupFileWriter)
 
 type BackupWriter struct {
-	store ChunkStore
-	index Index
-	files []*proto.ChunkRef
-	group *singleflight.Group
-}
-
-func (bw *BackupWriter) storeChunk(chunk *proto.Chunk) error {
-
-	// make sure that only a single goroutine is ever trying
-	// to store the same chunk
-	_, err := bw.group.Do(string(chunk.Ref.Sum), func() (interface{}, error) {
-		// don't store chunks that we know exist already
-		found, err := bw.index.HasChunk(chunk.Ref)
-		if err != nil || found {
-			return nil, err
-		}
-
-		err = bw.store.Create(chunk)
-		if err != nil {
-			return nil, err
-		}
-
-		return nil, bw.index.Index(chunk)
-	})
-
-	return err
-}
-
-func (br *BackupWriter) add(file *proto.ChunkRef) {
-	br.files = append(br.files, proto.GetUntypedRef(file))
+	store  ObjectStore
+	files  []*proto.Ref
+	group  *singleflight.Group
+	commit *proto.Commit
 }
 
 func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, error) {
@@ -209,7 +166,6 @@ func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, 
 
 	writer := &backupFileWriter{
 		store:            br.store,
-		index:            br.index,
 		rs:               rollsum.New(),
 		parts:            make([]*proto.FilePart, 0),
 		info:             fInfo,
@@ -223,41 +179,30 @@ func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, 
 }
 
 func (br *BackupWriter) Close() error {
-	snapshot := proto.GetMetaChunk(&proto.Snapshot{
-		Files: br.files,
-	}, proto.ChunkType_SNAPSHOT)
+	/*
+		snapshot := proto.NewObject(&proto.Commit)
 
-	err := br.storeChunk(snapshot)
+		err := br.storeChunk(snapshot)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	return br.storeChunk(proto.GetMetaChunk(&proto.SnapshotInfo{
-		Data:      snapshot.Ref,
-		Timestamp: time.Now().UTC().Unix(),
-	}, proto.ChunkType_SNAPSHOT_INFO))
+		return br.storeChunk(proto.GetMetaChunk(&proto.SnapshotInfo{
+			Data:      snapshot.Ref,
+			Timestamp: time.Now().UTC().Unix(),
+		}, proto.ChunkType_SNAPSHOT_INFO))
+
+	*/
+
+	return errors.New("no implemented")
 }
 
-func NewBackupWriter(index Index, store ChunkStore) *BackupWriter {
+func NewBackupWriter(store ObjectStore) *BackupWriter {
 	return &BackupWriter{
 		store: store,
-		index: index,
-		files: make([]*proto.ChunkRef, 0),
+		files: make([]*proto.Ref, 0),
 		group: new(singleflight.Group),
-	}
-}
-
-func NewBackupReader(index Index, store ChunkStore, optionalTime ...time.Time) *BackupReader {
-	when := time.Unix(int64(^uint64(0)>>1), 0)
-	if len(optionalTime) > 0 {
-		when = optionalTime[0]
-	}
-
-	return &BackupReader{
-		index: index,
-		store: store,
-		when:  when,
 	}
 }
 
@@ -292,10 +237,24 @@ func (bi *backupFileInfo) Sys() interface{} {
 	return nil
 }
 
+/*
+func NewBackupReader(index Index, store ChunkStore, optionalTime ...time.Time) *BackupReader {
+	when := time.Unix(int64(^uint64(0)>>1), 0)
+	if len(optionalTime) > 0 {
+		when = optionalTime[0]
+	}
+
+	return &BackupReader{
+		index: index,
+		store: store,
+		when:  when,
+	}
+}
+
 type backupFileReader struct {
 	store     ChunkStore
 	data      *proto.File
-	chunk     *proto.Chunk
+	chunk     *proto.Blob
 	partIndex int
 	offset    int64
 }
@@ -305,13 +264,14 @@ type searchCallback func(index int) bool
 func (bfr *backupFileReader) search(index int) bool {
 	part := bfr.data.Parts[index]
 
-	return bfr.offset <= part.Start+part.Length-1
-
+	return bfr.offset <= int64(part.Offset+part.Length-1)
 }
 
 func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 	// check if we reached EOF
-	if bfr.offset >= bfr.data.Size {
+
+	//if bfr.offset >= int64(len(bfr.data)) {
+	if bfr.offset >= 0 {
 		return 0, io.EOF
 	}
 
@@ -324,10 +284,11 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 	part := bfr.data.Parts[bfr.partIndex]
 
 	// calculate the offset for the currently active chunk
-	relativeOffset := bfr.offset - part.Start
+	relativeOffset := bfr.offset - int64(part.Offset)
 
 	// calculate the bytes left for reading in this file part
-	bytesRemaining := part.Length - relativeOffset
+
+	bytesRemaining := int64(part.Length) - relativeOffset
 
 	// exit early if no buffer was provided
 	if n == 0 {
@@ -342,7 +303,7 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 
 	// lazily load chunk from our chunk store
 	if bfr.chunk == nil {
-		bfr.chunk, err = bfr.store.Read(proto.GetTypedRef(part.Chunk, proto.ChunkType_DATA))
+		//bfr.chunk, err = bfr.store.Read(nil)
 	}
 
 	if err != nil {
@@ -354,7 +315,7 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 
 	// if we reached the end of the current chunk
 	// we'll unload it and increase the part index
-	if relativeOffset+int64(n) == part.Length {
+	if relativeOffset+int64(n) == int64(part.Length) {
 		bfr.chunk = nil
 		bfr.partIndex++
 	}
@@ -443,3 +404,5 @@ func (b *BackupReader) Stat(name string) (os.FileInfo, error) {
 
 	return &backupFileInfo{infoList[0].Info}, nil
 }
+
+*/

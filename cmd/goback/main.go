@@ -5,9 +5,6 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/twcclan/goback/cmd/goback/commands/file"
-	"github.com/twcclan/goback/cmd/goback/commands/snapshot"
-
 	"github.com/codegangsta/cli"
 	_ "github.com/joho/godotenv/autoload"
 )
@@ -21,8 +18,8 @@ func main() {
 	app.Name = "goback"
 	app.Usage = "Take snapshots of your files and restore them."
 	app.Commands = []cli.Command{
-		snapshot.Command,
-		file.Command,
+	//snapshot.Command,
+	//file.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

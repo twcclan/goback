@@ -14,7 +14,7 @@ import (
 	"github.com/goamz/goamz/aws"
 )
 
-func initS3(u *url.URL, c *cli.Context) (backup.ChunkStore, error) {
+func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	auth, err := aws.EnvAuth()
 
 	if err != nil {
@@ -42,13 +42,13 @@ func makeLocation(loc string) (string, error) {
 	return loc, nil
 }
 
-func initSimple(u *url.URL, c *cli.Context) (backup.ChunkStore, error) {
+func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	loc, err := makeLocation(u.Path)
 
-	return storage.NewSimpleChunkStore(loc), err
+	return storage.NewSimpleObjectStore(loc), err
 }
 
-var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ChunkStore, error){
+var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":     initSimple,
 	"file": initSimple,
 	"s3":   initS3,
@@ -58,7 +58,7 @@ func getIndexLocation(c *cli.Context) (string, error) {
 	return makeLocation(c.GlobalString("index"))
 }
 
-func GetChunkStore(c *cli.Context) backup.ChunkStore {
+func GetObjectStore(c *cli.Context) backup.ObjectStore {
 	location := c.GlobalString("storage")
 	u, err := url.Parse(location)
 
@@ -79,6 +79,7 @@ func GetChunkStore(c *cli.Context) backup.ChunkStore {
 	return nil
 }
 
+/*
 func GetIndex(c *cli.Context) backup.Index {
 	loc, err := getIndexLocation(c)
 	if err != nil {
@@ -86,3 +87,4 @@ func GetIndex(c *cli.Context) backup.Index {
 	}
 	return backup.NewSqliteIndex(loc)
 }
+*/

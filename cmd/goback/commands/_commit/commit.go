@@ -15,8 +15,8 @@ type snapshot struct {
 }
 
 var Command = cli.Command{
-	Name:        "snapshot",
-	Description: "Manage your snapshots",
+	Name:        "commit",
+	Description: "Manage your commits",
 	Subcommands: []cli.Command{
 		newCmd,
 		listCmd,
