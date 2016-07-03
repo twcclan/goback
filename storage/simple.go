@@ -30,8 +30,8 @@ func (s *SimpleChunkStore) chunkFilename(ref *proto.Ref) string {
 	return path.Join(s.base, chunk)
 }
 
-func (s *SimpleChunkStore) Put(chunk *proto.Object) error {
-	return ioutil.WriteFile(s.chunkFilename(chunk.Ref()), chunk.Bytes(), 0644)
+func (s *SimpleChunkStore) Put(obj *proto.Object) error {
+	return ioutil.WriteFile(s.chunkFilename(obj.Ref()), obj.Bytes(), 0644)
 }
 
 func (s *SimpleChunkStore) Delete(ref *proto.Ref) error {

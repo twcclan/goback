@@ -1,21 +1,12 @@
 package backup
 
 import (
-	"crypto/sha1"
-	"errors"
-	"io"
-	"log"
 	"os"
-	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/twcclan/goback/proto"
-
-	"github.com/golang/groupcache/singleflight"
-
-	"camlistore.org/pkg/rollsum"
-
-	"go4.org/syncutil"
 )
 
 var (
@@ -33,176 +24,35 @@ const (
 	bufioReaderSize = 32 << 10
 )
 
-type backupFileWriter struct {
-	store            ObjectStore
-	backup           *BackupWriter
-	buf              [maxBlobSize]byte
-	blobSize         int64
-	offset           int64
-	rs               *rollsum.RollSum
-	parts            []*proto.FilePart
-	info             os.FileInfo
-	name             string
-	storageErr       *atomic.Value
-	storageGroup     syncutil.Group
-	storageSemaphore *syncutil.Gate
-
-	pending int32
-}
-
-func (bfw *backupFileWriter) split() {
-	chunkBytes := make([]byte, bfw.blobSize)
-	copy(chunkBytes, bfw.buf[:bfw.blobSize])
-	sum := sha1.Sum(chunkBytes)
-
-	obj := proto.NewObject(&proto.Blob{
-		Data: chunkBytes,
-	})
-
-	length := bfw.blobSize
-	bfw.blobSize = 0
-
-	bfw.parts = append(bfw.parts, &proto.FilePart{
-		Ref:    obj.Ref(),
-		Offset: uint64(bfw.offset),
-	})
-
-	bfw.offset += length
-
-	bfw.storageSemaphore.Start()
-	atomic.AddInt32(&bfw.pending, 1)
-
-	bfw.storageGroup.Go(func() error {
-		err := bfw.backup.storeChunk(obj)
-		bfw.storageSemaphore.Done()
-		defer atomic.AddInt32(&bfw.pending, -1)
-		if err != nil {
-			// store the error here so future calls to write can exit early
-			bfw.storageErr.Store(err)
-		}
-		return err
-	})
-}
-
-func (bfw *backupFileWriter) Write(bytes []byte) (int, error) {
-	deferred := bfw.storageErr.Load()
-
-	if deferred != nil {
-		return 0, deferred.(error)
-	}
-
-	for _, b := range bytes {
-		bfw.rs.Roll(b)
-		bfw.buf[bfw.blobSize] = b
-		bfw.blobSize++
-
-		onSplit := bfw.rs.OnSplit()
-
-		//split if we found a border, or we reached maxBlobSize
-		if (onSplit && bfw.blobSize > tooSmallThreshold) || bfw.blobSize == maxBlobSize {
-			bfw.split()
-		}
-	}
-
-	return len(bytes), nil
-}
-
-func (bfw *backupFileWriter) Close() (err error) {
-	log.Printf("Closing file")
-
-	if bfw.blobSize > 0 {
-		bfw.split()
-	}
-
-	// store the file -> chunks mapping
-	fileDataChunk := proto.NewObject(&proto.File{
-		Parts: bfw.parts,
-	})
-
-	if err = bfw.backup.storeChunk(fileDataChunk); err != nil {
-		return
-	}
-
-	// store the file info -> file mapping
-	info := proto.GetFileInfo(bfw.info)
-	info.Name = bfw.name
-	info.Tree = false
-
-	infoChunk := proto.NewObject(info)
-	if err = bfw.backup.storeChunk(infoChunk); err != nil {
-		return
-	}
-
-	bfw.backup.add(infoChunk.Ref())
-
-	// wait for all chunk uploads to finish
-
-	log.Printf("Waiting for %d transfers to finish", atomic.LoadInt32(&bfw.pending))
-	return bfw.storageGroup.Err()
-}
-
-var _ io.WriteCloser = new(backupFileWriter)
-
 type BackupWriter struct {
-	store  ObjectStore
-	files  []*proto.Ref
-	group  *singleflight.Group
-	commit *proto.Commit
+	store ObjectStore
+	*backupTree
 }
 
-func (br *BackupWriter) Create(name string, fInfo os.FileInfo) (io.WriteCloser, error) {
-	// check if we have this file already
-	info, err := br.index.FileInfo(name, fInfo.ModTime(), 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(info) > 0 && info[0].Info.Timestamp <= fInfo.ModTime().UTC().Unix() {
-		br.add(info[0].Ref)
-
-		// signal that we have this file already
-		return nil, os.ErrExist
-	}
-
-	writer := &backupFileWriter{
-		store:            br.store,
-		rs:               rollsum.New(),
-		parts:            make([]*proto.FilePart, 0),
-		info:             fInfo,
-		name:             name,
-		backup:           br,
-		storageErr:       new(atomic.Value),
-		storageSemaphore: syncutil.NewGate(inFlightChunks),
-	}
-
-	return writer, nil
-}
+var _ TreeWriter = (*BackupWriter)(nil)
 
 func (br *BackupWriter) Close() error {
-	/*
-		snapshot := proto.NewObject(&proto.Commit)
+	tree := proto.NewObject(&proto.Tree{
+		Nodes: br.nodes,
+	})
 
-		err := br.storeChunk(snapshot)
+	err := br.store.Put(tree)
+	if err != nil {
+	}
 
-		if err != nil {
-			return err
-		}
+	commit := proto.NewObject(&proto.Commit{
+		Timestamp: time.Now().Unix(),
+		Tree:      tree.Ref(),
+	})
 
-		return br.storeChunk(proto.GetMetaChunk(&proto.SnapshotInfo{
-			Data:      snapshot.Ref,
-			Timestamp: time.Now().UTC().Unix(),
-		}, proto.ChunkType_SNAPSHOT_INFO))
+	err = br.store.Put(commit)
 
-	*/
-
-	return errors.New("no implemented")
 }
 
 func NewBackupWriter(store ObjectStore) *BackupWriter {
 	return &BackupWriter{
-		store: store,
-		files: make([]*proto.Ref, 0),
-		group: new(singleflight.Group),
+		store:      store,
+		backupTree: newTree(store),
 	}
 }
 

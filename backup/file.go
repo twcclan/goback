@@ -2,7 +2,6 @@ package backup
 
 import (
 	"io"
-	"os"
 	"sync/atomic"
 
 	"github.com/twcclan/goback/proto"
@@ -31,7 +30,6 @@ type fileWriter struct {
 	offset           int64
 	rs               *rollsum.RollSum
 	parts            []*proto.FilePart
-	info             os.FileInfo
 	storageErr       *atomic.Value
 	storageGroup     syncutil.Group
 	storageSemaphore *syncutil.Gate

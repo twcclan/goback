@@ -3,52 +3,88 @@ package backup
 import (
 	"io"
 	"os"
+	"sync/atomic"
+
+	"camlistore.org/pkg/rollsum"
+	"go4.org/syncutil"
 
 	"github.com/twcclan/goback/proto"
 )
 
 type TreeWriter interface {
-	File(os.FileInfo) io.WriteCloser
-	Tree(os.FileInfo) TreeWriter
-	io.Closer
-}
-
-type nodeReceiver interface {
-	add(*proto.TreeNode)
+	File(os.FileInfo, func(io.Writer) error) error
+	Tree(os.FileInfo, func(TreeWriter) error) error
 }
 
 type backupTree struct {
-	parent nodeReceiver
-	store  ObjectStore
-	info   os.FileInfo
-	nodes  []*proto.TreeNode
+	store ObjectStore
+	nodes []*proto.TreeNode
 }
 
-func (bt *backupTree) add(node *proto.TreeNode) {
-	bt.nodes = append(bt.nodes, node)
-}
+var _ TreeWriter = (*backupTree)(nil)
 
-func (bt *backupTree) Tree(info os.FileInfo) *backupTree {
-	return &backupTree{
-		parent: bt,
+func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) error {
+	node := &backupTree{
+		nodes: make([]*proto.TreeNode, 0),
+		store: bt.store,
 	}
+
+	// allow the caller to populate this sub-tree
+	err := writer(node)
+	if err != nil {
+		return err
+	}
+
+	treeObj := proto.NewObject(&proto.Tree{
+		Nodes: node.nodes,
+	})
+
+	// store the sub-tree
+	err = bt.store.Put(treeObj)
+	if err != nil {
+		return err
+	}
+
+	// save a reference to the sub-tree
+	bt.nodes = append(bt.nodes, &proto.TreeNode{
+		Stat: proto.GetFileInfo(info),
+		Ref:  treeObj.Ref(),
+	})
+
+	return err
 }
 
-func (bt *backupTree) File(info os.FileInfo) io.WriteCloser {
+func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error {
+	fWriter := &fileWriter{
+		store:            bt.store,
+		rs:               rollsum.New(),
+		parts:            make([]*proto.FilePart, 0),
+		storageErr:       new(atomic.Value),
+		storageSemaphore: syncutil.NewGate(inFlightChunks),
+	}
+
+	err := writer(fWriter)
+	if err != nil {
+		return err
+	}
+
+	// closing the writer will finish uploading all parts
+	// and also store the metadata
+	err = fWriter.Close()
+	if err != nil {
+		return err
+	}
+
+	bt.nodes = append(bt.nodes, &proto.TreeNode{
+		Stat: proto.GetFileInfo(info),
+		Ref:  fWriter.Ref(),
+	})
+
 	return nil
 }
 
-func (bt *backupTree) Close() error {
-	obj := proto.NewObject(&proto.Tree{
-		Nodes: bt.nodes,
-	})
-
-	err := bt.store.Put()
-}
-
-func newTree(info os.FileInfo, store ObjectStore) *backupTree {
+func newTree(store ObjectStore) *backupTree {
 	return &backupTree{
-		info:  info,
 		store: store,
 		nodes: make([]*proto.TreeNode, 0),
 	}

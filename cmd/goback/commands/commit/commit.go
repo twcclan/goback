@@ -1,4 +1,4 @@
-package snapshot
+package commit
 
 import (
 	"github.com/twcclan/goback/backup"
@@ -6,9 +6,8 @@ import (
 	"github.com/codegangsta/cli"
 )
 
-type snapshot struct {
+type commit struct {
 	backup   *backup.BackupWriter
-	reader   *backup.BackupReader
 	base     string
 	includes []string
 	excludes []string
@@ -19,6 +18,5 @@ var Command = cli.Command{
 	Description: "Manage your commits",
 	Subcommands: []cli.Command{
 		newCmd,
-		listCmd,
 	},
 }
