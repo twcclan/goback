@@ -64,15 +64,15 @@ func (s *commit) read(file string) func(io.Writer) error {
 	}
 }
 
-func (s *commit) descend(absPath string) func(backup.TreeWriter) error {
+func (s *commit) descend(base string) func(backup.TreeWriter) error {
 	return func(tree backup.TreeWriter) error {
-		files, err := ioutil.ReadDir(absPath)
+		files, err := ioutil.ReadDir(base)
 		if err != nil {
-			return errors.Wrapf(err, "Failed opening %s for listing", absPath)
+			return errors.Wrapf(err, "Failed opening %s for listing", base)
 		}
 
 		for _, file := range files {
-			absPath = path.Join(absPath, file.Name())
+			absPath := path.Join(base, file.Name())
 
 			if !s.shouldInclude(absPath) {
 				continue
@@ -116,15 +116,19 @@ func newAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
+	index := backup.NewSqliteIndex("index", store)
+	log.Println(index.Open())
 
 	s := &commit{
-		backup:   backup.NewBackupWriter(store),
+		backup:   backup.NewBackupWriter(index),
 		base:     base,
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),
 	}
 
 	s.take()
+
+	index.Close()
 }
 
 var newCmd = cli.Command{

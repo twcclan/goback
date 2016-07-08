@@ -5,6 +5,7 @@ package proto
 import (
 	"crypto/sha1"
 	"os"
+	"time"
 
 	pb "github.com/golang/protobuf/proto"
 )
@@ -41,6 +42,7 @@ func (o *Object) Bytes() []byte {
 	} else {
 		return data
 	}
+	//return []byte(pb.MarshalTextString(o))
 }
 
 func NewObject(in interface{}) *Object {
@@ -76,6 +78,38 @@ func GetFileInfo(info os.FileInfo) *FileInfo {
 		Size:      info.Size(),
 		Tree:      info.IsDir(),
 	}
+}
+
+type backupFileInfo struct {
+	*FileInfo
+}
+
+func (bi *backupFileInfo) IsDir() bool {
+	return false
+}
+
+func (bi *backupFileInfo) Name() string {
+	return bi.FileInfo.Name
+}
+
+func (bi *backupFileInfo) ModTime() time.Time {
+	return time.Unix(bi.Timestamp, 0)
+}
+
+func (bi *backupFileInfo) Mode() os.FileMode {
+	return os.FileMode(bi.FileInfo.Mode)
+}
+
+func (bi *backupFileInfo) Size() int64 {
+	return bi.FileInfo.Size
+}
+
+func (bi *backupFileInfo) Sys() interface{} {
+	return nil
+}
+
+func GetOSFileInfo(info *FileInfo) os.FileInfo {
+	return &backupFileInfo{info}
 }
 
 /*

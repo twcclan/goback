@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"os"
 	"time"
 
 	"github.com/pkg/errors"
@@ -38,6 +37,7 @@ func (br *BackupWriter) Close() error {
 
 	err := br.store.Put(tree)
 	if err != nil {
+		return errors.Wrap(err, "Failed to store backup tree")
 	}
 
 	commit := proto.NewObject(&proto.Commit{
@@ -47,6 +47,7 @@ func (br *BackupWriter) Close() error {
 
 	err = br.store.Put(commit)
 
+	return errors.Wrap(err, "Failed to store commit")
 }
 
 func NewBackupWriter(store ObjectStore) *BackupWriter {
@@ -54,37 +55,6 @@ func NewBackupWriter(store ObjectStore) *BackupWriter {
 		store:      store,
 		backupTree: newTree(store),
 	}
-}
-
-/*
-	backupFileInfo implements os.FileInfo for files from a backup
-*/
-type backupFileInfo struct {
-	info *proto.FileInfo
-}
-
-func (bi *backupFileInfo) IsDir() bool {
-	return false
-}
-
-func (bi *backupFileInfo) Name() string {
-	return bi.info.Name
-}
-
-func (bi *backupFileInfo) ModTime() time.Time {
-	return time.Unix(bi.info.Timestamp, 0)
-}
-
-func (bi *backupFileInfo) Mode() os.FileMode {
-	return os.FileMode(bi.info.Mode)
-}
-
-func (bi *backupFileInfo) Size() int64 {
-	return bi.info.Size
-}
-
-func (bi *backupFileInfo) Sys() interface{} {
-	return nil
 }
 
 /*
