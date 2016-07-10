@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package proto;
+
+import "ref.proto";
+import "object.proto";
+
+message Location {
+  Ref ref = 1;
+  uint64 offset = 2;
+  ObjectType type = 3;
+}
+
+message Index {
+  repeated Location locations = 1;
+}

@@ -20,7 +20,7 @@ type Tree struct {
 func (m *Tree) Reset()                    { *m = Tree{} }
 func (m *Tree) String() string            { return proto1.CompactTextString(m) }
 func (*Tree) ProtoMessage()               {}
-func (*Tree) Descriptor() ([]byte, []int) { return fileDescriptor6, []int{0} }
+func (*Tree) Descriptor() ([]byte, []int) { return fileDescriptor7, []int{0} }
 
 func (m *Tree) GetNodes() []*TreeNode {
 	if m != nil {
@@ -38,7 +38,7 @@ type TreeNode struct {
 func (m *TreeNode) Reset()                    { *m = TreeNode{} }
 func (m *TreeNode) String() string            { return proto1.CompactTextString(m) }
 func (*TreeNode) ProtoMessage()               {}
-func (*TreeNode) Descriptor() ([]byte, []int) { return fileDescriptor6, []int{1} }
+func (*TreeNode) Descriptor() ([]byte, []int) { return fileDescriptor7, []int{1} }
 
 func (m *TreeNode) GetStat() *FileInfo {
 	if m != nil {
@@ -59,7 +59,7 @@ func init() {
 	proto1.RegisterType((*TreeNode)(nil), "proto.TreeNode")
 }
 
-var fileDescriptor6 = []byte{
+var fileDescriptor7 = []byte{
 	// 141 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xe2, 0xe2, 0x2a, 0x29, 0x4a, 0x4d,
 	0xd5, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x52, 0x5c, 0x69, 0x99, 0x39, 0x50,

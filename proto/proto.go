@@ -10,6 +10,21 @@ import (
 	pb "github.com/golang/protobuf/proto"
 )
 
+func protoBytes(m pb.Message) []byte {
+	if data, err := pb.Marshal(m); err != nil {
+		// there are only a few very specific error conditions
+		// that shouldn't ever affect us
+		panic(err)
+	} else {
+		return data
+	}
+	//return []byte(pb.MarshalTextString(o))
+}
+
+func (i *Index) Bytes() []byte {
+	return protoBytes(i)
+}
+
 func Size(msg pb.Message) int {
 	return pb.Size(msg)
 }
@@ -35,14 +50,7 @@ func (o *Object) Ref() *Ref {
 }
 
 func (o *Object) Bytes() []byte {
-	if data, err := pb.Marshal(o); err != nil {
-		// there are only a few very specific error conditions
-		// that shouldn't ever affect us
-		panic(err)
-	} else {
-		return data
-	}
-	//return []byte(pb.MarshalTextString(o))
+	return protoBytes(o)
 }
 
 func NewObject(in interface{}) *Object {

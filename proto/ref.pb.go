@@ -20,13 +20,13 @@ type Ref struct {
 func (m *Ref) Reset()                    { *m = Ref{} }
 func (m *Ref) String() string            { return proto1.CompactTextString(m) }
 func (*Ref) ProtoMessage()               {}
-func (*Ref) Descriptor() ([]byte, []int) { return fileDescriptor5, []int{0} }
+func (*Ref) Descriptor() ([]byte, []int) { return fileDescriptor6, []int{0} }
 
 func init() {
 	proto1.RegisterType((*Ref)(nil), "proto.Ref")
 }
 
-var fileDescriptor5 = []byte{
+var fileDescriptor6 = []byte{
 	// 67 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xe2, 0xe2, 0x2c, 0x4a, 0x4d, 0xd3,
 	0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x4a, 0x92, 0x5c, 0xcc, 0x41, 0xa9, 0x69,

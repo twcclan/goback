@@ -41,6 +41,6 @@ message ListRequest {
 service Store {
     rpc Put (PutRequest) returns (PutResponse) {}
     rpc Get (GetRequest) returns (GetResponse) {}
-    rpc Delete () returns (DeleteResponse) {}
+    rpc Delete (DeleteRequest) returns (DeleteResponse) {}
     rpc List(ListRequest) returns (stream ListResponse) {}
 }

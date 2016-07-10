@@ -41,7 +41,7 @@ var ObjectType_value = map[string]int32{
 func (x ObjectType) String() string {
 	return proto1.EnumName(ObjectType_name, int32(x))
 }
-func (ObjectType) EnumDescriptor() ([]byte, []int) { return fileDescriptor4, []int{0} }
+func (ObjectType) EnumDescriptor() ([]byte, []int) { return fileDescriptor5, []int{0} }
 
 type Object struct {
 	// Types that are valid to be assigned to Object:
@@ -55,7 +55,7 @@ type Object struct {
 func (m *Object) Reset()                    { *m = Object{} }
 func (m *Object) String() string            { return proto1.CompactTextString(m) }
 func (*Object) ProtoMessage()               {}
-func (*Object) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{0} }
+func (*Object) Descriptor() ([]byte, []int) { return fileDescriptor5, []int{0} }
 
 type isObject_Object interface {
 	isObject_Object()
@@ -231,7 +231,7 @@ func init() {
 	proto1.RegisterEnum("proto.ObjectType", ObjectType_name, ObjectType_value)
 }
 
-var fileDescriptor4 = []byte{
+var fileDescriptor5 = []byte{
 	// 226 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x54, 0xcf, 0xc1, 0x4a, 0xc4, 0x30,
 	0x10, 0x06, 0xe0, 0xcd, 0x6e, 0x8c, 0xcb, 0x74, 0x85, 0x90, 0x53, 0xe8, 0x49, 0xbd, 0x28, 0x1e,
