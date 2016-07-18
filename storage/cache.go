@@ -30,6 +30,6 @@ func (c *Cache) Delete(ref *proto.Ref) error {
 	return c.upstream.Delete(ref)
 }
 
-func (c *Cache) Walk(chunkType proto.ObjectType, fn backup.ChunkWalkFn) error {
+func (c *Cache) Walk(chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	return c.upstream.Walk(chunkType, fn)
 }

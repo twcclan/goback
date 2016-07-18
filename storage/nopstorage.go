@@ -11,29 +11,36 @@ import (
 
 func NewNopStorage() *NopStorage {
 	return &NopStorage{
-		chunks:       metrics.NewRegisteredCounter("chunks", metrics.DefaultRegistry),
-		chunkBytes:   metrics.NewRegisteredCounter("chunkBytes", metrics.DefaultRegistry),
-		metaChunks:   metrics.NewRegisteredCounter("metaChunks", metrics.DefaultRegistry),
+		objects:      metrics.NewRegisteredCounter("objects", metrics.DefaultRegistry),
+		objectBytes:  metrics.NewRegisteredCounter("objectBytes", metrics.DefaultRegistry),
+		metaObjects:  metrics.NewRegisteredCounter("metaObjects", metrics.DefaultRegistry),
 		metaBytes:    metrics.NewRegisteredCounter("metaBytes", metrics.DefaultRegistry),
 		snapshotSize: metrics.NewRegisteredGauge("snapshotSize", metrics.DefaultRegistry),
 	}
 }
 
 type NopStorage struct {
-	chunks       metrics.Counter
-	chunkBytes   metrics.Counter
-	metaChunks   metrics.Counter
+	objects      metrics.Counter
+	objectBytes  metrics.Counter
+	metaObjects  metrics.Counter
 	metaBytes    metrics.Counter
 	snapshotSize metrics.Gauge
 }
 
-func (n *NopStorage) Read(ref *proto.Ref) (*proto.Object, error) {
+func (n *NopStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 	return nil, nil
 }
 
-func (n *NopStorage) Create(chunk *proto.Object) error {
-	n.chunkBytes.Inc(int64(proto.Size(chunk)))
-	n.chunks.Inc(1)
+func (n *NopStorage) Put(obj *proto.Object) error {
+	size := int64(len(obj.Bytes()))
+
+	n.objectBytes.Inc(size)
+	n.objects.Inc(1)
+
+	if obj.Type() < proto.ObjectType_BLOB {
+		n.metaBytes.Inc(size)
+		n.metaObjects.Inc(1)
+	}
 
 	return nil
 }
@@ -42,7 +49,7 @@ func (n *NopStorage) Delete(ref *proto.Ref) error {
 	return nil
 }
 
-func (n *NopStorage) Walk(t proto.ObjectType, fn backup.ChunkWalkFn) error {
+func (n *NopStorage) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error {
 	return nil
 }
 

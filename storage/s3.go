@@ -43,7 +43,7 @@ func (s *S3ChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
 	return proto.NewObjectFromBytes(data)
 }
 
-func (s *S3ChunkStore) Walk(chunkType proto.ObjectType, fn backup.ChunkWalkFn) error {
+func (s *S3ChunkStore) Walk(chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	resp, err := s.bucket.List(fmt.Sprintf("%d", chunkType), "", "", 1000)
 	if err != nil {
 		return err
