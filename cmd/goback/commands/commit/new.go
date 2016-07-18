@@ -129,6 +129,10 @@ func newAction(c *cli.Context) {
 	s.take()
 
 	index.Close()
+
+	if cl, ok := store.(common.Closer); ok {
+		log.Println(cl.Close())
+	}
 }
 
 var newCmd = cli.Command{

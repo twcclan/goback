@@ -14,6 +14,14 @@ import (
 	"github.com/goamz/goamz/aws"
 )
 
+type Opener interface {
+	Open() error
+}
+
+type Closer interface {
+	Close() error
+}
+
 func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	auth, err := aws.EnvAuth()
 
@@ -48,8 +56,14 @@ func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewSimpleObjectStore(loc), err
 }
 
+func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	loc, err := makeLocation(u.Path)
+
+	return storage.NewPackStorage(loc), err
+}
+
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":     initSimple,
+	"":     initPack,
 	"file": initSimple,
 	"s3":   initS3,
 }
@@ -70,6 +84,13 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 		store, err := driver(u, c)
 		if err != nil {
 			log.Fatalf("Could not initialise storage driver %s: %v", u.Scheme, err)
+		}
+
+		if op, ok := store.(Opener); ok {
+			err := op.Open()
+			if err != nil {
+				log.Fatalf("Could not open object store %s: %v", u.Scheme, err)
+			}
 		}
 
 		return store
