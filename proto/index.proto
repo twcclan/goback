@@ -9,6 +9,7 @@ message Location {
   Ref ref = 1;
   uint64 offset = 2;
   ObjectType type = 3;
+  uint64 size = 4;
 }
 
 message Index {
