@@ -3,7 +3,10 @@ package proto
 //go:generate protoc --go_out=plugins=grpc:. *.proto
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha1"
+	"io/ioutil"
 	"os"
 	"time"
 
@@ -21,8 +24,44 @@ func protoBytes(m pb.Message) []byte {
 	//return []byte(pb.MarshalTextString(o))
 }
 
+func compressedProtoBytes(m pb.Message) []byte {
+	buf := new(bytes.Buffer)
+	writer := gzip.NewWriter(buf)
+
+	_, err := writer.Write(protoBytes(m))
+	if err != nil {
+		panic(err)
+	}
+
+	err = writer.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	return buf.Bytes()
+}
+
+func decompressedBytes(compressed []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := ioutil.ReadAll(reader)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return b, reader.Close()
+}
+
 func (i *Index) Bytes() []byte {
 	return protoBytes(i)
+}
+
+func (i *Index) CompressedBytes() []byte {
+	return compressedProtoBytes(i)
 }
 
 func Size(msg pb.Message) int {
@@ -53,6 +92,10 @@ func (o *Object) Bytes() []byte {
 	return protoBytes(o)
 }
 
+func (o *Object) CompressedBytes() []byte {
+	return compressedProtoBytes(o)
+}
+
 func NewObject(in interface{}) *Object {
 	var out isObject_Object
 
@@ -72,10 +115,36 @@ func NewObject(in interface{}) *Object {
 	return &Object{out}
 }
 
+func NewObjectFromCompressedBytes(bytes []byte) (*Object, error) {
+	b, err := decompressedBytes(bytes)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return NewObjectFromBytes(b)
+}
+
 func NewObjectFromBytes(bytes []byte) (*Object, error) {
 	obj := new(Object)
 
 	return obj, pb.Unmarshal(bytes, obj)
+}
+
+func NewIndexFromCompressedBytes(bytes []byte) (*Index, error) {
+	b, err := decompressedBytes(bytes)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return NewIndexFromBytes(b)
+}
+
+func NewIndexFromBytes(bytes []byte) (*Index, error) {
+	idx := new(Index)
+
+	return idx, pb.Unmarshal(bytes, idx)
 }
 
 func GetFileInfo(info os.FileInfo) *FileInfo {
