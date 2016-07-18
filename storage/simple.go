@@ -2,10 +2,11 @@ package storage
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
@@ -21,25 +22,36 @@ var _ backup.ObjectStore = (*SimpleChunkStore)(nil)
 
 type SimpleChunkStore struct {
 	base string
+	db   *leveldb.DB
 }
 
-func (s *SimpleChunkStore) chunkFilename(ref *proto.Ref) string {
-	//chunk := fmt.Sprintf("%x/%x/%x", ref.Sum[:2], ref.Sum[2:4], ref.Sum)
-	chunk := fmt.Sprintf("%x", ref.Sha1)
+func (s *SimpleChunkStore) Open() (err error) {
+	s.db, err = leveldb.OpenFile(s.base, &opt.Options{
+		NoSync: true,
+	})
 
-	return path.Join(s.base, chunk)
+	return err
+}
+
+func (s *SimpleChunkStore) Close() error {
+	return s.db.Close()
 }
 
 func (s *SimpleChunkStore) Put(obj *proto.Object) error {
-	return ioutil.WriteFile(s.chunkFilename(obj.Ref()), obj.Bytes(), 0644)
+	err := s.db.Put(obj.Ref().Sha1, obj.Bytes(), nil)
+	if err != nil {
+		return err
+	}
+
+	return err
 }
 
 func (s *SimpleChunkStore) Delete(ref *proto.Ref) error {
-	return os.Remove(s.chunkFilename(ref))
+	return s.db.Delete(ref.Sha1, nil)
 }
 
 func (s *SimpleChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
-	data, err := ioutil.ReadFile(s.chunkFilename(ref))
+	data, err := s.db.Get(ref.Sha1, nil)
 
 	if err != nil {
 		return nil, err
@@ -48,7 +60,7 @@ func (s *SimpleChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
 	return proto.NewObjectFromBytes(data)
 }
 
-func (s *SimpleChunkStore) Walk(chunkType proto.ObjectType, fn backup.ChunkWalkFn) error {
+func (s *SimpleChunkStore) Walk(chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	matches, err := filepath.Glob(path.Join(s.base, fmt.Sprintf("%d-*", chunkType)))
 	if err != nil {
 		return err
