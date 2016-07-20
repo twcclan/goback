@@ -14,6 +14,7 @@ import (
 type TreeWriter interface {
 	File(os.FileInfo, func(io.Writer) error) error
 	Tree(os.FileInfo, func(TreeWriter) error) error
+	Node(*proto.TreeNode)
 }
 
 type backupTree struct {
@@ -81,6 +82,10 @@ func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error
 	})
 
 	return nil
+}
+
+func (bt *backupTree) Node(node *proto.TreeNode) {
+	bt.nodes = append(bt.nodes, node)
 }
 
 func newTree(store ObjectStore) *backupTree {
