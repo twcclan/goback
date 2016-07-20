@@ -5,11 +5,12 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/proto"
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/codegangsta/cli"
@@ -72,7 +73,7 @@ func (s *commit) descend(base string) func(backup.TreeWriter) error {
 		}
 
 		for _, file := range files {
-			absPath := path.Join(base, file.Name())
+			absPath := filepath.Join(base, file.Name())
 
 			if !s.shouldInclude(absPath) {
 				continue
@@ -83,8 +84,19 @@ func (s *commit) descend(base string) func(backup.TreeWriter) error {
 				err = tree.Tree(file, s.descend(absPath))
 
 			} else if file.Mode()&os.ModeSymlink == 0 { // skip symlinks
-				// store the file
-				err = tree.File(file, s.read(absPath))
+				var nodes []proto.TreeNode
+				nodes, err = s.index.FileInfo(strings.TrimPrefix(absPath, s.base+"/"), file.ModTime(), 1)
+				if err != nil {
+					return errors.Wrapf(err, "Failed checking index for file %s", absPath)
+				}
+
+				if len(nodes) > 0 {
+					// apparently we have this file already
+					tree.Node(&nodes[0])
+				} else {
+					// store the file
+					err = tree.File(file, s.read(absPath))
+				}
 			}
 
 			if err != nil {
@@ -122,6 +134,7 @@ func newAction(c *cli.Context) {
 	s := &commit{
 		backup:   backup.NewBackupWriter(index),
 		base:     base,
+		index:    index,
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),
 	}

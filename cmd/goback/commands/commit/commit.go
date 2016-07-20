@@ -8,6 +8,7 @@ import (
 
 type commit struct {
 	backup   *backup.BackupWriter
+	index    backup.Index
 	base     string
 	includes []string
 	excludes []string
