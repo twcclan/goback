@@ -1,16 +1,15 @@
 package storage
 
 import (
-	"archive/tar"
+	"bufio"
 	"bytes"
-	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/twcclan/goback/backup"
@@ -18,10 +17,11 @@ import (
 )
 
 const MaxSize = 1024 * 1024 * 1024 // 1 GB TODO: make this configurable for testing
-const ArchiveName = "goback-pack"
-const ArchiveSuffix = ".tar"
+const ArchiveName = "archive"
+const ArchiveSuffix = ".goback"
 const ArchivePattern = ArchiveName + "*" + ArchiveSuffix
 const IndexExt = ".idx"
+const varIntMaxSize = 10
 
 func NewPackStorage(base string) *PackStorage {
 	return &PackStorage{
@@ -171,14 +171,15 @@ func (ps *PackStorage) prepareArchive() (err error) {
 type archive struct {
 	archive    *os.File
 	readFile   *os.File
-	writer     *tar.Writer
-	reader     *tar.Reader
+	writer     *bufio.Writer
+	reader     *bufio.Reader
 	base       string
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*proto.Location
 	readIndex  *proto.Index
 	mtx        sync.RWMutex
+	last       *proto.Ref
 }
 
 func newArchive(base string) (*archive, error) {
@@ -197,8 +198,8 @@ func newArchive(base string) (*archive, error) {
 	return &archive{
 		archive:    writeFile,
 		readFile:   readFile,
-		reader:     tar.NewReader(readFile),
-		writer:     tar.NewWriter(writeFile),
+		reader:     bufio.NewReader(readFile),
+		writer:     bufio.NewWriter(writeFile),
 		base:       base,
 		readOnly:   false,
 		writeIndex: make(map[string]*proto.Location),
@@ -226,6 +227,7 @@ func openArchive(path string) (*archive, error) {
 
 	return &archive{
 		readFile:  file,
+		reader:    bufio.NewReader(file),
 		readIndex: index,
 		readOnly:  true,
 	}, nil
@@ -262,13 +264,44 @@ func (a *archive) Get(ref *proto.Ref) (*proto.Object, error) {
 	defer a.mtx.RUnlock()
 
 	if loc := a.indexLocation(ref); loc != nil {
+
 		_, err := a.readFile.Seek(int64(loc.Offset), os.SEEK_SET)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed seeking in file")
 		}
 
-		buf := make([]byte, loc.Size)
-		_, err = a.readFile.Read(buf)
+		a.reader.Reset(a.readFile)
+
+		// read size of object header
+		hdrSizeBytes, err := a.reader.Peek(varIntMaxSize)
+		if err != nil {
+			return nil, err
+		}
+
+		hdrSize, consumed := proto.DecodeVarint(hdrSizeBytes)
+		_, err = a.reader.Discard(consumed)
+		if err != nil {
+			return nil, err
+		}
+
+		// read object header
+		hdrBytes := make([]byte, hdrSize)
+		_, err = a.reader.Read(hdrBytes)
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed reading object header")
+		}
+
+		hdr, err := proto.NewObjectHeaderFromBytes(hdrBytes)
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed parsing object header")
+		}
+
+		if !bytes.Equal(hdr.Ref.Sha1, ref.Sha1) {
+			return nil, errors.New("Object doesn't match Ref, index probably corrupted")
+		}
+
+		buf := make([]byte, hdr.Size)
+		_, err = io.ReadFull(a.reader, buf)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed reading data from archive")
 		}
@@ -295,40 +328,38 @@ func (a *archive) Put(object *proto.Object) error {
 		return nil
 	}
 
-	//log.Printf("Attempting to write %d bytes", len(bytes))
-
-	hdr := &tar.Header{
-		Name:     fmt.Sprintf("%x", object.Ref().Sha1),
-		Typeflag: tar.TypeReg,
-		ModTime:  time.Now(),
-		Size:     int64(len(bytes)),
+	hdr := &proto.ObjectHeader{
+		Size:        uint64(len(bytes)),
+		Compression: proto.Compression_GZIP,
+		Ref:         object.Ref(),
+		Predecessor: a.last,
 	}
 
-	err := a.writer.WriteHeader(hdr)
+	hdrBytesSize := uint64(proto.Size(hdr))
+	hdrBytes := proto.Bytes(hdr)
+
+	// construct a buffer with our header preceded by a varint describing its size
+	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
+
+	_, err := a.archive.Write(hdrBytes)
 	if err != nil {
-		return errors.Wrap(err, "Failed writing tar header")
+		return errors.Wrap(err, "Failed writing header")
 	}
 
-	// retrieve the current offset
-	offset, err := a.archive.Seek(0, os.SEEK_CUR)
-	if err != nil {
-		return errors.Wrap(err, "Failed getting archive file offset")
-	}
-
-	_, err = a.writer.Write(bytes)
-	//log.Printf("%d bytes written", n)r
+	_, err = a.archive.Write(bytes)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing data")
 	}
 
 	a.writeIndex[string(object.Ref().Sha1)] = &proto.Location{
 		Ref:    object.Ref(),
-		Offset: uint64(offset),
+		Offset: a.size,
 		Type:   object.Type(),
-		Size:   uint64(len(bytes)),
+		Size:   uint64(len(hdrBytes)) + hdr.Size,
 	}
 
-	a.size = uint64(offset) + uint64(len(bytes))
+	a.size += uint64(len(hdrBytes)) + hdr.Size
+	a.last = object.Ref()
 
 	return nil
 	//return errors.Wrap(a.writer.Flush(), "Failed flushing tar file")
@@ -365,12 +396,10 @@ func (a *archive) CloseReader() error {
 }
 
 func (a *archive) Close() error {
-	err := a.writer.Close()
-	if err != nil {
-		return errors.Wrap(err, "Failed finalizing archive")
-	}
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 
-	err = a.archive.Close()
+	err := a.archive.Close()
 	if err != nil {
 		return errors.Wrap(err, "Failed closing file")
 	}

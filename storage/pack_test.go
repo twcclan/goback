@@ -9,13 +9,19 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+// number of objects to generate for the tests
+const n = 1000
+
+// average size of objects
+const ObjectSize = 1024 * 8
+
 func makeTestData(t *testing.T, num int) []*proto.Object {
 	t.Logf("Generating %d test objects", num)
 
 	objects := make([]*proto.Object, num)
 
 	for i := 0; i < num; i++ {
-		size := rand.Int63n(16 * 1024)
+		size := rand.Int63n(ObjectSize * 2)
 		randomBytes := make([]byte, size)
 		_, err := rand.Read(randomBytes)
 		if err != nil {
@@ -43,7 +49,6 @@ func getTempDir(t *testing.T) string {
 }
 
 func TestPack(t *testing.T) {
-	n := 10000
 	base := getTempDir(t)
 	store := NewPackStorage(base)
 
@@ -71,7 +76,9 @@ func TestPack(t *testing.T) {
 		}
 
 		if !bytes.Equal(object.Bytes(), original.Bytes()) {
-			t.Fatal("Object read back incorrectly")
+			t.Logf("Original %x", original.Bytes())
+			t.Logf("Stored %x", object.Bytes())
+			t.Fatalf("Object read back incorrectly")
 		}
 	}
 
@@ -82,8 +89,6 @@ func TestPack(t *testing.T) {
 }
 
 func TestArchive(t *testing.T) {
-	// number of objects to generate
-	n := 10000
 	base := getTempDir(t)
 
 	t.Logf("Creating archive in %s", base)
@@ -116,7 +121,9 @@ func TestArchive(t *testing.T) {
 			}
 
 			if !bytes.Equal(object.Bytes(), original.Bytes()) {
-				t.Fatal("Object read back incorrectly")
+				t.Logf("Original %x", original.Bytes())
+				t.Logf("Stored %x", object.Bytes())
+				t.Fatalf("Object read back incorrectly")
 			}
 		}
 	}
