@@ -9,6 +9,8 @@ message Location {
   Ref ref = 1;
   uint64 offset = 2;
   ObjectType type = 3;
+
+  // total size of object including header
   uint64 size = 4;
 }
 

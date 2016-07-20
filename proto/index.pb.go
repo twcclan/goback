@@ -17,7 +17,8 @@ type Location struct {
 	Ref    *Ref       `protobuf:"bytes,1,opt,name=ref" json:"ref,omitempty"`
 	Offset uint64     `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
 	Type   ObjectType `protobuf:"varint,3,opt,name=type,enum=proto.ObjectType" json:"type,omitempty"`
-	Size   uint64     `protobuf:"varint,4,opt,name=size" json:"size,omitempty"`
+	// total size of object including header
+	Size uint64 `protobuf:"varint,4,opt,name=size" json:"size,omitempty"`
 }
 
 func (m *Location) Reset()                    { *m = Location{} }
