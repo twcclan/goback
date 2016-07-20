@@ -6,6 +6,7 @@ import "tree.proto";
 import "commit.proto";
 import "blob.proto";
 import "file.proto";
+import "ref.proto";
 
 enum ObjectType {
   INVALID = 0;
@@ -13,6 +14,18 @@ enum ObjectType {
   TREE = 2;
   FILE = 3;
   BLOB = 4;
+}
+
+enum Compression {
+  NONE = 0;
+  GZIP = 1;
+}
+
+message ObjectHeader {
+  Ref ref = 1;
+  Ref predecessor = 2;
+  uint64 size = 3;
+  Compression compression = 4;
 }
 
 message Object {
