@@ -2,10 +2,12 @@ package backup
 
 import (
 	"database/sql"
-	"log"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"go4.org/syncutil/singleflight"
 
 	"github.com/pkg/errors"
 	"github.com/twcclan/goback/proto"
@@ -16,6 +18,7 @@ import (
 
 type Index interface {
 	ObjectStore
+	FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error)
 	/*
 		// chunk related methods
 		ReIndex(ObjectStore) error
@@ -24,7 +27,6 @@ type Index interface {
 
 		SnapshotInfo(notAfter time.Time, count int) ([]SnapshotPointer, error)
 
-		FileInfo(name string, notAfter time.Time, count int) ([]FilePointer, error)
 	*/
 }
 
@@ -34,7 +36,7 @@ type SnapshotPointer struct {
 }
 
 func NewSqliteIndex(base string, store ObjectStore) *SqliteIndex {
-	idx := &SqliteIndex{base: base, txMtx: new(sync.Mutex), ObjectStore: store}
+	idx := &SqliteIndex{base: base, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
 	return idx
 }
 
@@ -43,13 +45,17 @@ var _ Index = (*SqliteIndex)(nil)
 //go:generate go-bindata -pkg backup sql/
 type SqliteIndex struct {
 	ObjectStore
-	base  string
-	db    *sql.DB
-	txMtx *sync.Mutex
+	base   string
+	db     *sql.DB
+	single *singleflight.Group
+	txMtx  *sync.Mutex
 }
+
+// TODO: use transactions for better write performance
 
 func (s *SqliteIndex) Open() error {
 	db, err := sql.Open("sqlite3", path.Join(s.base, "index.db"))
+
 	if err != nil {
 		return err
 	}
@@ -98,13 +104,16 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 				return err
 			}
 
+			if subTree == nil {
+				return errors.Errorf("Sub tree %x could not be retrieved", node.Ref.Sha1)
+			}
+
 			err = s.traverseTree(path.Join(p, info.Name), subTree)
 			if err != nil {
 				return err
 			}
 		} else {
 			// store the relative path to this file in the index
-			log.Printf("Indexing file: %s %x %v", path.Join(p, info.Name), node.Ref.Sha1, info)
 			_, err := s.db.Exec("INSERT INTO fileInfo(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
 				path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
 
@@ -125,14 +134,16 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 }
 
 func (s *SqliteIndex) Put(object *proto.Object) error {
-
-	if ok, err := s.HasObject(object.Ref()); ok || err != nil {
-		return err
-	}
-
 	// store the object first
 	err := s.ObjectStore.Put(object)
 	if err != nil {
+		return err
+	}
+
+	s.txMtx.Lock()
+	defer s.txMtx.Unlock()
+
+	if ok, err := s.HasObject(object.Ref()); ok || err != nil {
 		return err
 	}
 
@@ -154,12 +165,17 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 			return err
 		}
 
+		if treeObj == nil {
+			return errors.Errorf("Root tree %x could not be retrieved", commit.Tree.Sha1)
+		}
+
 		err = s.traverseTree("", treeObj)
 		if err != nil {
 			return err
 		}
 
 		// mark commit indexed
+
 		err = s.markIndexed(object.Ref())
 		if err != nil {
 			return err
@@ -183,9 +199,6 @@ func (s *SqliteIndex) markIndexed(ref *proto.Ref) error {
 }
 
 func (s *SqliteIndex) hasRow(query string, params ...interface{}) (bool, error) {
-	s.txMtx.Lock()
-	defer s.txMtx.Unlock()
-
 	var unused int
 
 	err := s.db.QueryRow(query, params...).Scan(&unused)
@@ -200,7 +213,7 @@ func (s *SqliteIndex) hasRow(query string, params ...interface{}) (bool, error) 
 func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
 	infoList := make([]proto.TreeNode, count)
 
-	rows, err := s.db.Query("SELECT path, timestamp, size, mode, ref FROM fileInfo WHERE name = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
+	rows, err := s.db.Query("SELECT path, timestamp, size, mode, ref FROM fileInfo WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +229,8 @@ func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]pr
 		if err != nil {
 			return nil, err
 		}
+
+		info.Name = filepath.Base(info.Name)
 
 		infoList[counter] = proto.TreeNode{
 			Stat: info,
