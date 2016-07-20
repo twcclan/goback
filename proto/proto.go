@@ -13,7 +13,7 @@ import (
 	pb "github.com/golang/protobuf/proto"
 )
 
-func protoBytes(m pb.Message) []byte {
+func Bytes(m pb.Message) []byte {
 	if data, err := pb.Marshal(m); err != nil {
 		// there are only a few very specific error conditions
 		// that shouldn't ever affect us
@@ -24,11 +24,11 @@ func protoBytes(m pb.Message) []byte {
 	//return []byte(pb.MarshalTextString(o))
 }
 
-func compressedProtoBytes(m pb.Message) []byte {
+func CompressedBytes(m pb.Message) []byte {
 	buf := new(bytes.Buffer)
 	writer := gzip.NewWriter(buf)
 
-	_, err := writer.Write(protoBytes(m))
+	_, err := writer.Write(Bytes(m))
 	if err != nil {
 		panic(err)
 	}
@@ -57,15 +57,23 @@ func decompressedBytes(compressed []byte) ([]byte, error) {
 }
 
 func (i *Index) Bytes() []byte {
-	return protoBytes(i)
+	return Bytes(i)
 }
 
 func (i *Index) CompressedBytes() []byte {
-	return compressedProtoBytes(i)
+	return CompressedBytes(i)
 }
 
 func Size(msg pb.Message) int {
 	return pb.Size(msg)
+}
+
+func EncodeVarint(x uint64) []byte {
+	return pb.EncodeVarint(x)
+}
+
+func DecodeVarint(buf []byte) (x uint64, n int) {
+	return pb.DecodeVarint(buf)
 }
 
 func (o *Object) Type() ObjectType {
@@ -89,11 +97,11 @@ func (o *Object) Ref() *Ref {
 }
 
 func (o *Object) Bytes() []byte {
-	return protoBytes(o)
+	return Bytes(o)
 }
 
 func (o *Object) CompressedBytes() []byte {
-	return compressedProtoBytes(o)
+	return CompressedBytes(o)
 }
 
 func NewObject(in interface{}) *Object {
@@ -113,6 +121,12 @@ func NewObject(in interface{}) *Object {
 	}
 
 	return &Object{out}
+}
+
+func NewObjectHeaderFromBytes(bytes []byte) (*ObjectHeader, error) {
+	hdr := new(ObjectHeader)
+
+	return hdr, pb.Unmarshal(bytes, hdr)
 }
 
 func NewObjectFromCompressedBytes(bytes []byte) (*Object, error) {
