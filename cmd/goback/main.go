@@ -9,6 +9,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
+	"github.com/twcclan/goback/cmd/goback/commands/file"
 )
 
 func main() {
@@ -21,7 +22,7 @@ func main() {
 	app.Usage = "Take snapshots of your files and restore them."
 	app.Commands = []cli.Command{
 		commit.Command,
-		//file.Command,
+		file.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

@@ -1,6 +1,7 @@
 package file
 
 import (
+	"errors"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,12 +16,18 @@ import (
 )
 
 func (f *file) restore() error {
-	info, err := f.reader.Stat(f.src)
+	files, err := f.index.FileInfo(f.src, f.when, 1)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("name: %s, size: %d, mod: %s", info.Name(), info.Size(), info.ModTime())
+	if len(files) != 1 {
+		return errors.New("Couldn't find file")
+	}
+
+	info := files[0].Stat
+
+	log.Printf("name: %s, size: %d, mod: %s", info.Name, info.Size, time.Unix(info.Timestamp, 0))
 
 	outFile, err := ioutil.TempFile(filepath.Dir(f.dst), filepath.Base(f.dst))
 	if err != nil {
@@ -28,7 +35,7 @@ func (f *file) restore() error {
 	}
 	defer outFile.Close()
 
-	inFile, err := f.reader.Open(f.src)
+	inFile, err := f.reader.ReadFile(files[0].Ref)
 	if err != nil {
 		return err
 	}
@@ -40,12 +47,12 @@ func (f *file) restore() error {
 
 	outFile.Close()
 
-	err = os.Chtimes(outFile.Name(), time.Now(), info.ModTime())
+	err = os.Chtimes(outFile.Name(), time.Now(), time.Unix(info.Timestamp, 0))
 	if err != nil {
 		return err
 	}
 
-	err = os.Chmod(outFile.Name(), info.Mode())
+	err = os.Chmod(outFile.Name(), os.FileMode(info.Mode))
 	if err != nil {
 		return err
 	}
@@ -75,17 +82,19 @@ func restoreAction(c *cli.Context) {
 
 	log.Printf("Searching file as old as %s", when)
 
-	idx := common.GetIndex(c)
-	store := common.GetChunkStore(c)
+	store := common.GetObjectStore(c)
+	idx := backup.NewSqliteIndex("index", store)
 
 	if err := idx.Open(); err != nil {
 		log.Fatal(err)
 	}
 
 	f := &file{
-		reader: backup.NewBackupReader(idx, store, when),
+		reader: backup.NewBackupReader(store),
 		src:    src,
 		dst:    dst,
+		when:   when,
+		index:  idx,
 	}
 
 	if err := f.restore(); err != nil {
