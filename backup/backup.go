@@ -1,6 +1,9 @@
 package backup
 
 import (
+	"io"
+	"os"
+	"sort"
 	"time"
 
 	"github.com/pkg/errors"
@@ -57,24 +60,40 @@ func NewBackupWriter(store ObjectStore) *BackupWriter {
 	}
 }
 
-/*
-func NewBackupReader(index Index, store ChunkStore, optionalTime ...time.Time) *BackupReader {
-	when := time.Unix(int64(^uint64(0)>>1), 0)
-	if len(optionalTime) > 0 {
-		when = optionalTime[0]
-	}
+type BackupReader struct {
+	store ObjectStore
+}
 
+func NewBackupReader(store ObjectStore) *BackupReader {
 	return &BackupReader{
-		index: index,
 		store: store,
-		when:  when,
 	}
 }
 
+func (br *BackupReader) ReadFile(ref *proto.Ref) (io.ReadSeeker, error) {
+	obj, err := br.store.Get(ref)
+	if err != nil {
+		return nil, errors.Wrap(err, "Couldn't get object from store")
+	}
+
+	if obj == nil {
+		return nil, errors.New("Object not found")
+	}
+
+	if obj.Type() != proto.ObjectType_FILE {
+		return nil, errors.New("Object doesn't describe a file")
+	}
+
+	return &backupFileReader{
+		store: br.store,
+		file:  obj.GetFile(),
+	}, nil
+}
+
 type backupFileReader struct {
-	store     ChunkStore
-	data      *proto.File
-	chunk     *proto.Blob
+	store     ObjectStore
+	file      *proto.File
+	blob      *proto.Object
 	partIndex int
 	offset    int64
 }
@@ -82,16 +101,26 @@ type backupFileReader struct {
 type searchCallback func(index int) bool
 
 func (bfr *backupFileReader) search(index int) bool {
-	part := bfr.data.Parts[index]
+	part := bfr.file.Parts[index]
 
 	return bfr.offset <= int64(part.Offset+part.Length-1)
+}
+
+func (bfr *backupFileReader) Size() int64 {
+	parts := bfr.file.Parts
+	length := len(parts)
+	if length > 0 {
+		last := parts[length-1]
+		return int64(last.Offset + last.Length)
+	}
+
+	return 0
 }
 
 func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 	// check if we reached EOF
 
-	//if bfr.offset >= int64(len(bfr.data)) {
-	if bfr.offset >= 0 {
+	if bfr.offset >= bfr.Size() {
 		return 0, io.EOF
 	}
 
@@ -101,7 +130,7 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 
 	// the chunk that represents the currently active part
 	// of the file that is being read
-	part := bfr.data.Parts[bfr.partIndex]
+	part := bfr.file.Parts[bfr.partIndex]
 
 	// calculate the offset for the currently active chunk
 	relativeOffset := bfr.offset - int64(part.Offset)
@@ -121,9 +150,9 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 		n = int(bytesRemaining)
 	}
 
-	// lazily load chunk from our chunk store
-	if bfr.chunk == nil {
-		//bfr.chunk, err = bfr.store.Read(nil)
+	// lazily load blob from our object store
+	if bfr.blob == nil {
+		bfr.blob, err = bfr.store.Get(part.Ref)
 	}
 
 	if err != nil {
@@ -131,12 +160,12 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 	}
 
 	// read data from chunk
-	copy(b, bfr.chunk.Data[relativeOffset:relativeOffset+int64(n)])
+	copy(b, bfr.blob.GetBlob().Data[relativeOffset:relativeOffset+int64(n)])
 
 	// if we reached the end of the current chunk
 	// we'll unload it and increase the part index
 	if relativeOffset+int64(n) == int64(part.Length) {
-		bfr.chunk = nil
+		bfr.blob = nil
 		bfr.partIndex++
 	}
 
@@ -146,83 +175,27 @@ func (bfr *backupFileReader) Read(b []byte) (n int, err error) {
 	return
 }
 
-const (
-	seekSet = 0
-	seekCur = 1
-	seekEnd = 2
-)
-
 func (bfr *backupFileReader) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
-	case seekSet:
+	case os.SEEK_SET:
 		bfr.offset = offset
-	case seekCur:
+	case os.SEEK_CUR:
 		bfr.offset += offset
-	case seekEnd:
-		bfr.offset = bfr.data.Size - 1 - offset
+	case os.SEEK_END:
+		bfr.offset = bfr.Size() - 1 - offset
 	}
 
-	if bfr.offset < 0 || bfr.offset > bfr.data.Size {
+	if bfr.offset < 0 || bfr.offset > bfr.Size() {
 		return bfr.offset, ErrIllegalOffset
 	}
 
 	// find the part that cointains the requested data
-	if i := sort.Search(len(bfr.data.Parts), bfr.search); i != bfr.partIndex {
+	if i := sort.Search(len(bfr.file.Parts), bfr.search); i != bfr.partIndex {
 		// if it is not the currently active part
 		// unload the currently loaded chunk
 		bfr.partIndex = i
-		bfr.chunk = nil
+		bfr.blob = nil
 	}
 
 	return bfr.offset, nil
 }
-
-type BackupReader struct {
-	index Index
-	store ChunkStore
-	when  time.Time
-}
-
-func (b *BackupReader) Open(name string) (io.ReadSeeker, error) {
-	var info *proto.FileInfo
-	infoList, err := b.index.FileInfo(name, b.when, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(infoList) > 0 {
-		info = infoList[0].Info
-		log.Printf("%s (%d)", info.Name, info.Timestamp)
-	} else {
-		log.Fatalf("File %s not found", name)
-		return nil, os.ErrNotExist
-	}
-
-	fileDataChunk, err := b.store.Read(proto.GetTypedRef(info.Data, proto.ChunkType_FILE))
-	if err != nil {
-		return nil, err
-	}
-
-	fileData := new(proto.File)
-	proto.ReadMetaChunk(fileDataChunk, fileData)
-
-	return &backupFileReader{
-		store: b.store,
-		data:  fileData,
-	}, nil
-}
-
-func (b *BackupReader) Stat(name string) (os.FileInfo, error) {
-	infoList, err := b.index.FileInfo(name, b.when, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(infoList) == 0 {
-		return nil, os.ErrNotExist
-	}
-
-	return &backupFileInfo{infoList[0].Info}, nil
-}
-
-*/
