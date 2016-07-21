@@ -12,22 +12,23 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/satori/go.uuid"
+
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 )
 
 const MaxSize = 1024 * 1024 * 1024 // 1 GB TODO: make this configurable for testing
-const ArchiveName = "archive"
 const ArchiveSuffix = ".goback"
-const ArchivePattern = ArchiveName + "*" + ArchiveSuffix
+const ArchivePattern = "*" + ArchiveSuffix
 const IndexExt = ".idx"
 const varIntMaxSize = 10
 
-func NewPackStorage(base string) *PackStorage {
+func NewPackStorage(storage ArchiveStorage) *PackStorage {
 	return &PackStorage{
 		archives: make(map[string]*archive),
 		active:   nil,
-		base:     base,
+		storage:  storage,
 	}
 }
 
@@ -36,13 +37,14 @@ type PackStorage struct {
 	active   *archive
 	base     string
 	mtx      sync.RWMutex
+	storage  ArchiveStorage
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Put(object *proto.Object) error {
 	if err := ps.prepareArchive(); err != nil {
-		return err
+		return errors.Wrap(err, "Couldn't get archive for writing")
 	}
 
 	// don't store objects we already know about
@@ -120,13 +122,13 @@ func (ps *PackStorage) Close() error {
 }
 
 func (ps *PackStorage) Open() error {
-	matches, err := filepath.Glob(filepath.Join(ps.base, ArchivePattern))
+	matches, err := ps.storage.List()
 	if err != nil {
 		panic(err)
 	}
 
 	for _, match := range matches {
-		archive, err := openArchive(match)
+		archive, err := openArchive(ps.storage, match)
 		if err != nil {
 			return err
 		}
@@ -147,19 +149,19 @@ func (ps *PackStorage) prepareArchive() (err error) {
 
 	// close the active archive first
 	if openNew && ps.active != nil {
-		err = ps.active.Close()
+		err = ps.active.CloseWriter()
 		if err != nil {
 			return
 		}
 
-		ps.archives[ps.active.readFile.Name()] = ps.active
+		ps.archives[ps.active.name] = ps.active
 		ps.active = nil
 	}
 
 	// if there is not active archive
 	// create a new one
 	if openNew {
-		ps.active, err = newArchive(ps.base)
+		ps.active, err = newArchive(ps.storage)
 		if err != nil {
 			return
 		}
@@ -169,68 +171,82 @@ func (ps *PackStorage) prepareArchive() (err error) {
 }
 
 type archive struct {
-	archive    *os.File
-	readFile   *os.File
+	writeFile  File
+	readFile   File
 	writer     *bufio.Writer
 	reader     *bufio.Reader
-	base       string
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*proto.Location
 	readIndex  *proto.Index
 	mtx        sync.RWMutex
 	last       *proto.Ref
+	storage    ArchiveStorage
+	name       string
 }
 
-func newArchive(base string) (*archive, error) {
-	writeFile, err := ioutil.TempFile(base, ArchiveName)
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed creating temp file")
+func newArchive(storage ArchiveStorage) (*archive, error) {
+	a := &archive{
+		storage:  storage,
+		name:     uuid.NewV4().String(),
+		readOnly: false,
 	}
 
-	readFile, err := os.OpenFile(writeFile.Name(), os.O_RDONLY, 644)
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed opening temp file for reading")
-	}
-
-	//log.Printf("Archive path: %s", file.Name())
-
-	return &archive{
-		archive:    writeFile,
-		readFile:   readFile,
-		reader:     bufio.NewReader(readFile),
-		writer:     bufio.NewWriter(writeFile),
-		base:       base,
-		readOnly:   false,
-		writeIndex: make(map[string]*proto.Location),
-	}, nil
+	return a, a.open()
 }
 
-func openArchive(path string) (*archive, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
+func openArchive(storage ArchiveStorage, name string) (*archive, error) {
+	a := &archive{
+		storage:  storage,
+		name:     name,
+		readOnly: true,
 	}
 
-	// TODO: extract this into a function
-	idxPath := filepath.Join(filepath.Dir(path), strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+IndexExt)
+	return a, a.open()
+}
 
-	bytes, err := ioutil.ReadFile(idxPath)
-	if err != nil {
-		return nil, err
+func (a *archive) open() (err error) {
+	if a.readOnly {
+		idxFile, err := a.storage.Open(a.indexName())
+		if err != nil {
+			return errors.Wrap(err, "Failed opening index file")
+		}
+		defer idxFile.Close()
+
+		idxBytes, err := ioutil.ReadAll(idxFile)
+		if err != nil {
+			return errors.Wrap(err, "Couldn't read index file")
+		}
+
+		a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBytes)
+		if err != nil {
+			return errors.Wrap(err, "Couldn't parse index file")
+		}
+	} else {
+		a.writeFile, err = a.storage.Create(a.archiveName())
+		if err != nil {
+			return errors.Wrap(err, "Failed creating archive file")
+		}
+
+		a.writer = bufio.NewWriter(a.writeFile)
+		a.writeIndex = make(map[string]*proto.Location)
 	}
 
-	index, err := proto.NewIndexFromCompressedBytes(bytes)
+	a.readFile, err = a.storage.Open(a.archiveName())
 	if err != nil {
-		return nil, err
+		return errors.Wrap(err, "Failed opening archive for reading")
 	}
+	a.reader = bufio.NewReader(a.readFile)
 
-	return &archive{
-		readFile:  file,
-		reader:    bufio.NewReader(file),
-		readIndex: index,
-		readOnly:  true,
-	}, nil
+	return nil
+}
+
+func (a *archive) archiveName() string {
+	return a.name + ArchiveSuffix
+}
+
+func (a *archive) indexName() string {
+	return a.name + IndexExt
 }
 
 // make sure that you are holding a lock when calling this
@@ -341,12 +357,12 @@ func (a *archive) Put(object *proto.Object) error {
 	// construct a buffer with our header preceded by a varint describing its size
 	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
 
-	_, err := a.archive.Write(hdrBytes)
+	_, err := a.writer.Write(hdrBytes)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing header")
 	}
 
-	_, err = a.archive.Write(bytes)
+	_, err = a.writer.Write(bytes)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing data")
 	}
@@ -361,8 +377,7 @@ func (a *archive) Put(object *proto.Object) error {
 	a.size += uint64(len(hdrBytes)) + hdr.Size
 	a.last = object.Ref()
 
-	return nil
-	//return errors.Wrap(a.writer.Flush(), "Failed flushing tar file")
+	return errors.Wrap(a.writer.Flush(), "Failed flushing object data")
 }
 
 type byRef []*proto.Location
@@ -382,34 +397,88 @@ func (a *archive) storeIndex() error {
 
 	sort.Sort(byRef(idx.Locations))
 
-	idxPath := filepath.Join(a.base, filepath.Base(a.archive.Name())+IndexExt)
-
 	a.readIndex = idx
 
 	//log.Printf("Writing index to %s", idxPath)
+	idxFile, err := a.storage.Create(a.indexName())
+	if err != nil {
+		return errors.Wrap(err, "Failed creating index file")
+	}
 
-	return ioutil.WriteFile(idxPath, idx.CompressedBytes(), 0644)
+	_, err = io.Copy(idxFile, bytes.NewReader(idx.CompressedBytes()))
+	if err != nil {
+		return errors.Wrap(err, "Failed writing index file")
+	}
+
+	return errors.Wrap(idxFile.Close(), "Failed closing index file")
+}
+
+func (a *archive) Close() error {
+	a.CloseReader()
+	return a.CloseWriter()
 }
 
 func (a *archive) CloseReader() error {
 	return a.readFile.Close()
 }
 
-func (a *archive) Close() error {
+func (a *archive) CloseWriter() error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	err := a.archive.Close()
+	if a.readOnly {
+		return nil
+	}
+
+	err := a.writeFile.Close()
 	if err != nil {
 		return errors.Wrap(err, "Failed closing file")
 	}
 
-	err = os.Rename(a.archive.Name(), a.archive.Name()+ArchiveSuffix)
-	if err != nil {
-		errors.Wrap(err, "Failed renaming archive")
-	}
-
+	// switch to read-only mode
 	a.readOnly = true
 
 	return a.storeIndex()
+}
+
+func NewLocalArchiveStorage(base string) *LocalArchiveStorage {
+	return &LocalArchiveStorage{base}
+}
+
+type LocalArchiveStorage struct {
+	base string
+}
+
+func (las *LocalArchiveStorage) Open(name string) (File, error) {
+	return os.OpenFile(filepath.Join(las.base, name), os.O_RDONLY, 644)
+}
+
+func (las *LocalArchiveStorage) Create(name string) (File, error) {
+	return os.Create(filepath.Join(las.base, name))
+}
+
+func (las *LocalArchiveStorage) List() ([]string, error) {
+	archives, err := filepath.Glob(filepath.Join(las.base, ArchivePattern))
+	if err != nil {
+		return nil, err
+	}
+
+	for i, archive := range archives {
+		archives[i] = strings.TrimSuffix(filepath.Base(archive), ArchiveSuffix)
+	}
+
+	return archives, nil
+}
+
+type File interface {
+	io.Reader
+	io.Writer
+	io.Seeker
+	io.Closer
+}
+
+type ArchiveStorage interface {
+	Create(name string) (File, error)
+	Open(name string) (File, error)
+	List() ([]string, error)
 }

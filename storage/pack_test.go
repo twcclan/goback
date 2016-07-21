@@ -50,7 +50,8 @@ func getTempDir(t *testing.T) string {
 
 func TestPack(t *testing.T) {
 	base := getTempDir(t)
-	store := NewPackStorage(base)
+	storage := NewLocalArchiveStorage(base)
+	store := NewPackStorage(storage)
 
 	objects := makeTestData(t, n)
 	t.Logf("Storing %d objects", n)
@@ -90,9 +91,10 @@ func TestPack(t *testing.T) {
 
 func TestArchive(t *testing.T) {
 	base := getTempDir(t)
+	storage := NewLocalArchiveStorage(base)
 
 	t.Logf("Creating archive in %s", base)
-	a, err := newArchive(base)
+	a, err := newArchive(storage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +134,7 @@ func TestArchive(t *testing.T) {
 	readBack()
 
 	t.Log("Closing archive")
-	err = a.Close()
+	err = a.CloseWriter()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,10 +148,10 @@ func TestArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path := a.archive.Name() + ArchiveSuffix
+	path := a.name
 
 	t.Logf("Re-opening archive from %s", path)
-	a, err = openArchive(path)
+	a, err = openArchive(storage, a.name)
 	if err != nil {
 		t.Fatal(err)
 	}

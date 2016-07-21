@@ -59,7 +59,7 @@ func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	loc, err := makeLocation(u.Path)
 
-	return storage.NewPackStorage(loc), err
+	return storage.NewPackStorage(storage.NewLocalArchiveStorage(loc)), err
 }
 
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
