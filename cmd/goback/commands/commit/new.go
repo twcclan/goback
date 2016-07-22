@@ -128,7 +128,7 @@ func newAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
-	index := backup.NewSqliteIndex("index", store)
+	index := common.GetIndex(c, store)
 	log.Println(index.Open())
 
 	s := &commit{

@@ -83,7 +83,7 @@ func restoreAction(c *cli.Context) {
 	log.Printf("Searching file as old as %s", when)
 
 	store := common.GetObjectStore(c)
-	idx := backup.NewSqliteIndex("index", store)
+	idx := common.GetIndex(c, store)
 
 	if err := idx.Open(); err != nil {
 		log.Fatal(err)
