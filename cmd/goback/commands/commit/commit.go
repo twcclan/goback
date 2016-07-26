@@ -8,6 +8,7 @@ import (
 
 type commit struct {
 	backup   *backup.BackupWriter
+	reader   *backup.BackupReader
 	index    backup.Index
 	base     string
 	includes []string
@@ -19,5 +20,7 @@ var Command = cli.Command{
 	Description: "Manage your commits",
 	Subcommands: []cli.Command{
 		newCmd,
+		listCmd,
+		restoreCmd,
 	},
 }
