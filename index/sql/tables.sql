@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS `objects`(
 	PRIMARY KEY(ref)
 ) WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS `fileInfo`(
+CREATE TABLE IF NOT EXISTS `files`(
 	`path` TEXT NOT NULL,
 	`mode` INTEGER NOT NULL,
 	--`user` TEXT NOT NULL,
@@ -18,12 +18,9 @@ CREATE TABLE IF NOT EXISTS `fileInfo`(
 	--FOREIGN KEY(data) REFERENCES chunks(sum)
 ) WITHOUT ROWID;
 
-
- --CREATE TABLE IF NOT EXISTS `snapshotInfo`(
-	--`timestamp` INTEGER NOT NULL,
-	--'chunk' BLOB NOT NULL,
-	--'data' BLOB NOT NULL,
-	--PRIMARY KEY(timestamp),
-	--FOREIGN KEY(chunk) REFERENCES chunks(sum),
-	--FOREIGN KEY(data) REFERENCES chunks(sum)
---) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS `commits`(
+	`timestamp` INTEGER NOT NULL,
+	'tree' BLOB NOT NULL,
+	PRIMARY KEY(timestamp),
+	FOREIGN KEY(tree) REFERENCES objects(ref)
+) WITHOUT ROWID;

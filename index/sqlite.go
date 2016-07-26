@@ -24,7 +24,7 @@ func NewSqliteIndex(base string, store backup.ObjectStore) *SqliteIndex {
 
 var _ backup.Index = (*SqliteIndex)(nil)
 
-//go:generate go-bindata -pkg backup sql/
+//go:generate go-bindata -pkg index sql/
 type SqliteIndex struct {
 	backup.ObjectStore
 	base   string
@@ -96,7 +96,7 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 			}
 		} else {
 			// store the relative path to this file in the index
-			_, err := s.db.Exec("INSERT INTO fileInfo(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
+			_, err := s.db.Exec("INSERT INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
 				path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
 
 			if err != nil {
@@ -156,6 +156,11 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 			return err
 		}
 
+		_, err = s.db.Exec("INSERT INTO commits (timestamp, tree) VALUES (?, ?)", commit.Timestamp, commit.Tree.Sha1)
+		if err != nil {
+			return err
+		}
+
 		// mark commit indexed
 
 		err = s.markIndexed(object.Ref())
@@ -195,7 +200,7 @@ func (s *SqliteIndex) hasRow(query string, params ...interface{}) (bool, error) 
 func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
 	infoList := make([]proto.TreeNode, count)
 
-	rows, err := s.db.Query("SELECT path, timestamp, size, mode, ref FROM fileInfo WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
+	rows, err := s.db.Query("SELECT path, timestamp, size, mode, ref FROM files WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +223,36 @@ func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]pr
 			Stat: info,
 			Ref:  ref,
 		}
+
+		counter++
+	}
+
+	return infoList[:counter], rows.Err()
+}
+
+func (s *SqliteIndex) CommitInfo(notAfter time.Time, count int) ([]proto.Commit, error) {
+	infoList := make([]proto.Commit, count)
+
+	rows, err := s.db.Query("SELECT timestamp, tree FROM commits WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counter := 0
+	for rows.Next() {
+
+		commit := proto.Commit{}
+		tree := proto.Ref{}
+
+		err = rows.Scan(&commit.Timestamp, &tree.Sha1)
+		if err != nil {
+			return nil, err
+		}
+
+		commit.Tree = &tree
+
+		infoList[counter] = commit
 
 		counter++
 	}

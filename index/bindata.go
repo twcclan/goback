@@ -11,11 +11,11 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
+	"os"
 	"time"
+	"io/ioutil"
+	"path/filepath"
 )
 
 func bindataRead(data []byte, name string) ([]byte, error) {
@@ -44,9 +44,9 @@ type asset struct {
 }
 
 type bindataFileInfo struct {
-	name    string
-	size    int64
-	mode    os.FileMode
+	name string
+	size int64
+	mode os.FileMode
 	modTime time.Time
 }
 
@@ -85,11 +85,11 @@ func sqlSettingsSql() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "sql/settings.sql", size: 56, mode: os.FileMode(436), modTime: time.Unix(1432992547, 0)}
-	a := &asset{bytes: bytes, info: info}
+	a := &asset{bytes: bytes, info:  info}
 	return a, nil
 }
 
-var _sqlTablesSql = []byte("\x1f\x8b\x08\x00\x00\x09\x6e\x88\x00\xff\x84\x91\xcd\x6e\x82\x40\x14\x85\xd7\x92\xf0\x0e\x77\xa7\x24\xce\x13\x74\xa5\xf6\x6a\x27\xa5\xd0\x8c\x63\xd4\xdd\x50\x19\x0b\x6d\xf9\x09\x33\x24\x6d\x9f\xbe\x03\x1a\x02\xe1\xa7\x5b\xce\xe1\x9e\x73\xbe\xd9\x30\x5c\x71\x04\xbe\x5a\xbb\x08\x74\x0b\x9e\xcf\x01\x4f\x74\xcf\xf7\x20\xb2\xb7\x0f\x79\xd1\x4a\x2c\x6c\x6b\x26\x0a\x79\x15\xb3\xb5\xeb\xaf\x6b\x8b\x77\x70\xdd\x65\xf5\x59\xff\xe4\x52\x00\xf5\x38\xee\x90\x75\xa5\x38\x0d\xe5\xb7\x0c\x87\xd5\x57\x46\x5f\x56\xec\x0c\xcf\x78\x5e\x98\xd3\x8e\x6d\x39\x70\xa4\xfc\xc9\x3f\x70\x60\xfe\x91\x3e\x3e\xd8\x96\x6d\x4d\xb5\xbb\xc6\x5f\x92\xa6\xd7\xec\x56\x2f\x0f\x74\x24\x80\xe3\x89\x77\x4b\x24\x59\x38\xd2\x8f\x10\x51\x2a\x59\x0c\xfc\x64\x94\xf7\x22\x2b\xf3\xa1\x7b\x3a\x4e\xa4\xd2\x41\x92\x8f\x8c\x56\xf1\xef\x48\xde\xdc\xcc\x9c\x43\x8f\x60\x1b\xc4\x6d\xc5\x12\x5a\x29\x4e\xe5\xd9\xfa\x0c\xe9\xce\x6b\x60\x01\xc3\x2d\x32\xf4\x36\xb8\x87\xfb\x23\xdd\x21\x9a\xee\x6d\x73\x18\xe8\xa0\xe3\xbe\x44\x65\xfa\xa9\x16\xaa\x4c\x46\x88\xdb\x16\x10\x32\x85\x5d\xa5\x41\xae\xa2\x4c\x37\xe8\x0d\xad\x7f\xa0\x10\x32\xaf\x73\x07\xd6\x1b\xa9\xea\x38\xa8\xb4\xc9\x34\x09\xce\xb2\x37\xb2\xbe\x3d\xb6\xb2\x6f\x9f\x66\x42\x48\x9f\xca\x5f\x00\x00\x00\xff\xff\xd6\x07\xee\x3e\x24\x03\x00\x00")
+var _sqlTablesSql = []byte("\x1f\x8b\x08\x00\x00\x09\x6e\x88\x00\xff\x94\x91\x51\x4f\x83\x30\x14\x85\x9f\xc7\xaf\xb8\x6f\x40\xb2\xfd\x02\x9f\x60\x5e\x66\x23\x82\x29\x5d\xb6\xbd\x15\xa1\x73\xa8\x1d\x84\x96\x44\xfd\xf5\x56\x59\x16\xd8\x2a\xc9\x5e\x7b\x4f\xef\x39\xdf\xb9\x4b\x8a\x01\x43\x60\x41\x18\x23\x90\x08\x92\x94\x01\x6e\x49\xc6\x32\xe0\xf5\xcb\x9b\x28\xb4\xe2\x9e\x33\xe3\xad\xd8\xf3\x59\x18\xa7\xe1\x9f\x22\x59\xc7\xf1\xdc\xbc\xea\xaf\x46\x70\x20\x09\xc3\x15\xd2\xd1\xa4\x3a\x96\xe2\x53\x94\xd6\xe1\x33\x25\x4f\x01\xdd\xc1\x23\xee\x3c\xb3\xd7\x77\x7c\xd8\x10\xf6\x90\xae\x19\xd0\x74\x43\xee\xef\x1c\x67\x2a\xd6\xbe\xfa\x10\x7d\xa8\x26\xd7\x07\x0e\x0c\xb7\x6c\xe4\x2d\xeb\xd2\x9e\x6a\xb1\xe0\x9d\x12\xed\xf5\x17\x33\x78\x6d\xeb\xae\xb1\x2c\xd3\x95\x14\x4a\xe7\xb2\xb1\x73\xaa\xea\xdb\xee\xe5\x1a\x32\x17\x2e\x1b\x1b\xa2\xf7\xf1\xe7\x30\xb0\xf0\x8d\x24\x4a\x29\x92\x55\x72\x6e\x07\x28\x46\x48\x31\x59\x62\x06\xa7\x8b\xf4\xad\x99\xd4\x43\x6d\x99\xeb\x7c\x24\x2e\x0e\xdd\xf1\x5d\x79\xaa\x93\xb7\x36\x5c\xd4\x52\x56\xa7\xc3\x4f\xf3\xbb\xba\x15\x62\x1a\xf3\xbc\xe0\x12\xee\xf7\xeb\xff\x74\x57\x89\x7f\x02\x00\x00\xff\xff\xb6\x61\xf5\x19\xaa\x02\x00\x00")
 
 func sqlTablesSqlBytes() ([]byte, error) {
 	return bindataRead(
@@ -104,8 +104,8 @@ func sqlTablesSql() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "sql/tables.sql", size: 804, mode: os.FileMode(436), modTime: time.Unix(1467961516, 0)}
-	a := &asset{bytes: bytes, info: info}
+	info := bindataFileInfo{name: "sql/tables.sql", size: 682, mode: os.FileMode(436), modTime: time.Unix(1469270004, 0)}
+	a := &asset{bytes: bytes, info:  info}
 	return a, nil
 }
 
@@ -128,7 +128,7 @@ func Asset(name string) ([]byte, error) {
 // It simplifies safe initialization of global variables.
 func MustAsset(name string) []byte {
 	a, err := Asset(name)
-	if err != nil {
+	if (err != nil) {
 		panic("asset: Asset(" + name + "): " + err.Error())
 	}
 
@@ -162,7 +162,7 @@ func AssetNames() []string {
 // _bindata is a table, holding each asset generator, mapped to its name.
 var _bindata = map[string]func() (*asset, error){
 	"sql/settings.sql": sqlSettingsSql,
-	"sql/tables.sql":   sqlTablesSql,
+	"sql/tables.sql": sqlTablesSql,
 }
 
 // AssetDir returns the file names below a certain
@@ -201,60 +201,62 @@ func AssetDir(name string) ([]string, error) {
 }
 
 type bintree struct {
-	Func     func() (*asset, error)
+	Func func() (*asset, error)
 	Children map[string]*bintree
 }
-
 var _bintree = &bintree{nil, map[string]*bintree{
 	"sql": &bintree{nil, map[string]*bintree{
-		"settings.sql": &bintree{sqlSettingsSql, map[string]*bintree{}},
-		"tables.sql":   &bintree{sqlTablesSql, map[string]*bintree{}},
+		"settings.sql": &bintree{sqlSettingsSql, map[string]*bintree{
+		}},
+		"tables.sql": &bintree{sqlTablesSql, map[string]*bintree{
+		}},
 	}},
 }}
 
 // RestoreAsset restores an asset under the given directory
 func RestoreAsset(dir, name string) error {
-	data, err := Asset(name)
-	if err != nil {
-		return err
-	}
-	info, err := AssetInfo(name)
-	if err != nil {
-		return err
-	}
-	err = os.MkdirAll(_filePath(dir, filepath.Dir(name)), os.FileMode(0755))
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(_filePath(dir, name), data, info.Mode())
-	if err != nil {
-		return err
-	}
-	err = os.Chtimes(_filePath(dir, name), info.ModTime(), info.ModTime())
-	if err != nil {
-		return err
-	}
-	return nil
+        data, err := Asset(name)
+        if err != nil {
+                return err
+        }
+        info, err := AssetInfo(name)
+        if err != nil {
+                return err
+        }
+        err = os.MkdirAll(_filePath(dir, filepath.Dir(name)), os.FileMode(0755))
+        if err != nil {
+                return err
+        }
+        err = ioutil.WriteFile(_filePath(dir, name), data, info.Mode())
+        if err != nil {
+                return err
+        }
+        err = os.Chtimes(_filePath(dir, name), info.ModTime(), info.ModTime())
+        if err != nil {
+                return err
+        }
+        return nil
 }
 
 // RestoreAssets restores an asset under the given directory recursively
 func RestoreAssets(dir, name string) error {
-	children, err := AssetDir(name)
-	// File
-	if err != nil {
-		return RestoreAsset(dir, name)
-	}
-	// Dir
-	for _, child := range children {
-		err = RestoreAssets(dir, filepath.Join(name, child))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+        children, err := AssetDir(name)
+        // File
+        if err != nil {
+                return RestoreAsset(dir, name)
+        }
+        // Dir
+        for _, child := range children {
+                err = RestoreAssets(dir, filepath.Join(name, child))
+                if err != nil {
+                        return err
+                }
+        }
+        return nil
 }
 
 func _filePath(dir, name string) string {
-	cannonicalName := strings.Replace(name, "\\", "/", -1)
-	return filepath.Join(append([]string{dir}, strings.Split(cannonicalName, "/")...)...)
+        cannonicalName := strings.Replace(name, "\\", "/", -1)
+        return filepath.Join(append([]string{dir}, strings.Split(cannonicalName, "/")...)...)
 }
+
