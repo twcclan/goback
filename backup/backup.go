@@ -3,6 +3,7 @@ package backup
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -88,6 +89,48 @@ func (br *BackupReader) ReadFile(ref *proto.Ref) (io.ReadSeeker, error) {
 		store: br.store,
 		file:  obj.GetFile(),
 	}, nil
+}
+
+type WalkFn func(path string, info os.FileInfo, ref *proto.Ref) error
+
+func (br *BackupReader) walk(path string, tree *proto.Tree, walkFn WalkFn) error {
+	for _, node := range tree.GetNodes() {
+		info := node.Stat
+		absPath := filepath.Join(path, info.Name)
+
+		err := walkFn(absPath, proto.GetOSFileInfo(info), node.Ref)
+		if err != nil {
+			return errors.Wrap(err, "WalkFn returned error")
+		}
+
+		if info.Tree {
+			subTree, err := br.store.Get(node.Ref)
+			if err != nil {
+				return errors.Wrap(err, "Failed retrieving sub-tree")
+			}
+
+			return br.walk(absPath, subTree.GetTree(), walkFn)
+		}
+	}
+
+	return nil
+}
+
+func (br *BackupReader) WalkTree(ref *proto.Ref, walkFn WalkFn) error {
+	obj, err := br.store.Get(ref)
+	if err != nil {
+		return errors.Wrap(err, "Couldn't get object from store")
+	}
+
+	if obj == nil {
+		return errors.New("Object not found")
+	}
+
+	if obj.Type() != proto.ObjectType_TREE {
+		return errors.New("Object doesn't describe a tree")
+	}
+
+	return br.walk("", obj.GetTree(), walkFn)
 }
 
 type backupFileReader struct {
