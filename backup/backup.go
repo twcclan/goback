@@ -109,7 +109,10 @@ func (br *BackupReader) walk(path string, tree *proto.Tree, walkFn WalkFn) error
 				return errors.Wrap(err, "Failed retrieving sub-tree")
 			}
 
-			return br.walk(absPath, subTree.GetTree(), walkFn)
+			err = br.walk(absPath, subTree.GetTree(), walkFn)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
