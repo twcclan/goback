@@ -176,7 +176,7 @@ type backupFileInfo struct {
 }
 
 func (bi *backupFileInfo) IsDir() bool {
-	return false
+	return bi.Tree
 }
 
 func (bi *backupFileInfo) Name() string {
