@@ -1,8 +1,10 @@
 package commit
 
 import (
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -13,7 +15,7 @@ import (
 )
 
 func (c *commit) restore() {
-	commits, err := c.index.CommitInfo(time.Now(), 1)
+	commits, err := c.index.CommitInfo(c.when, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -21,14 +23,55 @@ func (c *commit) restore() {
 	if len(commits) == 1 {
 		commit := commits[0]
 
-		log.Printf("Walking tree %x for commit %d", commit.Tree.Sha1, commit.Timestamp)
-		err := c.reader.WalkTree(commit.Tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
-			log.Printf("%s %9d %s %s", info.Mode(), info.Size(), info.ModTime().Format(time.ANSIC), path)
+		walkErr := c.reader.WalkTree(commit.Tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
+			path = filepath.Join(c.base, path)
+
+			if info.IsDir() {
+				innerErr := os.Mkdir(path, info.Mode())
+
+				if innerErr != nil {
+					return innerErr
+				}
+			} else {
+				reader, innerErr := c.reader.ReadFile(ref)
+				if innerErr != nil {
+					return innerErr
+				}
+
+				file, innerErr := os.Create(path)
+				if innerErr != nil {
+					return innerErr
+				}
+				// leave this here in case we return out early
+				defer file.Close()
+
+				_, innerErr = io.Copy(file, reader)
+				if innerErr != nil {
+					return innerErr
+				}
+
+				// close file here so chtimes works
+				innerErr = file.Close()
+				if innerErr != nil {
+					return innerErr
+				}
+			}
+
+			err = os.Chtimes(path, time.Now(), info.ModTime())
+			if err != nil {
+				return err
+			}
+
+			err = os.Chmod(path, info.Mode())
+			if err != nil {
+				return err
+			}
+
 			return nil
 		})
 
-		if err != nil {
-			log.Fatal(err)
+		if walkErr != nil {
+			log.Fatal(walkErr)
 		}
 	} else {
 		log.Fatal("Commit not found")
@@ -36,12 +79,32 @@ func (c *commit) restore() {
 }
 
 func restoreAction(c *cli.Context) {
+	dst := c.Args().Get(0)
+	age := c.Args().Get(1)
+
+	if age == "" {
+		age = "0"
+	}
+
+	d, err := time.ParseDuration(age)
+	if err != nil {
+		log.Fatalf("Failed parsing <age> parameter: %v", err)
+	}
+
+	when := time.Now().Add(-d)
+
+	if err := os.MkdirAll(dst, 0775); err != nil {
+		log.Fatal(err)
+	}
+
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
 	log.Println(index.Open())
 
 	s := &commit{
 		index:  index,
+		base:   dst,
+		when:   when,
 		reader: backup.NewBackupReader(store),
 	}
 
