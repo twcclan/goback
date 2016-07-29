@@ -80,8 +80,6 @@ func restoreAction(c *cli.Context) {
 
 	when := time.Now().Add(-d)
 
-	log.Printf("Searching file as old as %s", when)
-
 	store := common.GetObjectStore(c)
 	idx := common.GetIndex(c, store)
 
