@@ -70,6 +70,8 @@ func init() {
 	proto1.RegisterType((*FilePart)(nil), "proto.FilePart")
 }
 
+func init() { proto1.RegisterFile("file.proto", fileDescriptor3) }
+
 var fileDescriptor3 = []byte{
 	// 239 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x44, 0x90, 0x4f, 0x4b, 0x03, 0x31,

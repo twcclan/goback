@@ -280,6 +280,8 @@ func init() {
 	proto1.RegisterEnum("proto.Compression", Compression_name, Compression_value)
 }
 
+func init() { proto1.RegisterFile("object.proto", fileDescriptor5) }
+
 var fileDescriptor5 = []byte{
 	// 326 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x64, 0x91, 0xc1, 0x4e, 0xf2, 0x50,
