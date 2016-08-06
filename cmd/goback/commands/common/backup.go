@@ -1,18 +1,16 @@
 package common
 
 import (
-	"errors"
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
+	"path"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage"
 
 	"github.com/codegangsta/cli"
-	"github.com/goamz/goamz/aws"
 )
 
 type Opener interface {
@@ -24,20 +22,7 @@ type Closer interface {
 }
 
 func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	auth, err := aws.EnvAuth()
-
-	if err != nil {
-		return nil, err
-	}
-
-	region, ok := aws.Regions[u.Host]
-	if !ok {
-		return nil, errors.New("No or invalid AWS region specified")
-	}
-
-	log.Println(filepath.Base(u.Path))
-
-	return storage.NewS3ChunkStore(auth, region, filepath.Base(u.Path)), nil
+	return storage.NewS3ChunkStore(u.Host, path.Base(u.Path)), nil
 }
 
 func makeLocation(loc string) (string, error) {

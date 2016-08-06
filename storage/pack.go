@@ -124,7 +124,7 @@ func (ps *PackStorage) Close() error {
 func (ps *PackStorage) Open() error {
 	matches, err := ps.storage.List()
 	if err != nil {
-		panic(err)
+		return errors.Wrap(err, "failed listing archive names")
 	}
 
 	for _, match := range matches {
@@ -302,7 +302,7 @@ func (a *archive) Get(ref *proto.Ref) (*proto.Object, error) {
 
 		// read object header
 		hdrBytes := make([]byte, hdrSize)
-		_, err = a.reader.Read(hdrBytes)
+		_, err = io.ReadFull(a.reader, hdrBytes)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed reading object header")
 		}
