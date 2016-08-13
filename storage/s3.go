@@ -20,6 +20,7 @@ import (
 const s3Key = "pack/%s/%s" // pack/<extension>/<filename>
 
 var _ io.ReadSeeker = (*s3Reader)(nil)
+var _ io.WriterTo = (*s3Reader)(nil)
 
 type s3Reader struct {
 	s3     *s3.S3
@@ -57,6 +58,23 @@ func (s *s3Reader) Read(buf []byte) (int, error) {
 	s.offset += int64(n)
 
 	return n, err
+}
+
+func (s *s3Reader) WriteTo(w io.Writer) (int64, error) {
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-", s.offset)),
+	}
+
+	obj, err := s.s3.GetObject(params)
+	if err != nil {
+		return 0, err
+	}
+
+	defer obj.Body.Close()
+
+	return io.Copy(w, obj.Body)
 }
 
 func (s *s3Reader) Seek(offset int64, whence int) (int64, error) {
@@ -232,7 +250,7 @@ func (s *s3Storage) Create(name string) (File, error) {
 
 func (s *s3Storage) List() ([]string, error) {
 	params := &s3.ListObjectsInput{
-		Prefix:    aws.String(fmt.Sprintf(s3Key, ".idx", "")),
+		Prefix:    aws.String(fmt.Sprintf(s3Key, ArchiveSuffix, "")),
 		Bucket:    aws.String(s.bucket),
 		Delimiter: aws.String("/"),
 	}

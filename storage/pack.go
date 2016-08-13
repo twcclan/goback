@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -209,16 +208,19 @@ func (a *archive) open() (err error) {
 	if a.readOnly {
 		idxFile, err := a.storage.Open(a.indexName())
 		if err != nil {
+			//TODO: implement index recovery
 			return errors.Wrap(err, "Failed opening index file")
 		}
 		defer idxFile.Close()
 
-		idxBytes, err := ioutil.ReadAll(idxFile)
+		idxBuffer := new(bytes.Buffer)
+
+		_, err = io.Copy(idxBuffer, idxFile)
 		if err != nil {
 			return errors.Wrap(err, "Couldn't read index file")
 		}
 
-		a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBytes)
+		a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBuffer.Bytes())
 		if err != nil {
 			return errors.Wrap(err, "Couldn't parse index file")
 		}
