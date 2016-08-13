@@ -98,10 +98,10 @@ func (s *StorageSuit) testDriver(c *C, store backup.ObjectStore) {
 	}
 }
 
-func (s *StorageSuit) TestSimpleStore(c *C) {
+func (s *StorageSuit) TestSimple(c *C) {
 	s.testDriver(c, storage.NewSimpleObjectStore(c.MkDir()))
 }
 
-func (s *StorageSuit) TestPackStore(c *C) {
+func (s *StorageSuit) TestPack(c *C) {
 	s.testDriver(c, storage.NewPackStorage(storage.NewLocalArchiveStorage(c.MkDir())))
 }
