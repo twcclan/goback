@@ -8,7 +8,7 @@ go:
 matrix:
   fast_finish: true
   allow_failures:
-    go: tip
+    - go: tip
 
 install:
   - go get -v github.com/twcclan/goback/cmd/goback
