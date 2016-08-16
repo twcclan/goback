@@ -6,4 +6,5 @@ go:
   - tip
 
 install:
-  - go get -t -v github.com/twcclan/goback/cmd/goback
+  - go get -v github.com/twcclan/goback/cmd/goback
+  - go get -t ./...
