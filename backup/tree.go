@@ -3,10 +3,6 @@ package backup
 import (
 	"io"
 	"os"
-	"sync/atomic"
-
-	"camlistore.org/pkg/rollsum"
-	"go4.org/syncutil"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -56,13 +52,7 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 }
 
 func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error {
-	fWriter := &fileWriter{
-		store:            bt.store,
-		rs:               rollsum.New(),
-		parts:            make([]*proto.FilePart, 0),
-		storageErr:       new(atomic.Value),
-		storageSemaphore: syncutil.NewGate(inFlightChunks),
-	}
+	fWriter := newFileWriter(bt.store)
 
 	err := writer(fWriter)
 	if err != nil {

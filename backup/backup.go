@@ -84,10 +84,7 @@ func (br *BackupReader) ReadFile(ref *proto.Ref) (io.ReadSeeker, error) {
 		return nil, errors.New("Object doesn't describe a file")
 	}
 
-	return &fileReader{
-		store: br.store,
-		file:  obj.GetFile(),
-	}, nil
+	return newFileReader(br.store, obj.GetFile()), nil
 }
 
 type WalkFn func(path string, info os.FileInfo, ref *proto.Ref) error

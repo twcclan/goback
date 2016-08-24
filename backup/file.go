@@ -25,6 +25,16 @@ const (
 	inFlightChunks = 128
 )
 
+func newFileWriter(store ObjectStore) *fileWriter {
+	return &fileWriter{
+		store:            store,
+		rs:               rollsum.New(),
+		parts:            make([]*proto.FilePart, 0),
+		storageErr:       new(atomic.Value),
+		storageSemaphore: syncutil.NewGate(inFlightChunks),
+	}
+}
+
 type fileWriter struct {
 	store            ObjectStore
 	buf              [maxBlobSize]byte
@@ -122,6 +132,13 @@ func (bfw *fileWriter) Close() (err error) {
 }
 
 var _ io.WriteCloser = new(fileWriter)
+
+func newFileReader(store ObjectStore, file *proto.File) *fileReader {
+	return &fileReader{
+		store: store,
+		file:  file,
+	}
+}
 
 type fileReader struct {
 	store     ObjectStore
