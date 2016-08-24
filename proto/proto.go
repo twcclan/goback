@@ -8,6 +8,7 @@ import (
 	"crypto/sha1"
 	"io/ioutil"
 	"os"
+	"sort"
 	"time"
 
 	pb "github.com/golang/protobuf/proto"
@@ -62,6 +63,20 @@ func (i *Index) Bytes() []byte {
 
 func (i *Index) CompressedBytes() []byte {
 	return CompressedBytes(i)
+}
+
+func (i *Index) Lookup(ref *Ref) *Location {
+	locs := i.Locations
+
+	n := sort.Search(len(locs), func(i int) bool {
+		return bytes.Compare(locs[i].Ref.Sha1, ref.Sha1) >= 0
+	})
+
+	if n < len(locs) && bytes.Equal(locs[n].Ref.Sha1, ref.Sha1) {
+		return locs[n]
+	}
+
+	return nil
 }
 
 func Size(msg pb.Message) int {

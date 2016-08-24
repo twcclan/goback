@@ -254,17 +254,7 @@ func (a *archive) indexName() string {
 // make sure that you are holding a lock when calling this
 func (a *archive) indexLocation(ref *proto.Ref) *proto.Location {
 	if a.readOnly {
-		locs := a.readIndex.Locations
-
-		i := sort.Search(len(locs), func(i int) bool {
-			return bytes.Compare(locs[i].Ref.Sha1, ref.Sha1) >= 0
-		})
-
-		if i < len(locs) && bytes.Equal(locs[i].Ref.Sha1, ref.Sha1) {
-			return locs[i]
-		}
-
-		return nil
+		return a.readIndex.Lookup(ref)
 	}
 
 	return a.writeIndex[string(ref.Sha1)]
