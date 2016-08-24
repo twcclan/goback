@@ -2,8 +2,10 @@ package storage
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"io/ioutil"
 	"math/rand"
+	"sort"
 	"testing"
 
 	"github.com/twcclan/goback/proto"
@@ -14,6 +16,18 @@ const n = 1000
 
 // average size of objects
 const ObjectSize = 1024 * 8
+
+func makeRef() *proto.Ref {
+	hash := make([]byte, sha1.Size)
+	_, err := rand.Read(hash)
+	if err != nil {
+		panic(err)
+	}
+
+	return &proto.Ref{
+		Sha1: hash,
+	}
+}
 
 func makeTestData(t *testing.T, num int) []*proto.Object {
 	t.Logf("Generating %d test objects", num)
@@ -158,4 +172,32 @@ func TestArchive(t *testing.T) {
 
 	t.Log("Reading back stored objects from readonly archive")
 	readBack()
+}
+
+func BenchmarkReadIndex(b *testing.B) {
+	locs := make([]*proto.Location, b.N)
+	for i := 0; i < b.N; i++ {
+		locs[i] = &proto.Location{
+			Ref:    makeRef(),
+			Offset: uint64(rand.Int63()),
+			Size:   uint64(rand.Int63()),
+			Type:   proto.ObjectType_INVALID,
+		}
+	}
+
+	sort.Sort(byRef(locs))
+
+	idx := &proto.Index{
+		Locations: locs,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for _, i := range rand.Perm(b.N) {
+		loc := idx.Lookup(locs[i].Ref)
+		if loc == nil {
+			panic("Could not find location in index")
+		}
+	}
 }
