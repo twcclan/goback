@@ -3,7 +3,9 @@ package storage
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -176,8 +178,8 @@ type archive struct {
 	reader     *bufio.Reader
 	readOnly   bool
 	size       uint64
-	writeIndex map[string]*proto.Location
-	readIndex  *proto.Index
+	writeIndex map[string]*indexRecord
+	readIndex  index
 	mtx        sync.RWMutex
 	last       *proto.Ref
 	storage    ArchiveStorage
@@ -204,34 +206,45 @@ func openArchive(storage ArchiveStorage, name string) (*archive, error) {
 	return a, a.open()
 }
 
+func (a *archive) recoverIndex(err error) error {
+	log.Printf("Attempting index recovery. couldn't open index: %v", err)
+
+	recoveredIndex := make(index, 0)
+
+	err = a.foreach(func(o *proto.ObjectHeader, offset uint32) {
+		record := indexRecord{
+			Offset: offset,
+		}
+		copy(record.Sum[:], o.Ref.Sha1)
+
+		recoveredIndex = append(recoveredIndex, record)
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "Couldn't read achive to recover index")
+	}
+
+	log.Printf("Recovered %d index records", len(recoveredIndex))
+
+	recErr := a.storeReadIndex(recoveredIndex)
+	if recErr != nil {
+		// we tried hard, have to fail here
+		return errors.Wrap(recErr, "failed index recovery")
+	}
+
+	return nil
+
+}
+
 func (a *archive) open() (err error) {
-	if a.readOnly {
-		idxFile, err := a.storage.Open(a.indexName())
-		if err != nil {
-			//TODO: implement index recovery
-			return errors.Wrap(err, "Failed opening index file")
-		}
-		defer idxFile.Close()
-
-		idxBuffer := new(bytes.Buffer)
-
-		_, err = io.Copy(idxBuffer, idxFile)
-		if err != nil {
-			return errors.Wrap(err, "Couldn't read index file")
-		}
-
-		a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBuffer.Bytes())
-		if err != nil {
-			return errors.Wrap(err, "Couldn't parse index file")
-		}
-	} else {
+	if !a.readOnly {
 		a.writeFile, err = a.storage.Create(a.archiveName())
 		if err != nil {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
 
 		a.writer = bufio.NewWriter(a.writeFile)
-		a.writeIndex = make(map[string]*proto.Location)
+		a.writeIndex = make(map[string]*indexRecord)
 	}
 
 	a.readFile, err = a.storage.Open(a.archiveName())
@@ -239,6 +252,36 @@ func (a *archive) open() (err error) {
 		return errors.Wrap(err, "Failed opening archive for reading")
 	}
 	a.reader = bufio.NewReader(a.readFile)
+
+	if a.readOnly {
+		idxFile, err := a.storage.Open(a.indexName())
+		if err != nil {
+			defer idxFile.Close()
+			// attempt to recover index
+			// TODO: make this configurable since it may potentially take very long
+
+			return a.recoverIndex(err)
+		}
+		defer idxFile.Close()
+		/*
+			idxBuffer := new(bytes.Buffer)
+
+			_, err = io.Copy(idxBuffer, idxFile)
+			if err != nil {
+				return errors.Wrap(err, "Couldn't read index file")
+			}
+
+			a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBuffer.Bytes())
+			if err != nil {
+				return errors.Wrap(err, "Couldn't parse index file")
+			}
+		*/
+
+		_, err = (&a.readIndex).ReadFrom(idxFile)
+		if err != nil {
+			return errors.Wrap(a.recoverIndex(err), "Couldn't read index file")
+		}
+	}
 
 	return nil
 }
@@ -252,9 +295,9 @@ func (a *archive) indexName() string {
 }
 
 // make sure that you are holding a lock when calling this
-func (a *archive) indexLocation(ref *proto.Ref) *proto.Location {
+func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
 	if a.readOnly {
-		return a.readIndex.Lookup(ref)
+		return a.readIndex.lookup(ref)
 	}
 
 	return a.writeIndex[string(ref.Sha1)]
@@ -326,20 +369,21 @@ func (a *archive) Put(object *proto.Object) error {
 		panic("Cannot write to readonly archive")
 	}
 
-	// compressing the bytes can be done in parallel
-	bytes := object.CompressedBytes()
-
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	if loc := a.indexLocation(object.Ref()); loc != nil {
+	ref := object.Ref()
+
+	if loc := a.indexLocation(ref); loc != nil {
 		return nil
 	}
+
+	bytes := object.CompressedBytes()
 
 	hdr := &proto.ObjectHeader{
 		Size:        uint64(len(bytes)),
 		Compression: proto.Compression_GZIP,
-		Ref:         object.Ref(),
+		Ref:         ref,
 		Predecessor: a.last,
 	}
 
@@ -359,35 +403,81 @@ func (a *archive) Put(object *proto.Object) error {
 		return errors.Wrap(err, "Failed writing data")
 	}
 
-	a.writeIndex[string(object.Ref().Sha1)] = &proto.Location{
-		Ref:    object.Ref(),
-		Offset: a.size,
-		Type:   object.Type(),
-		Size:   uint64(len(hdrBytes)) + hdr.Size,
+	record := &indexRecord{
+		Offset: uint32(a.size),
 	}
 
+	copy(record.Sum[:], ref.Sha1)
+
+	a.writeIndex[string(ref.Sha1)] = record
+
+	/*
+		a.writeIndex[string(ref.Sha1)] = &proto.Location{
+			Ref:    ref,
+			Offset: a.size,
+			Type:   object.Type(),
+			Size:   uint64(len(hdrBytes)) + hdr.Size,
+		}
+	*/
 	a.size += uint64(len(hdrBytes)) + hdr.Size
-	a.last = object.Ref()
+	a.last = ref
 
 	return errors.Wrap(a.writer.Flush(), "Failed flushing object data")
 }
 
-type byRef []*proto.Location
+func (a *archive) foreach(callback func(o *proto.ObjectHeader, offset uint32)) error {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
 
-func (b byRef) Len() int           { return len(b) }
-func (b byRef) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b byRef) Less(i, j int) bool { return bytes.Compare(b[i].Ref.Sha1, b[j].Ref.Sha1) < 0 }
-
-func (a *archive) storeIndex() error {
-	idx := &proto.Index{
-		Locations: make([]*proto.Location, 0, len(a.writeIndex)),
+	_, err := a.readFile.Seek(0, io.SeekStart)
+	if err != nil {
+		return errors.Wrap(err, "Couldn't seek to start of archive")
 	}
 
-	for _, loc := range a.writeIndex {
-		idx.Locations = append(idx.Locations, loc)
+	a.reader.Reset(a.readFile)
+	offset := uint32(0)
+
+	for {
+		// read size of object header
+		hdrSizeBytes, err := a.reader.Peek(varIntMaxSize)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		hdrSize, consumed := proto.DecodeVarint(hdrSizeBytes)
+		_, err = a.reader.Discard(consumed)
+		if err != nil {
+			return err
+		}
+
+		// read object header
+		hdrBytes := make([]byte, hdrSize)
+		_, err = io.ReadFull(a.reader, hdrBytes)
+		if err != nil {
+			return errors.Wrap(err, "Failed reading object header")
+		}
+
+		hdr, err := proto.NewObjectHeaderFromBytes(hdrBytes)
+		if err != nil {
+			return errors.Wrap(err, "Failed parsing object header")
+		}
+
+		callback(hdr, offset)
+
+		offset += uint32(consumed) + uint32(hdr.Size) + uint32(hdrSize)
+
+		// skip the object data
+		a.reader.Discard(int(hdr.Size))
 	}
 
-	sort.Sort(byRef(idx.Locations))
+	return nil
+}
+
+func (a *archive) storeReadIndex(idx index) error {
+	sort.Sort(idx)
 
 	a.readIndex = idx
 
@@ -397,12 +487,64 @@ func (a *archive) storeIndex() error {
 		return errors.Wrap(err, "Failed creating index file")
 	}
 
-	_, err = io.Copy(idxFile, bytes.NewReader(idx.CompressedBytes()))
+	_, err = a.readIndex.WriteTo(idxFile)
 	if err != nil {
-		return errors.Wrap(err, "Failed writing index file")
+		return errors.Wrap(err, "Couldn't encode index file")
 	}
 
+	/*
+		// use a buffer to avoid allocations during when writing the index
+		buf := pb.NewBuffer(make([]byte, 0, 1024))
+
+		hdr := &proto.IndexHeader{
+			Count: uint64(len(a.writeIndex)),
+		}
+
+		gzipWriter := gzip.NewWriter(idxFile)
+
+		// write index header
+		err = buf.EncodeMessage(hdr)
+		if err != nil {
+			return errors.Wrap(err, "Failed marshalling index header")
+		}
+
+		_, err = gzipWriter.Write(buf.Bytes())
+		if err != nil {
+			return errors.Wrap(err, "Failed writing index header")
+		}
+
+		// write index locations
+		for _, loc := range idx.Locations {
+			buf.Reset()
+
+			pbErr := buf.EncodeMessage(loc)
+			if pbErr != nil {
+				return errors.Wrap(pbErr, "Failed marshalling location")
+			}
+
+			_, pbErr = gzipWriter.Write(buf.Bytes())
+			if pbErr != nil {
+				return errors.Wrap(pbErr, "Failed writing index location")
+			}
+		}
+
+		err = gzipWriter.Close()
+		if err != nil {
+			return errors.Wrap(err, "Failed flushing index file")
+		}
+	*/
+
 	return errors.Wrap(idxFile.Close(), "Failed closing index file")
+}
+
+func (a *archive) storeIndex() error {
+	idx := make(index, 0, len(a.writeIndex))
+
+	for _, loc := range a.writeIndex {
+		idx = append(idx, *loc)
+	}
+
+	return a.storeReadIndex(idx)
 }
 
 func (a *archive) Close() error {
@@ -430,7 +572,12 @@ func (a *archive) CloseWriter() error {
 	// switch to read-only mode
 	a.readOnly = true
 
-	return a.storeIndex()
+	err = a.storeIndex()
+
+	// release write index
+	a.writeIndex = nil
+
+	return err
 }
 
 func NewLocalArchiveStorage(base string) *LocalArchiveStorage {
@@ -473,4 +620,89 @@ type ArchiveStorage interface {
 	Create(name string) (File, error)
 	Open(name string) (File, error)
 	List() ([]string, error)
+}
+
+type countingWriter struct {
+	count int64
+}
+
+func (c *countingWriter) Write(data []byte) (int, error) {
+	c.count += int64(len(data))
+	return len(data), nil
+}
+
+var _ io.WriterTo = (index)(nil)
+var _ io.ReaderFrom = (*index)(nil)
+
+type index []indexRecord
+
+var indexEndianness = binary.BigEndian
+
+func (b index) Len() int           { return len(b) }
+func (b index) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b index) Less(i, j int) bool { return bytes.Compare(b[i].Sum[:], b[j].Sum[:]) < 0 }
+
+func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
+	buf := bufio.NewReader(reader)
+	var count uint32
+	byteCounter := &countingWriter{}
+
+	source := io.TeeReader(buf, byteCounter)
+
+	err := binary.Read(source, indexEndianness, &count)
+	if err != nil {
+		return 0, err
+	}
+
+	*idx = make([]indexRecord, count)
+
+	for i := 0; i < int(count); i++ {
+
+		idxSlice := *idx
+		err = binary.Read(source, indexEndianness, &idxSlice[i])
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return byteCounter.count, nil
+}
+
+func (idx index) lookup(ref *proto.Ref) *indexRecord {
+	n := sort.Search(len(idx), func(i int) bool {
+		return bytes.Compare(idx[i].Sum[:], ref.Sha1) >= 0
+	})
+
+	if n < len(idx) && bytes.Equal(idx[n].Sum[:], ref.Sha1) {
+		return &idx[n]
+	}
+
+	return nil
+}
+
+func (idx index) WriteTo(writer io.Writer) (int64, error) {
+	buf := bufio.NewWriter(writer)
+	count := uint32(len(idx))
+	byteCounter := &countingWriter{}
+
+	target := io.MultiWriter(buf, byteCounter)
+
+	err := binary.Write(target, indexEndianness, count)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, record := range idx {
+		err = binary.Write(target, indexEndianness, &record)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return byteCounter.count, buf.Flush()
+}
+
+type indexRecord struct {
+	Sum    [20]byte
+	Offset uint32
 }

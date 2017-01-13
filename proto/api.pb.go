@@ -31,6 +31,7 @@ It has these top-level messages:
 	FilePart
 	Location
 	Index
+	IndexHeader
 	ObjectHeader
 	Object
 	Ref

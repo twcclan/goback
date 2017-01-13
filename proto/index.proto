@@ -17,3 +17,7 @@ message Location {
 message Index {
   repeated Location locations = 1;
 }
+
+message IndexHeader {
+  uint64 count = 1;
+}

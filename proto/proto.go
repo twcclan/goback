@@ -14,6 +14,8 @@ import (
 	pb "github.com/golang/protobuf/proto"
 )
 
+var testMap = map[pb.Message][]byte{}
+
 func Bytes(m pb.Message) []byte {
 	if data, err := pb.Marshal(m); err != nil {
 		// there are only a few very specific error conditions

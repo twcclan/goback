@@ -1,11 +1,12 @@
 package storage
 
 import (
-	"os"
+	"sync"
 
-	"github.com/rcrowley/go-metrics"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
+
+	"github.com/rcrowley/go-metrics"
 )
 
 func NewMemoryStore() backup.ObjectStore {
@@ -21,6 +22,7 @@ func NewMemoryStore() backup.ObjectStore {
 
 type memoryStore struct {
 	store map[string]*proto.Object
+	mtx   sync.Mutex
 
 	//stats
 	objects      metrics.Counter
@@ -31,6 +33,9 @@ type memoryStore struct {
 }
 
 func (m *memoryStore) Put(obj *proto.Object) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
 	size := int64(len(obj.Bytes()))
 
 	m.objectBytes.Inc(size)
@@ -67,6 +72,5 @@ func (m *memoryStore) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error {
 }
 
 func (m *memoryStore) Close() error {
-	metrics.WriteOnce(metrics.DefaultRegistry, os.Stdout)
 	return nil
 }

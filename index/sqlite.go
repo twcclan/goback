@@ -70,11 +70,6 @@ func (s *SqliteIndex) Close() error {
 }
 
 func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
-
-	if ok, err := s.HasIndexed(tree.Ref()); ok || err != nil {
-		return err
-	}
-
 	for _, node := range tree.GetTree().GetNodes() {
 		info := node.Stat
 
@@ -96,23 +91,16 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 			}
 		} else {
 			// store the relative path to this file in the index
-			_, err := s.db.Exec("INSERT INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
+			_, err := s.db.Exec("INSERT OR IGNORE INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
 				path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
 
-			if err != nil {
-				return err
-			}
-
-			// mark file object indexed
-			err = s.markIndexed(node.Ref)
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	// mark tree indexed
-	return s.markIndexed(tree.Ref())
+	return nil
 }
 
 func (s *SqliteIndex) Put(object *proto.Object) error {
@@ -160,13 +148,6 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 		if err != nil {
 			return err
 		}
-
-		// mark commit indexed
-
-		err = s.markIndexed(object.Ref())
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -174,15 +155,6 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 
 func (s *SqliteIndex) HasObject(ref *proto.Ref) (bool, error) {
 	return s.hasRow("SELECT 1 FROM objects WHERE ref = ? LIMIT 1;", ref.Sha1)
-}
-
-func (s *SqliteIndex) HasIndexed(ref *proto.Ref) (bool, error) {
-	return s.hasRow("SELECT 1 FROM objects WHERE ref = ? AND indexed = 1", ref.Sha1)
-}
-
-func (s *SqliteIndex) markIndexed(ref *proto.Ref) error {
-	_, err := s.db.Exec("UPDATE objects SET indexed = 1 WHERE ref = ?", ref.Sha1)
-	return err
 }
 
 func (s *SqliteIndex) hasRow(query string, params ...interface{}) (bool, error) {

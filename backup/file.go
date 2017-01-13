@@ -22,7 +22,7 @@ const (
 	// smaller than this.
 	tooSmallThreshold = 0 //64 << 10
 
-	inFlightChunks = 128
+	inFlightChunks = 1
 )
 
 func newFileWriter(store ObjectStore) *fileWriter {
@@ -48,6 +48,12 @@ type fileWriter struct {
 	ref              *proto.Ref
 
 	pending int32
+}
+
+func (bfw *fileWriter) uploader() {
+	for {
+		select {}
+	}
 }
 
 func (bfw *fileWriter) split() {

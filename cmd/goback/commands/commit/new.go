@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
@@ -73,7 +74,7 @@ func (s *commit) descend(base string) func(backup.TreeWriter) error {
 		}
 
 		for _, file := range files {
-			absPath := filepath.Join(base, file.Name())
+			absPath := filepath.ToSlash(filepath.Join(base, file.Name()))
 
 			if !s.shouldInclude(absPath) {
 				continue
@@ -85,12 +86,12 @@ func (s *commit) descend(base string) func(backup.TreeWriter) error {
 
 			} else if file.Mode()&os.ModeSymlink == 0 { // skip symlinks
 				var nodes []proto.TreeNode
-				nodes, err = s.index.FileInfo(strings.TrimPrefix(absPath, s.base+"/"), file.ModTime(), 1)
+				nodes, err = s.index.FileInfo(strings.TrimPrefix(absPath, s.base+"/"), time.Now(), 1)
 				if err != nil {
 					return errors.Wrapf(err, "Failed checking index for file %s", absPath)
 				}
 
-				if len(nodes) > 0 {
+				if len(nodes) > 0 && nodes[0].Stat.Timestamp == file.ModTime().Unix() {
 					// apparently we have this file already
 					tree.Node(&nodes[0])
 				} else {

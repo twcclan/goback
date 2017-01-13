@@ -5,9 +5,10 @@ import (
 	"crypto/sha1"
 	"io/ioutil"
 	"math/rand"
-	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 )
 
@@ -16,6 +17,10 @@ const n = 1000
 
 // average size of objects
 const ObjectSize = 1024 * 8
+
+type testingInterface interface {
+	Logf(string, ...interface{})
+}
 
 func makeRef() *proto.Ref {
 	hash := make([]byte, sha1.Size)
@@ -50,14 +55,14 @@ func makeTestData(t *testing.T, num int) []*proto.Object {
 	return objects
 }
 
-func getTempDir(t *testing.T) string {
+func getTempDir(t testingInterface) string {
 	dir, err := ioutil.TempDir("", "goback")
 
 	if err != nil {
 		panic(err)
 	}
 
-	t.Logf("Creating temporary dir %s", dir)
+	//t.Logf("Creating temporary dir %s", dir)
 
 	return dir
 }
@@ -101,6 +106,33 @@ func TestPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func printIndex(t *testing.T, idx index) {
+	for _, rec := range idx {
+		t.Logf("hash: %x offset: %d", rec.Sum[:], rec.Offset)
+	}
+}
+
+func TestIndex(t *testing.T) {
+	buf := new(bytes.Buffer)
+	idx := make(index, 1000)
+
+	for i := range idx {
+		idx[i].Offset = rand.Uint32()
+		for j := range idx[i].Sum {
+			idx[i].Sum[j] = byte(rand.Intn(256))
+		}
+	}
+	_, err := idx.WriteTo(buf)
+	assert.Nil(t, err)
+
+	var newIdx index
+
+	_, err = (&newIdx).ReadFrom(bytes.NewReader(buf.Bytes()))
+	assert.Nil(t, err)
+
+	assert.Equal(t, idx, newIdx)
 }
 
 func TestArchive(t *testing.T) {
@@ -174,6 +206,7 @@ func TestArchive(t *testing.T) {
 	readBack()
 }
 
+/*
 func BenchmarkReadIndex(b *testing.B) {
 	locs := make([]*proto.Location, b.N)
 	for i := 0; i < b.N; i++ {
@@ -200,4 +233,60 @@ func BenchmarkReadIndex(b *testing.B) {
 			panic("Could not find location in index")
 		}
 	}
+}
+*/
+
+var benchRnd = rand.New(rand.NewSource(0))
+
+type Opener interface {
+	Open() error
+}
+
+type Closer interface {
+	Close() error
+}
+
+func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
+	benchRnd.Seed(0)
+	b.ReportAllocs()
+
+	if op, ok := store.(Opener); ok {
+		err := op.Open()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	for i := 0; i < b.N; i++ {
+		blobBytes := make([]byte, benchRnd.Intn(16*1024))
+		_, _ = benchRnd.Read(blobBytes)
+		object := proto.NewObject(&proto.Blob{
+			Data: blobBytes,
+		})
+
+		err := store.Put(object)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.SetBytes(int64(len(blobBytes)))
+	}
+
+	if cl, ok := store.(Closer); ok {
+		err := cl.Close()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMemoryStorage(b *testing.B) {
+	benchmarkStorage(b, NewMemoryStore())
+}
+
+func BenchmarkSimpleStorage(b *testing.B) {
+	benchmarkStorage(b, NewSimpleObjectStore(getTempDir(b)))
+}
+
+func BenchmarkArchiveStorage(b *testing.B) {
+	benchmarkStorage(b, NewPackStorage(NewLocalArchiveStorage(getTempDir(b))))
 }

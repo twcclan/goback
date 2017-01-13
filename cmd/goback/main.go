@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"runtime"
 
@@ -10,12 +11,23 @@ import (
 
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
 	"github.com/twcclan/goback/cmd/goback/commands/file"
+	"github.com/twcclan/goback/cmd/goback/commands/fix"
+
+	_ "expvar"
+	_ "net/http/pprof"
 )
 
+func webserver() {
+	http.ListenAndServe(":8080", nil)
+}
+
 func main() {
+	runtime.SetBlockProfileRate(1)
+	go webserver()
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(1)
 
 	app := cli.NewApp()
 	app.Name = "goback"
@@ -23,6 +35,7 @@ func main() {
 	app.Commands = []cli.Command{
 		commit.Command,
 		file.Command,
+		fix.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
