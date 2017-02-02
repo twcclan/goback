@@ -233,7 +233,6 @@ func (a *archive) recoverIndex(err error) error {
 	}
 
 	return nil
-
 }
 
 func (a *archive) open() (err error) {
@@ -263,19 +262,6 @@ func (a *archive) open() (err error) {
 			return a.recoverIndex(err)
 		}
 		defer idxFile.Close()
-		/*
-			idxBuffer := new(bytes.Buffer)
-
-			_, err = io.Copy(idxBuffer, idxFile)
-			if err != nil {
-				return errors.Wrap(err, "Couldn't read index file")
-			}
-
-			a.readIndex, err = proto.NewIndexFromCompressedBytes(idxBuffer.Bytes())
-			if err != nil {
-				return errors.Wrap(err, "Couldn't parse index file")
-			}
-		*/
 
 		_, err = (&a.readIndex).ReadFrom(idxFile)
 		if err != nil {
@@ -411,14 +397,6 @@ func (a *archive) Put(object *proto.Object) error {
 
 	a.writeIndex[string(ref.Sha1)] = record
 
-	/*
-		a.writeIndex[string(ref.Sha1)] = &proto.Location{
-			Ref:    ref,
-			Offset: a.size,
-			Type:   object.Type(),
-			Size:   uint64(len(hdrBytes)) + hdr.Size,
-		}
-	*/
 	a.size += uint64(len(hdrBytes)) + hdr.Size
 	a.last = ref
 
@@ -492,48 +470,6 @@ func (a *archive) storeReadIndex(idx index) error {
 		return errors.Wrap(err, "Couldn't encode index file")
 	}
 
-	/*
-		// use a buffer to avoid allocations during when writing the index
-		buf := pb.NewBuffer(make([]byte, 0, 1024))
-
-		hdr := &proto.IndexHeader{
-			Count: uint64(len(a.writeIndex)),
-		}
-
-		gzipWriter := gzip.NewWriter(idxFile)
-
-		// write index header
-		err = buf.EncodeMessage(hdr)
-		if err != nil {
-			return errors.Wrap(err, "Failed marshalling index header")
-		}
-
-		_, err = gzipWriter.Write(buf.Bytes())
-		if err != nil {
-			return errors.Wrap(err, "Failed writing index header")
-		}
-
-		// write index locations
-		for _, loc := range idx.Locations {
-			buf.Reset()
-
-			pbErr := buf.EncodeMessage(loc)
-			if pbErr != nil {
-				return errors.Wrap(pbErr, "Failed marshalling location")
-			}
-
-			_, pbErr = gzipWriter.Write(buf.Bytes())
-			if pbErr != nil {
-				return errors.Wrap(pbErr, "Failed writing index location")
-			}
-		}
-
-		err = gzipWriter.Close()
-		if err != nil {
-			return errors.Wrap(err, "Failed flushing index file")
-		}
-	*/
-
 	return errors.Wrap(idxFile.Close(), "Failed closing index file")
 }
 
@@ -584,6 +520,8 @@ func NewLocalArchiveStorage(base string) *LocalArchiveStorage {
 	return &LocalArchiveStorage{base}
 }
 
+var _ ArchiveStorage = (*LocalArchiveStorage)(nil)
+
 type LocalArchiveStorage struct {
 	base string
 }
@@ -594,6 +532,10 @@ func (las *LocalArchiveStorage) Open(name string) (File, error) {
 
 func (las *LocalArchiveStorage) Create(name string) (File, error) {
 	return os.Create(filepath.Join(las.base, name))
+}
+
+func (las *LocalArchiveStorage) Delete(name string) error {
+	return os.Remove(filepath.Join(las.base, name))
 }
 
 func (las *LocalArchiveStorage) List() ([]string, error) {
@@ -614,12 +556,15 @@ type File interface {
 	io.Writer
 	io.Seeker
 	io.Closer
+
+	Stat() (os.FileInfo, error)
 }
 
 type ArchiveStorage interface {
 	Create(name string) (File, error)
 	Open(name string) (File, error)
 	List() ([]string, error)
+	Delete(name string) error
 }
 
 type countingWriter struct {
