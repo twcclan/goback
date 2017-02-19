@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/backup"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -281,7 +282,16 @@ func (s *s3Storage) List() ([]string, error) {
 var _ ArchiveStorage = (*s3Storage)(nil)
 
 func NewS3ChunkStore(region string, bucket string) backup.ObjectStore {
-	session := session.New(aws.NewConfig().WithRegion(region).WithDisableSSL(true))
+
+	s3Config := &aws.Config{
+		Credentials:      credentials.NewStaticCredentials("5ZAYW8RRO1661OUEZKQ2", "IIqLWbAmFiq/BBw3YkHNOUskLZKTBUt14ujrxErz", ""),
+		Endpoint:         aws.String("http://localhost:9000"),
+		Region:           aws.String("us-east-1"),
+		DisableSSL:       aws.Bool(true),
+		S3ForcePathStyle: aws.Bool(true),
+	}
+
+	session := session.New(s3Config)
 
 	storage := &s3Storage{
 		uploader: s3manager.NewUploader(session, func(u *s3manager.Uploader) {

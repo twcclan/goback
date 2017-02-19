@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
@@ -21,9 +20,9 @@ type Closer interface {
 	Close() error
 }
 
-func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewS3ChunkStore(u.Host, path.Base(u.Path)), nil
-}
+// func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+// 	return storage.NewS3ChunkStore(u.Host, path.Base(u.Path)), nil
+// }
 
 func makeLocation(loc string) (string, error) {
 	err := os.MkdirAll(loc, os.FileMode(0700))
@@ -51,7 +50,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":     initPack,
 	"file": initSimple,
-	"s3":   initS3,
+	// "s3":   initS3,
 }
 
 func getIndexLocation(c *cli.Context) (string, error) {

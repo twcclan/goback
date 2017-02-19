@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 
@@ -19,11 +20,13 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
-const MaxSize = 1024 * 1024 * 1024 // 1 GB TODO: make this configurable for testing
-const ArchiveSuffix = ".goback"
-const ArchivePattern = "*" + ArchiveSuffix
-const IndexExt = ".idx"
-const varIntMaxSize = 10
+const (
+	MaxSize        = 1024 * 1024 * 1024 // 1 GB TODO: make this configurable for testing
+	ArchiveSuffix  = ".goback"
+	ArchivePattern = "*" + ArchiveSuffix
+	IndexExt       = ".idx"
+	varIntMaxSize  = 10
+)
 
 func NewPackStorage(storage ArchiveStorage) *PackStorage {
 	return &PackStorage{
@@ -44,18 +47,21 @@ type PackStorage struct {
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Put(object *proto.Object) error {
+	// don't store objects we already know about
+	if ps.Has(object.Ref()) {
+		return nil
+	}
+
+	return ps.put(object)
+}
+
+func (ps *PackStorage) put(object *proto.Object) error {
 	if err := ps.prepareArchive(); err != nil {
 		return errors.Wrap(err, "Couldn't get archive for writing")
 	}
 
-	// don't store objects we already know about
-
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
-
-	if ps.Has(object.Ref()) {
-		return nil
-	}
 
 	return ps.active.Put(object)
 }
@@ -115,8 +121,63 @@ func (ps *PackStorage) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error 
 }
 
 func (ps *PackStorage) Close() error {
+	var (
+		candidates []*archive
+		total      uint64
+	)
+
+	// check if we could do a compaction here
+	for _, archive := range ps.archives {
+		if archive.size < MaxSize {
+			// this may be a candidate for compaction
+			candidates = append(candidates, archive)
+			total += archive.size
+		} else {
+
+			// we're not going to need this any longer
+			err := archive.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// use some heuristic to decide whether we should do a compaction
+	if len(candidates) > 10 && total > MaxSize/4 {
+		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
+
+		for _, archive := range candidates {
+			err := archive.foreach(true, func(hdr *proto.ObjectHeader, obj *proto.Object, offset uint32) error {
+				return ps.put(obj)
+			})
+
+			if err != nil {
+				return err
+			}
+
+			// we don't care about the error here, we're about to delete it anyways
+			archive.Close()
+		}
+	}
+
 	if ps.active != nil {
-		return ps.active.Close()
+		err := ps.active.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	// after having safely closed the active file(s) we can delete the left-overs
+	for _, archive := range candidates {
+		err := ps.storage.Delete(archive.name + IndexExt)
+		if err != nil {
+			log.Printf("Failed deleting index %s after compaction", archive.name)
+		}
+
+		err = ps.storage.Delete(archive.name + ArchiveSuffix)
+		if err != nil {
+			log.Printf("Failed deleting archive %s after compaction", archive.name)
+		}
 	}
 
 	return nil
@@ -211,13 +272,15 @@ func (a *archive) recoverIndex(err error) error {
 
 	recoveredIndex := make(index, 0)
 
-	err = a.foreach(func(o *proto.ObjectHeader, offset uint32) {
+	err = a.foreach(false, func(o *proto.ObjectHeader, _ *proto.Object, offset uint32) error {
 		record := indexRecord{
 			Offset: offset,
 		}
 		copy(record.Sum[:], o.Ref.Sha1)
 
 		recoveredIndex = append(recoveredIndex, record)
+
+		return nil
 	})
 
 	if err != nil {
@@ -253,6 +316,14 @@ func (a *archive) open() (err error) {
 	a.reader = bufio.NewReader(a.readFile)
 
 	if a.readOnly {
+		info, err := a.readFile.Stat()
+		if err != nil {
+			return err
+		}
+
+		// store the size of the archive here for later
+		a.size = uint64(info.Size())
+
 		idxFile, err := a.storage.Open(a.indexName())
 		if err != nil {
 			defer idxFile.Close()
@@ -403,7 +474,7 @@ func (a *archive) Put(object *proto.Object) error {
 	return errors.Wrap(a.writer.Flush(), "Failed flushing object data")
 }
 
-func (a *archive) foreach(callback func(o *proto.ObjectHeader, offset uint32)) error {
+func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj *proto.Object, offset uint32) error) error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -443,12 +514,30 @@ func (a *archive) foreach(callback func(o *proto.ObjectHeader, offset uint32)) e
 			return errors.Wrap(err, "Failed parsing object header")
 		}
 
-		callback(hdr, offset)
+		var obj *proto.Object
+		var objOffset = offset
+		if load {
+			objectBytes := make([]byte, hdr.Size)
+			_, err = io.ReadFull(a.reader, objectBytes)
+			if err != nil {
+				return errors.Wrap(err, "Failed reading object data")
+			}
 
-		offset += uint32(consumed) + uint32(hdr.Size) + uint32(hdrSize)
+			obj, err = proto.NewObjectFromCompressedBytes(objectBytes)
+			if err != nil {
+				return errors.Wrap(err, "Failed decrompressing object")
+			}
+		} else {
+			offset += uint32(consumed) + uint32(hdr.Size) + uint32(hdrSize)
 
-		// skip the object data
-		a.reader.Discard(int(hdr.Size))
+			// skip the object data
+			a.reader.Discard(int(hdr.Size))
+		}
+
+		err = callback(hdr, obj, objOffset)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
