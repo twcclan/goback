@@ -123,6 +123,7 @@ func (ps *PackStorage) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error 
 func (ps *PackStorage) Close() error {
 	var (
 		candidates []*archive
+		obsolete   []*archive
 		total      uint64
 	)
 
@@ -157,6 +158,7 @@ func (ps *PackStorage) Close() error {
 
 			// we don't care about the error here, we're about to delete it anyways
 			archive.Close()
+			obsolete = append(obsolete, archive)
 		}
 	}
 
@@ -168,13 +170,13 @@ func (ps *PackStorage) Close() error {
 	}
 
 	// after having safely closed the active file(s) we can delete the left-overs
-	for _, archive := range candidates {
-		err := ps.storage.Delete(archive.name + IndexExt)
+	for _, archive := range obsolete {
+		err := ps.storage.Delete(archive.indexName())
 		if err != nil {
 			log.Printf("Failed deleting index %s after compaction", archive.name)
 		}
 
-		err = ps.storage.Delete(archive.name + ArchiveSuffix)
+		err = ps.storage.Delete(archive.archiveName())
 		if err != nil {
 			log.Printf("Failed deleting archive %s after compaction", archive.name)
 		}
