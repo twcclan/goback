@@ -117,7 +117,21 @@ func (ps *PackStorage) Delete(ref *proto.Ref) error {
 }
 
 func (ps *PackStorage) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error {
-	panic("not implemented")
+	for _, archive := range ps.archives {
+		// log.Printf("Reading archive: %s", name)
+		err := archive.foreach(true, func(hdr *proto.ObjectHeader, obj *proto.Object, offset uint32) error {
+			if t == proto.ObjectType_INVALID || obj.Type() == t {
+				return fn(obj)
+			}
+			return nil
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (ps *PackStorage) Close() error {
@@ -328,7 +342,6 @@ func (a *archive) open() (err error) {
 
 		idxFile, err := a.storage.Open(a.indexName())
 		if err != nil {
-			defer idxFile.Close()
 			// attempt to recover index
 			// TODO: make this configurable since it may potentially take very long
 
@@ -491,8 +504,9 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 	for {
 		// read size of object header
 		hdrSizeBytes, err := a.reader.Peek(varIntMaxSize)
-		if err != nil {
+		if len(hdrSizeBytes) != varIntMaxSize {
 			if err == io.EOF {
+				// we're done reading this archive
 				break
 			}
 			return err
@@ -506,8 +520,12 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 
 		// read object header
 		hdrBytes := make([]byte, hdrSize)
-		_, err = io.ReadFull(a.reader, hdrBytes)
-		if err != nil {
+		n, err := io.ReadFull(a.reader, hdrBytes)
+		if n != int(hdrSize) {
+			return errors.Wrap(io.ErrUnexpectedEOF, "Failed reading object header")
+		}
+
+		if err != nil && err != io.EOF {
 			return errors.Wrap(err, "Failed reading object header")
 		}
 
@@ -520,8 +538,12 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 		var objOffset = offset
 		if load {
 			objectBytes := make([]byte, hdr.Size)
-			_, err = io.ReadFull(a.reader, objectBytes)
-			if err != nil {
+			n, err = io.ReadFull(a.reader, objectBytes)
+			if n != int(hdr.Size) {
+				return errors.Wrap(io.ErrUnexpectedEOF, "Failed reading object")
+			}
+
+			if err != nil && err != io.EOF {
 				return errors.Wrap(err, "Failed reading object data")
 			}
 

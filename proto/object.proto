@@ -26,6 +26,7 @@ message ObjectHeader {
   Ref predecessor = 2;
   uint64 size = 3;
   Compression compression = 4;
+  // int64 timestamp = 5;
 }
 
 message Object {

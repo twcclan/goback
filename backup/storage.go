@@ -4,7 +4,7 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
-type ObjectReceiver func(*proto.Ref) error
+type ObjectReceiver func(*proto.Object) error
 
 type ObjectStore interface {
 	Put(*proto.Object) error

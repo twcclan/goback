@@ -2,6 +2,7 @@ package backup
 
 import (
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -113,6 +114,35 @@ func (br *BackupReader) walk(path string, tree *proto.Tree, walkFn WalkFn) error
 	}
 
 	return nil
+}
+
+func (br *BackupReader) GetTree(ref *proto.Ref, parts []string) (*proto.Ref, error) {
+	if len(parts) == 0 {
+		return ref, nil
+	}
+
+	obj, err := br.store.Get(ref)
+	if err != nil {
+		return nil, errors.Wrap(err, "Couldn't get object from store")
+	}
+
+	if obj == nil {
+		return nil, errors.New("Object not found")
+	}
+
+	if obj.Type() != proto.ObjectType_TREE {
+		return nil, errors.New("Object doesn't describe a tree")
+	}
+
+	name := parts[0]
+	log.Printf("Searching for %s %v", name, parts)
+	for _, node := range obj.GetTree().Nodes {
+		if node.Stat.Tree && node.Stat.Name == name {
+			return br.GetTree(node.Ref, parts[1:])
+		}
+	}
+
+	return nil, errors.New("Folder not found")
 }
 
 func (br *BackupReader) WalkTree(ref *proto.Ref, walkFn WalkFn) error {

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"io"
+	"log"
 	"os"
 	"sort"
 	"sync/atomic"
@@ -213,6 +214,15 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 
 	if err != nil {
 		return
+	}
+
+	// this means we have a corrupt backup :(
+	if bfr.blob == nil {
+		// fake some data for testing
+		log.Printf("Warning: couldn't find part %d (%x) of file %X", bfr.partIndex, part.Ref.Sha1, proto.NewObject(bfr.file).Ref().Sha1)
+		bfr.blob = proto.NewObject(&proto.Blob{
+			Data: make([]byte, bytesRemaining),
+		})
 	}
 
 	// read data from chunk

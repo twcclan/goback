@@ -14,6 +14,7 @@ type commit struct {
 	index    backup.Index
 	when     time.Time
 	base     string
+	from     string
 	includes []string
 	excludes []string
 }

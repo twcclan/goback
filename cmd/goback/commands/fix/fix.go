@@ -23,5 +23,4 @@ func fixAction(c *cli.Context) {
 	if cl, ok := store.(common.Closer); ok {
 		log.Println(cl.Close())
 	}
-
 }

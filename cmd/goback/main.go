@@ -12,6 +12,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
 	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
+	"github.com/twcclan/goback/cmd/goback/commands/object"
 
 	_ "expvar"
 	_ "net/http/pprof"
@@ -36,6 +37,7 @@ func main() {
 		commit.Command,
 		file.Command,
 		fix.Command,
+		object.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

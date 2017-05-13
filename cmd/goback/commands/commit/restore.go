@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -12,6 +13,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/codegangsta/cli"
+	"github.com/pkg/errors"
 )
 
 func (c *commit) restore() {
@@ -22,8 +24,16 @@ func (c *commit) restore() {
 
 	if len(commits) == 1 {
 		commit := commits[0]
+		tree := commit.Tree
 
-		walkErr := c.reader.WalkTree(commit.Tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
+		if c.from != "" {
+			tree, err = c.reader.GetTree(tree, strings.Split(c.from, "/"))
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		walkErr := c.reader.WalkTree(tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
 			path = filepath.Join(c.base, path)
 
 			if info.IsDir() {
@@ -47,7 +57,7 @@ func (c *commit) restore() {
 
 				_, innerErr = io.Copy(file, reader)
 				if innerErr != nil {
-					return innerErr
+					return errors.Wrapf(innerErr, "Restoring file: %s", path)
 				}
 
 				// close file here so chtimes works
@@ -105,6 +115,7 @@ func restoreAction(c *cli.Context) {
 		index:  index,
 		base:   dst,
 		when:   when,
+		from:   c.String("from"),
 		reader: backup.NewBackupReader(store),
 	}
 
@@ -121,4 +132,10 @@ var restoreCmd = cli.Command{
 	Name:        "restore",
 	Description: "Restore all files from a given commit",
 	Action:      restoreAction,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "from",
+			Value: "",
+		},
+	},
 }

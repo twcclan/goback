@@ -60,9 +60,9 @@ func (m *memoryStore) Delete(ref *proto.Ref) error {
 }
 
 func (m *memoryStore) Walk(t proto.ObjectType, fn backup.ObjectReceiver) error {
-	for ref, object := range m.store {
-		if object.Type() == t {
-			err := fn(&proto.Ref{Sha1: []byte(ref)})
+	for _, object := range m.store {
+		if t == proto.ObjectType_INVALID || object.Type() == t {
+			err := fn(object)
 			if err != nil {
 				return err
 			}

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path"
 	"path/filepath"
 
@@ -67,11 +68,18 @@ func (s *SimpleChunkStore) Walk(chunkType proto.ObjectType, fn backup.ObjectRece
 	}
 
 	for _, match := range matches {
-		var hexSum []byte
 
-		fmt.Sscanf(filepath.Base(match), "%x", &hexSum)
+		data, err := ioutil.ReadFile(match)
+		if err != nil {
+			return err
+		}
 
-		err = fn(&proto.Ref{Sha1: hexSum})
+		obj, err := proto.NewObjectFromBytes(data)
+		if err != nil {
+			return err
+		}
+
+		err = fn(obj)
 		if err != nil {
 			return err
 		}
