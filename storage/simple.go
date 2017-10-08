@@ -61,25 +61,27 @@ func (s *SimpleChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
 	return proto.NewObjectFromBytes(data)
 }
 
-func (s *SimpleChunkStore) Walk(chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
+func (s *SimpleChunkStore) Walk(load bool, chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	matches, err := filepath.Glob(path.Join(s.base, fmt.Sprintf("%d-*", chunkType)))
 	if err != nil {
 		return err
 	}
 
 	for _, match := range matches {
+		var obj *proto.Object
+		if load {
+			data, err := ioutil.ReadFile(match)
+			if err != nil {
+				return err
+			}
 
-		data, err := ioutil.ReadFile(match)
-		if err != nil {
-			return err
+			obj, err = proto.NewObjectFromBytes(data)
+			if err != nil {
+				return err
+			}
 		}
 
-		obj, err := proto.NewObjectFromBytes(data)
-		if err != nil {
-			return err
-		}
-
-		err = fn(obj)
+		err = fn(&proto.ObjectHeader{}, obj)
 		if err != nil {
 			return err
 		}

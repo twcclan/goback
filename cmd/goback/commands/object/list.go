@@ -1,7 +1,9 @@
 package object
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
@@ -11,14 +13,23 @@ import (
 )
 
 func (o *object) list() {
-	err := o.store.Walk(o.objectType, func(obj *proto.Object) error {
-		log.Printf("%x %s", obj.Ref().Sha1, obj.Type().String())
+	out, err := os.Create("objects.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer out.Close()
+
+	err = o.store.Walk(false, o.objectType, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+		if hdr.Size > 1<<20 {
+			fmt.Fprintf(out, "%x,%d\n", hdr.Ref.Sha1, hdr.Size)
+		}
 		return nil
 	})
 
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }
 
 func listAction(c *cli.Context) {

@@ -75,6 +75,30 @@ func TestPack(t *testing.T) {
 	objects := makeTestData(t, n)
 	t.Logf("Storing %d objects", n)
 
+	readObjects := func(t *testing.T) {
+		t.Helper()
+
+		t.Logf("Reading back %d objects", n)
+		for _, i := range rand.Perm(n) {
+			original := objects[i]
+
+			if !store.Has(original.Ref()) {
+				t.Fatal("Archive doesn't have object")
+			}
+
+			object, err := store.Get(original.Ref())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !bytes.Equal(object.Bytes(), original.Bytes()) {
+				t.Logf("Original %x", original.Bytes())
+				t.Logf("Stored %x", object.Bytes())
+				t.Fatalf("Object read back incorrectly")
+			}
+		}
+	}
+
 	for _, object := range objects {
 		err := store.Put(object)
 		if err != nil {
@@ -82,27 +106,26 @@ func TestPack(t *testing.T) {
 		}
 	}
 
-	t.Logf("Reading back %d objects", n)
-	for _, i := range rand.Perm(n) {
-		original := objects[i]
+	readObjects(t)
 
-		if !store.Has(original.Ref()) {
-			t.Fatal("Archive doesn't have object")
-		}
-
-		object, err := store.Get(original.Ref())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !bytes.Equal(object.Bytes(), original.Bytes()) {
-			t.Logf("Original %x", original.Bytes())
-			t.Logf("Stored %x", object.Bytes())
-			t.Fatalf("Object read back incorrectly")
-		}
+	t.Log("Closing pack store")
+	err := store.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	err := store.Close()
+	t.Log("Reopening pack store")
+	store = NewPackStorage(storage)
+
+	err = store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readObjects(t)
+
+	t.Log("Closing pack store")
+	err = store.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +143,7 @@ func TestIndex(t *testing.T) {
 
 	for i := range idx {
 		idx[i].Offset = rand.Uint32()
+		idx[i].Length = rand.Uint32()
 		for j := range idx[i].Sum {
 			idx[i].Sum[j] = byte(rand.Intn(256))
 		}
@@ -138,9 +162,10 @@ func TestIndex(t *testing.T) {
 func TestArchive(t *testing.T) {
 	base := getTempDir(t)
 	storage := NewLocalArchiveStorage(base)
+	idle := make(chan *archive)
 
 	t.Logf("Creating archive in %s", base)
-	a, err := newArchive(storage)
+	a, err := newArchive(storage, idle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +174,7 @@ func TestArchive(t *testing.T) {
 
 	t.Logf("Storing %d objects", n)
 	for _, object := range objects {
-		err = a.Put(object)
+		err = (<-idle).Put(object)
 		if err != nil {
 			t.Fatal(err)
 		}

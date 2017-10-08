@@ -12,10 +12,13 @@ var Command = cli.Command{
 	Description: "Do stuff with objects",
 	Subcommands: []cli.Command{
 		listCmd,
+		getCmd,
 	},
 }
 
 type object struct {
 	store      backup.ObjectStore
 	objectType proto.ObjectType
+	ref        *proto.Ref
+	out        string
 }

@@ -20,9 +20,9 @@ type Closer interface {
 	Close() error
 }
 
-// func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-// 	return storage.NewS3ChunkStore(u.Host, path.Base(u.Path)), nil
-// }
+func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	return storage.NewS3(), nil
+}
 
 func makeLocation(loc string) (string, error) {
 	err := os.MkdirAll(loc, os.FileMode(0700))
@@ -47,10 +47,26 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewPackStorage(storage.NewLocalArchiveStorage(loc)), err
 }
 
+func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	return storage.NewSwiftObjectStore(
+		"teUHDFyfMNqU",
+		"mppPgm529A6MNx6UNFqTxvnYyMv7Wqsy",
+		"https://auth.cloud.ovh.net/v2.0",
+		"1675837378358194",
+		"goback-test",
+	), nil
+}
+
+func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	return storage.NewGCSObjectStore("service_account.json", u.Host)
+}
+
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":     initPack,
-	"file": initSimple,
-	// "s3":   initS3,
+	"":      initPack,
+	"file":  initSimple,
+	"swift": initSwift,
+	"gcs":   initGCS,
+	"s3":    initS3,
 }
 
 func getIndexLocation(c *cli.Context) (string, error) {

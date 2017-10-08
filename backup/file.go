@@ -1,11 +1,15 @@
 package backup
 
 import (
+	"context"
 	"io"
 	"log"
 	"os"
 	"sort"
 	"sync/atomic"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/twcclan/goback/proto"
 
@@ -23,7 +27,7 @@ const (
 	// smaller than this.
 	tooSmallThreshold = 0 //64 << 10
 
-	inFlightChunks = 1
+	inFlightChunks = 10
 )
 
 func newFileWriter(store ObjectStore) *fileWriter {
@@ -172,6 +176,99 @@ func (bfr *fileReader) Size() int64 {
 	}
 
 	return 0
+}
+
+type partResponse struct {
+	index int
+	blob  *proto.Blob
+}
+
+type partRequest struct {
+	index int
+	ref   *proto.Ref
+}
+
+func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
+	log.Println("Starting WriteTo")
+	group, ctx := errgroup.WithContext(context.Background())
+	requests := make(chan partRequest)
+	parts := make(chan partResponse)
+	numParts := len(bfr.file.Parts)
+	numWorker := 128
+	bytesWritten := int64(0)
+
+	// writer goroutine
+	group.Go(func() error {
+		stash := make(map[int]*proto.Blob)
+
+		for partIndex := 0; partIndex < numParts; {
+			// check if we have the next part stashed already
+			if p, ok := stash[partIndex]; ok {
+				n, err := writer.Write(p.Data)
+				bytesWritten += int64(n)
+
+				if err != nil {
+					return err
+				}
+
+				delete(stash, partIndex)
+				partIndex++
+				continue
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case p := <-parts:
+				// stash it for later
+				stash[p.index] = p.blob
+			}
+		}
+
+		return nil
+	})
+
+	// scheduler goroutine
+	group.Go(func() error {
+		defer func() {
+			close(requests)
+		}()
+
+		// push all parts to the request channel
+		for i, part := range bfr.file.Parts {
+			select {
+			// cancelling the context is the only way this should ever exit early
+			case <-ctx.Done():
+				return nil
+			case requests <- partRequest{index: i, ref: part.Ref}:
+			}
+		}
+
+		return nil
+	})
+
+	// start workers
+	for i := 0; i < numWorker; i++ {
+		group.Go(func() error {
+			for req := range requests {
+				start := time.Now()
+				obj, err := bfr.store.Get(req.ref)
+				// TODO: implement retry here
+				if err != nil {
+					return err
+				}
+
+				download := time.Since(start)
+				log.Printf("Retrieved part %d in %s", req.index, download)
+
+				parts <- partResponse{index: req.index, blob: obj.GetBlob()}
+			}
+
+			return nil
+		})
+	}
+
+	return bytesWritten, group.Wait()
 }
 
 func (bfr *fileReader) Read(b []byte) (n int, err error) {
