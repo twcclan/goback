@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/trace"
+	"time"
 
 	"github.com/codegangsta/cli"
 	_ "github.com/joho/godotenv/autoload"
@@ -22,13 +24,25 @@ func webserver() {
 	http.ListenAndServe(":8080", nil)
 }
 
+func tracer() {
+	f, err := os.Create("trace.out")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	trace.Start(f)
+
+	time.Sleep(15 * time.Second)
+	trace.Stop()
+}
+
 func main() {
-	runtime.SetBlockProfileRate(1)
 	go webserver()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	runtime.GOMAXPROCS(1)
+	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 
 	app := cli.NewApp()
 	app.Name = "goback"

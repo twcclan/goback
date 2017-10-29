@@ -4,25 +4,23 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
-
-	"cloud.google.com/go/storage"
-
-	"github.com/Sirupsen/logrus"
 	"github.com/twcclan/goback/backup"
 
+	"cloud.google.com/go/storage"
+	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 func init() {
-	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetLevel(logrus.InfoLevel)
 }
 
 const gcsObjectKey = "pack/%s/%s" // pack/<extension>/<filename>
@@ -69,7 +67,6 @@ func (s *gcsReader) ReadAt(buf []byte, offset int64) (int, error) {
 }
 
 func (s *gcsReader) WriteTo(w io.Writer) (int64, error) {
-	s.logger.Info("Streaming whole file")
 	reader, err := s.gcs.Bucket(s.attrs.Bucket).Object(s.attrs.Name).NewReader(context.Background())
 
 	if err != nil {
@@ -97,12 +94,8 @@ func (s *gcsReader) Seek(offset int64, whence int) (int64, error) {
 }
 
 type gcsFile struct {
-	gcsWriter  *storage.Writer
-	fileWriter *os.File
-	writer     io.Writer
-
-	fileReader *os.File
-	gcsReader  *gcsReader
+	gcsWriter *storage.Writer
+	gcsReader *gcsReader
 
 	readOnly bool
 }
@@ -120,10 +113,6 @@ func (s *gcsFile) Close() error {
 		s.gcsReader.attrs = s.gcsWriter.Attrs()
 	}
 
-	s.fileReader.Close()
-	s.fileWriter.Close()
-	os.Remove(s.fileWriter.Name()) // it's just a temp file, don't care about error
-
 	// wait for the upload to finish
 	return err
 }
@@ -133,7 +122,7 @@ func (s *gcsFile) Read(buf []byte) (int, error) {
 		return s.gcsReader.Read(buf)
 	}
 
-	return s.fileReader.Read(buf)
+	return 0, errors.New("Read only supported for readonly files")
 }
 
 func (s *gcsFile) Write(buf []byte) (int, error) {
@@ -141,7 +130,7 @@ func (s *gcsFile) Write(buf []byte) (int, error) {
 		return 0, errors.New("Cannot write to read only file")
 	}
 
-	return s.writer.Write(buf)
+	return s.gcsWriter.Write(buf)
 }
 
 func (s *gcsFile) Seek(offset int64, whence int) (int64, error) {
@@ -149,7 +138,7 @@ func (s *gcsFile) Seek(offset int64, whence int) (int64, error) {
 		return s.gcsReader.Seek(offset, whence)
 	}
 
-	return s.fileReader.Seek(offset, whence)
+	return -1, errors.New("Seek only supported for readonly files")
 }
 
 func (s *gcsFile) WriteTo(w io.Writer) (int64, error) {
@@ -167,16 +156,24 @@ func (s *gcsFile) Stat() (os.FileInfo, error) {
 var _ File = (*gcsFile)(nil)
 
 type gcsStore struct {
-	bucket    string
-	gcs       *storage.Client
-	openFiles map[string]*gcsFile
+	bucket string
+	gcs    *storage.Client
+
+	openFilesMtx sync.Mutex
+	openFiles    map[string]*gcsFile
 }
+
+func (s *gcsStore) CloseBeforeRead() {}
 
 func (s *gcsStore) openGCSFile(key string) (File, error) {
 	gcsLogger.WithField("key", key).Debug("Opening file")
 	// if this is a file we are currently uploading
 	// return the active instance instead
-	if file, ok := s.openFiles[key]; ok {
+	s.openFilesMtx.Lock()
+	file, ok := s.openFiles[key]
+	s.openFilesMtx.Unlock()
+
+	if ok {
 		return file, nil
 	}
 
@@ -197,30 +194,18 @@ func (s *gcsStore) openGCSFile(key string) (File, error) {
 }
 
 func (s *gcsStore) newGCSFile(key string) (File, error) {
-	gcsLogger.WithField("key", key).Debug("Creating file")
-	fileWriter, err := ioutil.TempFile("", "goback-gcs")
-	if err != nil {
-		return nil, err
-	}
-
-	fileReader, err := os.Open(fileWriter.Name())
-	if err != nil {
-		return nil, err
-	}
-
 	writer := s.gcs.Bucket(s.bucket).Object(key).NewWriter(context.Background())
 
 	file := &gcsFile{
-		gcsWriter:  writer,
-		fileWriter: fileWriter,
-		fileReader: fileReader,
-		writer:     io.MultiWriter(fileWriter, writer),
+		gcsWriter: writer,
 		gcsReader: &gcsReader{
 			gcs: s.gcs,
 		},
 	}
 
+	s.openFilesMtx.Lock()
 	s.openFiles[key] = file
+	s.openFilesMtx.Unlock()
 
 	return file, nil
 }
@@ -258,8 +243,6 @@ func (s *gcsStore) List() ([]string, error) {
 
 			return names, err
 		}
-
-		gcsLogger.WithField("key", attrs.Name).Debug("Scanning object")
 
 		name := strings.TrimSuffix(path.Base(attrs.Name), path.Ext(attrs.Name))
 		names = append(names, name)

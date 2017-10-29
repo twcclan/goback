@@ -2,6 +2,7 @@ package index
 
 import (
 	"database/sql"
+	"log"
 	"path"
 	"path/filepath"
 	"sync"
@@ -36,7 +37,7 @@ type SqliteIndex struct {
 // TODO: use transactions for better write performance
 
 func (s *SqliteIndex) Open() error {
-	db, err := sql.Open("sqlite3", path.Join(s.base, "index.db"))
+	db, err := sql.Open("sqlite3", path.Join(s.base, "index.db")+"?busy_timeout=1000")
 
 	if err != nil {
 		return err
@@ -62,6 +63,51 @@ func (s *SqliteIndex) Open() error {
 	}
 
 	s.db = db
+	return nil
+}
+
+func (s *SqliteIndex) FindMissing() error {
+	refs := make([][]byte, 0)
+	rows, err := s.db.Query("SELECT ref FROM objects;")
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		ref := make([]byte, 0)
+		err = rows.Scan(&ref)
+		if err != nil {
+			return err
+		}
+
+		obj, err := s.ObjectStore.Get(&proto.Ref{Sha1: ref})
+		if err != nil {
+			return err
+		}
+
+		if obj == nil {
+			log.Printf("Found missing object %x", ref)
+			refs = append(refs, ref)
+		}
+	}
+
+	rows.Close()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Commit()
+
+	log.Printf("Deleting %d missing objects", len(refs))
+	for _, ref := range refs {
+		_, err := tx.Exec("DELETE FROM objects where ref = ?;", ref)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -110,18 +156,6 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 		return err
 	}
 
-	s.txMtx.Lock()
-	defer s.txMtx.Unlock()
-
-	if ok, err := s.HasObject(object.Ref()); ok || err != nil {
-		return err
-	}
-
-	_, err = s.db.Exec("INSERT INTO objects (ref, type, indexed) VALUES(?, ?, ?)", object.Ref().Sha1, object.Type(), false)
-	if err != nil {
-		return errors.Wrap(err, "Failed to create object index")
-	}
-
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
 
@@ -151,22 +185,6 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 	}
 
 	return nil
-}
-
-func (s *SqliteIndex) HasObject(ref *proto.Ref) (bool, error) {
-	return s.hasRow("SELECT 1 FROM objects WHERE ref = ? LIMIT 1;", ref.Sha1)
-}
-
-func (s *SqliteIndex) hasRow(query string, params ...interface{}) (bool, error) {
-	var unused int
-
-	err := s.db.QueryRow(query, params...).Scan(&unused)
-
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-
-	return err == nil, err
 }
 
 func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
@@ -231,133 +249,3 @@ func (s *SqliteIndex) CommitInfo(notAfter time.Time, count int) ([]proto.Commit,
 
 	return infoList[:counter], rows.Err()
 }
-
-/*
-func (s *SqliteIndex) index(chunk *proto.Blob, tx *sql.Tx) (err error) {
-	switch chunk.Ref.Type {
-	case proto.ChunkType_FILE_INFO:
-		info := new(proto.FileInfo)
-		proto.ReadMetaChunk(chunk, info)
-
-		_, err = tx.Exec("INSERT INTO fileInfo(name, timestamp, chunk, data, size, mode) VALUES(?, ?, ?, ?, ?, ?);",
-			info.Name, info.Timestamp, chunk.Ref.Sum, info.Data.Sum, info.Size, info.Mode)
-		if err != nil {
-			return
-		}
-
-	case proto.ChunkType_SNAPSHOT_INFO:
-		snapshot := new(proto.SnapshotInfo)
-		proto.ReadMetaChunk(chunk, snapshot)
-
-		_, err = tx.Exec("INSERT INTO snapshotInfo(timestamp, data, chunk) VALUES(?, ?, ?);", snapshot.Timestamp, snapshot.Data.Sum, chunk.Ref.Sum)
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = tx.Exec("INSERT INTO chunks(sum) VALUES(?);", chunk.Ref.Sum)
-
-	return
-}
-
-func (s *SqliteIndex) ReIndex(store ChunkStore) (err error) {
-	types := []proto.ChunkType{
-		proto.ChunkType_DATA,
-		proto.ChunkType_FILE,
-		proto.ChunkType_FILE_INFO,
-		proto.ChunkType_SNAPSHOT,
-		proto.ChunkType_SNAPSHOT_INFO,
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return
-	}
-
-	// commit or rollback transaction depending return value
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
-
-	for _, t := range types {
-		err = store.Walk(t, func(ref *proto.ChunkRef) error {
-
-			chunk, e := store.Read(ref)
-			if e != nil {
-				return err
-			}
-
-			return s.index(chunk, tx)
-		})
-
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-
-	return
-}
-
-func (s *SqliteIndex) Index(chunk *proto.Object) (err error) {
-	s.txMtx.Lock()
-	defer s.txMtx.Unlock()
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-
-	// commit or rollback transaction depending return value
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
-
-	err = s.index(chunk, tx)
-
-	return
-}
-
-func (s *SqliteIndex) SnapshotInfo(notAfter time.Time, count int) ([]SnapshotPointer, error) {
-	infoList := make([]SnapshotPointer, count)
-
-	rows, err := s.db.Query("SELECT timestamp, chunk, data FROM snapshotInfo WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	counter := 0
-	for rows.Next() {
-
-		dataRef := &proto.ChunkRef{Type: proto.ChunkType_SNAPSHOT}
-		infoRef := &proto.ChunkRef{Type: proto.ChunkType_SNAPSHOT_INFO}
-
-		info := &proto.SnapshotInfo{
-			Data: dataRef,
-		}
-
-		err = rows.Scan(&info.Timestamp, &infoRef.Sum, &dataRef.Sum)
-		if err != nil {
-			return nil, err
-		}
-
-		infoList[counter] = SnapshotPointer{
-			Info: info,
-			Ref:  infoRef,
-		}
-
-		counter++
-	}
-
-	return infoList[:counter], rows.Err()
-}
-*/

@@ -3,6 +3,8 @@ package backup
 import (
 	"io"
 	"os"
+	"sort"
+	"sync"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -14,8 +16,9 @@ type TreeWriter interface {
 }
 
 type backupTree struct {
-	store ObjectStore
-	nodes []*proto.TreeNode
+	store    ObjectStore
+	nodes    []*proto.TreeNode
+	nodesMtx sync.Mutex
 }
 
 var _ TreeWriter = (*backupTree)(nil)
@@ -32,6 +35,11 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 		return err
 	}
 
+	// make sure the nodes are sorted deterministically
+	sort.Slice(node.nodes, func(i int, j int) bool {
+		return node.nodes[i].Stat.Name < node.nodes[j].Stat.Name
+	})
+
 	treeObj := proto.NewObject(&proto.Tree{
 		Nodes: node.nodes,
 	})
@@ -43,7 +51,7 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 	}
 
 	// save a reference to the sub-tree
-	bt.nodes = append(bt.nodes, &proto.TreeNode{
+	bt.Node(&proto.TreeNode{
 		Stat: proto.GetFileInfo(info),
 		Ref:  treeObj.Ref(),
 	})
@@ -53,6 +61,11 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 
 func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error {
 	fWriter := newFileWriter(bt.store)
+	node := &proto.TreeNode{
+		Stat: proto.GetFileInfo(info),
+	}
+
+	bt.Node(node)
 
 	err := writer(fWriter)
 	if err != nil {
@@ -66,16 +79,15 @@ func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error
 		return err
 	}
 
-	bt.nodes = append(bt.nodes, &proto.TreeNode{
-		Stat: proto.GetFileInfo(info),
-		Ref:  fWriter.Ref(),
-	})
+	node.Ref = fWriter.Ref()
 
 	return nil
 }
 
 func (bt *backupTree) Node(node *proto.TreeNode) {
+	bt.nodesMtx.Lock()
 	bt.nodes = append(bt.nodes, node)
+	bt.nodesMtx.Unlock()
 }
 
 func newTree(store ObjectStore) *backupTree {

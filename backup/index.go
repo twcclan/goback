@@ -13,6 +13,7 @@ type Index interface {
 	ObjectStore
 	FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error)
 	CommitInfo(notAfter time.Time, count int) ([]proto.Commit, error)
+	FindMissing() error
 	/*
 		// chunk related methods
 		ReIndex(ObjectStore) error

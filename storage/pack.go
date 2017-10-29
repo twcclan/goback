@@ -12,11 +12,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	humanize "github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 
@@ -35,19 +35,19 @@ const (
 
 func NewPackStorage(storage ArchiveStorage) *PackStorage {
 	return &PackStorage{
-		archives: make(map[string]*archive),
-		active:   nil,
-		storage:  storage,
+		archives:         make(map[string]*archive),
+		idle:             make(chan *archive),
+		archiveSemaphore: semaphore.NewWeighted(64),
+		storage:          storage,
 	}
 }
 
 type PackStorage struct {
 	archives         map[string]*archive
-	writableArchives map[string]*archive
 	idle             chan *archive
-	active           *archive
 	base             string
 	mtx              sync.RWMutex
+	archiveSemaphore *semaphore.Weighted
 	storage          ArchiveStorage
 }
 
@@ -55,6 +55,7 @@ var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Put(object *proto.Object) error {
 	// don't store objects we already know about
+	// TODO: add bloom filter
 	if ps.Has(object.Ref()) {
 		return nil
 	}
@@ -63,20 +64,17 @@ func (ps *PackStorage) Put(object *proto.Object) error {
 }
 
 func (ps *PackStorage) put(object *proto.Object) error {
-	if err := ps.prepareArchive(); err != nil {
+	a, err := ps.getWritableArchive()
+	if err != nil {
 		return errors.Wrap(err, "Couldn't get archive for writing")
 	}
 
-	ps.mtx.Lock()
-	defer ps.mtx.Unlock()
-
-	return ps.active.Put(object)
+	return a.Put(object)
 }
 
 func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
-	if ps.active != nil && ps.active.Has(ref) {
-		return true
-	}
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
 
 	for _, archive := range ps.archives {
 		if archive.Has(ref) {
@@ -90,18 +88,6 @@ func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
 func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
-
-	// there is a good chance we are looking for data in the active archive
-	if ps.active != nil {
-		obj, err := ps.active.Get(ref)
-		if err != nil {
-			return nil, err
-		}
-
-		if obj != nil {
-			return obj, nil
-		}
-	}
 
 	for _, archive := range ps.archives {
 		obj, err := archive.Get(ref)
@@ -119,11 +105,30 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 	return nil, nil
 }
 
+func (ps *PackStorage) Flush() error {
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
+
+	for _, archive := range ps.archives {
+		if !archive.readOnly {
+			err := archive.CloseWriter()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (ps *PackStorage) Delete(ref *proto.Ref) error {
 	panic("not implemented")
 }
 
 func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
 	for _, archive := range ps.archives {
 		log.Printf("Reading archive: %s", archive.name)
 		err := archive.foreach(load, func(hdr *proto.ObjectHeader, obj *proto.Object, offset, length uint32) error {
@@ -143,50 +148,50 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 
 func (ps *PackStorage) Close() error {
 	var (
-		candidates []*archive
-		obsolete   []*archive
-		total      uint64
+		//candidates []*archive
+		obsolete []*archive
+		//total      uint64
 	)
 
-	// check if we could do a compaction here
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
+	/*
+
+		// check if we could do a compaction here
+		for _, archive := range ps.archives {
+			if archive.size < MaxSize && archive.readOnly {
+				// this may be a candidate for compaction
+				candidates = append(candidates, archive)
+				total += archive.size
+			}
+		}
+
+		// use some heuristic to decide whether we should do a compaction
+		if len(candidates) > 10 && total > MaxSize/4 {
+			log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
+
+			for _, archive := range candidates {
+				err := archive.foreach(true, func(hdr *proto.ObjectHeader, obj *proto.Object, offset, length uint32) error {
+					return ps.put(obj)
+				})
+
+				if err != nil {
+					return err
+				}
+
+				// we don't care about the error here, we're about to delete it anyways
+				archive.Close()
+				obsolete = append(obsolete, archive)
+			}
+		}
+	*/
+
 	for _, archive := range ps.archives {
-		if archive.size < MaxSize {
-			// this may be a candidate for compaction
-			candidates = append(candidates, archive)
-			total += archive.size
-		} else {
-
-			// we're not going to need this any longer
-			err := archive.Close()
+		if !archive.readOnly {
+			err := archive.CloseWriter()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "Failed closing archive")
 			}
-		}
-	}
-
-	// use some heuristic to decide whether we should do a compaction
-	if len(candidates) > 10 && total > MaxSize/4 {
-		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
-
-		for _, archive := range candidates {
-			err := archive.foreach(true, func(hdr *proto.ObjectHeader, obj *proto.Object, offset, length uint32) error {
-				return ps.put(obj)
-			})
-
-			if err != nil {
-				return err
-			}
-
-			// we don't care about the error here, we're about to delete it anyways
-			archive.Close()
-			obsolete = append(obsolete, archive)
-		}
-	}
-
-	if ps.active != nil {
-		err := ps.active.Close()
-		if err != nil {
-			return err
 		}
 	}
 
@@ -239,71 +244,77 @@ func (ps *PackStorage) Open() error {
 		})
 	}
 
-	err = group.Wait()
+	return group.Wait()
+}
+
+func (ps *PackStorage) addArchive() error {
+	a, err := newArchive(ps.storage, ps.idle)
 	if err != nil {
 		return err
 	}
 
-	go ps.archiveManager()
+	ps.mtx.Lock()
+	ps.archives[a.name] = a
+	ps.mtx.Unlock()
 
 	return nil
 }
 
-func (ps *PackStorage) prepareArchive() (err error) {
-	ps.mtx.Lock()
-	defer ps.mtx.Unlock()
+func (ps *PackStorage) getWritableArchive() (*archive, error) {
+	for {
+		select {
+		// try to grab an idle open archive
+		case a := <-ps.idle:
+			// close this archive if it's full and retry
+			if a.size >= MaxSize {
+				log.Printf("Closing archive because it's full: %s", a.name)
+				err := a.CloseWriter()
+				if err != nil {
+					return nil, err
+				}
 
-	// if there is no active archive or the currently active
-	// archive is too large already, start a new one
-	openNew := ps.active == nil || ps.active.size >= MaxSize
+				ps.archiveSemaphore.Release(1)
 
-	// close the active archive first
-	if openNew && ps.active != nil {
-		err = ps.active.CloseWriter()
-		if err != nil {
-			return
-		}
+				continue
+			}
 
-		ps.archives[ps.active.name] = ps.active
-		ps.active = nil
-	}
-
-	// if there is not active archive
-	// create a new one
-	if openNew {
-		ps.active, err = newArchive(ps.storage, ps.idle)
-		if err != nil {
-			return
+			return a, nil
+		case <-time.After(10 * time.Millisecond):
+			if ps.archiveSemaphore.TryAcquire(1) {
+				ps.addArchive()
+			}
 		}
 	}
-
-	return
 }
 
 type archive struct {
-	writeFile  File
-	readFile   File
-	writer     *bufio.Writer
-	reader     *bufio.Reader
-	readOnly   bool
-	size       uint64
-	writeIndex map[string]*indexRecord
-	readIndex  index
-	mtx        sync.RWMutex
-	last       *proto.Ref
-	storage    ArchiveStorage
-	name       string
-	idle       chan *archive
-	closed     chan struct{}
+	writeFile       File
+	readFile        File
+	writer          *bufio.Writer
+	reader          *bufio.Reader
+	readOnly        bool
+	closeBeforeRead bool
+	size            uint64
+	writeIndex      map[string]*indexRecord
+	readIndex       index
+	mtx             sync.RWMutex
+	last            *proto.Ref
+	storage         ArchiveStorage
+	name            string
+	idle            chan *archive
+	closed          chan struct{}
 }
 
 func newArchive(storage ArchiveStorage, idle chan *archive) (*archive, error) {
+	_, closeBeforeRead := storage.(CloseBeforeRead)
+
 	a := &archive{
-		storage:  storage,
-		name:     uuid.NewV4().String(),
-		readOnly: false,
-		idle:     idle,
-		closed:   make(chan struct{}),
+		storage:         storage,
+		name:            uuid.NewV4().String(),
+		readOnly:        false,
+		idle:            idle,
+		closed:          make(chan struct{}),
+		closeBeforeRead: closeBeforeRead,
 	}
 
 	return a, a.open()
@@ -361,7 +372,7 @@ func (a *archive) open() (err error) {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
 
-		a.writer = bufio.NewWriter(a.writeFile)
+		//a.writer = bufio.NewWriterSize(a.writeFile, 1024*1024)
 		a.writeIndex = make(map[string]*indexRecord)
 	}
 
@@ -434,19 +445,39 @@ func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
 		return a.readIndex.lookup(ref)
 	}
 
-	a.mtx.RLock()
-	defer a.mtx.RUnlock()
-
 	return a.writeIndex[string(ref.Sha1)]
 }
 
 func (a *archive) Has(ref *proto.Ref) bool {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
 	return a.indexLocation(ref) != nil
 }
 
 func (a *archive) Get(ref *proto.Ref) (*proto.Object, error) {
+	a.mtx.RLock()
+
 	if loc := a.indexLocation(ref); loc != nil {
+		a.mtx.RUnlock()
 		buf := make([]byte, loc.Length)
+
+		if a.closeBeforeRead && !a.readOnly {
+			err := a.CloseWriter()
+			if err != nil {
+				return nil, errors.Wrap(err, "Failed closing archive before read")
+			}
+		}
+
+		/*
+			// flush the write buffer first to make sure we can read
+			if !a.readOnly {
+				err := a.writer.Flush()
+				if err != nil {
+					return nil, errors.Wrap(err, "Failed flushing write buffer")
+				}
+			}
+		*/
 
 		if readerAt, ok := a.readFile.(io.ReaderAt); ok {
 			_, err := readerAt.ReadAt(buf, int64(loc.Offset))
@@ -488,6 +519,8 @@ func (a *archive) Get(ref *proto.Ref) (*proto.Object, error) {
 		return proto.NewObjectFromCompressedBytes(buf[consumed+int(hdrSize):])
 	}
 
+	a.mtx.RUnlock()
+
 	// it probably shouldn't be an error when we don't have an object
 	return nil, nil
 }
@@ -502,6 +535,9 @@ func (a *archive) Put(object *proto.Object) error {
 	}()
 
 	ref := object.Ref()
+
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 
 	if loc := a.indexLocation(ref); loc != nil {
 		return nil
@@ -522,15 +558,12 @@ func (a *archive) Put(object *proto.Object) error {
 	// construct a buffer with our header preceeded by a varint describing its size
 	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
 
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
-	_, err := a.writer.Write(hdrBytes)
+	_, err := a.writeFile.Write(hdrBytes)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing header")
 	}
 
-	_, err = a.writer.Write(bytes)
+	_, err = a.writeFile.Write(bytes)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing data")
 	}
@@ -667,20 +700,21 @@ func (a *archive) CloseReader() error {
 }
 
 func (a *archive) CloseWriter() error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
 	if a.readOnly {
 		return nil
 	}
 
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
 	close(a.closed)
-	err := a.writer.Flush()
-	if err != nil {
-		return errors.Wrap(err, "Failed flushing buffer")
-	}
+	/*
+		err := a.writer.Flush()
+		if err != nil {
+			return errors.Wrap(err, "Failed flushing buffer")
+		}*/
 
-	err = a.writeFile.Close()
+	err := a.writeFile.Close()
 	if err != nil {
 		return errors.Wrap(err, "Failed closing file")
 	}
@@ -738,6 +772,10 @@ type File interface {
 	io.Closer
 
 	Stat() (os.FileInfo, error)
+}
+
+type CloseBeforeRead interface {
+	CloseBeforeRead()
 }
 
 type ArchiveStorage interface {

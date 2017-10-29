@@ -13,7 +13,11 @@ import (
 )
 
 var (
-	ErrEmptyBuffer   = errors.New("no buffer space provided")
+	// ErrEmptyBuffer is returned when trying to read from a backup file into
+	// an empty buffer
+	ErrEmptyBuffer = errors.New("no buffer space provided")
+
+	// ErrIllegalOffset is returned when trying to seek past the end of a file
 	ErrIllegalOffset = errors.New("illegal offset")
 )
 

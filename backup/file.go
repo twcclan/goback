@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -27,7 +26,7 @@ const (
 	// smaller than this.
 	tooSmallThreshold = 0 //64 << 10
 
-	inFlightChunks = 10
+	inFlightChunks = 80
 )
 
 func newFileWriter(store ObjectStore) *fileWriter {
@@ -185,16 +184,15 @@ type partResponse struct {
 
 type partRequest struct {
 	index int
-	ref   *proto.Ref
+	part  *proto.FilePart
 }
 
 func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
-	log.Println("Starting WriteTo")
 	group, ctx := errgroup.WithContext(context.Background())
 	requests := make(chan partRequest)
 	parts := make(chan partResponse)
 	numParts := len(bfr.file.Parts)
-	numWorker := 128
+	numWorker := 512
 	bytesWritten := int64(0)
 
 	// writer goroutine
@@ -240,7 +238,7 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 			// cancelling the context is the only way this should ever exit early
 			case <-ctx.Done():
 				return nil
-			case requests <- partRequest{index: i, ref: part.Ref}:
+			case requests <- partRequest{index: i, part: part}:
 			}
 		}
 
@@ -251,15 +249,18 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 	for i := 0; i < numWorker; i++ {
 		group.Go(func() error {
 			for req := range requests {
-				start := time.Now()
-				obj, err := bfr.store.Get(req.ref)
+				obj, err := bfr.store.Get(req.part.Ref)
 				// TODO: implement retry here
 				if err != nil {
 					return err
 				}
 
-				download := time.Since(start)
-				log.Printf("Retrieved part %d in %s", req.index, download)
+				if obj == nil {
+					log.Printf("Warning: couldn't find part %d (%x) of file %X", req.index, req.part.Ref.Sha1, proto.NewObject(bfr.file).Ref().Sha1)
+					obj = proto.NewObject(&proto.Blob{
+						Data: make([]byte, req.part.Length),
+					})
+				}
 
 				parts <- partResponse{index: req.index, blob: obj.GetBlob()}
 			}

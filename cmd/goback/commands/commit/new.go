@@ -6,8 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
+
+	"go4.org/syncutil"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
@@ -18,12 +23,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (s *commit) shouldInclude(fName string) bool {
+func (c *commit) shouldInclude(fName string) bool {
 	// check the patterns against paths relative to our base
-	fName = strings.TrimPrefix(fName, s.base)
+	fName = strings.TrimPrefix(fName, c.base)
 
 	// check whitelist first
-	for _, pat := range s.includes {
+	for _, pat := range c.includes {
 		match, err := doublestar.Match(pat, fName)
 		if err != nil {
 			log.Printf("Malformed pattern: \"%s\" %v", pat, err)
@@ -36,7 +41,7 @@ func (s *commit) shouldInclude(fName string) bool {
 	}
 
 	// check blacklist
-	for _, pat := range s.excludes {
+	for _, pat := range c.excludes {
 		match, err := doublestar.Match(pat, fName)
 		if err != nil {
 			log.Printf("Malformed pattern: \"%s\" %v", pat, err)
@@ -52,7 +57,7 @@ func (s *commit) shouldInclude(fName string) bool {
 	return true
 }
 
-func (s *commit) read(file string) func(io.Writer) error {
+func (c *commit) read(file string) func(io.Writer) error {
 	return func(writer io.Writer) error {
 		reader, err := os.Open(file)
 		if err != nil {
@@ -66,57 +71,71 @@ func (s *commit) read(file string) func(io.Writer) error {
 	}
 }
 
-func (s *commit) descend(base string) func(backup.TreeWriter) error {
+func (c *commit) descend(base string) func(backup.TreeWriter) error {
 	return func(tree backup.TreeWriter) error {
+		group := errgroup.Group{}
+
 		files, err := ioutil.ReadDir(base)
 		if err != nil {
 			return errors.Wrapf(err, "Failed opening %s for listing", base)
 		}
 
 		for _, file := range files {
-			absPath := filepath.ToSlash(filepath.Join(base, file.Name()))
+			info := file
+			absPath := filepath.ToSlash(filepath.Join(base, info.Name()))
 
-			if !s.shouldInclude(absPath) {
+			if !c.shouldInclude(absPath) {
 				continue
 			}
 
-			if file.IsDir() {
+			if info.IsDir() {
 				// recurse into the sub folder
-				err = tree.Tree(file, s.descend(absPath))
-
-			} else if file.Mode()&os.ModeSymlink == 0 { // skip symlinks
-				var nodes []proto.TreeNode
-				nodes, err = s.index.FileInfo(strings.TrimPrefix(absPath, s.base+"/"), time.Now(), 1)
-				if err != nil {
-					return errors.Wrapf(err, "Failed checking index for file %s", absPath)
+				tErr := tree.Tree(info, c.descend(absPath))
+				if tErr != nil {
+					return tErr
 				}
 
-				if len(nodes) > 0 && nodes[0].Stat.Timestamp == file.ModTime().Unix() {
-					// apparently we have this file already
-					tree.Node(&nodes[0])
-				} else {
-					// store the file
-					err = tree.File(file, s.read(absPath))
-				}
+				continue
 			}
 
-			if err != nil {
-				return err
-			}
+			// spawn a limited number of workers in parallel for file backups
+			c.gate.Start()
+			group.Go(func() error {
+				defer c.gate.Done()
+
+				if info.Mode()&os.ModeSymlink == 0 { // skip symlinks
+					var nodes []proto.TreeNode
+					nodes, err = c.index.FileInfo(strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
+					if err != nil {
+						return errors.Wrapf(err, "Failed checking index for info %s", absPath)
+					}
+
+					if len(nodes) > 0 && nodes[0].Stat.Timestamp == info.ModTime().Unix() {
+						// apparently we have this file already
+						tree.Node(&nodes[0])
+					} else {
+						// store the file
+						return tree.File(info, c.read(absPath))
+					}
+				}
+
+				return nil
+			})
 		}
 
-		return nil
+		return group.Wait()
 	}
 }
 
-func (s *commit) take() {
-	err := s.descend(s.base)(s.backup)
+func (c *commit) take() {
+	err := c.descend(c.base)(c.backup)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%+v", err)
+		os.Exit(-1)
 	}
 
-	err = s.backup.Close()
+	err = c.backup.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,6 +157,7 @@ func newAction(c *cli.Context) {
 		index:    index,
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),
+		gate:     syncutil.NewGate(c.Int("workers")),
 	}
 
 	s.take()
@@ -161,6 +181,10 @@ var newCmd = cli.Command{
 		cli.StringSliceFlag{
 			Name:  "exclude, e",
 			Value: new(cli.StringSlice),
+		},
+		cli.IntFlag{
+			Name:  "workers, w",
+			Value: runtime.NumCPU(),
 		},
 	},
 }

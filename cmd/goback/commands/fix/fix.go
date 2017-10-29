@@ -18,6 +18,11 @@ func fixAction(c *cli.Context) {
 	index := common.GetIndex(c, store)
 	log.Println(index.Open())
 
+	err := index.FindMissing()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	index.Close()
 
 	if cl, ok := store.(common.Closer); ok {

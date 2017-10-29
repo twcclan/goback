@@ -3,6 +3,8 @@ package commit
 import (
 	"time"
 
+	"go4.org/syncutil"
+
 	"github.com/twcclan/goback/backup"
 
 	"github.com/codegangsta/cli"
@@ -17,6 +19,7 @@ type commit struct {
 	from     string
 	includes []string
 	excludes []string
+	gate     *syncutil.Gate
 }
 
 var Command = cli.Command{
