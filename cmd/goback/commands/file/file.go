@@ -21,5 +21,6 @@ var Command = cli.Command{
 	Description: "Manage files",
 	Subcommands: []cli.Command{
 		restoreCmd,
+		showCmd,
 	},
 }
