@@ -148,17 +148,21 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 
 func (ps *PackStorage) Close() error {
 	var (
+		current    []*archive
 		candidates []*archive
 		obsolete   []*archive
 		total      uint64
 	)
 
 	ps.mtx.Lock()
-	defer ps.mtx.Unlock()
+	for _, archive := range ps.archives {
+		current = append(current, archive)
+	}
+	ps.mtx.Unlock()
 
 	if _, ok := ps.storage.(NeedCompaction); ok {
 		// check if we could do a compaction here
-		for _, archive := range ps.archives {
+		for _, archive := range current {
 			if archive.size < ps.storage.MaxSize() && archive.readOnly {
 				// this may be a candidate for compaction
 				candidates = append(candidates, archive)
@@ -186,14 +190,17 @@ func (ps *PackStorage) Close() error {
 		}
 	}
 
+	ps.mtx.Lock()
 	for _, archive := range ps.archives {
 		if !archive.readOnly {
 			err := archive.CloseWriter()
 			if err != nil {
+				ps.mtx.Unlock()
 				return errors.Wrap(err, "Failed closing archive")
 			}
 		}
 	}
+	ps.mtx.Unlock()
 
 	// after having safely closed the active file(s) we can delete the left-overs
 	for _, archive := range obsolete {
