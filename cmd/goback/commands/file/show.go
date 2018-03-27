@@ -4,10 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
 	"github.com/codegangsta/cli"
+	"github.com/pkg/errors"
 )
 
 func (f *file) show() error {
