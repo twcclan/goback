@@ -308,9 +308,14 @@ type archive struct {
 func newArchive(storage ArchiveStorage, idle chan *archive) (*archive, error) {
 	_, closeBeforeRead := storage.(CloseBeforeRead)
 
+	id, err := uuid.NewV4()
+	if err != nil {
+		return nil, err
+	}
+
 	a := &archive{
 		storage:         storage,
-		name:            uuid.NewV4().String(),
+		name:            id.String(),
 		readOnly:        false,
 		idle:            idle,
 		closed:          make(chan struct{}),
