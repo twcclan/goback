@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 
@@ -148,15 +149,15 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 
 func (ps *PackStorage) Close() error {
 	var (
-		//candidates []*archive
-		obsolete []*archive
-		//total      uint64
+		candidates []*archive
+		obsolete   []*archive
+		total      uint64
 	)
 
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
-	/*
 
+	if _, ok := ps.storage.(NeedCompaction); ok {
 		// check if we could do a compaction here
 		for _, archive := range ps.archives {
 			if archive.size < MaxSize && archive.readOnly {
@@ -184,7 +185,7 @@ func (ps *PackStorage) Close() error {
 				obsolete = append(obsolete, archive)
 			}
 		}
-	*/
+	}
 
 	for _, archive := range ps.archives {
 		if !archive.readOnly {
@@ -745,6 +746,8 @@ type LocalArchiveStorage struct {
 	base string
 }
 
+func (las *LocalArchiveStorage) NeedCompaction() {}
+
 func (las *LocalArchiveStorage) Open(name string) (File, error) {
 	return os.OpenFile(filepath.Join(las.base, name), os.O_RDONLY, 644)
 }
@@ -781,6 +784,10 @@ type File interface {
 
 type CloseBeforeRead interface {
 	CloseBeforeRead()
+}
+
+type NeedCompaction interface {
+	NeedCompaction()
 }
 
 type ArchiveStorage interface {
