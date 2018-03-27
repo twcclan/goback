@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	MaxSize            = 1024 * 1024 * 64 // 1 GB TODO: make this configurable for testing
 	IndexOpenerThreads = 10
 	ArchiveSuffix      = ".goback"
 	ArchivePattern     = "*" + ArchiveSuffix
@@ -38,7 +37,7 @@ func NewPackStorage(storage ArchiveStorage) *PackStorage {
 	return &PackStorage{
 		archives:         make(map[string]*archive),
 		idle:             make(chan *archive),
-		archiveSemaphore: semaphore.NewWeighted(64),
+		archiveSemaphore: semaphore.NewWeighted(int64(storage.MaxParallel())),
 		storage:          storage,
 	}
 }
@@ -160,7 +159,7 @@ func (ps *PackStorage) Close() error {
 	if _, ok := ps.storage.(NeedCompaction); ok {
 		// check if we could do a compaction here
 		for _, archive := range ps.archives {
-			if archive.size < MaxSize && archive.readOnly {
+			if archive.size < ps.storage.MaxSize() && archive.readOnly {
 				// this may be a candidate for compaction
 				candidates = append(candidates, archive)
 				total += archive.size
@@ -168,7 +167,7 @@ func (ps *PackStorage) Close() error {
 		}
 
 		// use some heuristic to decide whether we should do a compaction
-		if len(candidates) > 10 && total > MaxSize/4 {
+		if len(candidates) > 10 && total > ps.storage.MaxSize()/4 {
 			log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
 			for _, archive := range candidates {
@@ -267,7 +266,7 @@ func (ps *PackStorage) getWritableArchive() (*archive, error) {
 		// try to grab an idle open archive
 		case a := <-ps.idle:
 			// close this archive if it's full and retry
-			if a.size >= MaxSize {
+			if a.size >= ps.storage.MaxSize() {
 				log.Printf("Closing archive because it's full: %s", a.name)
 				err := a.CloseWriter()
 				if err != nil {
@@ -746,6 +745,14 @@ type LocalArchiveStorage struct {
 	base string
 }
 
+func (las *LocalArchiveStorage) MaxSize() uint64 {
+	return 1024 * 1024 * 1024
+}
+
+func (las *LocalArchiveStorage) MaxParallel() uint64 {
+	return 1
+}
+
 func (las *LocalArchiveStorage) NeedCompaction() {}
 
 func (las *LocalArchiveStorage) Open(name string) (File, error) {
@@ -795,6 +802,8 @@ type ArchiveStorage interface {
 	Open(name string) (File, error)
 	List() ([]string, error)
 	Delete(name string) error
+	MaxSize() uint64
+	MaxParallel() uint64
 }
 
 type countingWriter struct {

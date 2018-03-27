@@ -214,6 +214,14 @@ func (s *gcsStore) key(name string) string {
 	return fmt.Sprintf(gcsObjectKey, path.Ext(name), name)
 }
 
+func (s *gcsStore) MaxSize() uint64 {
+	return 1024 * 1024 * 64
+}
+
+func (s *gcsStore) MaxParallel() uint64 {
+	return 64
+}
+
 func (s *gcsStore) Open(name string) (File, error) {
 	return s.openGCSFile(s.key(name))
 }

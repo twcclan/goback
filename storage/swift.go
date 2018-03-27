@@ -210,6 +210,14 @@ func (s *swiftStorage) List() ([]string, error) {
 	return names, nil
 }
 
+func (s *swiftStorage) MaxSize() uint64 {
+	return 128 * 1024 * 1024
+}
+
+func (s *swiftStorage) MaxParallel() uint64 {
+	return 4
+}
+
 var _ ArchiveStorage = (*swiftStorage)(nil)
 
 func NewSwiftObjectStore(username, apiKey, authURL, tenant, container string) backup.ObjectStore {
