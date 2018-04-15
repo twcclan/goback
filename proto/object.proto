@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package proto;
 
+import "google/protobuf/timestamp.proto";
+
 import "tree.proto";
 import "commit.proto";
 import "blob.proto";
@@ -26,7 +28,8 @@ message ObjectHeader {
   Ref predecessor = 2;
   uint64 size = 3;
   Compression compression = 4;
-  // int64 timestamp = 5;
+  google.protobuf.Timestamp timestamp = 5;
+  ObjectType type = 6;
 }
 
 message Object {

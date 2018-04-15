@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 
@@ -70,6 +71,15 @@ func (ps *PackStorage) put(object *proto.Object) error {
 	}
 
 	return a.Put(object)
+}
+
+func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
+	a, err := ps.getWritableArchive()
+	if err != nil {
+		return errors.Wrap(err, "Couldn't get archive for writing")
+	}
+
+	return a.putRaw(hdr, bytes)
 }
 
 func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
@@ -131,10 +141,21 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 
 	for _, archive := range ps.archives {
 		log.Printf("Reading archive: %s", archive.name)
-		err := archive.foreach(load, func(hdr *proto.ObjectHeader, obj *proto.Object, offset, length uint32) error {
-			if !load || t == proto.ObjectType_INVALID || obj.Type() == t {
+		err := archive.foreach(load, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+			if t == proto.ObjectType_INVALID || hdr.Type == t {
+				var obj *proto.Object
+				var err error
+
+				if load {
+					obj, err = proto.NewObjectFromCompressedBytes(bytes)
+					if err != nil {
+						return err
+					}
+				}
+
 				return fn(hdr, obj)
 			}
+
 			return nil
 		})
 
@@ -144,6 +165,22 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 	}
 
 	return nil
+}
+
+// hasExcept checks if a given ref exists in an archive that is not in
+// the provided map of exclusions
+func (ps *PackStorage) hasExcept(ref *proto.Ref, exclude map[string]bool) bool {
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
+	for name, archive := range ps.archives {
+		// ensure that the archive is either marked as true in the list of exclusions
+		// or that it doesn't exist at all.
+		if exclude, exists := exclude[name]; (!exists || !exclude) && archive.Has(ref) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ps *PackStorage) Close() error {
@@ -174,9 +211,21 @@ func (ps *PackStorage) Close() error {
 		if len(candidates) > 10 && total > ps.storage.MaxSize()/4 {
 			log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
+			exclusions := make(map[string]bool)
+			// build the list of archives to exclude when checking for duplicates.
+			// we do not want to consider archives that may potentially be removed
 			for _, archive := range candidates {
-				err := archive.foreach(true, func(hdr *proto.ObjectHeader, obj *proto.Object, offset, length uint32) error {
-					return ps.put(obj)
+				exclusions[archive.name] = true
+			}
+
+			for _, archive := range candidates {
+				err := archive.foreach(true, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+					// if it still exists in another file, it means that it is a duplicate
+					if ps.hasExcept(hdr.Ref, exclusions) {
+						return nil
+					}
+
+					return ps.putRaw(hdr, bytes)
 				})
 
 				if err != nil {
@@ -350,7 +399,7 @@ func (a *archive) recoverIndex(err error) error {
 
 	recoveredIndex := make(index, 0)
 
-	err = a.foreach(false, func(o *proto.ObjectHeader, _ *proto.Object, offset, length uint32) error {
+	err = a.foreach(false, func(o *proto.ObjectHeader, _ []byte, offset, length uint32) error {
 		record := indexRecord{
 			Offset: offset,
 			Length: length,
@@ -538,6 +587,21 @@ func (a *archive) Get(ref *proto.Ref) (*proto.Object, error) {
 }
 
 func (a *archive) Put(object *proto.Object) error {
+	bytes := object.CompressedBytes()
+	ref := object.Ref()
+
+	hdr := &proto.ObjectHeader{
+		Size:        uint64(len(bytes)),
+		Compression: proto.Compression_GZIP,
+		Ref:         ref,
+		Predecessor: a.last,
+		Type:        object.Type(),
+	}
+
+	return a.putRaw(hdr, bytes)
+}
+
+func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 	if a.readOnly {
 		panic("Cannot write to readonly archive")
 	}
@@ -546,23 +610,21 @@ func (a *archive) Put(object *proto.Object) error {
 		go a.reportIdle()
 	}()
 
-	ref := object.Ref()
-
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	if loc := a.indexLocation(ref); loc != nil {
-		return nil
+	// add type info where it isn't already present
+	if hdr.Type == proto.ObjectType_INVALID {
+		obj, err := proto.NewObjectFromCompressedBytes(bytes)
+		if err != nil {
+			return err
+		}
+
+		hdr.Type = obj.Type()
 	}
 
-	bytes := object.CompressedBytes()
-
-	hdr := &proto.ObjectHeader{
-		Size:        uint64(len(bytes)),
-		Compression: proto.Compression_GZIP,
-		Ref:         ref,
-		Predecessor: a.last,
-	}
+	ref := hdr.Ref
+	hdr.Timestamp = ptypes.TimestampNow()
 
 	hdrBytesSize := uint64(proto.Size(hdr))
 	hdrBytes := proto.Bytes(hdr)
@@ -595,7 +657,17 @@ func (a *archive) Put(object *proto.Object) error {
 	return nil
 }
 
-func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj *proto.Object, offset uint32, length uint32) error) error {
+type loadPredicate func(*proto.ObjectHeader) bool
+
+func loadAll(hdr *proto.ObjectHeader) bool  { return true }
+func loadNone(hdr *proto.ObjectHeader) bool { return false }
+func loadType(t *proto.ObjectType) loadPredicate {
+	return func(hdr *proto.ObjectHeader) bool {
+		return false
+	}
+}
+
+func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -640,10 +712,10 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 			return errors.Wrap(err, "Failed parsing object header")
 		}
 
-		var obj *proto.Object
 		var objOffset = offset
+		var objectBytes []byte
 		if load {
-			objectBytes := make([]byte, hdr.Size)
+			objectBytes = make([]byte, hdr.Size)
 			n, err = io.ReadFull(a.reader, objectBytes)
 			if n != int(hdr.Size) {
 				return errors.Wrap(io.ErrUnexpectedEOF, "Failed reading object")
@@ -652,11 +724,6 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 			if err != nil && err != io.EOF {
 				return errors.Wrap(err, "Failed reading object data")
 			}
-
-			obj, err = proto.NewObjectFromCompressedBytes(objectBytes)
-			if err != nil {
-				return errors.Wrap(err, "Failed decrompressing object")
-			}
 		} else {
 			offset += uint32(consumed) + uint32(hdr.Size) + uint32(hdrSize)
 
@@ -664,7 +731,7 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, obj 
 			a.reader.Discard(int(hdr.Size))
 		}
 
-		err = callback(hdr, obj, objOffset, uint32(consumed)+uint32(hdr.Size)+uint32(hdrSize))
+		err = callback(hdr, objectBytes, objOffset, uint32(consumed)+uint32(hdr.Size)+uint32(hdrSize))
 		if err != nil {
 			return err
 		}
