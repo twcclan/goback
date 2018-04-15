@@ -115,7 +115,13 @@ func (s *SqliteIndex) Close() error {
 	return s.db.Close()
 }
 
-func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
+func (s *SqliteIndex) ReIndex() error {
+	return s.ObjectStore.Walk(true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+		return s.index(obj.GetCommit())
+	})
+}
+
+func (s *SqliteIndex) traverseTree(stmt *sql.Stmt, p string, tree *proto.Object) error {
 	for _, node := range tree.GetTree().GetNodes() {
 		info := node.Stat
 
@@ -131,14 +137,13 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 				return errors.Errorf("Sub tree %x could not be retrieved", node.Ref.Sha1)
 			}
 
-			err = s.traverseTree(path.Join(p, info.Name), subTree)
+			err = s.traverseTree(stmt, path.Join(p, info.Name), subTree)
 			if err != nil {
 				return err
 			}
 		} else {
 			// store the relative path to this file in the index
-			_, err := s.db.Exec("INSERT OR IGNORE INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)",
-				path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
+			_, err := stmt.Exec(path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
 
 			if err != nil {
 				return err
@@ -147,6 +152,48 @@ func (s *SqliteIndex) traverseTree(p string, tree *proto.Object) error {
 	}
 
 	return nil
+}
+
+func (s *SqliteIndex) index(commit *proto.Commit) error {
+	log.Printf("Indexing commit: %v", time.Unix(commit.Timestamp, 0))
+
+	// whenever we get to index a commit
+	// we'll traverse the complete backup tree
+	// to create our filesystem path index
+
+	treeObj, err := s.ObjectStore.Get(commit.Tree)
+	if err != nil {
+		return err
+	}
+
+	if treeObj == nil {
+		log.Printf("Root tree %x could not be retrieved", commit.Tree.Sha1)
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare("INSERT OR IGNORE INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)")
+	if err != nil {
+		return nil
+	}
+
+	err = s.traverseTree(stmt, "", treeObj)
+	if err != nil {
+		log.Printf("Failed building tree for commit, skipping: %v", err)
+
+		return tx.Rollback()
+	}
+
+	_, err = tx.Exec("INSERT OR IGNORE INTO commits (timestamp, tree) VALUES (?, ?)", commit.Timestamp, commit.Tree.Sha1)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *SqliteIndex) Put(object *proto.Object) error {
@@ -158,30 +205,7 @@ func (s *SqliteIndex) Put(object *proto.Object) error {
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-
-		commit := object.GetCommit()
-		// whenever we get to index a commit
-		// we'll traverse the complete backup tree
-		// to create our filesystem path index
-
-		treeObj, err := s.ObjectStore.Get(commit.Tree)
-		if err != nil {
-			return err
-		}
-
-		if treeObj == nil {
-			return errors.Errorf("Root tree %x could not be retrieved", commit.Tree.Sha1)
-		}
-
-		err = s.traverseTree("", treeObj)
-		if err != nil {
-			return err
-		}
-
-		_, err = s.db.Exec("INSERT INTO commits (timestamp, tree) VALUES (?, ?)", commit.Timestamp, commit.Tree.Sha1)
-		if err != nil {
-			return err
-		}
+		return s.index(object.GetCommit())
 	}
 
 	return nil

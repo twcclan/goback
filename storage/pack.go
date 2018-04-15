@@ -139,9 +139,20 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
+	var pred loadPredicate
+
+	switch {
+	case !load:
+		pred = loadNone
+	case load && t == proto.ObjectType_INVALID:
+		pred = loadAll
+	case load && t != proto.ObjectType_INVALID:
+		pred = loadType(t)
+	}
+
 	for _, archive := range ps.archives {
 		log.Printf("Reading archive: %s", archive.name)
-		err := archive.foreach(load, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+		err := archive.foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			if t == proto.ObjectType_INVALID || hdr.Type == t {
 				var obj *proto.Object
 				var err error
@@ -219,7 +230,7 @@ func (ps *PackStorage) Close() error {
 			}
 
 			for _, archive := range candidates {
-				err := archive.foreach(true, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+				err := archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 					// if it still exists in another file, it means that it is a duplicate
 					if ps.hasExcept(hdr.Ref, exclusions) {
 						return nil
@@ -399,7 +410,7 @@ func (a *archive) recoverIndex(err error) error {
 
 	recoveredIndex := make(index, 0)
 
-	err = a.foreach(false, func(o *proto.ObjectHeader, _ []byte, offset, length uint32) error {
+	err = a.foreach(loadNone, func(o *proto.ObjectHeader, _ []byte, offset, length uint32) error {
 		record := indexRecord{
 			Offset: offset,
 			Length: length,
@@ -661,13 +672,13 @@ type loadPredicate func(*proto.ObjectHeader) bool
 
 func loadAll(hdr *proto.ObjectHeader) bool  { return true }
 func loadNone(hdr *proto.ObjectHeader) bool { return false }
-func loadType(t *proto.ObjectType) loadPredicate {
+func loadType(t proto.ObjectType) loadPredicate {
 	return func(hdr *proto.ObjectHeader) bool {
-		return false
+		return hdr.Type == t
 	}
 }
 
-func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) error {
+func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -714,7 +725,7 @@ func (a *archive) foreach(load bool, callback func(hdr *proto.ObjectHeader, byte
 
 		var objOffset = offset
 		var objectBytes []byte
-		if load {
+		if load(hdr) {
 			objectBytes = make([]byte, hdr.Size)
 			n, err = io.ReadFull(a.reader, objectBytes)
 			if n != int(hdr.Size) {
