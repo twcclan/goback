@@ -89,7 +89,6 @@ func (ps *PackStorage) put(object *proto.Object) error {
 
 	defer ps.putWritableArchive(a)
 
-	log.Printf("Writing into archive %s", a.name)
 	return a.Put(object)
 }
 
@@ -101,7 +100,6 @@ func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 
 	defer ps.putWritableArchive(a)
 
-	log.Printf("Writing into archive %s", a.name)
 	return a.putRaw(hdr, bytes)
 }
 
@@ -275,7 +273,6 @@ func (ps *PackStorage) openArchive(name string) error {
 }
 
 func (ps *PackStorage) getWritableArchive() (*archive, error) {
-	log.Printf("Getting writable archive")
 	for {
 		select {
 		// try to grab an idle open archive
@@ -294,7 +291,6 @@ func (ps *PackStorage) getWritableArchive() (*archive, error) {
 			return a, nil
 		case <-time.After(10 * time.Millisecond):
 			if ps.archiveSemaphore.TryAcquire(1) {
-				log.Printf("Adding new archive")
 				err := ps.newArchive()
 				if err != nil {
 					return nil, err
@@ -305,7 +301,6 @@ func (ps *PackStorage) getWritableArchive() (*archive, error) {
 }
 
 func (ps *PackStorage) putWritableArchive(ar *archive) {
-	log.Printf("Pushing writable archive %s", ar.name)
 	ps.writable <- ar
 }
 
