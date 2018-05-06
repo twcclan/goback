@@ -26,26 +26,47 @@ const (
 	varIntMaxSize      = 10
 )
 
-func NewPackStorage(storage ArchiveStorage) *PackStorage {
+func NewPackStorage(options ...PackOption) (*PackStorage, error) {
+	opts := &packOptions{
+		compaction:  true,
+		maxParallel: 1,
+		maxSize:     1024 * 1024 * 1024,
+	}
+
+	for _, opt := range options {
+		opt(opts)
+	}
+
+	if opts.storage == nil {
+		return nil, errors.New("No archive storage provided")
+	}
+
 	return &PackStorage{
 		archives:         make([]archive, 0),
 		activeArchives:   make(map[string]archive),
-		idle:             make(chan *archive),
-		archiveSemaphore: semaphore.NewWeighted(int64(storage.MaxParallel())),
-		storage:          storage,
+		writable:         make(chan *archive, opts.maxParallel),
+		archiveSemaphore: semaphore.NewWeighted(int64(opts.maxParallel)),
+		storage:          opts.storage,
 		index:            make(index, 0),
-	}
+		compaction:       opts.compaction,
+		maxSize:          opts.maxSize,
+		closeBeforeRead:  opts.closeBeforeRead,
+	}, nil
 }
 
 type PackStorage struct {
-	archives         []archive
-	activeArchives   map[string]archive
-	idle             chan *archive
-	base             string
-	mtx              sync.RWMutex
+	writable         chan *archive
 	archiveSemaphore *semaphore.Weighted
 	storage          ArchiveStorage
-	index            index
+	compaction       bool
+	maxSize          uint64
+	closeBeforeRead  bool
+
+	// all of these are guarded by mtx
+	mtx            sync.RWMutex
+	archives       []archive
+	activeArchives map[string]archive
+	index          index
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
@@ -66,6 +87,9 @@ func (ps *PackStorage) put(object *proto.Object) error {
 		return errors.Wrap(err, "Couldn't get archive for writing")
 	}
 
+	defer ps.putWritableArchive(a)
+
+	log.Printf("Writing into archive %s", a.name)
 	return a.Put(object)
 }
 
@@ -75,6 +99,9 @@ func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 		return errors.Wrap(err, "Couldn't get archive for writing")
 	}
 
+	defer ps.putWritableArchive(a)
+
+	log.Printf("Writing into archive %s", a.name)
 	return a.putRaw(hdr, bytes)
 }
 
@@ -115,16 +142,13 @@ func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
 }
 
 func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
-	ps.mtx.RLock()
-	defer ps.mtx.RUnlock()
-
 	rec := ps.indexLocation(ref)
 	if rec != nil {
+		ps.mtx.RLock()
 		a := &ps.archives[rec.Pack]
+		ps.mtx.RUnlock()
 
-		if a.closeBeforeRead {
-			// need to release lock here so we can safely close the archive
-			ps.mtx.RUnlock()
+		if ps.closeBeforeRead {
 			err := ps.closeArchive(a)
 			if err != nil {
 				return nil, err
@@ -199,7 +223,90 @@ func (ps *PackStorage) hasExcept(ref *proto.Ref, exclude map[string]bool) bool {
 }
 
 func (ps *PackStorage) closeArchive(a *archive) error {
+	err := a.CloseWriter()
+	if err != nil {
+		return err
+	}
+
+	ps.mtx.Lock()
+
+	ps.index = append(ps.index, a.readIndex...)
+	sort.Sort(ps.index)
+	a.readIndex = nil
+
+	ps.mtx.Unlock()
+	ps.archiveSemaphore.Release(1)
+
 	return nil
+}
+
+func (ps *PackStorage) newArchive() error {
+	a, err := newArchive(ps.storage)
+	if err != nil {
+		return err
+	}
+
+	ps.mtx.Lock()
+
+	a.number = uint16(len(ps.archives))
+	ps.archives = append(ps.archives, a)
+	ps.putWritableArchive(&ps.archives[a.number])
+
+	ps.mtx.Unlock()
+
+	return nil
+}
+
+func (ps *PackStorage) openArchive(name string) error {
+	a, err := openArchive(ps.storage, name)
+	if err != nil {
+		return err
+	}
+
+	ps.mtx.Lock()
+
+	a.number = uint16(len(ps.archives))
+	ps.archives = append(ps.archives, a)
+	ps.index = append(ps.index, a.readIndex...)
+
+	ps.mtx.Unlock()
+
+	return nil
+}
+
+func (ps *PackStorage) getWritableArchive() (*archive, error) {
+	log.Printf("Getting writable archive")
+	for {
+		select {
+		// try to grab an idle open archive
+		case a := <-ps.writable:
+			// close this archive if it's full and retry
+			if a.size >= ps.maxSize {
+				log.Printf("Closing archive because it's full: %s", a.name)
+				err := ps.closeArchive(a)
+				if err != nil {
+					return nil, err
+				}
+
+				continue
+			}
+
+			return a, nil
+		case <-time.After(10 * time.Millisecond):
+			if ps.archiveSemaphore.TryAcquire(1) {
+				log.Printf("Adding new archive")
+				err := ps.newArchive()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+}
+
+func (ps *PackStorage) putWritableArchive(ar *archive) {
+	log.Printf("Pushing writable archive %s", ar.name)
+	ps.writable <- ar
 }
 
 func (ps *PackStorage) Close() error {
@@ -216,7 +323,7 @@ func (ps *PackStorage) Close() error {
 	}
 	ps.mtx.Unlock()
 
-	if _, ok := ps.storage.(NeedCompaction); ok {
+	if ps.compaction {
 		// check if we could do a compaction here
 		for _, archive := range current {
 			if archive.size < ps.storage.MaxSize() && archive.readOnly {
@@ -305,19 +412,7 @@ func (ps *PackStorage) Open() error {
 		group.Go(func() error {
 			defer sem.Release(1)
 
-			a, aErr := openArchive(ps.storage, name)
-			if aErr != nil {
-				return aErr
-			}
-
-			ps.mtx.Lock()
-			a.number = uint16(len(ps.archives))
-			ps.archives = append(ps.archives, a)
-			ps.index = append(ps.index, a.readIndex...)
-			ps.markIdle(&ps.archives[a.number])
-			ps.mtx.Unlock()
-
-			return nil
+			return ps.openArchive(name)
 		})
 	}
 
@@ -326,65 +421,8 @@ func (ps *PackStorage) Open() error {
 		return err
 	}
 
-	ps.mtx.Lock()
 	sort.Sort(ps.index)
-	ps.mtx.Unlock()
 	return nil
-}
-
-func (ps *PackStorage) markIdle(a *archive) {
-	go func() {
-		ps.idle <- a
-	}()
-}
-
-func (ps *PackStorage) addArchive() error {
-	a, err := newArchive(ps.storage)
-	if err != nil {
-		return err
-	}
-
-	ps.mtx.Lock()
-
-	a.number = uint16(len(ps.archives))
-	ps.archives = append(ps.archives, a)
-	ps.markIdle(&ps.archives[a.number])
-
-	ps.mtx.Unlock()
-
-	return nil
-}
-
-func (ps *PackStorage) getWritableArchive() (*archive, error) {
-	for {
-		select {
-		// try to grab an idle open archive
-		case a := <-ps.idle:
-			// close this archive if it's full and retry
-			if a.size >= ps.storage.MaxSize() {
-				log.Printf("Closing archive because it's full: %s", a.name)
-				err := a.CloseWriter()
-				if err != nil {
-					return nil, err
-				}
-
-				ps.mtx.Lock()
-				ps.index = append(ps.index, a.readIndex...)
-				a.readIndex = nil
-				ps.mtx.Unlock()
-
-				ps.archiveSemaphore.Release(1)
-
-				continue
-			}
-
-			return a, nil
-		case <-time.After(10 * time.Millisecond):
-			if ps.archiveSemaphore.TryAcquire(1) {
-				ps.addArchive()
-			}
-		}
-	}
 }
 
 //go:generate mockery -name File -inpkg -testonly -outpkg pack
@@ -395,14 +433,6 @@ type File interface {
 	io.Closer
 
 	Stat() (os.FileInfo, error)
-}
-
-type CloseBeforeRead interface {
-	CloseBeforeRead()
-}
-
-type NeedCompaction interface {
-	NeedCompaction()
 }
 
 //go:generate mockery -name ArchiveStorage -inpkg -testonly -outpkg pack

@@ -1,12 +1,14 @@
 package pack
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 )
@@ -55,74 +57,79 @@ func makeTestData(t *testing.T, num int) []*proto.Object {
 	return objects
 }
 
-// func TestPack(t *testing.T) {
-// 	base := getTempDir(t)
-// 	storage := NewLocalArchiveStorage(base)
-// 	store := NewPackStorage(storage)
-//
-// 	objects := makeTestData(t, n)
-// 	t.Logf("Storing %d objects", n)
-//
-// 	readObjects := func(t *testing.T) {
-// 		t.Helper()
-//
-// 		t.Logf("Reading back %d objects", n)
-// 		for _, i := range rand.Perm(n) {
-// 			original := objects[i]
-//
-// 			if !store.Has(original.Ref()) {
-// 				t.Fatal("Archive doesn't have object")
-// 			}
-//
-// 			object, err := store.Get(original.Ref())
-// 			if err != nil {
-// 				t.Fatal(err)
-// 			}
-//
-// 			if object == nil {
-// 				t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
-// 			}
-//
-// 			if !bytes.Equal(object.Bytes(), original.Bytes()) {
-// 				t.Logf("Original %x", original.Bytes())
-// 				t.Logf("Stored %x", object.Bytes())
-// 				t.Fatalf("Object read back incorrectly")
-// 			}
-// 		}
-// 	}
-//
-// 	for _, object := range objects {
-// 		err := store.Put(object)
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 	}
-//
-// 	readObjects(t)
-//
-// 	t.Log("Closing pack store")
-// 	err := store.Close()
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	t.Log("Reopening pack store")
-// 	store = NewPackStorage(storage)
-//
-// 	err = store.Open()
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	readObjects(t)
-//
-// 	t.Log("Closing pack store")
-// 	err = store.Close()
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
-//
+func TestPack(t *testing.T) {
+	base := getTempDir(t)
+	storage := NewLocalArchiveStorage(base)
+	options := []PackOption{
+		WithArchiveStorage(storage),
+		WithCompaction(false),
+		WithMaxSize(1024 * 1024 * 5),
+	}
+	store, err := NewPackStorage(options...)
+	require.Nil(t, err)
+
+	objects := makeTestData(t, n)
+	t.Logf("Storing %d objects", n)
+
+	readObjects := func(t *testing.T) {
+		t.Helper()
+
+		t.Logf("Reading back %d objects", n)
+		for _, i := range rand.Perm(n) {
+			original := objects[i]
+
+			if !store.Has(original.Ref()) {
+				t.Fatal("Archive doesn't have object")
+			}
+
+			object, err := store.Get(original.Ref())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if object == nil {
+				t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
+			}
+
+			if !bytes.Equal(object.Bytes(), original.Bytes()) {
+				t.Logf("Original %x", original.Bytes())
+				t.Logf("Stored %x", object.Bytes())
+				t.Fatalf("Object read back incorrectly")
+			}
+		}
+	}
+
+	for _, object := range objects {
+		err := store.Put(object)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	readObjects(t)
+
+	t.Log("Closing pack store")
+	err = store.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Reopening pack store")
+	store, err = NewPackStorage(options...)
+	require.Nil(t, err)
+
+	err = store.Open()
+	require.Nil(t, err)
+
+	readObjects(t)
+
+	t.Log("Closing pack store")
+	err = store.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func printIndex(t *testing.T, idx index) {
 	for _, rec := range idx {
 		t.Logf("hash: %x offset: %d", rec.Sum[:], rec.Offset)
@@ -203,7 +210,11 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 }
 
 func BenchmarkArchiveStorage(b *testing.B) {
-	benchmarkStorage(b, NewPackStorage(NewLocalArchiveStorage(getTempDir(b))))
+	storage, err := NewPackStorage(WithArchiveStorage(NewLocalArchiveStorage(getTempDir(b))))
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkStorage(b, storage)
 }
 
 func testIndex(t interface{}) {

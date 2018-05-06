@@ -44,36 +44,32 @@ type writerTo interface {
 }
 
 type archive struct {
-	writeFile       writeFile
-	readFile        readFile
-	writer          *bufio.Writer
-	reader          *bufio.Reader
-	readOnly        bool
-	closeBeforeRead bool
-	size            uint64
-	writeIndex      map[string]*indexRecord
-	readIndex       index
-	mtx             *sync.RWMutex
-	last            *proto.Ref
-	storage         ArchiveStorage
-	name            string
-	number          uint16
+	writeFile  writeFile
+	readFile   readFile
+	writer     *bufio.Writer
+	reader     *bufio.Reader
+	readOnly   bool
+	size       uint64
+	writeIndex map[string]*indexRecord
+	readIndex  index
+	mtx        *sync.RWMutex
+	last       *proto.Ref
+	storage    ArchiveStorage
+	name       string
+	number     uint16
 }
 
 func newArchive(storage ArchiveStorage) (archive, error) {
-	_, closeBeforeRead := storage.(CloseBeforeRead)
-
 	id, err := uuid.NewV4()
 	if err != nil {
 		return archive{}, err
 	}
 
 	a := archive{
-		storage:         storage,
-		name:            id.String(),
-		readOnly:        false,
-		closeBeforeRead: closeBeforeRead,
-		mtx:             &sync.RWMutex{},
+		storage:  storage,
+		name:     id.String(),
+		readOnly: false,
+		mtx:      &sync.RWMutex{},
 	}
 
 	return a, a.open()
