@@ -322,7 +322,7 @@ func (ps *PackStorage) doCompaction() error {
 
 	ps.mtx.RLock()
 	for i := range ps.archives {
-		if ps.archives[i].size < ps.storage.MaxSize() && ps.archives[i].readOnly {
+		if ps.archives[i].size < ps.maxSize && ps.archives[i].readOnly {
 			// this may be a candidate for compaction
 			candidates = append(candidates, &ps.archives[i])
 			total += ps.archives[i].size
@@ -331,7 +331,7 @@ func (ps *PackStorage) doCompaction() error {
 	ps.mtx.RUnlock()
 
 	// use some heuristic to decide whether we should do a compaction
-	if len(candidates) > 10 && total > ps.storage.MaxSize()/4 {
+	if len(candidates) > 10 && total > ps.maxSize/4 {
 		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
 		for _, archive := range candidates {
@@ -447,6 +447,4 @@ type ArchiveStorage interface {
 	Open(name string) (File, error)
 	List() ([]string, error)
 	Delete(name string) error
-	MaxSize() uint64
-	MaxParallel() uint64
 }

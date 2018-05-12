@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/ncw/swift"
 	"github.com/pkg/errors"
@@ -87,7 +88,7 @@ func (s *swiftFile) Stat() (os.FileInfo, error) {
 	return &swiftFileInfo{info}, err
 }
 
-var _ File = (*swiftFile)(nil)
+var _ pack.File = (*swiftFile)(nil)
 
 type swiftFileInfo struct {
 	swift.Object
@@ -125,7 +126,7 @@ type swiftStorage struct {
 	openFiles map[string]*swiftFile
 }
 
-func (s *swiftStorage) openSwiftFile(key string) (File, error) {
+func (s *swiftStorage) openSwiftFile(key string) (pack.File, error) {
 	// if this is a file we are currently uploading
 	// return the active instance instead
 	if file, ok := s.openFiles[key]; ok {
@@ -146,7 +147,7 @@ func (s *swiftStorage) openSwiftFile(key string) (File, error) {
 	}, nil
 }
 
-func (s *swiftStorage) newSwiftFile(key string) (File, error) {
+func (s *swiftStorage) newSwiftFile(key string) (pack.File, error) {
 	fileWriter, err := ioutil.TempFile("", "goback-s3")
 	if err != nil {
 		return nil, err
@@ -181,11 +182,11 @@ func (s *swiftStorage) key(name string) string {
 	return fmt.Sprintf(objectKey, path.Ext(name), name)
 }
 
-func (s *swiftStorage) Open(name string) (File, error) {
+func (s *swiftStorage) Open(name string) (pack.File, error) {
 	return s.openSwiftFile(s.key(name))
 }
 
-func (s *swiftStorage) Create(name string) (File, error) {
+func (s *swiftStorage) Create(name string) (pack.File, error) {
 	return s.newSwiftFile(s.key(name))
 }
 
@@ -195,7 +196,7 @@ func (s *swiftStorage) Delete(name string) error {
 
 func (s *swiftStorage) List() ([]string, error) {
 	names, err := s.con.ObjectNamesAll(s.container, &swift.ObjectsOpts{
-		Prefix: fmt.Sprintf(objectKey, ArchiveSuffix, ""),
+		Prefix: fmt.Sprintf(objectKey, pack.ArchiveSuffix, ""),
 	})
 
 	if err != nil {
@@ -210,17 +211,9 @@ func (s *swiftStorage) List() ([]string, error) {
 	return names, nil
 }
 
-func (s *swiftStorage) MaxSize() uint64 {
-	return 128 * 1024 * 1024
-}
+var _ pack.ArchiveStorage = (*swiftStorage)(nil)
 
-func (s *swiftStorage) MaxParallel() uint64 {
-	return 4
-}
-
-var _ ArchiveStorage = (*swiftStorage)(nil)
-
-func NewSwiftObjectStore(username, apiKey, authURL, tenant, container string) backup.ObjectStore {
+func NewSwiftObjectStore(username, apiKey, authURL, tenant, container string) (backup.ObjectStore, error) {
 	// connection := &swift.Connection{
 	// 	UserName: "e2K4x5cQ85Fu",
 	// 	ApiKey:   "FDm9tDJsZa97Qez9rkTaeUBQkDdTS8w6",
@@ -247,5 +240,10 @@ func NewSwiftObjectStore(username, apiKey, authURL, tenant, container string) ba
 		openFiles: make(map[string]*swiftFile),
 	}
 
-	return NewPackStorage(storage)
+	return pack.NewPackStorage(
+		pack.WithArchiveStorage(storage),
+		pack.WithCloseBeforeRead(true),
+		pack.WithMaxSize(128*1024*1024),
+		pack.WithMaxParallel(4),
+	)
 }

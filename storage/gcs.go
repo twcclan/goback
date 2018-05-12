@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/storage/pack"
 
 	"cloud.google.com/go/storage"
 	"github.com/Sirupsen/logrus"
@@ -153,7 +154,7 @@ func (s *gcsFile) Stat() (os.FileInfo, error) {
 	return &gcsFileInfo{attrs: s.gcsReader.attrs}, nil
 }
 
-var _ File = (*gcsFile)(nil)
+var _ pack.File = (*gcsFile)(nil)
 
 type gcsStore struct {
 	bucket string
@@ -165,7 +166,7 @@ type gcsStore struct {
 
 func (s *gcsStore) CloseBeforeRead() {}
 
-func (s *gcsStore) openGCSFile(key string) (File, error) {
+func (s *gcsStore) openGCSFile(key string) (pack.File, error) {
 	gcsLogger.WithField("key", key).Debug("Opening file")
 	// if this is a file we are currently uploading
 	// return the active instance instead
@@ -193,7 +194,7 @@ func (s *gcsStore) openGCSFile(key string) (File, error) {
 	}, nil
 }
 
-func (s *gcsStore) newGCSFile(key string) (File, error) {
+func (s *gcsStore) newGCSFile(key string) (pack.File, error) {
 	writer := s.gcs.Bucket(s.bucket).Object(key).NewWriter(context.Background())
 
 	file := &gcsFile{
@@ -214,19 +215,11 @@ func (s *gcsStore) key(name string) string {
 	return fmt.Sprintf(gcsObjectKey, path.Ext(name), name)
 }
 
-func (s *gcsStore) MaxSize() uint64 {
-	return 1024 * 1024 * 64
-}
-
-func (s *gcsStore) MaxParallel() uint64 {
-	return 64
-}
-
-func (s *gcsStore) Open(name string) (File, error) {
+func (s *gcsStore) Open(name string) (pack.File, error) {
 	return s.openGCSFile(s.key(name))
 }
 
-func (s *gcsStore) Create(name string) (File, error) {
+func (s *gcsStore) Create(name string) (pack.File, error) {
 	return s.newGCSFile(s.key(name))
 }
 
@@ -236,7 +229,7 @@ func (s *gcsStore) Delete(name string) error {
 
 func (s *gcsStore) List() ([]string, error) {
 	iter := s.gcs.Bucket(s.bucket).Objects(context.Background(), &storage.Query{
-		Prefix:    fmt.Sprintf(gcsObjectKey, ArchiveSuffix, ""),
+		Prefix:    fmt.Sprintf(gcsObjectKey, pack.ArchiveSuffix, ""),
 		Delimiter: "/",
 	})
 
@@ -289,7 +282,7 @@ func (s *gcsFileInfo) IsDir() bool {
 
 var _ os.FileInfo = (*gcsFileInfo)(nil)
 
-var _ ArchiveStorage = (*gcsStore)(nil)
+var _ pack.ArchiveStorage = (*gcsStore)(nil)
 
 func NewGCSObjectStore(serviceAccountFile string, bucket string) (backup.ObjectStore, error) {
 	client, err := storage.NewClient(context.Background(), option.WithServiceAccountFile(serviceAccountFile))
@@ -303,5 +296,10 @@ func NewGCSObjectStore(serviceAccountFile string, bucket string) (backup.ObjectS
 		openFiles: make(map[string]*gcsFile),
 	}
 
-	return NewPackStorage(storage), nil
+	return pack.NewPackStorage(
+		pack.WithArchiveStorage(storage),
+		pack.WithMaxParallel(64),
+		pack.WithCloseBeforeRead(true),
+		pack.WithMaxSize(64*1024*1024),
+	)
 }

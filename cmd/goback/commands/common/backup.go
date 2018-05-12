@@ -8,6 +8,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/codegangsta/cli"
 )
@@ -43,8 +44,15 @@ func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 
 func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	loc, err := makeLocation(u.Path)
+	if err != nil {
+		return nil, err
+	}
 
-	return storage.NewPackStorage(storage.NewLocalArchiveStorage(loc)), err
+	return pack.NewPackStorage(
+		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(loc)),
+		pack.WithMaxParallel(1),
+		pack.WithMaxSize(1024*1024*1024),
+	)
 }
 
 func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -54,7 +62,7 @@ func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		"https://auth.cloud.ovh.net/v2.0",
 		"1675837378358194",
 		"goback-test",
-	), nil
+	)
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {

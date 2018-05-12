@@ -102,10 +102,6 @@ func (s *StorageSuit) TestSimple(c *C) {
 	s.testDriver(c, storage.NewSimpleObjectStore(c.MkDir()))
 }
 
-func (s *StorageSuit) TestPack(c *C) {
-	s.testDriver(c, storage.NewPackStorage(storage.NewLocalArchiveStorage(c.MkDir())))
-}
-
 func (s *StorageSuit) TestMemory(c *C) {
 	s.testDriver(c, storage.NewMemoryStore())
 }
