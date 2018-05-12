@@ -67,6 +67,8 @@ type PackStorage struct {
 	archives       []archive
 	activeArchives map[string]archive
 	index          index
+
+	compactorMtx sync.Mutex
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
@@ -82,30 +84,19 @@ func (ps *PackStorage) Put(object *proto.Object) error {
 }
 
 func (ps *PackStorage) put(object *proto.Object) error {
-	a, err := ps.getWritableArchive()
-	if err != nil {
-		return errors.Wrap(err, "Couldn't get archive for writing")
-	}
-
-	defer ps.putWritableArchive(a)
-
-	return a.Put(object)
+	return ps.withWritableArchive(func(a *archive) error {
+		return a.Put(object)
+	})
 }
 
 func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
-	a, err := ps.getWritableArchive()
-	if err != nil {
-		return errors.Wrap(err, "Couldn't get archive for writing")
-	}
-
-	defer ps.putWritableArchive(a)
-
-	return a.putRaw(hdr, bytes)
+	return ps.withWritableArchive(func(a *archive) error {
+		return a.putRaw(hdr, bytes)
+	})
 }
 
 // indexLocation returns the indexRecord for the provided ref or nil if it's
 // not in this store.
-// You need to hold a read lock before calling this
 func (ps *PackStorage) indexLocation(ref *proto.Ref) *indexRecord {
 	loc := ps.index.lookup(ref)
 	if loc != nil {
@@ -147,7 +138,7 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 		ps.mtx.RUnlock()
 
 		if ps.closeBeforeRead {
-			err := ps.closeArchive(a)
+			err := ps.finalizeArchive(a)
 			if err != nil {
 				return nil, err
 			}
@@ -220,7 +211,14 @@ func (ps *PackStorage) hasExcept(ref *proto.Ref, exclude map[string]bool) bool {
 	return false
 }
 
-func (ps *PackStorage) closeArchive(a *archive) error {
+func (ps *PackStorage) unloadArchive(a *archive) error {
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
+
+	return nil
+}
+
+func (ps *PackStorage) finalizeArchive(a *archive) error {
 	err := a.CloseWriter()
 	if err != nil {
 		return err
@@ -265,35 +263,43 @@ func (ps *PackStorage) openArchive(name string) error {
 
 	a.number = uint16(len(ps.archives))
 	ps.archives = append(ps.archives, a)
-	ps.index = append(ps.index, a.readIndex...)
+	for i := range a.readIndex {
+		ps.index = append(ps.index, a.readIndex[i])
+		ps.index[len(ps.index)-1].Pack = a.number
+	}
 
 	ps.mtx.Unlock()
 
 	return nil
 }
 
-func (ps *PackStorage) getWritableArchive() (*archive, error) {
+func (ps *PackStorage) withWritableArchive(writer func(*archive) error) error {
 	for {
 		select {
 		// try to grab an idle open archive
 		case a := <-ps.writable:
+			// lock this archive for writing
+			// a.mtx.Lock()
+
 			// close this archive if it's full and retry
 			if a.size >= ps.maxSize {
 				log.Printf("Closing archive because it's full: %s", a.name)
-				err := ps.closeArchive(a)
+				err := ps.finalizeArchive(a)
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				continue
 			}
 
-			return a, nil
+			defer ps.putWritableArchive(a)
+
+			return writer(a)
 		case <-time.After(10 * time.Millisecond):
 			if ps.archiveSemaphore.TryAcquire(1) {
 				err := ps.newArchive()
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 		}
@@ -304,59 +310,46 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 	ps.writable <- ar
 }
 
-func (ps *PackStorage) Close() error {
+func (ps *PackStorage) doCompaction() error {
+	ps.compactorMtx.Lock()
+	defer ps.compactorMtx.Unlock()
+
 	var (
-		current    []*archive
 		candidates []*archive
 		obsolete   []*archive
 		total      uint64
 	)
 
-	ps.mtx.Lock()
+	ps.mtx.RLock()
 	for i := range ps.archives {
-		current = append(current, &ps.archives[i])
-	}
-	ps.mtx.Unlock()
-
-	if ps.compaction {
-		// check if we could do a compaction here
-		for _, archive := range current {
-			if archive.size < ps.storage.MaxSize() && archive.readOnly {
-				// this may be a candidate for compaction
-				candidates = append(candidates, archive)
-				total += archive.size
-			}
+		if ps.archives[i].size < ps.storage.MaxSize() && ps.archives[i].readOnly {
+			// this may be a candidate for compaction
+			candidates = append(candidates, &ps.archives[i])
+			total += ps.archives[i].size
 		}
+	}
+	ps.mtx.RUnlock()
 
-		// use some heuristic to decide whether we should do a compaction
-		if len(candidates) > 10 && total > ps.storage.MaxSize()/4 {
-			log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
+	// use some heuristic to decide whether we should do a compaction
+	if len(candidates) > 10 && total > ps.storage.MaxSize()/4 {
+		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
-			exclusions := make(map[string]bool)
-			// build the list of archives to exclude when checking for duplicates.
-			// we do not want to consider archives that may potentially be removed
-			for _, archive := range candidates {
-				exclusions[archive.name] = true
+		for _, archive := range candidates {
+			err := archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+				// TODO: do some checks here like:
+				// * duplicates
+				// * deletions
+
+				return ps.putRaw(hdr, bytes)
+			})
+
+			if err != nil {
+				return err
 			}
 
-			for _, archive := range candidates {
-				err := archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
-					// if it still exists in another file, it means that it is a duplicate
-					if ps.hasExcept(hdr.Ref, exclusions) {
-						return nil
-					}
-
-					return ps.putRaw(hdr, bytes)
-				})
-
-				if err != nil {
-					return err
-				}
-
-				// we don't care about the error here, we're about to delete it anyways
-				archive.Close()
-				obsolete = append(obsolete, archive)
-			}
+			// we don't care about the error here, we're about to delete it anyways
+			archive.Close()
+			obsolete = append(obsolete, archive)
 		}
 	}
 
@@ -382,6 +375,24 @@ func (ps *PackStorage) Close() error {
 		err = ps.storage.Delete(archive.archiveName())
 		if err != nil {
 			log.Printf("Failed deleting archive %s after compaction", archive.name)
+		}
+	}
+
+	return nil
+}
+
+func (ps *PackStorage) Close() error {
+	// if ps.compaction {
+	// 	return ps.doCompaction()
+	// }
+
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
+
+	for i := range ps.archives {
+		err := ps.archives[i].Close()
+		if err != nil {
+			return err
 		}
 	}
 

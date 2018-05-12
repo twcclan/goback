@@ -256,8 +256,8 @@ func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 	hdr.Timestamp = ptypes.TimestampNow()
 	hdr.Predecessor = a.last
 
-	hdrBytesSize := uint64(proto.Size(hdr))
 	hdrBytes := proto.Bytes(hdr)
+	hdrBytesSize := uint64(len(hdrBytes))
 
 	// construct a buffer with our header preceeded by a varint describing its size
 	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
