@@ -137,7 +137,11 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 		a := &ps.archives[rec.Pack]
 		ps.mtx.RUnlock()
 
-		if ps.closeBeforeRead {
+		a.mtx.RLock()
+		needClose := !a.readOnly && ps.closeBeforeRead
+		a.mtx.RUnlock()
+
+		if needClose {
 			err := ps.finalizeArchive(a)
 			if err != nil {
 				return nil, err
