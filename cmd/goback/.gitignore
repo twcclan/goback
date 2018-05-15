@@ -1,2 +1,8 @@
-storage/*
-test/*
+storage
+index
+test
+test2
+restore
+service_account.json
+profile.cpu
+out.txt
