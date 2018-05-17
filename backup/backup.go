@@ -1,11 +1,9 @@
 package backup
 
 import (
-	"context"
 	"io"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -166,82 +164,4 @@ func (br *BackupReader) WalkTree(ref *proto.Ref, walkFn WalkFn) error {
 	}
 
 	return br.walk("", obj.GetTree(), walkFn)
-}
-
-type concurrentTreeNode struct {
-	prefix string
-	object *proto.Object
-}
-
-type concurrentTreeTraverser struct {
-	store      ObjectStore
-	queue      chan *concurrentTreeNode
-	traverseFn func(string, *proto.TreeNode) error
-}
-
-func (c *concurrentTreeTraverser) traverseTree(t *concurrentTreeNode) error {
-	for _, node := range t.object.GetTree().GetNodes() {
-		info := node.Stat
-
-		if info.Tree {
-			// retrieve the sub-tree object
-			subTree, err := c.store.Get(node.Ref)
-
-			if err != nil {
-				return err
-			}
-
-			if subTree == nil {
-				return errors.Errorf("Sub tree %x could not be retrieved", node.Ref.Sha1)
-			}
-
-			subTreeNode := &concurrentTreeNode{
-				prefix: path.Join(t.prefix, info.Name),
-				object: subTree,
-			}
-
-			// try to hand to an idle worker
-			select {
-			case c.queue <- subTreeNode:
-
-			// if no other worker is idle, do the job ourselves
-			default:
-				err = c.traverseTree(t)
-				if err != nil {
-					return err
-				}
-			}
-		} else {
-			err := c.traverseFn(path.Join(t.prefix, info.Name), node)
-
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (c *concurrentTreeTraverser) traverser(ctx context.Context) func() error {
-	return func() error {
-		for {
-			done := ctx.Done()
-
-			select {
-			case n := <-c.queue:
-				if n == nil {
-					return nil
-				}
-
-				err := c.traverseTree(n)
-				if err != nil {
-					return err
-				}
-
-			case <-done:
-				return ctx.Err()
-			}
-		}
-	}
 }

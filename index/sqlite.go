@@ -1,6 +1,7 @@
 package index
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"path"
@@ -11,7 +12,6 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
-	"github.com/pkg/errors"
 	"go4.org/syncutil/singleflight"
 
 	// load sqlite3 driver
@@ -121,39 +121,6 @@ func (s *SqliteIndex) ReIndex() error {
 	})
 }
 
-func (s *SqliteIndex) traverseTree(stmt *sql.Stmt, p string, tree *proto.Object) error {
-	for _, node := range tree.GetTree().GetNodes() {
-		info := node.Stat
-
-		if info.Tree {
-			// retrieve the sub-tree object
-			subTree, err := s.ObjectStore.Get(node.Ref)
-
-			if err != nil {
-				return err
-			}
-
-			if subTree == nil {
-				return errors.Errorf("Sub tree %x could not be retrieved", node.Ref.Sha1)
-			}
-
-			err = s.traverseTree(stmt, path.Join(p, info.Name), subTree)
-			if err != nil {
-				return err
-			}
-		} else {
-			// store the relative path to this file in the index
-			_, err := stmt.Exec(path.Join(p, info.Name), info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
-
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
 func (s *SqliteIndex) index(commit *proto.Commit) error {
 	log.Printf("Indexing commit: %v", time.Unix(commit.Timestamp, 0))
 
@@ -181,7 +148,17 @@ func (s *SqliteIndex) index(commit *proto.Commit) error {
 		return nil
 	}
 
-	err = s.traverseTree(stmt, "", treeObj)
+	err = backup.TraverseTree(context.Background(), s.ObjectStore, treeObj, 64, func(filepath string, node *proto.TreeNode) error {
+		info := node.Stat
+		if info.Tree {
+			return nil
+		}
+
+		// store the relative path to this file in the index
+		_, sqlErr := stmt.Exec(filepath, info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
+
+		return sqlErr
+	})
 	if err != nil {
 		log.Printf("Failed building tree for commit, skipping: %v", err)
 
