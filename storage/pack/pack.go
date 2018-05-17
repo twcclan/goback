@@ -84,9 +84,22 @@ func (ps *PackStorage) Put(object *proto.Object) error {
 }
 
 func (ps *PackStorage) put(object *proto.Object) error {
-	return ps.withWritableArchive(func(a *archive) error {
+	err := ps.withWritableArchive(func(a *archive) error {
 		return a.Put(object)
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// if this was a commit and we require closing before we read
+	// run a flush operation, because we expect to need to read
+	// a lot of objects to build the index
+	if ps.closeBeforeRead && object.Type() == proto.ObjectType_COMMIT {
+		return ps.Flush()
+	}
+
+	return nil
 }
 
 func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
@@ -142,6 +155,7 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 		a.mtx.RUnlock()
 
 		if needClose {
+			log.Printf("Need to close archvie %s before reading object %x", a.name, ref.Sha1)
 			err := ps.finalizeArchive(a)
 			if err != nil {
 				return nil, err
@@ -223,16 +237,20 @@ func (ps *PackStorage) unloadArchive(a *archive) error {
 }
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
+	start := time.Now()
 	err := a.CloseWriter()
 	if err != nil {
 		return err
 	}
+	log.Printf("Needed %v to close writer for archive %s", time.Since(start), a.name)
 
 	ps.mtx.Lock()
 
+	start = time.Now()
 	ps.index = append(ps.index, a.readIndex...)
 	sort.Sort(ps.index)
 	a.readIndex = nil
+	log.Printf("Needed %v to update read index for archive %s", time.Since(start), a.name)
 
 	ps.mtx.Unlock()
 	ps.archiveSemaphore.Release(1)
@@ -381,6 +399,12 @@ func (ps *PackStorage) doCompaction() error {
 			log.Printf("Failed deleting archive %s after compaction", archive.name)
 		}
 	}
+
+	return nil
+}
+
+func (ps *PackStorage) Flush() error {
+	// TODO: implement
 
 	return nil
 }
