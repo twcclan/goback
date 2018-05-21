@@ -13,8 +13,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
 )
 
 type readFile interface {
@@ -60,7 +60,7 @@ type archive struct {
 }
 
 func newArchive(storage ArchiveStorage) (archive, error) {
-	id, err := uuid.NewV4()
+	id, err := uuid.NewRandom()
 	if err != nil {
 		return archive{}, err
 	}
@@ -189,7 +189,7 @@ func (a *archive) getRaw(ref *proto.Ref, loc *indexRecord) (*proto.Object, error
 		// need to get an exclusive lock if we can't use ReadAt
 		a.mtx.Lock()
 
-		_, err := a.readFile.Seek(int64(loc.Offset), os.SEEK_SET)
+		_, err := a.readFile.Seek(int64(loc.Offset), io.SeekStart)
 		if err != nil {
 			a.mtx.Unlock()
 			return nil, errors.Wrap(err, "Failed seeking in file")
@@ -438,9 +438,6 @@ func (a *archive) CloseReader() error {
 }
 
 func (a *archive) CloseWriter() error {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
 	if a.readOnly {
 		return nil
 	}

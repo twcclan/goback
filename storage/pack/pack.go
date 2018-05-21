@@ -96,6 +96,7 @@ func (ps *PackStorage) put(object *proto.Object) error {
 	// run a flush operation, because we expect to need to read
 	// a lot of objects to build the index
 	if ps.closeBeforeRead && object.Type() == proto.ObjectType_COMMIT {
+		log.Printf("Flushing after commit")
 		return ps.Flush()
 	}
 
@@ -155,8 +156,9 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 		a.mtx.RUnlock()
 
 		if needClose {
-			log.Printf("Need to close archvie %s before reading object %x", a.name, ref.Sha1)
+			log.Printf("Need to close archive %s before reading object %x", a.name, ref.Sha1)
 			err := ps.finalizeArchive(a)
+
 			if err != nil {
 				return nil, err
 			}
@@ -229,14 +231,20 @@ func (ps *PackStorage) hasExcept(ref *proto.Ref, exclude map[string]bool) bool {
 	return false
 }
 
+// unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore).
+// needs an exclusive lock
 func (ps *PackStorage) unloadArchive(a *archive) error {
-	ps.mtx.Lock()
-	defer ps.mtx.Unlock()
-
 	return nil
 }
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	if a.readOnly {
+		return nil
+	}
+
 	start := time.Now()
 	err := a.CloseWriter()
 	if err != nil {
@@ -375,17 +383,10 @@ func (ps *PackStorage) doCompaction() error {
 		}
 	}
 
-	ps.mtx.Lock()
-	for i := range ps.archives {
-		if !ps.archives[i].readOnly {
-			err := ps.archives[i].CloseWriter()
-			if err != nil {
-				ps.mtx.Unlock()
-				return errors.Wrap(err, "Failed closing archive")
-			}
-		}
+	err := ps.Flush()
+	if err != nil {
+		return err
 	}
-	ps.mtx.Unlock()
 
 	// after having safely closed the active file(s) we can delete the left-overs
 	for _, archive := range obsolete {
@@ -403,10 +404,36 @@ func (ps *PackStorage) doCompaction() error {
 	return nil
 }
 
-func (ps *PackStorage) Flush() error {
-	// TODO: implement
+func (ps *PackStorage) withExclusiveLock(do func()) {
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
 
-	return nil
+	do()
+}
+
+func (ps *PackStorage) withReadLock(do func()) {
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
+	do()
+}
+
+// Flush will concurrently finalize all currently open archives
+func (ps *PackStorage) Flush() error {
+	grp, _ := errgroup.WithContext(context.Background())
+
+	ps.withReadLock(func() {
+
+		for i := range ps.archives {
+			ar := &ps.archives[i]
+
+			grp.Go(func() error {
+				return ps.finalizeArchive(ar)
+			})
+		}
+	})
+
+	return grp.Wait()
 }
 
 func (ps *PackStorage) Close() error {
