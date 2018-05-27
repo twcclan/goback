@@ -94,10 +94,9 @@ func (ps *PackStorage) put(object *proto.Object) error {
 		return err
 	}
 
-	// if this was a commit and we require closing before we read
-	// run a flush operation, because we expect to need to read
-	// a lot of objects to build the index
-	if ps.closeBeforeRead && object.Type() == proto.ObjectType_COMMIT {
+	// if this was a commit run a flush operation, to make sure all the date is safely stored
+	// and also because we expect to be reading a lot of objects for indexing purposes
+	if object.Type() == proto.ObjectType_COMMIT {
 		log.Printf("Flushing after commit")
 		return ps.Flush()
 	}
