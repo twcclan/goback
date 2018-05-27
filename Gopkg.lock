@@ -137,6 +137,21 @@
   version = "v1.2.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/lib/pq"
+  packages = [
+    ".",
+    "oid"
+  ]
+  revision = "d34b9ff171c21ad295489235aec8b6626023cd04"
+
+[[projects]]
+  name = "github.com/mattn/go-runewidth"
+  packages = ["."]
+  revision = "9e777a8366cce605130a531d2cd6363d07ad7317"
+  version = "v0.0.2"
+
+[[projects]]
   name = "github.com/mattn/go-sqlite3"
   packages = ["."]
   revision = "6c771bb9887719704b210e87e934f08be014bdb1"
@@ -382,9 +397,15 @@
   packages = ["."]
   revision = "20d25e2804050c1cd24a7eea1e7a6447dd0e74ec"
 
+[[projects]]
+  name = "gopkg.in/cheggaaa/pb.v1"
+  packages = ["."]
+  revision = "2af8bbdea9e99e83b3ac400d8f6b6d1b8cbbf338"
+  version = "v1.0.25"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2c52dd47b012562f1bacbf31b7acfbf4f88a75e0a30c75bee130e4f8e145b874"
+  inputs-digest = "945d083f59051d7a38b88d4a9650af01744f8bcb586c70127cf627d53869670a"
   solver-name = "gps-cdcl"
   solver-version = 1
