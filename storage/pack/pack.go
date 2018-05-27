@@ -1,5 +1,7 @@
 package pack
 
+// TODO: locking is a big mess right now, find a better way of handling concurrency
+
 import (
 	"context"
 	"io"
