@@ -310,10 +310,18 @@ func (ps *PackStorage) withWritableArchive(writer func(*archive) error) error {
 		// try to grab an idle open archive
 		case a := <-ps.writable:
 			// lock this archive for writing
-			// a.mtx.Lock()
+			a.mtx.RLock()
+			readOnly := a.readOnly
+			size := a.size
+			a.mtx.RUnlock()
+
+			// skip archives that have already been finalized
+			if readOnly {
+				continue
+			}
 
 			// close this archive if it's full and retry
-			if a.size >= ps.maxSize {
+			if size >= ps.maxSize {
 				log.Printf("Closing archive because it's full: %s", a.name)
 				err := ps.finalizeArchive(a)
 				if err != nil {

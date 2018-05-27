@@ -5,8 +5,9 @@ package proto;
 import "object.proto";
 import "ref.proto";
 
+//Put(*proto.Object) error
 message PutRequest {
-
+    Object object = 1;
 }
 
 message PutResponse {
@@ -14,14 +15,16 @@ message PutResponse {
 }
 
 
+//Get(*proto.Ref) (*proto.Object, error)
 message GetRequest {
-
+    Ref ref = 1;
 }
 
 message GetResponse {
     Object object = 1;
 }
 
+//Delete(*proto.Ref) error
 message DeleteRequest {
 
 }
@@ -30,17 +33,22 @@ message DeleteResponse {
 
 }
 
-message ListResponse {
-
+//Walk(bool, proto.ObjectType, ObjectReceiver) error
+message WalkRequest {
+    bool load = 1;
+    ObjectType objectType = 2;
 }
 
-message ListRequest {
-
+message WalkResponse {
+    ObjectHeader header = 1;
+    Object object = 2;
 }
+
+
 
 service Store {
     rpc Put (PutRequest) returns (PutResponse) {}
     rpc Get (GetRequest) returns (GetResponse) {}
     rpc Delete (DeleteRequest) returns (DeleteResponse) {}
-    rpc List(ListRequest) returns (stream ListResponse) {}
+    rpc Walk(WalkRequest) returns (stream WalkResponse) {}
 }

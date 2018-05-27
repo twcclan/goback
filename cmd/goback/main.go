@@ -1,23 +1,23 @@
 package main
 
 import (
+	_ "expvar"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"runtime/trace"
 	"time"
 
-	"github.com/codegangsta/cli"
-	_ "github.com/joho/godotenv/autoload"
-
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
 	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
+	"github.com/twcclan/goback/cmd/goback/commands/server"
 
-	_ "expvar"
-	_ "net/http/pprof"
+	"github.com/codegangsta/cli"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func webserver() {
@@ -52,6 +52,7 @@ func main() {
 		file.Command,
 		fix.Command,
 		object.Command,
+		server.Command,
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{

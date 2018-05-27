@@ -10,6 +10,8 @@ import (
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
+	"net"
+
 	"github.com/codegangsta/cli"
 )
 
@@ -69,12 +71,24 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewGCSObjectStore("service_account.json", u.Host)
 }
 
+func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	port := u.Port()
+	if port == "" {
+		port = "6060"
+	}
+
+	addr := net.JoinHostPort(u.Host, port)
+
+	return storage.NewRemoteClient(addr)
+}
+
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":      initPack,
-	"file":  initSimple,
-	"swift": initSwift,
-	"gcs":   initGCS,
-	"s3":    initS3,
+	"":       initPack,
+	"file":   initSimple,
+	"swift":  initSwift,
+	"gcs":    initGCS,
+	"s3":     initS3,
+	"goback": initRemote,
 }
 
 func getIndexLocation(c *cli.Context) (string, error) {
