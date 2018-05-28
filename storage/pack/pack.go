@@ -76,12 +76,6 @@ type PackStorage struct {
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Put(object *proto.Object) error {
-	// don't store objects we already know about
-	// TODO: add bloom filter
-	if ps.Has(object.Ref()) {
-		return nil
-	}
-
 	return ps.put(object)
 }
 
