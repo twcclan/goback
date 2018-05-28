@@ -355,11 +355,13 @@ func (ps *PackStorage) doCompaction() error {
 
 	ps.mtx.RLock()
 	for i := range ps.archives {
+		ps.archives[i].mtx.RLock()
 		if ps.archives[i].size < ps.maxSize && ps.archives[i].readOnly {
 			// this may be a candidate for compaction
 			candidates = append(candidates, &ps.archives[i])
 			total += ps.archives[i].size
 		}
+		ps.archives[i].mtx.RUnlock()
 	}
 	ps.mtx.RUnlock()
 
