@@ -88,7 +88,7 @@ func (ps *PackStorage) put(object *proto.Object) error {
 		return err
 	}
 
-	// if this was a commit run a flush operation, to make sure all the date is safely stored
+	// if this was a commit run a flush operation, to make sure all the data is safely stored
 	// and also because we expect to be reading a lot of objects for indexing purposes
 	if object.Type() == proto.ObjectType_COMMIT {
 		log.Printf("Flushing after commit")
