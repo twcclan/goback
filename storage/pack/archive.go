@@ -49,8 +49,6 @@ type writerTo interface {
 type archive struct {
 	writeFile  writeFile
 	readFile   readFile
-	writer     *bufio.Writer
-	reader     *bufio.Reader
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*indexRecord
@@ -129,7 +127,6 @@ func (a *archive) open() (err error) {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
 
-		//a.writer = bufio.NewWriterSize(a.writeFile, 1024*1024)
 		a.writeIndex = make(map[string]*indexRecord)
 	}
 
@@ -138,7 +135,6 @@ func (a *archive) open() (err error) {
 		return errors.Wrap(err, "Failed opening archive for reading")
 	}
 	a.readFile = readFile
-	a.reader = bufio.NewReader(a.readFile)
 
 	if a.readOnly {
 		defer a.rebuildBloomFilter()
