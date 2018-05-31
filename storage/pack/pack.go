@@ -15,6 +15,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
+	"github.com/willf/bloom"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -25,6 +26,8 @@ const (
 	ArchivePattern     = "*" + ArchiveSuffix
 	IndexExt           = ".idx"
 	varIntMaxSize      = 10
+	bloomFilterM       = 150000
+	bloomFilterK       = 7
 )
 
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
@@ -105,8 +108,10 @@ func (ps *PackStorage) indexLocation(ref *proto.Ref) (*archive, *indexRecord) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
+	locations := bloom.Locations(ref.Sha1, bloomFilterK)
+
 	for _, archive := range ps.archives {
-		if rec := archive.indexLocation(ref); rec != nil {
+		if rec := archive.indexLocation(ref, locations); rec != nil {
 			return archive, rec
 		}
 	}
@@ -120,8 +125,10 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
+	locations := bloom.Locations(ref.Sha1, bloomFilterK)
+
 	for name, archive := range ps.archives {
-		if rec := archive.indexLocation(ref); rec != nil {
+		if rec := archive.indexLocation(ref, locations); rec != nil {
 			if exclude == nil || !exclude[name] {
 				return archive, rec
 			}
@@ -214,13 +221,12 @@ func (ps *PackStorage) unloadArchive(a *archive) error {
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
 	err := a.CloseWriter()
-	if err != nil {
-		return err
+	if err == errAlreadyClosed {
+		return nil
 	}
 
 	ps.archiveSemaphore.Release(1)
-
-	return nil
+	return err
 }
 
 func (ps *PackStorage) newArchive() error {
@@ -397,7 +403,6 @@ func (ps *PackStorage) Flush() error {
 	grp, _ := errgroup.WithContext(context.Background())
 
 	ps.withReadLock(func() {
-
 		for _, archive := range ps.archives {
 
 			grp.Go(func() error {

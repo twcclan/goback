@@ -182,6 +182,12 @@
   revision = "e2704e165165ec55d062f5919b4b29494e9fa790"
 
 [[projects]]
+  name = "github.com/spaolacci/murmur3"
+  packages = ["."]
+  revision = "9f5d223c60793748f04a9d5b4b4eacddfc1f755d"
+  version = "v1.1"
+
+[[projects]]
   name = "github.com/stretchr/objx"
   packages = ["."]
   revision = "facf9a85c22f48d2f52f2380e4efce1768749a89"
@@ -215,6 +221,18 @@
     "leveldb/util"
   ]
   revision = "e6d6b529196422703d54ff5c40e79809ec2020b3"
+
+[[projects]]
+  name = "github.com/willf/bitset"
+  packages = ["."]
+  revision = "d860f346b89450988a379d7d705e83c58d1ea227"
+  version = "v1.1.3"
+
+[[projects]]
+  name = "github.com/willf/bloom"
+  packages = ["."]
+  revision = "54e3b963ee1652b06c4562cb9b6020ebc6e36e59"
+  version = "v2.0.3"
 
 [[projects]]
   name = "go.opencensus.io"
@@ -406,6 +424,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "945d083f59051d7a38b88d4a9650af01744f8bcb586c70127cf627d53869670a"
+  inputs-digest = "601e467e0692ae449b61e74d6ac35e8158eedd747f489e47c5d3fbc383f9050c"
   solver-name = "gps-cdcl"
   solver-version = 1

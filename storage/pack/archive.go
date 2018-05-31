@@ -10,12 +10,15 @@ import (
 	"sync"
 
 	"github.com/twcclan/goback/proto"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/willf/bloom"
+	"golang.org/x/sync/errgroup"
 )
+
+var errAlreadyClosed = errors.New("Writer is already closed")
 
 type readFile interface {
 	io.ReadSeeker
@@ -56,6 +59,7 @@ type archive struct {
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
+	bloom      *bloom.BloomFilter
 }
 
 func newArchive(storage ArchiveStorage) (*archive, error) {
@@ -137,6 +141,8 @@ func (a *archive) open() (err error) {
 	a.reader = bufio.NewReader(a.readFile)
 
 	if a.readOnly {
+		defer a.rebuildBloomFilter()
+
 		info, err := readFile.Stat()
 		if err != nil {
 			return err
@@ -169,11 +175,16 @@ func (a *archive) open() (err error) {
 	return nil
 }
 
-func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
+func (a *archive) indexLocation(ref *proto.Ref, locations []uint64) *indexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
 	if a.readOnly {
+		// use a bloom filter to make lookups faster
+		if !a.bloom.Test(ref.Sha1) {
+			return nil
+		}
+
 		return a.readIndex.lookup(ref)
 	}
 
@@ -438,9 +449,23 @@ func (a *archive) storeIndex() error {
 	return a.storeReadIndex(idx)
 }
 
+func (a *archive) rebuildBloomFilter() {
+	a.bloom = bloom.New(bloomFilterM, bloomFilterK)
+	for _, rec := range a.readIndex {
+		a.bloom.Add(rec.Sum[:])
+	}
+}
+
 func (a *archive) Close() error {
 	a.CloseReader()
-	return a.CloseWriter()
+	err := a.CloseWriter()
+
+	// this should be a nop here
+	if err == errAlreadyClosed {
+		err = nil
+	}
+
+	return nil
 }
 
 func (a *archive) CloseReader() error {
@@ -452,7 +477,7 @@ func (a *archive) CloseWriter() error {
 	defer a.mtx.Unlock()
 
 	if a.readOnly {
-		return nil
+		return errAlreadyClosed
 	}
 
 	err := a.writeFile.Close()
@@ -467,6 +492,7 @@ func (a *archive) CloseWriter() error {
 
 	// release write index
 	a.writeIndex = nil
+	a.rebuildBloomFilter()
 
 	return err
 }

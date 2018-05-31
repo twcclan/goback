@@ -108,3 +108,7 @@
 [[constraint]]
   name = "github.com/google/uuid"
   version = "0.2.0"
+
+[[constraint]]
+  name = "github.com/willf/bloom"
+  version = "2.0.3"
