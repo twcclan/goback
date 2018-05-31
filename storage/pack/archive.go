@@ -52,35 +52,32 @@ type archive struct {
 	size       uint64
 	writeIndex map[string]*indexRecord
 	readIndex  index
-	mtx        *sync.RWMutex
+	mtx        sync.RWMutex
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
-	number     uint16
 }
 
-func newArchive(storage ArchiveStorage) (archive, error) {
+func newArchive(storage ArchiveStorage) (*archive, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
-		return archive{}, err
+		return nil, err
 	}
 
-	a := archive{
+	a := &archive{
 		storage:  storage,
 		name:     id.String(),
 		readOnly: false,
-		mtx:      &sync.RWMutex{},
 	}
 
 	return a, a.open()
 }
 
-func openArchive(storage ArchiveStorage, name string) (archive, error) {
-	a := archive{
+func openArchive(storage ArchiveStorage, name string) (*archive, error) {
+	a := &archive{
 		storage:  storage,
 		name:     name,
 		readOnly: true,
-		mtx:      &sync.RWMutex{},
 	}
 
 	return a, a.open()
@@ -119,6 +116,9 @@ func (a *archive) recoverIndex(err error) error {
 }
 
 func (a *archive) open() (err error) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
 	if !a.readOnly {
 		a.writeFile, err = a.storage.Create(a.archiveName())
 		if err != nil {
@@ -167,6 +167,17 @@ func (a *archive) open() (err error) {
 	}
 
 	return nil
+}
+
+func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	if a.readOnly {
+		return a.readIndex.lookup(ref)
+	}
+
+	return a.writeIndex[string(ref.Sha1)]
 }
 
 func (a *archive) archiveName() string {
@@ -235,12 +246,12 @@ func (a *archive) Put(object *proto.Object) error {
 }
 
 func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
 	if a.readOnly {
 		panic("Cannot write to readonly archive")
 	}
-
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
 
 	// add type info where it isn't already present
 	if hdr.Type == proto.ObjectType_INVALID {
@@ -275,7 +286,6 @@ func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 	record := &indexRecord{
 		Offset: uint32(a.size),
 		Length: uint32(len(hdrBytes) + len(bytes)),
-		Pack:   a.number,
 	}
 
 	copy(record.Sum[:], ref.Sha1)
@@ -438,6 +448,9 @@ func (a *archive) CloseReader() error {
 }
 
 func (a *archive) CloseWriter() error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
 	if a.readOnly {
 		return nil
 	}

@@ -3,7 +3,6 @@ package pack
 import (
 	"bytes"
 	"io"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +37,6 @@ func TestOpenArchive(t *testing.T) {
 		indexRecord{
 			Length: 1,
 			Offset: 2,
-			Pack:   3,
 		},
 	}
 	idxBuffer := new(bytes.Buffer)
@@ -76,7 +74,6 @@ func TestArchiveFile(t *testing.T) {
 
 	ar := &archive{
 		writeIndex: make(map[string]*indexRecord),
-		mtx:        &sync.RWMutex{},
 	}
 
 	objects := makeTestData(t, 10)

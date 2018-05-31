@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"sort"
 	"sync"
 	"time"
 
@@ -44,12 +43,10 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	}
 
 	return &PackStorage{
-		archives:         make([]archive, 0),
-		activeArchives:   make(map[string]archive),
+		archives:         make(map[string]*archive),
 		writable:         make(chan *archive, opts.maxParallel),
 		archiveSemaphore: semaphore.NewWeighted(int64(opts.maxParallel)),
 		storage:          opts.storage,
-		index:            make(index, 0),
 		compaction:       opts.compaction,
 		maxSize:          opts.maxSize,
 		closeBeforeRead:  opts.closeBeforeRead,
@@ -65,10 +62,8 @@ type PackStorage struct {
 	closeBeforeRead  bool
 
 	// all of these are guarded by mtx
-	mtx            sync.RWMutex
-	archives       []archive
-	activeArchives map[string]archive
-	index          index
+	mtx      sync.RWMutex
+	archives map[string]*archive
 
 	compactorMtx sync.Mutex
 }
@@ -106,60 +101,59 @@ func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 
 // indexLocation returns the indexRecord for the provided ref or nil if it's
 // not in this store.
-func (ps *PackStorage) indexLocation(ref *proto.Ref) *indexRecord {
-	loc := ps.index.lookup(ref)
-	if loc != nil {
-		return loc
-	}
-
-	for i := range ps.archives {
-		a := &ps.archives[i]
-		a.mtx.RLock()
-
-		if !ps.archives[i].readOnly {
-			loc, ok := a.writeIndex[string(ref.Sha1)]
-			a.mtx.RUnlock()
-
-			if ok {
-				return loc
-			}
-
-		} else {
-			a.mtx.RUnlock()
-		}
-	}
-
-	return nil
-}
-
-func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
+func (ps *PackStorage) indexLocation(ref *proto.Ref) (*archive, *indexRecord) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	return ps.indexLocation(ref) != nil
+	for _, archive := range ps.archives {
+		if rec := archive.indexLocation(ref); rec != nil {
+			return archive, rec
+		}
+	}
+
+	return nil, nil
+}
+
+// indexLocationExcept checks if a given ref exists in an archive that is not in
+// the provided map of exclusions
+func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bool) (*archive, *indexRecord) {
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
+	for name, archive := range ps.archives {
+		if rec := archive.indexLocation(ref); rec != nil {
+			if exclude == nil || !exclude[name] {
+				return archive, rec
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
+	_, rec := ps.indexLocation(ref)
+
+	return rec != nil
 }
 
 func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
-	rec := ps.indexLocation(ref)
+	archive, rec := ps.indexLocation(ref)
 	if rec != nil {
-		ps.mtx.RLock()
-		a := &ps.archives[rec.Pack]
-		ps.mtx.RUnlock()
-
-		a.mtx.RLock()
-		needClose := !a.readOnly && ps.closeBeforeRead
-		a.mtx.RUnlock()
+		archive.mtx.RLock()
+		needClose := !archive.readOnly && ps.closeBeforeRead
+		archive.mtx.RUnlock()
 
 		if needClose {
-			log.Printf("Need to close archive %s before reading object %x", a.name, ref.Sha1)
-			err := ps.finalizeArchive(a)
+			log.Printf("Need to close archive %s before reading object %x", archive.name, ref.Sha1)
+			err := ps.finalizeArchive(archive)
 
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		return a.getRaw(ref, rec)
+		return archive.getRaw(ref, rec)
 	}
 
 	return nil, nil
@@ -184,9 +178,9 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 		pred = loadType(t)
 	}
 
-	for i := range ps.archives {
-		log.Printf("Reading archive: %s", ps.archives[i].name)
-		err := ps.archives[i].foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+	for _, archive := range ps.archives {
+		log.Printf("Reading archive: %s", archive.name)
+		err := archive.foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			if t == proto.ObjectType_INVALID || hdr.Type == t {
 				var obj *proto.Object
 				var err error
@@ -212,20 +206,6 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 	return nil
 }
 
-// hasExcept checks if a given ref exists in an archive that is not in
-// the provided map of exclusions
-func (ps *PackStorage) hasExcept(ref *proto.Ref, exclude map[string]bool) bool {
-	ps.mtx.RLock()
-	defer ps.mtx.RUnlock()
-
-	loc := ps.indexLocation(ref)
-	if loc != nil {
-		return !exclude[ps.archives[loc.Pack].name]
-	}
-
-	return false
-}
-
 // unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore).
 // needs an exclusive lock
 func (ps *PackStorage) unloadArchive(a *archive) error {
@@ -233,29 +213,11 @@ func (ps *PackStorage) unloadArchive(a *archive) error {
 }
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
-	if a.readOnly {
-		return nil
-	}
-
-	start := time.Now()
 	err := a.CloseWriter()
 	if err != nil {
 		return err
 	}
-	log.Printf("Needed %v to close writer for archive %s", time.Since(start), a.name)
 
-	ps.mtx.Lock()
-
-	start = time.Now()
-	ps.index = append(ps.index, a.readIndex...)
-	sort.Sort(ps.index)
-	a.readIndex = nil
-	log.Printf("Needed %v to update read index for archive %s", time.Since(start), a.name)
-
-	ps.mtx.Unlock()
 	ps.archiveSemaphore.Release(1)
 
 	return nil
@@ -268,11 +230,8 @@ func (ps *PackStorage) newArchive() error {
 	}
 
 	ps.mtx.Lock()
-
-	a.number = uint16(len(ps.archives))
-	ps.archives = append(ps.archives, a)
-	ps.putWritableArchive(&ps.archives[a.number])
-
+	ps.archives[a.name] = a
+	ps.putWritableArchive(a)
 	ps.mtx.Unlock()
 
 	return nil
@@ -285,14 +244,7 @@ func (ps *PackStorage) openArchive(name string) error {
 	}
 
 	ps.mtx.Lock()
-
-	a.number = uint16(len(ps.archives))
-	ps.archives = append(ps.archives, a)
-	for i := range a.readIndex {
-		ps.index = append(ps.index, a.readIndex[i])
-		ps.index[len(ps.index)-1].Pack = a.number
-	}
-
+	ps.archives[a.name] = a
 	ps.mtx.Unlock()
 
 	return nil
@@ -354,16 +306,25 @@ func (ps *PackStorage) doCompaction() error {
 	)
 
 	ps.mtx.RLock()
-	for i := range ps.archives {
-		ps.archives[i].mtx.RLock()
-		if ps.archives[i].size < ps.maxSize && ps.archives[i].readOnly {
+	for _, candidate := range ps.archives {
+		candidate.mtx.RLock()
+		if candidate.size < ps.maxSize && candidate.readOnly {
 			// this may be a candidate for compaction
-			candidates = append(candidates, &ps.archives[i])
-			total += ps.archives[i].size
+			candidates = append(candidates, candidate)
+			total += candidate.size
 		}
-		ps.archives[i].mtx.RUnlock()
+		candidate.mtx.RUnlock()
 	}
 	ps.mtx.RUnlock()
+
+	//var currentArchive archive
+	getArchiveForCompaction := func() (*archive, error) {
+		/*var err error
+		if currentArchive == nil {
+			currentArchive, err = newArchive(ps.storage)
+		}*/
+		return nil, nil
+	}
 
 	// use some heuristic to decide whether we should do a compaction
 	if len(candidates) > 10 && total > ps.maxSize/4 {
@@ -375,15 +336,23 @@ func (ps *PackStorage) doCompaction() error {
 				// * duplicates
 				// * deletions
 
-				return ps.putRaw(hdr, bytes)
+				ar, err := getArchiveForCompaction()
+				if err != nil {
+					return err
+				}
+
+				return ar.putRaw(hdr, bytes)
 			})
 
 			if err != nil {
 				return err
 			}
 
-			// we don't care about the error here, we're about to delete it anyways
-			archive.Close()
+			// we don't really care about the error here, we're about to delete it anyways
+			err = archive.Close()
+			if err != nil {
+				log.Printf("Warning: failed to close archive after compaction: %v", err)
+			}
 			obsolete = append(obsolete, archive)
 		}
 	}
@@ -429,11 +398,10 @@ func (ps *PackStorage) Flush() error {
 
 	ps.withReadLock(func() {
 
-		for i := range ps.archives {
-			ar := &ps.archives[i]
+		for _, archive := range ps.archives {
 
 			grp.Go(func() error {
-				return ps.finalizeArchive(ar)
+				return ps.finalizeArchive(archive)
 			})
 		}
 	})
@@ -482,13 +450,7 @@ func (ps *PackStorage) Open() error {
 		})
 	}
 
-	err = group.Wait()
-	if err != nil {
-		return err
-	}
-
-	sort.Sort(ps.index)
-	return nil
+	return group.Wait()
 }
 
 //go:generate mockery -name File -inpkg -testonly -outpkg pack

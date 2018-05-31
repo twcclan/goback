@@ -82,7 +82,6 @@ type indexRecord struct {
 	Sum    [20]byte
 	Offset uint32
 	Length uint32
-	Pack   uint16
 }
 
 var _ io.WriterTo = (index)(nil)
