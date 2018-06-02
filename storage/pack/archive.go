@@ -260,6 +260,12 @@ func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 		panic("Cannot write to readonly archive")
 	}
 
+	ref := hdr.Ref
+	// make sure not to have duplicates within a single file
+	if _, ok := a.writeIndex[string(ref.Sha1)]; ok {
+		return nil
+	}
+
 	// add type info where it isn't already present
 	if hdr.Type == proto.ObjectType_INVALID {
 		obj, err := proto.NewObjectFromCompressedBytes(bytes)
@@ -270,7 +276,6 @@ func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
 		hdr.Type = obj.Type()
 	}
 
-	ref := hdr.Ref
 	hdr.Timestamp = ptypes.TimestampNow()
 	hdr.Predecessor = a.last
 
