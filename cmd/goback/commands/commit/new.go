@@ -153,7 +153,7 @@ func newAction(c *cli.Context) {
 
 	s := &commit{
 		backup:   backup.NewBackupWriter(index),
-		base:     base,
+		base:     filepath.ToSlash(filepath.Clean(base)),
 		index:    index,
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),
