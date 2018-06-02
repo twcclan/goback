@@ -300,6 +300,6 @@ func NewGCSObjectStore(serviceAccountFile string, bucket string) (backup.ObjectS
 		pack.WithArchiveStorage(storage),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
-		pack.WithMaxSize(64*1024*1024),
+		pack.WithMaxSize(1024*1024*1024),
 	)
 }
