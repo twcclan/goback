@@ -81,11 +81,11 @@ func (s *gcsReader) WriteTo(w io.Writer) (int64, error) {
 
 func (s *gcsReader) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
-	case os.SEEK_SET:
+	case io.SeekStart:
 		s.offset = offset
-	case os.SEEK_CUR:
+	case io.SeekCurrent:
 		s.offset += offset
-	case os.SEEK_END:
+	case io.SeekEnd:
 		s.offset = s.attrs.Size - offset
 	default:
 		return 0, errors.New("invalid whence value")
