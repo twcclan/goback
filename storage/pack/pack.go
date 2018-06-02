@@ -213,10 +213,11 @@ func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectRecei
 	return nil
 }
 
-// unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore).
-// needs an exclusive lock
-func (ps *PackStorage) unloadArchive(a *archive) error {
-	return nil
+// unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore)
+func (ps *PackStorage) unloadArchive(a *archive) {
+	ps.mtx.Lock()
+	delete(ps.archives, a.name)
+	ps.mtx.Unlock()
 }
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
@@ -301,6 +302,32 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 	ps.writable <- ar
 }
 
+func (ps *PackStorage) calculateWaste(a *archive) float64 {
+	return 0
+
+	/*
+
+		objects := make(map[string]bool)
+		var total, waste uint64
+
+		for _, record := range a.readIndex {
+			total += uint64(record.Length)
+			objRefString := string(record.Sum[:])
+
+			if objects[objRefString] {
+				waste += uint64(record.Length)
+			} else {
+				objects[objRefString] = true
+			}
+		}
+
+		log.Print(len(objects), len(a.readIndex))
+
+		return float64(waste) / float64(total)
+
+	*/
+}
+
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
@@ -314,7 +341,9 @@ func (ps *PackStorage) doCompaction() error {
 	ps.mtx.RLock()
 	for _, candidate := range ps.archives {
 		candidate.mtx.RLock()
-		if candidate.size < ps.maxSize && candidate.readOnly {
+
+		// we only care about finalized archives
+		if candidate.readOnly && (candidate.size < ps.maxSize || ps.calculateWaste(candidate) > 0.1) {
 			// this may be a candidate for compaction
 			candidates = append(candidates, candidate)
 			total += candidate.size
@@ -323,29 +352,83 @@ func (ps *PackStorage) doCompaction() error {
 	}
 	ps.mtx.RUnlock()
 
-	//var currentArchive archive
-	getArchiveForCompaction := func() (*archive, error) {
-		/*var err error
-		if currentArchive == nil {
-			currentArchive, err = newArchive(ps.storage)
-		}*/
-		return nil, nil
+	closeArchive := func(a *archive) error {
+		err := a.CloseWriter()
+		if err != nil && err != errAlreadyClosed {
+			return err
+		}
+
+		ps.mtx.Lock()
+		ps.archives[a.name] = a
+		ps.mtx.Unlock()
+
+		return nil
+	}
+
+	var openArchive *archive
+	getArchive := func() (*archive, error) {
+		var err error
+
+		// if the currently open archive is full, finalize it
+		if openArchive != nil && openArchive.size >= ps.maxSize {
+			err = closeArchive(openArchive)
+			if err != nil {
+				return nil, err
+			}
+
+			openArchive = nil
+		}
+
+		if openArchive == nil {
+			openArchive, err = newArchive(ps.storage)
+		}
+
+		return openArchive, err
 	}
 
 	// use some heuristic to decide whether we should do a compaction
-	if len(candidates) > 10 && total > ps.maxSize/4 {
+	if len(candidates) > 10 {
 		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
+
+		var droppedObjects, droppedSize uint64
+
+		// a map with all the archives that we are looking to compact
+		exceptions := make(map[string]bool)
+		for _, archive := range candidates {
+			exceptions[archive.name] = true
+		}
+
+		// a map of all the objects we've already written to a new archive
+		written := make(map[string]bool)
 
 		for _, archive := range candidates {
 			err := archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
-				// TODO: do some checks here like:
-				// * duplicates
+				// TODO: do some more checks here like:
 				// * deletions
+				// * garbage collection
 
-				ar, err := getArchiveForCompaction()
+				objRefString := string(hdr.Ref.Sha1)
+
+				// if we have already written this object during this compaction run we drop it
+				if written[objRefString] {
+					droppedObjects++
+					droppedSize += uint64(length)
+					return nil
+				}
+
+				// if we can find a location for this ref in any other archive we just drop it
+				if _, rec := ps.indexLocationExcept(hdr.Ref, exceptions); rec != nil {
+					droppedObjects++
+					droppedSize += uint64(length)
+					return nil
+				}
+
+				ar, err := getArchive()
 				if err != nil {
 					return err
 				}
+
+				written[objRefString] = true
 
 				return ar.putRaw(hdr, bytes)
 			})
@@ -353,35 +436,49 @@ func (ps *PackStorage) doCompaction() error {
 			if err != nil {
 				return err
 			}
-
-			// we don't really care about the error here, we're about to delete it anyways
-			err = archive.Close()
-			if err != nil {
-				log.Printf("Warning: failed to close archive after compaction: %v", err)
-			}
 			obsolete = append(obsolete, archive)
 		}
+
+		log.Printf("Dropped %d objecst during compaction, saved %s", droppedObjects, humanize.Bytes(droppedSize))
 	}
 
-	err := ps.Flush()
-	if err != nil {
-		return err
+	if openArchive != nil {
+		err := closeArchive(openArchive)
+		if err != nil {
+			return err
+		}
 	}
 
 	// after having safely closed the active file(s) we can delete the left-overs
 	for _, archive := range obsolete {
+		ps.unloadArchive(archive)
+
+		if e := archive.Close(); e != nil {
+			log.Printf("Failed closing obsolete archive after compaction: %v", e)
+		}
+
 		err := ps.storage.Delete(archive.indexName())
 		if err != nil {
-			log.Printf("Failed deleting index %s after compaction", archive.name)
+			log.Printf("Failed deleting index %s after compaction: %v", archive.name, err)
 		}
 
 		err = ps.storage.Delete(archive.archiveName())
 		if err != nil {
-			log.Printf("Failed deleting archive %s after compaction", archive.name)
+			log.Printf("Failed deleting archive %s after compaction: %v", archive.name, err)
 		}
 	}
 
 	return nil
+}
+
+func (ps *PackStorage) backgroundCompaction() {
+	err := ps.doCompaction()
+
+	if err != nil {
+		log.Println("Failed running compaction", err)
+	} else {
+		log.Print("Compaction successful")
+	}
 }
 
 func (ps *PackStorage) withExclusiveLock(do func()) {
@@ -405,11 +502,16 @@ func (ps *PackStorage) Flush() error {
 	ps.withReadLock(func() {
 		for _, archive := range ps.archives {
 
+			a := archive
 			grp.Go(func() error {
-				return ps.finalizeArchive(archive)
+				return ps.finalizeArchive(a)
 			})
 		}
 	})
+
+	defer func() {
+		go ps.backgroundCompaction()
+	}()
 
 	return grp.Wait()
 }
