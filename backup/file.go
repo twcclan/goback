@@ -8,12 +8,11 @@ import (
 	"sort"
 	"sync/atomic"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/twcclan/goback/proto"
 
 	"camlistore.org/pkg/rollsum"
 	"go4.org/syncutil"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -36,6 +35,7 @@ func newFileWriter(ctx context.Context, store ObjectStore) *fileWriter {
 		parts:            make([]*proto.FilePart, 0),
 		storageErr:       new(atomic.Value),
 		storageSemaphore: syncutil.NewGate(inFlightChunks),
+		ctx:              ctx,
 	}
 }
 
