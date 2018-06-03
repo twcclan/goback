@@ -2,6 +2,7 @@ package common
 
 import (
 	"log"
+	"net"
 	"net/url"
 	"os"
 
@@ -9,8 +10,6 @@ import (
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
-
-	"net"
 
 	"github.com/codegangsta/cli"
 )
@@ -21,10 +20,6 @@ type Opener interface {
 
 type Closer interface {
 	Close() error
-}
-
-func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewS3(), nil
 }
 
 func makeLocation(loc string) (string, error) {
@@ -68,7 +63,7 @@ func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewGCSObjectStore("service_account.json", u.Host)
+	return storage.NewGCSObjectStore(u.Host)
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -87,7 +82,6 @@ var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore
 	"file":   initSimple,
 	"swift":  initSwift,
 	"gcs":    initGCS,
-	"s3":     initS3,
 	"goback": initRemote,
 }
 

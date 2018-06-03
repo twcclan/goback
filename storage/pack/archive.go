@@ -3,6 +3,7 @@ package pack
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"os"
@@ -195,7 +196,7 @@ func (a *archive) indexName() string {
 	return a.name + IndexExt
 }
 
-func (a *archive) getRaw(ref *proto.Ref, loc *indexRecord) (*proto.Object, error) {
+func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) (*proto.Object, error) {
 	buf := make([]byte, loc.Length)
 
 	if readerAt, ok := a.readFile.(io.ReaderAt); ok {
@@ -238,7 +239,7 @@ func (a *archive) getRaw(ref *proto.Ref, loc *indexRecord) (*proto.Object, error
 	return proto.NewObjectFromCompressedBytes(buf[consumed+int(hdrSize):])
 }
 
-func (a *archive) Put(object *proto.Object) error {
+func (a *archive) Put(ctx context.Context, object *proto.Object) error {
 	bytes := object.CompressedBytes()
 	ref := object.Ref()
 
@@ -249,10 +250,10 @@ func (a *archive) Put(object *proto.Object) error {
 		Type:        object.Type(),
 	}
 
-	return a.putRaw(hdr, bytes)
+	return a.putRaw(ctx, hdr, bytes)
 }
 
-func (a *archive) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
+func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 

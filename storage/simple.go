@@ -9,6 +9,8 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 
+	"context"
+
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 )
@@ -38,7 +40,7 @@ func (s *SimpleChunkStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *SimpleChunkStore) Put(obj *proto.Object) error {
+func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
 	err := s.db.Put(obj.Ref().Sha1, obj.Bytes(), nil)
 	if err != nil {
 		return err
@@ -47,11 +49,11 @@ func (s *SimpleChunkStore) Put(obj *proto.Object) error {
 	return err
 }
 
-func (s *SimpleChunkStore) Delete(ref *proto.Ref) error {
+func (s *SimpleChunkStore) Delete(ctx context.Context, ref *proto.Ref) error {
 	return s.db.Delete(ref.Sha1, nil)
 }
 
-func (s *SimpleChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
+func (s *SimpleChunkStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	data, err := s.db.Get(ref.Sha1, nil)
 
 	if err != nil {
@@ -61,7 +63,7 @@ func (s *SimpleChunkStore) Get(ref *proto.Ref) (*proto.Object, error) {
 	return proto.NewObjectFromBytes(data)
 }
 
-func (s *SimpleChunkStore) Walk(load bool, chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
+func (s *SimpleChunkStore) Walk(ctx context.Context, load bool, chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	matches, err := filepath.Glob(path.Join(s.base, fmt.Sprintf("%d-*", chunkType)))
 	if err != nil {
 		return err

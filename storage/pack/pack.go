@@ -73,13 +73,13 @@ type PackStorage struct {
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
-func (ps *PackStorage) Put(object *proto.Object) error {
-	return ps.put(object)
+func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
+	return ps.put(ctx, object)
 }
 
-func (ps *PackStorage) put(object *proto.Object) error {
+func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	err := ps.withWritableArchive(func(a *archive) error {
-		return a.Put(object)
+		return a.Put(ctx, object)
 	})
 
 	if err != nil {
@@ -96,9 +96,9 @@ func (ps *PackStorage) put(object *proto.Object) error {
 	return nil
 }
 
-func (ps *PackStorage) putRaw(hdr *proto.ObjectHeader, bytes []byte) error {
+func (ps *PackStorage) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
 	return ps.withWritableArchive(func(a *archive) error {
-		return a.putRaw(hdr, bytes)
+		return a.putRaw(ctx, hdr, bytes)
 	})
 }
 
@@ -138,13 +138,7 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 	return nil, nil
 }
 
-func (ps *PackStorage) Has(ref *proto.Ref) (has bool) {
-	_, rec := ps.indexLocation(ref)
-
-	return rec != nil
-}
-
-func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
+func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	archive, rec := ps.indexLocation(ref)
 	if rec != nil {
 		archive.mtx.RLock()
@@ -160,17 +154,17 @@ func (ps *PackStorage) Get(ref *proto.Ref) (*proto.Object, error) {
 			}
 		}
 
-		return archive.getRaw(ref, rec)
+		return archive.getRaw(ctx, ref, rec)
 	}
 
 	return nil, nil
 }
 
-func (ps *PackStorage) Delete(ref *proto.Ref) error {
+func (ps *PackStorage) Delete(ctx context.Context, ref *proto.Ref) error {
 	panic("not implemented")
 }
 
-func (ps *PackStorage) Walk(load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
+func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
@@ -332,6 +326,8 @@ func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
+	ctx := context.Background()
+
 	var (
 		candidates []*archive
 		obsolete   []*archive
@@ -430,7 +426,7 @@ func (ps *PackStorage) doCompaction() error {
 
 				written[objRefString] = true
 
-				return ar.putRaw(hdr, bytes)
+				return ar.putRaw(ctx, hdr, bytes)
 			})
 
 			if err != nil {

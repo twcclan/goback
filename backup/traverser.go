@@ -57,7 +57,7 @@ func (c *concurrentTreeTraverser) run(ctx context.Context, root *proto.Object, w
 	return grp.Wait()
 }
 
-func (c *concurrentTreeTraverser) traverseTree(t *concurrentTreeNode) error {
+func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurrentTreeNode) error {
 	// we traverse depth-first to distribute the work to as many goroutines
 	// as possible. this means we're going to iterate twice, because our
 	// trees nodes are sorted lexicographically
@@ -73,7 +73,7 @@ func (c *concurrentTreeTraverser) traverseTree(t *concurrentTreeNode) error {
 		}
 
 		// retrieve the sub-tree object
-		subTree, err := c.store.Get(node.Ref)
+		subTree, err := c.store.Get(ctx, node.Ref)
 
 		if err != nil {
 			return err
@@ -96,7 +96,7 @@ func (c *concurrentTreeTraverser) traverseTree(t *concurrentTreeNode) error {
 		// if no other worker is idle, do the job ourselves
 		default:
 			c.wg.Done()
-			err = c.traverseTree(subTreeNode)
+			err = c.traverseTree(ctx, subTreeNode)
 			if err != nil {
 				return err
 			}
@@ -130,7 +130,7 @@ func (c *concurrentTreeTraverser) traverser(ctx context.Context) func() error {
 					return nil
 				}
 
-				err := c.traverseTree(n)
+				err := c.traverseTree(ctx, n)
 				c.wg.Done()
 
 				if err != nil {

@@ -7,6 +7,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 var testObjects = map[string]*proto.Object{
@@ -44,7 +45,7 @@ var testObjects = map[string]*proto.Object{
 func TestConcurrentTreeTraverser(t *testing.T) {
 	for i := 1; i < 10; i++ {
 		store := &MockObjectStore{}
-		store.On("Get", &proto.Ref{Sha1: []byte("test.dir")}).Return(testObjects["test.dir"], nil).Once()
+		store.On("Get", mock.Anything, &proto.Ref{Sha1: []byte("test.dir")}).Return(testObjects["test.dir"], nil).Once()
 		expected := map[string]bool{
 			"test.dir":            true,
 			"test.dir/test.file2": true,

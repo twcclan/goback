@@ -1,6 +1,7 @@
 package fix
 
 import (
+	"context"
 	"log"
 
 	"github.com/codegangsta/cli"
@@ -18,7 +19,7 @@ func fixAction(c *cli.Context) {
 	index := common.GetIndex(c, store)
 	log.Println(index.Open())
 
-	err := index.FindMissing()
+	err := index.ReIndex(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}

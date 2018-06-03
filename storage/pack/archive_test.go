@@ -5,6 +5,8 @@ import (
 	"io"
 	"testing"
 
+	"context"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -89,7 +91,7 @@ func TestArchiveFile(t *testing.T) {
 		}, nil)
 
 		for _, obj := range objects {
-			assert.Nil(t, ar.Put(obj))
+			assert.Nil(t, ar.Put(context.Background(), obj))
 		}
 
 		assert.Len(t, ar.writeIndex, 10)
@@ -120,7 +122,7 @@ func TestArchiveFile(t *testing.T) {
 				Sha1: []byte(hash),
 			}
 
-			newObj, err := ar.getRaw(ref, loc)
+			newObj, err := ar.getRaw(context.Background(), ref, loc)
 			require.Nil(t, err)
 
 			for _, obj := range objects {
@@ -153,7 +155,7 @@ func TestArchiveFile(t *testing.T) {
 				Sha1: []byte(hash),
 			}
 
-			newObj, err := ar.getRaw(ref, loc)
+			newObj, err := ar.getRaw(context.Background(), ref, loc)
 			require.Nil(t, err)
 
 			for _, obj := range objects {

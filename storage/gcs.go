@@ -16,6 +16,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -284,8 +285,12 @@ var _ os.FileInfo = (*gcsFileInfo)(nil)
 
 var _ pack.ArchiveStorage = (*gcsStore)(nil)
 
-func NewGCSObjectStore(serviceAccountFile string, bucket string) (backup.ObjectStore, error) {
-	client, err := storage.NewClient(context.Background(), option.WithServiceAccountFile(serviceAccountFile))
+func NewGCSObjectStore(bucket string) (backup.ObjectStore, error) {
+	credentials, err := google.FindDefaultCredentials(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	client, err := storage.NewClient(context.Background(), option.WithCredentials(credentials))
 	if err != nil {
 		return nil, err
 	}

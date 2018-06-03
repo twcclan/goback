@@ -8,13 +8,15 @@ import (
 	"reflect"
 	"testing"
 
+	"context"
+
 	"github.com/stretchr/testify/require"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 )
 
 // number of objects to generate for the tests
-const n = 1000
+const numObjects = 1000
 
 // average size of objects
 const ObjectSize = 1024 * 8
@@ -68,21 +70,17 @@ func TestPack(t *testing.T) {
 	store, err := NewPackStorage(options...)
 	require.Nil(t, err)
 
-	objects := makeTestData(t, n)
-	t.Logf("Storing %d objects", n)
+	objects := makeTestData(t, numObjects)
+	t.Logf("Storing %d objects", numObjects)
 
 	readObjects := func(t *testing.T) {
 		t.Helper()
 
-		t.Logf("Reading back %d objects", n)
-		for _, i := range rand.Perm(n) {
+		t.Logf("Reading back %d objects", numObjects)
+		for _, i := range rand.Perm(numObjects) {
 			original := objects[i]
 
-			if !store.Has(original.Ref()) {
-				t.Fatal("Archive doesn't have object")
-			}
-
-			object, err := store.Get(original.Ref())
+			object, err := store.Get(context.Background(), original.Ref())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -100,7 +98,7 @@ func TestPack(t *testing.T) {
 	}
 
 	for _, object := range objects {
-		err := store.Put(object)
+		err := store.Put(context.Background(), object)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +192,7 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 			Data: blobBytes,
 		})
 
-		err := store.Put(object)
+		err := store.Put(context.Background(), object)
 		if err != nil {
 			b.Fatal(err)
 		}

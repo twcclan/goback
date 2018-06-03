@@ -8,6 +8,8 @@ import (
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
 
+	"context"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -67,7 +69,7 @@ func (s *StorageSuit) testDriver(c *C, store backup.ObjectStore) {
 
 	c.Logf("Storing %d objects", n)
 	for _, object := range objects {
-		err := store.Put(object)
+		err := store.Put(context.Background(), object)
 		if err != nil {
 			c.Fatal(err)
 		}
@@ -77,7 +79,7 @@ func (s *StorageSuit) testDriver(c *C, store backup.ObjectStore) {
 	for _, i := range rand.Perm(n) {
 		original := objects[i]
 
-		object, err := store.Get(original.Ref())
+		object, err := store.Get(context.Background(), original.Ref())
 		if err != nil {
 			c.Fatal(err)
 		}
@@ -100,8 +102,4 @@ func (s *StorageSuit) testDriver(c *C, store backup.ObjectStore) {
 
 func (s *StorageSuit) TestSimple(c *C) {
 	s.testDriver(c, storage.NewSimpleObjectStore(c.MkDir()))
-}
-
-func (s *StorageSuit) TestMemory(c *C) {
-	s.testDriver(c, storage.NewMemoryStore())
 }

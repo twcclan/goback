@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func (f *file) show() error {
-	nodes, err := f.index.FileInfo(f.src, f.when, 10)
+	nodes, err := f.index.FileInfo(context.Background(), f.src, f.when, 10)
 	if err != nil {
 		return err
 	}

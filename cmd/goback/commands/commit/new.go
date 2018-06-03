@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"log"
@@ -10,10 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
-	"go4.org/syncutil"
-
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/proto"
@@ -21,6 +18,8 @@ import (
 	"github.com/bmatcuk/doublestar"
 	"github.com/codegangsta/cli"
 	"github.com/pkg/errors"
+	"go4.org/syncutil"
+	"golang.org/x/sync/errgroup"
 )
 
 func (c *commit) shouldInclude(fName string) bool {
@@ -90,7 +89,7 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 
 			if info.IsDir() {
 				// recurse into the sub folder
-				tErr := tree.Tree(info, c.descend(absPath))
+				tErr := tree.Tree(context.Background(), info, c.descend(absPath))
 				if tErr != nil {
 					return tErr
 				}
@@ -105,7 +104,7 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 
 				if info.Mode()&os.ModeSymlink == 0 { // skip symlinks
 					var nodes []proto.TreeNode
-					nodes, err = c.index.FileInfo(strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
+					nodes, err = c.index.FileInfo(context.Background(), strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
 					if err != nil {
 						return errors.Wrapf(err, "Failed checking index for info %s", absPath)
 					}
@@ -115,7 +114,7 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 						tree.Node(&nodes[0])
 					} else {
 						// store the file
-						return tree.File(info, c.read(absPath))
+						return tree.File(context.Background(), info, c.read(absPath))
 					}
 				}
 
@@ -135,7 +134,7 @@ func (c *commit) take() {
 		os.Exit(-1)
 	}
 
-	err = c.backup.Close()
+	err = c.backup.Close(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}

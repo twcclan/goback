@@ -29,7 +29,7 @@ const (
 	inFlightChunks = 80
 )
 
-func newFileWriter(store ObjectStore) *fileWriter {
+func newFileWriter(ctx context.Context, store ObjectStore) *fileWriter {
 	return &fileWriter{
 		store:            store,
 		rs:               rollsum.New(),
@@ -50,6 +50,7 @@ type fileWriter struct {
 	storageGroup     syncutil.Group
 	storageSemaphore *syncutil.Gate
 	ref              *proto.Ref
+	ctx              context.Context
 
 	pending int32
 }
@@ -83,7 +84,7 @@ func (bfw *fileWriter) split() {
 	atomic.AddInt32(&bfw.pending, 1)
 
 	bfw.storageGroup.Go(func() error {
-		err := bfw.store.Put(blob)
+		err := bfw.store.Put(bfw.ctx, blob)
 		bfw.storageSemaphore.Done()
 		defer atomic.AddInt32(&bfw.pending, -1)
 		if err != nil {
@@ -133,7 +134,7 @@ func (bfw *fileWriter) Close() (err error) {
 
 	bfw.ref = file.Ref()
 
-	if err = bfw.store.Put(file); err != nil {
+	if err = bfw.store.Put(bfw.ctx, file); err != nil {
 		return
 	}
 
@@ -143,10 +144,11 @@ func (bfw *fileWriter) Close() (err error) {
 
 var _ io.WriteCloser = new(fileWriter)
 
-func newFileReader(store ObjectStore, file *proto.File) *fileReader {
+func newFileReader(ctx context.Context, store ObjectStore, file *proto.File) *fileReader {
 	return &fileReader{
 		store: store,
 		file:  file,
+		ctx:   ctx,
 	}
 }
 
@@ -156,6 +158,7 @@ type fileReader struct {
 	blob      *proto.Object
 	partIndex int
 	offset    int64
+	ctx       context.Context
 }
 
 type searchCallback func(index int) bool
@@ -249,7 +252,7 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 	for i := 0; i < numWorker; i++ {
 		group.Go(func() error {
 			for req := range requests {
-				obj, err := bfr.store.Get(req.part.Ref)
+				obj, err := bfr.store.Get(bfr.ctx, req.part.Ref)
 				// TODO: implement retry here
 				if err != nil {
 					return err
@@ -307,7 +310,7 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 
 	// lazily load blob from our object store
 	if bfr.blob == nil {
-		bfr.blob, err = bfr.store.Get(part.Ref)
+		bfr.blob, err = bfr.store.Get(bfr.ctx, part.Ref)
 	}
 
 	if err != nil {

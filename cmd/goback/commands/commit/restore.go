@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"context"
 	"io"
 	"log"
 	"os"
@@ -17,7 +18,7 @@ import (
 )
 
 func (c *commit) restore() {
-	commits, err := c.index.CommitInfo(c.when, 1)
+	commits, err := c.index.CommitInfo(context.Background(), c.when, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -28,14 +29,15 @@ func (c *commit) restore() {
 		tree := commit.Tree
 
 		if c.from != "" {
-			tree, err = c.reader.GetTree(tree, strings.Split(c.from, "/"))
+			tree, err = c.reader.GetTree(context.Background(), tree, strings.Split(c.from, "/"))
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 
-		walkErr := c.reader.WalkTree(tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
+		walkErr := c.reader.WalkTree(context.Background(), tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
 			path = filepath.Join(c.base, path)
+			log.Printf("Restoring %s", path)
 
 			if info.IsDir() {
 				innerErr := os.Mkdir(path, info.Mode())
@@ -44,7 +46,7 @@ func (c *commit) restore() {
 					return innerErr
 				}
 			} else {
-				reader, innerErr := c.reader.ReadFile(ref)
+				reader, innerErr := c.reader.ReadFile(context.Background(), ref)
 				if innerErr != nil {
 					return innerErr
 				}

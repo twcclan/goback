@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -16,7 +17,7 @@ import (
 )
 
 func (f *file) restore() error {
-	files, err := f.index.FileInfo(f.src, f.when, 1)
+	files, err := f.index.FileInfo(context.Background(), f.src, f.when, 1)
 	if err != nil {
 		return err
 	}
@@ -35,7 +36,7 @@ func (f *file) restore() error {
 	}
 	defer outFile.Close()
 
-	inFile, err := f.reader.ReadFile(files[0].Ref)
+	inFile, err := f.reader.ReadFile(context.Background(), files[0].Ref)
 	if err != nil {
 		return err
 	}

@@ -1,17 +1,18 @@
 package commit
 
 import (
+	"context"
 	"log"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
 	"github.com/codegangsta/cli"
+	"github.com/pkg/errors"
 )
 
 func (c *commit) list() {
-	commits, err := c.index.CommitInfo(time.Now(), 10)
+	commits, err := c.index.CommitInfo(context.Background(), time.Now(), 10)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "Failed reading commit info"))
 	}

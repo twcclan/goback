@@ -15,6 +15,7 @@ import (
 	"go4.org/syncutil/singleflight"
 
 	// load sqlite3 driver
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -33,8 +34,6 @@ type SqliteIndex struct {
 	single *singleflight.Group
 	txMtx  *sync.Mutex
 }
-
-// TODO: use transactions for better write performance
 
 func (s *SqliteIndex) Open() error {
 	db, err := sql.Open("sqlite3", path.Join(s.base, "index.db")+"?busy_timeout=1000")
@@ -66,9 +65,9 @@ func (s *SqliteIndex) Open() error {
 	return nil
 }
 
-func (s *SqliteIndex) FindMissing() error {
+func (s *SqliteIndex) FindMissing(ctx context.Context) error {
 	refs := make([][]byte, 0)
-	rows, err := s.db.Query("SELECT ref FROM objects;")
+	rows, err := s.db.QueryContext(ctx, "SELECT ref FROM objects;")
 	if err != nil {
 		return err
 	}
@@ -81,7 +80,7 @@ func (s *SqliteIndex) FindMissing() error {
 			return err
 		}
 
-		obj, err := s.ObjectStore.Get(&proto.Ref{Sha1: ref})
+		obj, err := s.ObjectStore.Get(ctx, &proto.Ref{Sha1: ref})
 		if err != nil {
 			return err
 		}
@@ -115,20 +114,20 @@ func (s *SqliteIndex) Close() error {
 	return s.db.Close()
 }
 
-func (s *SqliteIndex) ReIndex() error {
-	return s.ObjectStore.Walk(true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
-		return s.index(obj.GetCommit())
+func (s *SqliteIndex) ReIndex(ctx context.Context) error {
+	return s.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+		return s.index(ctx, obj.GetCommit())
 	})
 }
 
-func (s *SqliteIndex) index(commit *proto.Commit) error {
+func (s *SqliteIndex) index(ctx context.Context, commit *proto.Commit) error {
 	log.Printf("Indexing commit: %v", time.Unix(commit.Timestamp, 0))
 
 	// whenever we get to index a commit
 	// we'll traverse the complete backup tree
 	// to create our filesystem path index
 
-	treeObj, err := s.ObjectStore.Get(commit.Tree)
+	treeObj, err := s.ObjectStore.Get(ctx, commit.Tree)
 	if err != nil {
 		return err
 	}
@@ -143,19 +142,19 @@ func (s *SqliteIndex) index(commit *proto.Commit) error {
 		return err
 	}
 
-	stmt, err := tx.Prepare("INSERT OR IGNORE INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)")
+	stmt, err := tx.PrepareContext(ctx, "INSERT OR IGNORE INTO files(path, timestamp, size, mode, ref) VALUES(?,?,?,?,?)")
 	if err != nil {
 		return nil
 	}
 
-	err = backup.TraverseTree(context.Background(), s.ObjectStore, treeObj, 64, func(filepath string, node *proto.TreeNode) error {
+	err = backup.TraverseTree(ctx, s.ObjectStore, treeObj, 64, func(filepath string, node *proto.TreeNode) error {
 		info := node.Stat
 		if info.Tree {
 			return nil
 		}
 
 		// store the relative path to this file in the index
-		_, sqlErr := stmt.Exec(filepath, info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
+		_, sqlErr := stmt.ExecContext(ctx, filepath, info.Timestamp, info.Size, info.Mode, node.Ref.Sha1)
 
 		return sqlErr
 	})
@@ -165,7 +164,7 @@ func (s *SqliteIndex) index(commit *proto.Commit) error {
 		return tx.Rollback()
 	}
 
-	_, err = tx.Exec("INSERT OR IGNORE INTO commits (timestamp, tree) VALUES (?, ?)", commit.Timestamp, commit.Tree.Sha1)
+	_, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO commits (timestamp, tree) VALUES (?, ?)", commit.Timestamp, commit.Tree.Sha1)
 	if err != nil {
 		return err
 	}
@@ -173,25 +172,25 @@ func (s *SqliteIndex) index(commit *proto.Commit) error {
 	return tx.Commit()
 }
 
-func (s *SqliteIndex) Put(object *proto.Object) error {
+func (s *SqliteIndex) Put(ctx context.Context, object *proto.Object) error {
 	// store the object first
-	err := s.ObjectStore.Put(object)
+	err := s.ObjectStore.Put(ctx, object)
 	if err != nil {
 		return err
 	}
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-		return s.index(object.GetCommit())
+		return s.index(ctx, object.GetCommit())
 	}
 
 	return nil
 }
 
-func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
+func (s *SqliteIndex) FileInfo(ctx context.Context, name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
 	infoList := make([]proto.TreeNode, count)
 
-	rows, err := s.db.Query("SELECT path, timestamp, size, mode, ref FROM files WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
+	rows, err := s.db.QueryContext(ctx, "SELECT path, timestamp, size, mode, ref FROM files WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
 	if err != nil {
 		return nil, err
 	}
@@ -221,10 +220,10 @@ func (s *SqliteIndex) FileInfo(name string, notAfter time.Time, count int) ([]pr
 	return infoList[:counter], rows.Err()
 }
 
-func (s *SqliteIndex) CommitInfo(notAfter time.Time, count int) ([]proto.Commit, error) {
+func (s *SqliteIndex) CommitInfo(ctx context.Context, notAfter time.Time, count int) ([]proto.Commit, error) {
 	infoList := make([]proto.Commit, count)
 
-	rows, err := s.db.Query("SELECT timestamp, tree FROM commits WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
+	rows, err := s.db.QueryContext(ctx, "SELECT timestamp, tree FROM commits WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
 	if err != nil {
 		return nil, err
 	}

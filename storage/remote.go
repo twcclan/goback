@@ -25,14 +25,14 @@ type RemoteClient struct {
 	store proto.StoreClient
 }
 
-func (r *RemoteClient) Put(object *proto.Object) error {
-	_, err := r.store.Put(context.Background(), &proto.PutRequest{Object: object})
+func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
+	_, err := r.store.Put(ctx, &proto.PutRequest{Object: object})
 
 	return err
 }
 
-func (r *RemoteClient) Get(ref *proto.Ref) (*proto.Object, error) {
-	resp, err := r.store.Get(context.Background(), &proto.GetRequest{Ref: ref})
+func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	resp, err := r.store.Get(ctx, &proto.GetRequest{Ref: ref})
 	if err != nil {
 		return nil, err
 	}
@@ -40,12 +40,12 @@ func (r *RemoteClient) Get(ref *proto.Ref) (*proto.Object, error) {
 	return resp.Object, nil
 }
 
-func (r *RemoteClient) Delete(*proto.Ref) error {
+func (r *RemoteClient) Delete(ctx context.Context, ref *proto.Ref) error {
 	return nil
 }
 
-func (r *RemoteClient) Walk(load bool, typ proto.ObjectType, fn backup.ObjectReceiver) error {
-	ctx, cancel := context.WithCancel(context.Background())
+func (r *RemoteClient) Walk(ctx context.Context, load bool, typ proto.ObjectType, fn backup.ObjectReceiver) error {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	walker, err := r.store.Walk(ctx, &proto.WalkRequest{Load: load, ObjectType: typ})
@@ -85,11 +85,11 @@ type RemoteServer struct {
 }
 
 func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
-	return &proto.PutResponse{}, r.store.Put(request.Object)
+	return &proto.PutResponse{}, r.store.Put(ctx, request.Object)
 }
 
 func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
-	obj, err := r.store.Get(request.Ref)
+	obj, err := r.store.Get(ctx, request.Ref)
 
 	return &proto.GetResponse{Object: obj}, err
 }
@@ -99,7 +99,7 @@ func (r *RemoteServer) Delete(context.Context, *proto.DeleteRequest) (*proto.Del
 }
 
 func (r *RemoteServer) Walk(request *proto.WalkRequest, walker proto.Store_WalkServer) error {
-	return r.store.Walk(request.Load, request.ObjectType, func(header *proto.ObjectHeader, object *proto.Object) error {
+	return r.store.Walk(walker.Context(), request.Load, request.ObjectType, func(header *proto.ObjectHeader, object *proto.Object) error {
 		return walker.Send(&proto.WalkResponse{Object: object, Header: header})
 	})
 }

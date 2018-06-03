@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"encoding/hex"
 	"io/ioutil"
 	"log"
@@ -12,7 +13,7 @@ import (
 )
 
 func (o *object) get() {
-	obj, err := o.store.Get(o.ref)
+	obj, err := o.store.Get(context.Background(), o.ref)
 	if err != nil {
 		log.Fatal(err)
 	}

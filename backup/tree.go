@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"io"
 	"os"
 	"sort"
@@ -10,8 +11,8 @@ import (
 )
 
 type TreeWriter interface {
-	File(os.FileInfo, func(io.Writer) error) error
-	Tree(os.FileInfo, func(TreeWriter) error) error
+	File(context.Context, os.FileInfo, func(io.Writer) error) error
+	Tree(context.Context, os.FileInfo, func(TreeWriter) error) error
 	Node(*proto.TreeNode)
 }
 
@@ -23,7 +24,7 @@ type backupTree struct {
 
 var _ TreeWriter = (*backupTree)(nil)
 
-func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) error {
+func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(TreeWriter) error) error {
 	node := &backupTree{
 		nodes: make([]*proto.TreeNode, 0),
 		store: bt.store,
@@ -45,7 +46,7 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 	})
 
 	// store the sub-tree
-	err = bt.store.Put(treeObj)
+	err = bt.store.Put(ctx, treeObj)
 	if err != nil {
 		return err
 	}
@@ -59,8 +60,8 @@ func (bt *backupTree) Tree(info os.FileInfo, writer func(TreeWriter) error) erro
 	return err
 }
 
-func (bt *backupTree) File(info os.FileInfo, writer func(io.Writer) error) error {
-	fWriter := newFileWriter(bt.store)
+func (bt *backupTree) File(ctx context.Context, info os.FileInfo, writer func(io.Writer) error) error {
+	fWriter := newFileWriter(ctx, bt.store)
 	node := &proto.TreeNode{
 		Stat: proto.GetFileInfo(info),
 	}
