@@ -38,10 +38,6 @@
   version = "1.0.5"
 
 [[constraint]]
-  name = "github.com/aws/aws-sdk-go"
-  version = "1.13.52"
-
-[[constraint]]
   name = "github.com/bmatcuk/doublestar"
   version = "1.0.9"
 
@@ -72,10 +68,6 @@
 [[constraint]]
   name = "github.com/pkg/errors"
   version = "0.8.0"
-
-[[constraint]]
-  branch = "master"
-  name = "github.com/rcrowley/go-metrics"
 
 [[constraint]]
   name = "github.com/stretchr/testify"
@@ -112,3 +104,11 @@
 [[constraint]]
   name = "github.com/willf/bloom"
   version = "2.0.3"
+
+[[constraint]]
+  name = "go.opencensus.io"
+  version = "0.9.0"
+
+[[constraint]]
+  name = "github.com/prometheus/client_golang"
+  version = "0.8.0"

@@ -15,9 +15,13 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
 	"github.com/twcclan/goback/cmd/goback/commands/server"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/codegangsta/cli"
 	_ "github.com/joho/godotenv/autoload"
+	prom "github.com/prometheus/client_golang/prometheus"
+	"go.opencensus.io/exporter/prometheus"
+	"go.opencensus.io/stats/view"
 )
 
 func webserver() {
@@ -38,6 +42,12 @@ func tracer() {
 }
 
 func main() {
+	exp, _ := prometheus.NewExporter(prometheus.Options{Registry: prom.NewRegistry()})
+	view.RegisterExporter(exp)
+	view.Register(pack.DefaultViews...)
+
+	http.Handle("/metrics", exp)
+
 	go webserver()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/twcclan/goback/proto"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/willf/bloom"
+	"go.opencensus.io/stats"
+	"go.opencensus.io/tag"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -199,6 +202,7 @@ func (a *archive) indexName() string {
 func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) (*proto.Object, error) {
 	buf := make([]byte, loc.Length)
 
+	start := time.Now()
 	if readerAt, ok := a.readFile.(io.ReaderAt); ok {
 		_, err := readerAt.ReadAt(buf, int64(loc.Offset))
 		if err != nil {
@@ -223,6 +227,8 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) 
 		a.mtx.Unlock()
 	}
 
+	readLatency := float64(time.Since(start)) / float64(time.Millisecond)
+
 	// read size of object header
 	hdrSize, consumed := proto.DecodeVarint(buf)
 
@@ -234,6 +240,16 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) 
 
 	if !bytes.Equal(hdr.Ref.Sha1, ref.Sha1) {
 		return nil, errors.New("Object doesn't match Ref, index probably corrupted")
+	}
+
+	if ctx, err := tag.New(ctx,
+		tag.Insert(KeyObjectType, hdr.Type.String()),
+	); err == nil {
+		stats.Record(ctx,
+			GetObjectSize.M(int64(hdr.Size)),
+			ArchiveReadLatency.M(readLatency),
+			ArchiveReadSize.M(int64(loc.Length)),
+		)
 	}
 
 	return proto.NewObjectFromCompressedBytes(buf[consumed+int(hdrSize):])
@@ -286,15 +302,16 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	// construct a buffer with our header preceeded by a varint describing its size
 	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
 
-	_, err := a.writeFile.Write(hdrBytes)
+	// add our payload
+	data := append(hdrBytes, bytes...)
+
+	start := time.Now()
+	_, err := a.writeFile.Write(data)
 	if err != nil {
 		return errors.Wrap(err, "Failed writing header")
 	}
 
-	_, err = a.writeFile.Write(bytes)
-	if err != nil {
-		return errors.Wrap(err, "Failed writing data")
-	}
+	writeLatency := float64(time.Since(start)) / float64(time.Millisecond)
 
 	record := &indexRecord{
 		Offset: uint32(a.size),
@@ -307,6 +324,16 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 
 	a.size += uint64(record.Length)
 	a.last = ref
+
+	if ctx, err := tag.New(ctx,
+		tag.Insert(KeyObjectType, hdr.Type.String()),
+	); err == nil {
+		stats.Record(ctx,
+			PutObjectSize.M(int64(hdr.Size)),
+			ArchiveWriteLatency.M(writeLatency),
+			ArchiveWriteSize.M(int64(len(data))),
+		)
+	}
 
 	return nil
 }
