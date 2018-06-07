@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"sort"
 	"sync/atomic"
 
@@ -19,6 +18,10 @@ const (
 	// maxBlobSize is the largest blob we ever make when cutting up
 	// a file.
 	maxBlobSize = 1 << 20
+
+	// maxFileParts is the number of file parts at which we start
+	// splitting the file object
+	maxFileParts = 25000
 
 	// tooSmallThreshold is the threshold at which rolling checksum
 	// boundaries are ignored if the current chunk being built is
@@ -127,10 +130,35 @@ func (bfw *fileWriter) Close() (err error) {
 		bfw.split()
 	}
 
-	// store the file -> chunks mapping
-	file := proto.NewObject(&proto.File{
-		Parts: bfw.parts,
-	})
+	var file *proto.Object
+
+	if len(bfw.parts) > maxFileParts {
+		var splits []*proto.Ref
+		for len(bfw.parts) > 0 {
+			max := maxFileParts
+			if max > len(bfw.parts) {
+				max = len(bfw.parts)
+			}
+
+			split := proto.NewObject(&proto.File{Parts: bfw.parts[:max]})
+
+			err := bfw.store.Put(bfw.ctx, split)
+			if err != nil {
+				return err
+			}
+
+			bfw.parts = bfw.parts[max:]
+			splits = append(splits, split.Ref())
+		}
+
+		file = proto.NewObject(&proto.File{
+			Splits: splits,
+		})
+	} else {
+		file = proto.NewObject(&proto.File{
+			Parts: bfw.parts,
+		})
+	}
 
 	bfw.ref = file.Ref()
 
@@ -155,6 +183,7 @@ func newFileReader(ctx context.Context, store ObjectStore, file *proto.File) *fi
 type fileReader struct {
 	store     ObjectStore
 	file      *proto.File
+	parts     []*proto.FilePart
 	blob      *proto.Object
 	partIndex int
 	offset    int64
@@ -164,13 +193,13 @@ type fileReader struct {
 type searchCallback func(index int) bool
 
 func (bfr *fileReader) search(index int) bool {
-	part := bfr.file.Parts[index]
+	part := bfr.parts[index]
 
 	return bfr.offset <= int64(part.Offset+part.Length-1)
 }
 
-func (bfr *fileReader) Size() int64 {
-	parts := bfr.file.Parts
+func (bfr *fileReader) size() int64 {
+	parts := bfr.parts
 	length := len(parts)
 	if length > 0 {
 		last := parts[length-1]
@@ -190,13 +219,59 @@ type partRequest struct {
 	part  *proto.FilePart
 }
 
+func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, error) {
+	if bfr.parts == nil {
+		// this is a large file so we need to fetch the referenced file objects
+		if bfr.file.Splits != nil {
+			subFiles := make([]*proto.File, len(bfr.file.Splits))
+			grp, grpCtx := errgroup.WithContext(ctx)
+
+			for i := range bfr.file.Splits {
+				index := i
+
+				// get all parts in parallel, can add bounds later if required
+				grp.Go(func() error {
+					ref := bfr.file.Splits[index]
+
+					obj, err := bfr.store.Get(grpCtx, ref)
+					if err != nil {
+						return err
+					}
+
+					subFiles[index] = obj.GetFile()
+					return nil
+				})
+			}
+
+			err := grp.Wait()
+			if err != nil {
+				return nil, err
+			}
+
+			for _, subFile := range subFiles {
+				bfr.parts = append(bfr.parts, subFile.GetParts()...)
+			}
+		} else {
+			bfr.parts = bfr.file.Parts
+		}
+	}
+
+	return bfr.parts, nil
+}
+
 func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
-	group, ctx := errgroup.WithContext(context.Background())
+	group, ctx := errgroup.WithContext(bfr.ctx)
 	requests := make(chan partRequest)
 	parts := make(chan partResponse)
-	numParts := len(bfr.file.Parts)
 	numWorker := 512
 	bytesWritten := int64(0)
+
+	fileParts, err := bfr.getFileParts(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	numParts := len(fileParts)
 
 	// writer goroutine
 	group.Go(func() error {
@@ -236,11 +311,11 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 		}()
 
 		// push all parts to the request channel
-		for i, part := range bfr.file.Parts {
+		for i, part := range fileParts {
 			select {
 			// cancelling the context is the only way this should ever exit early
 			case <-ctx.Done():
-				return nil
+				return ctx.Err()
 			case requests <- partRequest{index: i, part: part}:
 			}
 		}
@@ -276,9 +351,14 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 }
 
 func (bfr *fileReader) Read(b []byte) (n int, err error) {
+	fileParts, err := bfr.getFileParts(bfr.ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	// check if we reached EOF
 
-	if bfr.offset >= bfr.Size() {
+	if bfr.offset >= bfr.size() {
 		return 0, io.EOF
 	}
 
@@ -288,7 +368,7 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 
 	// the chunk that represents the currently active part
 	// of the file that is being read
-	part := bfr.file.Parts[bfr.partIndex]
+	part := fileParts[bfr.partIndex]
 
 	// calculate the offset for the currently active chunk
 	relativeOffset := bfr.offset - int64(part.Offset)
@@ -343,21 +423,26 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 }
 
 func (bfr *fileReader) Seek(offset int64, whence int) (int64, error) {
-	switch whence {
-	case os.SEEK_SET:
-		bfr.offset = offset
-	case os.SEEK_CUR:
-		bfr.offset += offset
-	case os.SEEK_END:
-		bfr.offset = bfr.Size() - 1 - offset
+	fileParts, err := bfr.getFileParts(bfr.ctx)
+	if err != nil {
+		return 0, err
 	}
 
-	if bfr.offset < 0 || bfr.offset > bfr.Size() {
+	switch whence {
+	case io.SeekStart:
+		bfr.offset = offset
+	case io.SeekCurrent:
+		bfr.offset += offset
+	case io.SeekEnd:
+		bfr.offset = bfr.size() - 1 - offset
+	}
+
+	if bfr.offset < 0 || bfr.offset > bfr.size() {
 		return bfr.offset, ErrIllegalOffset
 	}
 
-	// find the part that cointains the requested data
-	if i := sort.Search(len(bfr.file.Parts), bfr.search); i != bfr.partIndex {
+	// find the part that contains the requested data
+	if i := sort.Search(len(fileParts), bfr.search); i != bfr.partIndex {
 		// if it is not the currently active part
 		// unload the currently loaded chunk
 		bfr.partIndex = i

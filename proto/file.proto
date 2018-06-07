@@ -17,7 +17,11 @@ message FileInfo {
 }
 
 message File {
+	// an ordered list of file parts
 	repeated FilePart parts = 1;
+
+	// an ordered list of references to other file objects
+	repeated Ref splits = 2;
 }
 
 message FilePart {
