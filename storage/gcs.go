@@ -286,7 +286,7 @@ var _ os.FileInfo = (*gcsFileInfo)(nil)
 var _ pack.ArchiveStorage = (*gcsStore)(nil)
 
 func NewGCSObjectStore(bucket string) (backup.ObjectStore, error) {
-	credentials, err := google.FindDefaultCredentials(context.Background())
+	credentials, err := google.FindDefaultCredentials(context.Background(), storage.ScopeReadWrite)
 	if err != nil {
 		return nil, err
 	}
