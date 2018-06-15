@@ -13,4 +13,5 @@ type ObjectStore interface {
 	Get(context.Context, *proto.Ref) (*proto.Object, error)
 	Delete(context.Context, *proto.Ref) error
 	Walk(context.Context, bool, proto.ObjectType, ObjectReceiver) error
+	Has(context.Context, *proto.Ref) (bool, error)
 }

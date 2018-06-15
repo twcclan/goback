@@ -87,7 +87,12 @@ func (bfw *fileWriter) split() {
 	atomic.AddInt32(&bfw.pending, 1)
 
 	bfw.storageGroup.Go(func() error {
-		err := bfw.store.Put(bfw.ctx, blob)
+		has, err := bfw.store.Has(bfw.ctx, blob.Ref())
+		if has {
+			return nil
+		}
+
+		err = bfw.store.Put(bfw.ctx, blob)
 		bfw.storageSemaphore.Done()
 		defer atomic.AddInt32(&bfw.pending, -1)
 		if err != nil {

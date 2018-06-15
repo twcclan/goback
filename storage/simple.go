@@ -40,6 +40,10 @@ func (s *SimpleChunkStore) Close() error {
 	return s.db.Close()
 }
 
+func (s *SimpleChunkStore) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
+	return s.db.Has(ref.Sha1, nil)
+}
+
 func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
 	err := s.db.Put(obj.Ref().Sha1, obj.Bytes(), nil)
 	if err != nil {

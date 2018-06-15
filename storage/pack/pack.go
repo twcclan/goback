@@ -73,6 +73,12 @@ type PackStorage struct {
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
+func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
+	_, loc := ps.indexLocation(ref)
+
+	return loc != nil, nil
+}
+
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
 	return ps.put(ctx, object)
 }
@@ -297,29 +303,23 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 }
 
 func (ps *PackStorage) calculateWaste(a *archive) float64 {
-	return 0
+	objects := make(map[string]bool)
+	var total, waste uint64
 
-	/*
+	for _, record := range a.readIndex {
+		total += uint64(record.Length)
+		objRefString := string(record.Sum[:])
 
-		objects := make(map[string]bool)
-		var total, waste uint64
-
-		for _, record := range a.readIndex {
-			total += uint64(record.Length)
-			objRefString := string(record.Sum[:])
-
-			if objects[objRefString] {
-				waste += uint64(record.Length)
-			} else {
-				objects[objRefString] = true
-			}
+		if objects[objRefString] {
+			waste += uint64(record.Length)
+		} else {
+			objects[objRefString] = true
 		}
+	}
 
-		log.Print(len(objects), len(a.readIndex))
+	log.Print(len(objects), len(a.readIndex))
 
-		return float64(waste) / float64(total)
-
-	*/
+	return float64(waste) / float64(total)
 }
 
 func (ps *PackStorage) doCompaction() error {
