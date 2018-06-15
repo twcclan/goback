@@ -48,8 +48,10 @@ type RemoteClient struct {
 	cache *pack.PackStorage
 }
 
-func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
-	_, err := r.store.Put(ctx, &proto.PutRequest{Object: object})
+func (r *RemoteClient) maybeCache(ctx context.Context, object *proto.Object, err error) {
+	if err != nil {
+		return
+	}
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT, proto.ObjectType_FILE, proto.ObjectType_TREE:
@@ -58,7 +60,12 @@ func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
 			log.Printf("failed putting object into cache: %v", cacheErr)
 		}
 	}
+}
 
+func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
+	_, err := r.store.Put(ctx, &proto.PutRequest{Object: object})
+
+	r.maybeCache(ctx, object, err)
 	return err
 }
 
@@ -74,6 +81,8 @@ func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 	if err != nil {
 		return nil, err
 	}
+
+	r.maybeCache(ctx, resp.Object, nil)
 
 	return resp.Object, nil
 }
