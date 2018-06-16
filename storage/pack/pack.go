@@ -63,6 +63,7 @@ type PackStorage struct {
 	compaction       bool
 	maxSize          uint64
 	closeBeforeRead  bool
+	cache            backup.ObjectStore
 
 	// all of these are guarded by mtx
 	mtx      sync.RWMutex
@@ -79,8 +80,49 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return loc != nil, nil
 }
 
+func (ps *PackStorage) cachable(obj *proto.Object) bool {
+	if obj == nil {
+		return false
+	}
+
+	switch obj.Type() {
+	case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
+		return true
+	}
+
+	return false
+}
+
+func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err error) error {
+	if ps.cache != nil && err == nil && ps.cachable(obj) {
+		ps.cache.Put(ctx, obj)
+	}
+
+	return err
+}
+
+func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, error) (*proto.Object, error) {
+	return func(obj *proto.Object, err error) (*proto.Object, error) {
+		if ps.cache != nil && err == nil && ps.cachable(obj) {
+		}
+
+		return nil, nil
+	}
+}
+
+func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Object {
+	if ps.cache != nil {
+		obj, err := ps.cache.Get(ctx, ref)
+		if err == nil {
+			return obj
+		}
+	}
+
+	return nil
+}
+
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
-	return ps.put(ctx, object)
+	return ps.putWriteCache(ctx, object, ps.put(ctx, object))
 }
 
 func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
@@ -145,6 +187,11 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 }
 
 func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	cached := ps.getCache(ctx, ref)
+	if cached != nil {
+		return cached, nil
+	}
+
 	archive, rec := ps.indexLocation(ref)
 	if rec != nil {
 		archive.mtx.RLock()
@@ -160,7 +207,7 @@ func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 			}
 		}
 
-		return archive.getRaw(ctx, ref, rec)
+		return ps.putReadCache(ctx)(archive.getRaw(ctx, ref, rec))
 	}
 
 	return nil, nil
@@ -524,6 +571,12 @@ func (ps *PackStorage) Close() error {
 		err := ps.archives[i].Close()
 		if err != nil {
 			return err
+		}
+	}
+
+	if ps.cache != nil {
+		if cls, ok := ps.cache.(io.Closer); ok {
+			cls.Close()
 		}
 	}
 

@@ -285,7 +285,7 @@ var _ os.FileInfo = (*gcsFileInfo)(nil)
 
 var _ pack.ArchiveStorage = (*gcsStore)(nil)
 
-func NewGCSObjectStore(bucket string) (backup.ObjectStore, error) {
+func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 	credentials, err := google.FindDefaultCredentials(context.Background(), storage.ScopeReadWrite)
 	if err != nil {
 		return nil, err
@@ -301,10 +301,30 @@ func NewGCSObjectStore(bucket string) (backup.ObjectStore, error) {
 		openFiles: make(map[string]*gcsFile),
 	}
 
-	return pack.NewPackStorage(
+	options := []pack.PackOption{
 		pack.WithArchiveStorage(storage),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
-		pack.WithMaxSize(1024*1024*1024),
-	)
+		pack.WithMaxSize(1024 * 1024 * 1024),
+	}
+
+	if cacheDir != "" {
+		err = os.MkdirAll(cacheDir, 0644)
+		if err != nil {
+			return nil, err
+		}
+
+		cache, err := pack.NewPackStorage(
+			pack.WithMaxParallel(1),
+			pack.WithCompaction(true),
+			pack.WithArchiveStorage(pack.NewLocalArchiveStorage(cacheDir)),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		options = append(options, pack.WithMetadataCache(cache))
+	}
+
+	return pack.NewPackStorage(options...)
 }

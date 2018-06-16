@@ -3,14 +3,9 @@ package storage
 import (
 	"context"
 	"io"
-	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
-
 	"google.golang.org/grpc"
 )
 
@@ -20,69 +15,26 @@ func NewRemoteClient(addr string) (*RemoteClient, error) {
 		return nil, err
 	}
 
-	cacheDir := filepath.Join(os.TempDir(), ".goback", "cache")
-	err = os.MkdirAll(cacheDir, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Using cache at %s", cacheDir)
-
-	cache, err := pack.NewPackStorage(
-		pack.WithMaxParallel(1),
-		pack.WithCompaction(true),
-		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(cacheDir)),
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	return &RemoteClient{
 		store: proto.NewStoreClient(con),
-		cache: cache,
 	}, nil
 }
 
 type RemoteClient struct {
 	store proto.StoreClient
-	cache *pack.PackStorage
-}
-
-func (r *RemoteClient) maybeCache(ctx context.Context, object *proto.Object, err error) {
-	if err != nil {
-		return
-	}
-
-	switch object.Type() {
-	case proto.ObjectType_COMMIT, proto.ObjectType_FILE, proto.ObjectType_TREE:
-		cacheErr := r.cache.Put(ctx, object)
-		if cacheErr != nil {
-			log.Printf("failed putting object into cache: %v", cacheErr)
-		}
-	}
 }
 
 func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
 	_, err := r.store.Put(ctx, &proto.PutRequest{Object: object})
 
-	r.maybeCache(ctx, object, err)
 	return err
 }
 
 func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	obj, err := r.cache.Get(ctx, ref)
-	if err == nil {
-		if obj != nil {
-			return obj, nil
-		}
-	}
-
 	resp, err := r.store.Get(ctx, &proto.GetRequest{Ref: ref})
 	if err != nil {
 		return nil, err
 	}
-
-	r.maybeCache(ctx, resp.Object, nil)
 
 	return resp.Object, nil
 }

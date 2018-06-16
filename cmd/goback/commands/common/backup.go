@@ -63,7 +63,7 @@ func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewGCSObjectStore(u.Host)
+	return storage.NewGCSObjectStore(u.Host, u.Query().Get("cache"))
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
