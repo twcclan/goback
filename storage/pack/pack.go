@@ -365,8 +365,6 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 		}
 	}
 
-	log.Print(len(objects), len(a.readIndex))
-
 	return float64(waste) / float64(total)
 }
 
