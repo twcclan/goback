@@ -53,6 +53,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		compaction:       opts.compaction,
 		maxSize:          opts.maxSize,
 		closeBeforeRead:  opts.closeBeforeRead,
+		cache:            opts.cache,
 	}, nil
 }
 
