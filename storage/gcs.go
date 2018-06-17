@@ -323,6 +323,11 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 			return nil, err
 		}
 
+		err = cache.Open()
+		if err != nil {
+			return nil, err
+		}
+
 		options = append(options, pack.WithMetadataCache(cache))
 	}
 
