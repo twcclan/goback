@@ -80,7 +80,7 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return loc != nil, nil
 }
 
-func (ps *PackStorage) cachable(obj *proto.Object) bool {
+func (ps *PackStorage) cacheable(obj *proto.Object) bool {
 	if obj == nil {
 		return false
 	}
@@ -94,7 +94,7 @@ func (ps *PackStorage) cachable(obj *proto.Object) bool {
 }
 
 func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err error) error {
-	if ps.cache != nil && err == nil && ps.cachable(obj) {
+	if ps.cache != nil && err == nil && ps.cacheable(obj) {
 		ps.cache.Put(ctx, obj)
 	}
 
@@ -103,7 +103,7 @@ func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err
 
 func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, error) (*proto.Object, error) {
 	return func(obj *proto.Object, err error) (*proto.Object, error) {
-		if ps.cache != nil && err == nil && ps.cachable(obj) {
+		if ps.cache != nil && err == nil && ps.cacheable(obj) {
 			ps.cache.Put(ctx, obj)
 		}
 
