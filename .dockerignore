@@ -1,0 +1,8 @@
+*.exe
+*.dat
+*.profile
+*.db
+.env
+test/
+.idea
+vendor
