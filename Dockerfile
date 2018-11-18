@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 RUN mkdir /goback-bin
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /goback-bin/binary ./cmd/goback
+RUN GOOS=linux go build -a -o /goback-bin/binary ./cmd/goback
 
 FROM alpine
 
