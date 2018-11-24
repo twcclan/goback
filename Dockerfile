@@ -15,7 +15,7 @@ RUN mkdir /goback-bin
 
 RUN go build -o /goback-bin/binary ./cmd/goback
 
-FROM alpine
+FROM alpine as runner
 
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /root
