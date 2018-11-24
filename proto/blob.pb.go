@@ -3,23 +3,51 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+
 type Blob struct {
-	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Data                 []byte   `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Blob) Reset()                    { *m = Blob{} }
-func (m *Blob) String() string            { return proto1.CompactTextString(m) }
-func (*Blob) ProtoMessage()               {}
-func (*Blob) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{0} }
+func (m *Blob) Reset()         { *m = Blob{} }
+func (m *Blob) String() string { return proto.CompactTextString(m) }
+func (*Blob) ProtoMessage()    {}
+func (*Blob) Descriptor() ([]byte, []int) {
+	return fileDescriptor_blob_dc82e1e551278169, []int{0}
+}
+func (m *Blob) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Blob.Unmarshal(m, b)
+}
+func (m *Blob) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Blob.Marshal(b, m, deterministic)
+}
+func (dst *Blob) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Blob.Merge(dst, src)
+}
+func (m *Blob) XXX_Size() int {
+	return xxx_messageInfo_Blob.Size(m)
+}
+func (m *Blob) XXX_DiscardUnknown() {
+	xxx_messageInfo_Blob.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Blob proto.InternalMessageInfo
 
 func (m *Blob) GetData() []byte {
 	if m != nil {
@@ -29,12 +57,12 @@ func (m *Blob) GetData() []byte {
 }
 
 func init() {
-	proto1.RegisterType((*Blob)(nil), "proto.Blob")
+	proto.RegisterType((*Blob)(nil), "proto.Blob")
 }
 
-func init() { proto1.RegisterFile("blob.proto", fileDescriptor1) }
+func init() { proto.RegisterFile("blob.proto", fileDescriptor_blob_dc82e1e551278169) }
 
-var fileDescriptor1 = []byte{
+var fileDescriptor_blob_dc82e1e551278169 = []byte{
 	// 69 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4a, 0xca, 0xc9, 0x4f,
 	0xd2, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x4a, 0x52, 0x5c, 0x2c, 0x4e, 0x39,

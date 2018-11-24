@@ -3,24 +3,53 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+
 type Commit struct {
-	Timestamp int64 `protobuf:"varint,1,opt,name=timestamp" json:"timestamp,omitempty"`
-	Tree      *Ref  `protobuf:"bytes,2,opt,name=tree" json:"tree,omitempty"`
+	Timestamp            int64    `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Tree                 *Ref     `protobuf:"bytes,2,opt,name=tree,proto3" json:"tree,omitempty"`
+	BackupSet            string   `protobuf:"bytes,3,opt,name=backup_set,json=backupSet,proto3" json:"backup_set,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Commit) Reset()                    { *m = Commit{} }
-func (m *Commit) String() string            { return proto1.CompactTextString(m) }
-func (*Commit) ProtoMessage()               {}
-func (*Commit) Descriptor() ([]byte, []int) { return fileDescriptor2, []int{0} }
+func (m *Commit) Reset()         { *m = Commit{} }
+func (m *Commit) String() string { return proto.CompactTextString(m) }
+func (*Commit) ProtoMessage()    {}
+func (*Commit) Descriptor() ([]byte, []int) {
+	return fileDescriptor_commit_0deaae49a9269ba2, []int{0}
+}
+func (m *Commit) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Commit.Unmarshal(m, b)
+}
+func (m *Commit) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Commit.Marshal(b, m, deterministic)
+}
+func (dst *Commit) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Commit.Merge(dst, src)
+}
+func (m *Commit) XXX_Size() int {
+	return xxx_messageInfo_Commit.Size(m)
+}
+func (m *Commit) XXX_DiscardUnknown() {
+	xxx_messageInfo_Commit.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Commit proto.InternalMessageInfo
 
 func (m *Commit) GetTimestamp() int64 {
 	if m != nil {
@@ -36,19 +65,28 @@ func (m *Commit) GetTree() *Ref {
 	return nil
 }
 
-func init() {
-	proto1.RegisterType((*Commit)(nil), "proto.Commit")
+func (m *Commit) GetBackupSet() string {
+	if m != nil {
+		return m.BackupSet
+	}
+	return ""
 }
 
-func init() { proto1.RegisterFile("commit.proto", fileDescriptor2) }
+func init() {
+	proto.RegisterType((*Commit)(nil), "proto.Commit")
+}
 
-var fileDescriptor2 = []byte{
-	// 107 bytes of a gzipped FileDescriptorProto
+func init() { proto.RegisterFile("commit.proto", fileDescriptor_commit_0deaae49a9269ba2) }
+
+var fileDescriptor_commit_0deaae49a9269ba2 = []byte{
+	// 134 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x49, 0xce, 0xcf, 0xcd,
 	0xcd, 0x2c, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x52, 0x9c, 0x45, 0xa9,
-	0x69, 0x10, 0x11, 0x25, 0x37, 0x2e, 0x36, 0x67, 0xb0, 0x0a, 0x21, 0x19, 0x2e, 0xce, 0x92, 0xcc,
+	0x69, 0x10, 0x11, 0xa5, 0x54, 0x2e, 0x36, 0x67, 0xb0, 0x0a, 0x21, 0x19, 0x2e, 0xce, 0x92, 0xcc,
 	0xdc, 0xd4, 0xe2, 0x92, 0xc4, 0xdc, 0x02, 0x09, 0x46, 0x05, 0x46, 0x0d, 0xe6, 0x20, 0x84, 0x80,
 	0x90, 0x1c, 0x17, 0x4b, 0x49, 0x51, 0x6a, 0xaa, 0x04, 0x93, 0x02, 0xa3, 0x06, 0xb7, 0x11, 0x17,
-	0x44, 0xb7, 0x5e, 0x50, 0x6a, 0x5a, 0x10, 0x58, 0x3c, 0x89, 0x0d, 0x2c, 0x60, 0x0c, 0x08, 0x00,
-	0x00, 0xff, 0xff, 0x0b, 0x8b, 0x04, 0xa7, 0x70, 0x00, 0x00, 0x00,
+	0x44, 0xb7, 0x5e, 0x50, 0x6a, 0x5a, 0x10, 0x58, 0x5c, 0x48, 0x96, 0x8b, 0x2b, 0x29, 0x31, 0x39,
+	0xbb, 0xb4, 0x20, 0xbe, 0x38, 0xb5, 0x44, 0x82, 0x59, 0x81, 0x51, 0x83, 0x33, 0x88, 0x13, 0x22,
+	0x12, 0x9c, 0x5a, 0x92, 0xc4, 0x06, 0x56, 0x6f, 0x0c, 0x08, 0x00, 0x00, 0xff, 0xff, 0x56, 0x9e,
+	0x3a, 0x42, 0x8f, 0x00, 0x00, 0x00,
 }

@@ -137,7 +137,7 @@ func NewObject(in interface{}) *Object {
 		panic("Unsupported object type")
 	}
 
-	return &Object{out}
+	return &Object{Object: out}
 }
 
 func NewObjectHeaderFromBytes(bytes []byte) (*ObjectHeader, error) {

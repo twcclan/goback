@@ -7,4 +7,5 @@ import "ref.proto";
 message Commit {
   int64 timestamp = 1;
   Ref tree = 2;
+  string backup_set = 3;
 }

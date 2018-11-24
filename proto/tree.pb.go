@@ -3,23 +3,51 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+
 type Tree struct {
-	Nodes []*TreeNode `protobuf:"bytes,1,rep,name=nodes" json:"nodes,omitempty"`
+	Nodes                []*TreeNode `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
+	XXX_unrecognized     []byte      `json:"-"`
+	XXX_sizecache        int32       `json:"-"`
 }
 
-func (m *Tree) Reset()                    { *m = Tree{} }
-func (m *Tree) String() string            { return proto1.CompactTextString(m) }
-func (*Tree) ProtoMessage()               {}
-func (*Tree) Descriptor() ([]byte, []int) { return fileDescriptor7, []int{0} }
+func (m *Tree) Reset()         { *m = Tree{} }
+func (m *Tree) String() string { return proto.CompactTextString(m) }
+func (*Tree) ProtoMessage()    {}
+func (*Tree) Descriptor() ([]byte, []int) {
+	return fileDescriptor_tree_325d3c1490d62e74, []int{0}
+}
+func (m *Tree) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Tree.Unmarshal(m, b)
+}
+func (m *Tree) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Tree.Marshal(b, m, deterministic)
+}
+func (dst *Tree) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Tree.Merge(dst, src)
+}
+func (m *Tree) XXX_Size() int {
+	return xxx_messageInfo_Tree.Size(m)
+}
+func (m *Tree) XXX_DiscardUnknown() {
+	xxx_messageInfo_Tree.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Tree proto.InternalMessageInfo
 
 func (m *Tree) GetNodes() []*TreeNode {
 	if m != nil {
@@ -30,14 +58,36 @@ func (m *Tree) GetNodes() []*TreeNode {
 
 type TreeNode struct {
 	// contains info about whether this is a file or a directory (tree)
-	Stat *FileInfo `protobuf:"bytes,1,opt,name=stat" json:"stat,omitempty"`
-	Ref  *Ref      `protobuf:"bytes,2,opt,name=ref" json:"ref,omitempty"`
+	Stat                 *FileInfo `protobuf:"bytes,1,opt,name=stat,proto3" json:"stat,omitempty"`
+	Ref                  *Ref      `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
+	XXX_unrecognized     []byte    `json:"-"`
+	XXX_sizecache        int32     `json:"-"`
 }
 
-func (m *TreeNode) Reset()                    { *m = TreeNode{} }
-func (m *TreeNode) String() string            { return proto1.CompactTextString(m) }
-func (*TreeNode) ProtoMessage()               {}
-func (*TreeNode) Descriptor() ([]byte, []int) { return fileDescriptor7, []int{1} }
+func (m *TreeNode) Reset()         { *m = TreeNode{} }
+func (m *TreeNode) String() string { return proto.CompactTextString(m) }
+func (*TreeNode) ProtoMessage()    {}
+func (*TreeNode) Descriptor() ([]byte, []int) {
+	return fileDescriptor_tree_325d3c1490d62e74, []int{1}
+}
+func (m *TreeNode) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_TreeNode.Unmarshal(m, b)
+}
+func (m *TreeNode) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_TreeNode.Marshal(b, m, deterministic)
+}
+func (dst *TreeNode) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TreeNode.Merge(dst, src)
+}
+func (m *TreeNode) XXX_Size() int {
+	return xxx_messageInfo_TreeNode.Size(m)
+}
+func (m *TreeNode) XXX_DiscardUnknown() {
+	xxx_messageInfo_TreeNode.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TreeNode proto.InternalMessageInfo
 
 func (m *TreeNode) GetStat() *FileInfo {
 	if m != nil {
@@ -54,13 +104,13 @@ func (m *TreeNode) GetRef() *Ref {
 }
 
 func init() {
-	proto1.RegisterType((*Tree)(nil), "proto.Tree")
-	proto1.RegisterType((*TreeNode)(nil), "proto.TreeNode")
+	proto.RegisterType((*Tree)(nil), "proto.Tree")
+	proto.RegisterType((*TreeNode)(nil), "proto.TreeNode")
 }
 
-func init() { proto1.RegisterFile("tree.proto", fileDescriptor7) }
+func init() { proto.RegisterFile("tree.proto", fileDescriptor_tree_325d3c1490d62e74) }
 
-var fileDescriptor7 = []byte{
+var fileDescriptor_tree_325d3c1490d62e74 = []byte{
 	// 145 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x2a, 0x29, 0x4a, 0x4d,
 	0xd5, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x52, 0x5c, 0x69, 0x99, 0x39, 0x50,

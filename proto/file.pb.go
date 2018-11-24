@@ -3,31 +3,59 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
 // this contains file metadata, which can be different
 // accross backups, even if file content is the same
 type FileInfo struct {
-	Name      string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Mode      uint32 `protobuf:"varint,2,opt,name=mode" json:"mode,omitempty"`
-	User      string `protobuf:"bytes,3,opt,name=user" json:"user,omitempty"`
-	Group     string `protobuf:"bytes,4,opt,name=group" json:"group,omitempty"`
-	Timestamp int64  `protobuf:"varint,5,opt,name=timestamp" json:"timestamp,omitempty"`
-	Size      int64  `protobuf:"varint,6,opt,name=size" json:"size,omitempty"`
-	Tree      bool   `protobuf:"varint,7,opt,name=tree" json:"tree,omitempty"`
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Mode                 uint32   `protobuf:"varint,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	User                 string   `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	Group                string   `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
+	Timestamp            int64    `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Size                 int64    `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
+	Tree                 bool     `protobuf:"varint,7,opt,name=tree,proto3" json:"tree,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *FileInfo) Reset()                    { *m = FileInfo{} }
-func (m *FileInfo) String() string            { return proto1.CompactTextString(m) }
-func (*FileInfo) ProtoMessage()               {}
-func (*FileInfo) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{0} }
+func (m *FileInfo) Reset()         { *m = FileInfo{} }
+func (m *FileInfo) String() string { return proto.CompactTextString(m) }
+func (*FileInfo) ProtoMessage()    {}
+func (*FileInfo) Descriptor() ([]byte, []int) {
+	return fileDescriptor_file_4fdd285a06ed1735, []int{0}
+}
+func (m *FileInfo) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_FileInfo.Unmarshal(m, b)
+}
+func (m *FileInfo) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_FileInfo.Marshal(b, m, deterministic)
+}
+func (dst *FileInfo) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FileInfo.Merge(dst, src)
+}
+func (m *FileInfo) XXX_Size() int {
+	return xxx_messageInfo_FileInfo.Size(m)
+}
+func (m *FileInfo) XXX_DiscardUnknown() {
+	xxx_messageInfo_FileInfo.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FileInfo proto.InternalMessageInfo
 
 func (m *FileInfo) GetName() string {
 	if m != nil {
@@ -80,15 +108,37 @@ func (m *FileInfo) GetTree() bool {
 
 type File struct {
 	// an ordered list of file parts
-	Parts []*FilePart `protobuf:"bytes,1,rep,name=parts" json:"parts,omitempty"`
+	Parts []*FilePart `protobuf:"bytes,1,rep,name=parts,proto3" json:"parts,omitempty"`
 	// an ordered list of references to other file objects
-	Splits []*Ref `protobuf:"bytes,2,rep,name=splits" json:"splits,omitempty"`
+	Splits               []*Ref   `protobuf:"bytes,2,rep,name=splits,proto3" json:"splits,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *File) Reset()                    { *m = File{} }
-func (m *File) String() string            { return proto1.CompactTextString(m) }
-func (*File) ProtoMessage()               {}
-func (*File) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{1} }
+func (m *File) Reset()         { *m = File{} }
+func (m *File) String() string { return proto.CompactTextString(m) }
+func (*File) ProtoMessage()    {}
+func (*File) Descriptor() ([]byte, []int) {
+	return fileDescriptor_file_4fdd285a06ed1735, []int{1}
+}
+func (m *File) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_File.Unmarshal(m, b)
+}
+func (m *File) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_File.Marshal(b, m, deterministic)
+}
+func (dst *File) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_File.Merge(dst, src)
+}
+func (m *File) XXX_Size() int {
+	return xxx_messageInfo_File.Size(m)
+}
+func (m *File) XXX_DiscardUnknown() {
+	xxx_messageInfo_File.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_File proto.InternalMessageInfo
 
 func (m *File) GetParts() []*FilePart {
 	if m != nil {
@@ -105,15 +155,37 @@ func (m *File) GetSplits() []*Ref {
 }
 
 type FilePart struct {
-	Offset uint64 `protobuf:"varint,1,opt,name=offset" json:"offset,omitempty"`
-	Length uint64 `protobuf:"varint,2,opt,name=length" json:"length,omitempty"`
-	Ref    *Ref   `protobuf:"bytes,3,opt,name=ref" json:"ref,omitempty"`
+	Offset               uint64   `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length               uint64   `protobuf:"varint,2,opt,name=length,proto3" json:"length,omitempty"`
+	Ref                  *Ref     `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *FilePart) Reset()                    { *m = FilePart{} }
-func (m *FilePart) String() string            { return proto1.CompactTextString(m) }
-func (*FilePart) ProtoMessage()               {}
-func (*FilePart) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{2} }
+func (m *FilePart) Reset()         { *m = FilePart{} }
+func (m *FilePart) String() string { return proto.CompactTextString(m) }
+func (*FilePart) ProtoMessage()    {}
+func (*FilePart) Descriptor() ([]byte, []int) {
+	return fileDescriptor_file_4fdd285a06ed1735, []int{2}
+}
+func (m *FilePart) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_FilePart.Unmarshal(m, b)
+}
+func (m *FilePart) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_FilePart.Marshal(b, m, deterministic)
+}
+func (dst *FilePart) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FilePart.Merge(dst, src)
+}
+func (m *FilePart) XXX_Size() int {
+	return xxx_messageInfo_FilePart.Size(m)
+}
+func (m *FilePart) XXX_DiscardUnknown() {
+	xxx_messageInfo_FilePart.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FilePart proto.InternalMessageInfo
 
 func (m *FilePart) GetOffset() uint64 {
 	if m != nil {
@@ -137,14 +209,14 @@ func (m *FilePart) GetRef() *Ref {
 }
 
 func init() {
-	proto1.RegisterType((*FileInfo)(nil), "proto.FileInfo")
-	proto1.RegisterType((*File)(nil), "proto.File")
-	proto1.RegisterType((*FilePart)(nil), "proto.FilePart")
+	proto.RegisterType((*FileInfo)(nil), "proto.FileInfo")
+	proto.RegisterType((*File)(nil), "proto.File")
+	proto.RegisterType((*FilePart)(nil), "proto.FilePart")
 }
 
-func init() { proto1.RegisterFile("file.proto", fileDescriptor3) }
+func init() { proto.RegisterFile("file.proto", fileDescriptor_file_4fdd285a06ed1735) }
 
-var fileDescriptor3 = []byte{
+var fileDescriptor_file_4fdd285a06ed1735 = []byte{
 	// 253 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x54, 0x8f, 0x4f, 0x4b, 0xc4, 0x30,
 	0x10, 0xc5, 0xc9, 0xf6, 0x8f, 0xdb, 0x11, 0x11, 0x82, 0x48, 0x90, 0x3d, 0x84, 0x82, 0x90, 0xd3,

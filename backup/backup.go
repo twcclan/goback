@@ -33,7 +33,8 @@ const (
 )
 
 type BackupWriter struct {
-	store ObjectStore
+	store     ObjectStore
+	backupSet string
 	*backupTree
 }
 
@@ -52,6 +53,7 @@ func (br *BackupWriter) Close(ctx context.Context) error {
 	commit := proto.NewObject(&proto.Commit{
 		Timestamp: time.Now().Unix(),
 		Tree:      tree.Ref(),
+		BackupSet: br.backupSet,
 	})
 
 	err = br.store.Put(ctx, commit)
@@ -59,10 +61,11 @@ func (br *BackupWriter) Close(ctx context.Context) error {
 	return errors.Wrap(err, "Failed to store commit")
 }
 
-func NewBackupWriter(store ObjectStore) *BackupWriter {
+func NewBackupWriter(store ObjectStore, backupSet string) *BackupWriter {
 	return &BackupWriter{
 		store:      store,
 		backupTree: newTree(store),
+		backupSet:  backupSet,
 	}
 }
 

@@ -3,27 +3,55 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+
 type Location struct {
-	Ref    *Ref       `protobuf:"bytes,1,opt,name=ref" json:"ref,omitempty"`
-	Offset uint64     `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
-	Type   ObjectType `protobuf:"varint,3,opt,name=type,enum=proto.ObjectType" json:"type,omitempty"`
+	Ref    *Ref       `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Offset uint64     `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Type   ObjectType `protobuf:"varint,3,opt,name=type,proto3,enum=proto.ObjectType" json:"type,omitempty"`
 	// total size of object including header
-	Size uint64 `protobuf:"varint,4,opt,name=size" json:"size,omitempty"`
+	Size                 uint64   `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Location) Reset()                    { *m = Location{} }
-func (m *Location) String() string            { return proto1.CompactTextString(m) }
-func (*Location) ProtoMessage()               {}
-func (*Location) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{0} }
+func (m *Location) Reset()         { *m = Location{} }
+func (m *Location) String() string { return proto.CompactTextString(m) }
+func (*Location) ProtoMessage()    {}
+func (*Location) Descriptor() ([]byte, []int) {
+	return fileDescriptor_index_be938e22f966263e, []int{0}
+}
+func (m *Location) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Location.Unmarshal(m, b)
+}
+func (m *Location) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Location.Marshal(b, m, deterministic)
+}
+func (dst *Location) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Location.Merge(dst, src)
+}
+func (m *Location) XXX_Size() int {
+	return xxx_messageInfo_Location.Size(m)
+}
+func (m *Location) XXX_DiscardUnknown() {
+	xxx_messageInfo_Location.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Location proto.InternalMessageInfo
 
 func (m *Location) GetRef() *Ref {
 	if m != nil {
@@ -54,13 +82,35 @@ func (m *Location) GetSize() uint64 {
 }
 
 type Index struct {
-	Locations []*Location `protobuf:"bytes,1,rep,name=locations" json:"locations,omitempty"`
+	Locations            []*Location `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
+	XXX_unrecognized     []byte      `json:"-"`
+	XXX_sizecache        int32       `json:"-"`
 }
 
-func (m *Index) Reset()                    { *m = Index{} }
-func (m *Index) String() string            { return proto1.CompactTextString(m) }
-func (*Index) ProtoMessage()               {}
-func (*Index) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{1} }
+func (m *Index) Reset()         { *m = Index{} }
+func (m *Index) String() string { return proto.CompactTextString(m) }
+func (*Index) ProtoMessage()    {}
+func (*Index) Descriptor() ([]byte, []int) {
+	return fileDescriptor_index_be938e22f966263e, []int{1}
+}
+func (m *Index) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Index.Unmarshal(m, b)
+}
+func (m *Index) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Index.Marshal(b, m, deterministic)
+}
+func (dst *Index) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Index.Merge(dst, src)
+}
+func (m *Index) XXX_Size() int {
+	return xxx_messageInfo_Index.Size(m)
+}
+func (m *Index) XXX_DiscardUnknown() {
+	xxx_messageInfo_Index.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Index proto.InternalMessageInfo
 
 func (m *Index) GetLocations() []*Location {
 	if m != nil {
@@ -70,13 +120,35 @@ func (m *Index) GetLocations() []*Location {
 }
 
 type IndexHeader struct {
-	Count uint64 `protobuf:"varint,1,opt,name=count" json:"count,omitempty"`
+	Count                uint64   `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *IndexHeader) Reset()                    { *m = IndexHeader{} }
-func (m *IndexHeader) String() string            { return proto1.CompactTextString(m) }
-func (*IndexHeader) ProtoMessage()               {}
-func (*IndexHeader) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{2} }
+func (m *IndexHeader) Reset()         { *m = IndexHeader{} }
+func (m *IndexHeader) String() string { return proto.CompactTextString(m) }
+func (*IndexHeader) ProtoMessage()    {}
+func (*IndexHeader) Descriptor() ([]byte, []int) {
+	return fileDescriptor_index_be938e22f966263e, []int{2}
+}
+func (m *IndexHeader) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_IndexHeader.Unmarshal(m, b)
+}
+func (m *IndexHeader) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_IndexHeader.Marshal(b, m, deterministic)
+}
+func (dst *IndexHeader) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_IndexHeader.Merge(dst, src)
+}
+func (m *IndexHeader) XXX_Size() int {
+	return xxx_messageInfo_IndexHeader.Size(m)
+}
+func (m *IndexHeader) XXX_DiscardUnknown() {
+	xxx_messageInfo_IndexHeader.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_IndexHeader proto.InternalMessageInfo
 
 func (m *IndexHeader) GetCount() uint64 {
 	if m != nil {
@@ -86,14 +158,14 @@ func (m *IndexHeader) GetCount() uint64 {
 }
 
 func init() {
-	proto1.RegisterType((*Location)(nil), "proto.Location")
-	proto1.RegisterType((*Index)(nil), "proto.Index")
-	proto1.RegisterType((*IndexHeader)(nil), "proto.IndexHeader")
+	proto.RegisterType((*Location)(nil), "proto.Location")
+	proto.RegisterType((*Index)(nil), "proto.Index")
+	proto.RegisterType((*IndexHeader)(nil), "proto.IndexHeader")
 }
 
-func init() { proto1.RegisterFile("index.proto", fileDescriptor4) }
+func init() { proto.RegisterFile("index.proto", fileDescriptor_index_be938e22f966263e) }
 
-var fileDescriptor4 = []byte{
+var fileDescriptor_index_be938e22f966263e = []byte{
 	// 213 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x44, 0x8e, 0xc1, 0x4a, 0xc4, 0x30,
 	0x10, 0x86, 0x89, 0x4d, 0x17, 0x77, 0x22, 0x8a, 0x83, 0x48, 0x58, 0x3c, 0x84, 0x8a, 0x90, 0x8b,

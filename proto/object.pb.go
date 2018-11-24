@@ -3,15 +3,21 @@
 
 package proto
 
-import proto1 "github.com/golang/protobuf/proto"
+import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
-import google_protobuf "github.com/golang/protobuf/ptypes/timestamp"
+import timestamp "github.com/golang/protobuf/ptypes/timestamp"
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto1.Marshal
+var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
 type ObjectType int32
 
@@ -39,9 +45,11 @@ var ObjectType_value = map[string]int32{
 }
 
 func (x ObjectType) String() string {
-	return proto1.EnumName(ObjectType_name, int32(x))
+	return proto.EnumName(ObjectType_name, int32(x))
 }
-func (ObjectType) EnumDescriptor() ([]byte, []int) { return fileDescriptor5, []int{0} }
+func (ObjectType) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_object_1ee538c74fba0758, []int{0}
+}
 
 type Compression int32
 
@@ -60,23 +68,47 @@ var Compression_value = map[string]int32{
 }
 
 func (x Compression) String() string {
-	return proto1.EnumName(Compression_name, int32(x))
+	return proto.EnumName(Compression_name, int32(x))
 }
-func (Compression) EnumDescriptor() ([]byte, []int) { return fileDescriptor5, []int{1} }
+func (Compression) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_object_1ee538c74fba0758, []int{1}
+}
 
 type ObjectHeader struct {
-	Ref         *Ref                       `protobuf:"bytes,1,opt,name=ref" json:"ref,omitempty"`
-	Predecessor *Ref                       `protobuf:"bytes,2,opt,name=predecessor" json:"predecessor,omitempty"`
-	Size        uint64                     `protobuf:"varint,3,opt,name=size" json:"size,omitempty"`
-	Compression Compression                `protobuf:"varint,4,opt,name=compression,enum=proto.Compression" json:"compression,omitempty"`
-	Timestamp   *google_protobuf.Timestamp `protobuf:"bytes,5,opt,name=timestamp" json:"timestamp,omitempty"`
-	Type        ObjectType                 `protobuf:"varint,6,opt,name=type,enum=proto.ObjectType" json:"type,omitempty"`
+	Ref                  *Ref                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Predecessor          *Ref                 `protobuf:"bytes,2,opt,name=predecessor,proto3" json:"predecessor,omitempty"`
+	Size                 uint64               `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Compression          Compression          `protobuf:"varint,4,opt,name=compression,proto3,enum=proto.Compression" json:"compression,omitempty"`
+	Timestamp            *timestamp.Timestamp `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Type                 ObjectType           `protobuf:"varint,6,opt,name=type,proto3,enum=proto.ObjectType" json:"type,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}             `json:"-"`
+	XXX_unrecognized     []byte               `json:"-"`
+	XXX_sizecache        int32                `json:"-"`
 }
 
-func (m *ObjectHeader) Reset()                    { *m = ObjectHeader{} }
-func (m *ObjectHeader) String() string            { return proto1.CompactTextString(m) }
-func (*ObjectHeader) ProtoMessage()               {}
-func (*ObjectHeader) Descriptor() ([]byte, []int) { return fileDescriptor5, []int{0} }
+func (m *ObjectHeader) Reset()         { *m = ObjectHeader{} }
+func (m *ObjectHeader) String() string { return proto.CompactTextString(m) }
+func (*ObjectHeader) ProtoMessage()    {}
+func (*ObjectHeader) Descriptor() ([]byte, []int) {
+	return fileDescriptor_object_1ee538c74fba0758, []int{0}
+}
+func (m *ObjectHeader) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ObjectHeader.Unmarshal(m, b)
+}
+func (m *ObjectHeader) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ObjectHeader.Marshal(b, m, deterministic)
+}
+func (dst *ObjectHeader) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ObjectHeader.Merge(dst, src)
+}
+func (m *ObjectHeader) XXX_Size() int {
+	return xxx_messageInfo_ObjectHeader.Size(m)
+}
+func (m *ObjectHeader) XXX_DiscardUnknown() {
+	xxx_messageInfo_ObjectHeader.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ObjectHeader proto.InternalMessageInfo
 
 func (m *ObjectHeader) GetRef() *Ref {
 	if m != nil {
@@ -106,7 +138,7 @@ func (m *ObjectHeader) GetCompression() Compression {
 	return Compression_NONE
 }
 
-func (m *ObjectHeader) GetTimestamp() *google_protobuf.Timestamp {
+func (m *ObjectHeader) GetTimestamp() *timestamp.Timestamp {
 	if m != nil {
 		return m.Timestamp
 	}
@@ -126,29 +158,51 @@ type Object struct {
 	//	*Object_Tree
 	//	*Object_File
 	//	*Object_Blob
-	Object isObject_Object `protobuf_oneof:"object"`
+	Object               isObject_Object `protobuf_oneof:"object"`
+	XXX_NoUnkeyedLiteral struct{}        `json:"-"`
+	XXX_unrecognized     []byte          `json:"-"`
+	XXX_sizecache        int32           `json:"-"`
 }
 
-func (m *Object) Reset()                    { *m = Object{} }
-func (m *Object) String() string            { return proto1.CompactTextString(m) }
-func (*Object) ProtoMessage()               {}
-func (*Object) Descriptor() ([]byte, []int) { return fileDescriptor5, []int{1} }
+func (m *Object) Reset()         { *m = Object{} }
+func (m *Object) String() string { return proto.CompactTextString(m) }
+func (*Object) ProtoMessage()    {}
+func (*Object) Descriptor() ([]byte, []int) {
+	return fileDescriptor_object_1ee538c74fba0758, []int{1}
+}
+func (m *Object) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Object.Unmarshal(m, b)
+}
+func (m *Object) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Object.Marshal(b, m, deterministic)
+}
+func (dst *Object) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Object.Merge(dst, src)
+}
+func (m *Object) XXX_Size() int {
+	return xxx_messageInfo_Object.Size(m)
+}
+func (m *Object) XXX_DiscardUnknown() {
+	xxx_messageInfo_Object.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Object proto.InternalMessageInfo
 
 type isObject_Object interface {
 	isObject_Object()
 }
 
 type Object_Commit struct {
-	Commit *Commit `protobuf:"bytes,1,opt,name=commit,oneof"`
+	Commit *Commit `protobuf:"bytes,1,opt,name=commit,proto3,oneof"`
 }
 type Object_Tree struct {
-	Tree *Tree `protobuf:"bytes,2,opt,name=tree,oneof"`
+	Tree *Tree `protobuf:"bytes,2,opt,name=tree,proto3,oneof"`
 }
 type Object_File struct {
-	File *File `protobuf:"bytes,3,opt,name=file,oneof"`
+	File *File `protobuf:"bytes,3,opt,name=file,proto3,oneof"`
 }
 type Object_Blob struct {
-	Blob *Blob `protobuf:"bytes,4,opt,name=blob,oneof"`
+	Blob *Blob `protobuf:"bytes,4,opt,name=blob,proto3,oneof"`
 }
 
 func (*Object_Commit) isObject_Object() {}
@@ -192,7 +246,7 @@ func (m *Object) GetBlob() *Blob {
 }
 
 // XXX_OneofFuncs is for the internal use of the proto package.
-func (*Object) XXX_OneofFuncs() (func(msg proto1.Message, b *proto1.Buffer) error, func(msg proto1.Message, tag, wire int, b *proto1.Buffer) (bool, error), func(msg proto1.Message) (n int), []interface{}) {
+func (*Object) XXX_OneofFuncs() (func(msg proto.Message, b *proto.Buffer) error, func(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error), func(msg proto.Message) (n int), []interface{}) {
 	return _Object_OneofMarshaler, _Object_OneofUnmarshaler, _Object_OneofSizer, []interface{}{
 		(*Object_Commit)(nil),
 		(*Object_Tree)(nil),
@@ -201,27 +255,27 @@ func (*Object) XXX_OneofFuncs() (func(msg proto1.Message, b *proto1.Buffer) erro
 	}
 }
 
-func _Object_OneofMarshaler(msg proto1.Message, b *proto1.Buffer) error {
+func _Object_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
 	m := msg.(*Object)
 	// object
 	switch x := m.Object.(type) {
 	case *Object_Commit:
-		b.EncodeVarint(1<<3 | proto1.WireBytes)
+		b.EncodeVarint(1<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Commit); err != nil {
 			return err
 		}
 	case *Object_Tree:
-		b.EncodeVarint(2<<3 | proto1.WireBytes)
+		b.EncodeVarint(2<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Tree); err != nil {
 			return err
 		}
 	case *Object_File:
-		b.EncodeVarint(3<<3 | proto1.WireBytes)
+		b.EncodeVarint(3<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.File); err != nil {
 			return err
 		}
 	case *Object_Blob:
-		b.EncodeVarint(4<<3 | proto1.WireBytes)
+		b.EncodeVarint(4<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Blob); err != nil {
 			return err
 		}
@@ -232,36 +286,36 @@ func _Object_OneofMarshaler(msg proto1.Message, b *proto1.Buffer) error {
 	return nil
 }
 
-func _Object_OneofUnmarshaler(msg proto1.Message, tag, wire int, b *proto1.Buffer) (bool, error) {
+func _Object_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error) {
 	m := msg.(*Object)
 	switch tag {
 	case 1: // object.commit
-		if wire != proto1.WireBytes {
-			return true, proto1.ErrInternalBadWireType
+		if wire != proto.WireBytes {
+			return true, proto.ErrInternalBadWireType
 		}
 		msg := new(Commit)
 		err := b.DecodeMessage(msg)
 		m.Object = &Object_Commit{msg}
 		return true, err
 	case 2: // object.tree
-		if wire != proto1.WireBytes {
-			return true, proto1.ErrInternalBadWireType
+		if wire != proto.WireBytes {
+			return true, proto.ErrInternalBadWireType
 		}
 		msg := new(Tree)
 		err := b.DecodeMessage(msg)
 		m.Object = &Object_Tree{msg}
 		return true, err
 	case 3: // object.file
-		if wire != proto1.WireBytes {
-			return true, proto1.ErrInternalBadWireType
+		if wire != proto.WireBytes {
+			return true, proto.ErrInternalBadWireType
 		}
 		msg := new(File)
 		err := b.DecodeMessage(msg)
 		m.Object = &Object_File{msg}
 		return true, err
 	case 4: // object.blob
-		if wire != proto1.WireBytes {
-			return true, proto1.ErrInternalBadWireType
+		if wire != proto.WireBytes {
+			return true, proto.ErrInternalBadWireType
 		}
 		msg := new(Blob)
 		err := b.DecodeMessage(msg)
@@ -272,29 +326,29 @@ func _Object_OneofUnmarshaler(msg proto1.Message, tag, wire int, b *proto1.Buffe
 	}
 }
 
-func _Object_OneofSizer(msg proto1.Message) (n int) {
+func _Object_OneofSizer(msg proto.Message) (n int) {
 	m := msg.(*Object)
 	// object
 	switch x := m.Object.(type) {
 	case *Object_Commit:
-		s := proto1.Size(x.Commit)
-		n += proto1.SizeVarint(1<<3 | proto1.WireBytes)
-		n += proto1.SizeVarint(uint64(s))
+		s := proto.Size(x.Commit)
+		n += 1 // tag and wire
+		n += proto.SizeVarint(uint64(s))
 		n += s
 	case *Object_Tree:
-		s := proto1.Size(x.Tree)
-		n += proto1.SizeVarint(2<<3 | proto1.WireBytes)
-		n += proto1.SizeVarint(uint64(s))
+		s := proto.Size(x.Tree)
+		n += 1 // tag and wire
+		n += proto.SizeVarint(uint64(s))
 		n += s
 	case *Object_File:
-		s := proto1.Size(x.File)
-		n += proto1.SizeVarint(3<<3 | proto1.WireBytes)
-		n += proto1.SizeVarint(uint64(s))
+		s := proto.Size(x.File)
+		n += 1 // tag and wire
+		n += proto.SizeVarint(uint64(s))
 		n += s
 	case *Object_Blob:
-		s := proto1.Size(x.Blob)
-		n += proto1.SizeVarint(4<<3 | proto1.WireBytes)
-		n += proto1.SizeVarint(uint64(s))
+		s := proto.Size(x.Blob)
+		n += 1 // tag and wire
+		n += proto.SizeVarint(uint64(s))
 		n += s
 	case nil:
 	default:
@@ -304,15 +358,15 @@ func _Object_OneofSizer(msg proto1.Message) (n int) {
 }
 
 func init() {
-	proto1.RegisterType((*ObjectHeader)(nil), "proto.ObjectHeader")
-	proto1.RegisterType((*Object)(nil), "proto.Object")
-	proto1.RegisterEnum("proto.ObjectType", ObjectType_name, ObjectType_value)
-	proto1.RegisterEnum("proto.Compression", Compression_name, Compression_value)
+	proto.RegisterType((*ObjectHeader)(nil), "proto.ObjectHeader")
+	proto.RegisterType((*Object)(nil), "proto.Object")
+	proto.RegisterEnum("proto.ObjectType", ObjectType_name, ObjectType_value)
+	proto.RegisterEnum("proto.Compression", Compression_name, Compression_value)
 }
 
-func init() { proto1.RegisterFile("object.proto", fileDescriptor5) }
+func init() { proto.RegisterFile("object.proto", fileDescriptor_object_1ee538c74fba0758) }
 
-var fileDescriptor5 = []byte{
+var fileDescriptor_object_1ee538c74fba0758 = []byte{
 	// 394 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x64, 0x92, 0x41, 0xcf, 0x9a, 0x40,
 	0x10, 0x86, 0x41, 0x91, 0xea, 0x60, 0x1b, 0xba, 0x27, 0x62, 0x9a, 0x54, 0x4d, 0x9a, 0x1a, 0xd3,
