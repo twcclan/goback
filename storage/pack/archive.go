@@ -19,6 +19,7 @@ import (
 	"github.com/willf/bloom"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
+	"go.opencensus.io/trace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -200,15 +201,22 @@ func (a *archive) indexName() string {
 }
 
 func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) (*proto.Object, error) {
+	ctx, span := trace.StartSpan(ctx, "archive.getRaw")
+	defer span.End()
+
 	buf := make([]byte, loc.Length)
 
 	start := time.Now()
 	if readerAt, ok := a.readFile.(io.ReaderAt); ok {
+		span.AddAttributes(trace.BoolAttribute("lock-free", true))
+
 		_, err := readerAt.ReadAt(buf, int64(loc.Offset))
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed filling buffer")
 		}
 	} else {
+		span.AddAttributes(trace.BoolAttribute("lock-free", false))
+
 		// need to get an exclusive lock if we can't use ReadAt
 		a.mtx.Lock()
 
@@ -256,6 +264,9 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) 
 }
 
 func (a *archive) Put(ctx context.Context, object *proto.Object) error {
+	ctx, span := trace.StartSpan(ctx, "archive.Put")
+	defer span.End()
+
 	bytes := object.CompressedBytes()
 	ref := object.Ref()
 

@@ -24,7 +24,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.10.0
 	github.com/ncw/swift v1.0.39
 	github.com/onsi/gomega v1.4.2 // indirect
-	github.com/openzipkin/zipkin-go v0.1.2 // indirect
+	github.com/openzipkin/zipkin-go v0.1.2
 	github.com/pkg/errors v0.8.0
 	github.com/prometheus/client_golang v0.9.0
 	github.com/prometheus/common v0.0.0-20181020173914-7e9e6cabbd39 // indirect

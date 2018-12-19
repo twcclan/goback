@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opencensus.io/trace"
+
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
@@ -76,7 +78,7 @@ type PackStorage struct {
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
-	_, loc := ps.indexLocation(ref)
+	_, loc := ps.indexLocation(ctx, ref)
 
 	return loc != nil, nil
 }
@@ -124,6 +126,9 @@ func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Obje
 }
 
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
+	ctx, span := trace.StartSpan(ctx, "PackStorage.Put")
+	defer span.End()
+
 	return ps.putWriteCache(ctx, object, ps.put(ctx, object))
 }
 
@@ -154,9 +159,14 @@ func (ps *PackStorage) putRaw(ctx context.Context, hdr *proto.ObjectHeader, byte
 
 // indexLocation returns the indexRecord for the provided ref or nil if it's
 // not in this store.
-func (ps *PackStorage) indexLocation(ref *proto.Ref) (*archive, *indexRecord) {
+func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*archive, *indexRecord) {
+	ctx, span := trace.StartSpan(ctx, "PackStorage.indexLocation")
+	defer span.End()
+
+	span.Annotate(nil, "waiting for lock")
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
+	span.Annotate(nil, "acquired lock")
 
 	locations := bloom.Locations(ref.Sha1, bloomFilterK)
 
@@ -189,18 +199,22 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 }
 
 func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	ctx, span := trace.StartSpan(ctx, "PackStorage.Get")
+	defer span.End()
+
 	cached := ps.getCache(ctx, ref)
 	if cached != nil {
 		return cached, nil
 	}
 
-	archive, rec := ps.indexLocation(ref)
+	archive, rec := ps.indexLocation(ctx, ref)
 	if rec != nil {
 		archive.mtx.RLock()
 		needClose := !archive.readOnly && ps.closeBeforeRead
 		archive.mtx.RUnlock()
 
 		if needClose {
+			span.AddAttributes(trace.BoolAttribute("close-before-read", true))
 			log.Printf("Need to close archive %s before reading object %x", archive.name, ref.Sha1)
 			err := ps.finalizeArchive(archive)
 

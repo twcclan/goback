@@ -12,6 +12,8 @@ import (
 
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/codegangsta/cli"
+	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
+	"go.opencensus.io/exporter/zipkin"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
@@ -27,15 +29,17 @@ var Command = cli.Command{
 			Name:  "address",
 			Value: ":6060",
 		},
-		cli.BoolFlag{
-			Name: "stackdriver",
+		cli.StringFlag{
+			Name: "stackdriver-project",
+		},
+		cli.StringFlag{
+			Name: "zipkin-url",
 		},
 	},
 }
 
-func enableStackdriver() {
+func enableStackdriver(projectID string) {
 	sd, err := stackdriver.NewExporter(stackdriver.Options{})
-
 	if err != nil {
 		log.Fatalf("failed to create stackdriver exporter: %s", err)
 	}
@@ -43,6 +47,22 @@ func enableStackdriver() {
 	view.RegisterExporter(sd)
 	view.SetReportingPeriod(60 * time.Second)
 	trace.RegisterExporter(sd)
+}
+
+func enableZipkin(url string) {
+	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+
+	zk := zipkin.NewExporter(reporter, nil)
+
+	trace.RegisterExporter(zk)
+}
+
+func serverAction(ctx *cli.Context) {
+	s := common.GetObjectStore(ctx)
+	listener, err := net.Listen("tcp", ctx.String("address"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	err = view.Register(pack.DefaultViews...)
 	if err != nil {
@@ -53,21 +73,21 @@ func enableStackdriver() {
 	if err != nil {
 		log.Fatalf("failed to register grpc server views: %s", err)
 	}
-}
 
-func serverAction(ctx *cli.Context) {
-	s := common.GetObjectStore(ctx)
-	listener, err := net.Listen("tcp", ctx.String("address"))
-	if err != nil {
-		log.Fatal(err)
+	if projectID := ctx.String("stackdriver-project"); projectID != "" {
+		enableStackdriver(projectID)
 	}
 
-	if ctx.Bool("stackdriver") {
-		enableStackdriver()
+	if url := ctx.String("zipkin-url"); url != "" {
+		enableZipkin(url)
 	}
 
 	srv := grpc.NewServer(grpc.StatsHandler(&ocgrpc.ServerHandler{
 		IsPublicEndpoint: true,
+		StartOptions: trace.StartOptions{
+			SpanKind: trace.SpanKindServer,
+			Sampler:  trace.ProbabilitySampler(1e-2),
+		},
 	}))
 
 	proto.RegisterStoreServer(srv, storage.NewRemoteServer(s))
