@@ -50,7 +50,7 @@ func enableStackdriver(projectID string) {
 }
 
 func enableZipkin(url string) {
-	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+	reporter := zipkinHTTP.NewReporter(url)
 
 	zk := zipkin.NewExporter(reporter, nil)
 
