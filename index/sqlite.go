@@ -12,12 +12,25 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
+	"contrib.go.opencensus.io/integrations/ocsql"
 	"go4.org/syncutil/singleflight"
 
 	// load sqlite3 driver
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var tracedSQLDriver = ""
+
+func init() {
+	var err error
+
+	// register openconsensus database wrapper
+	tracedSQLDriver, err = ocsql.Register("sqlite3", ocsql.WithAllTraceOptions())
+	if err != nil {
+		log.Fatalf("failed to register ocsql driver: %s", err)
+	}
+}
 
 func NewSqliteIndex(base string, store backup.ObjectStore) *SqliteIndex {
 	idx := &SqliteIndex{base: base, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
@@ -36,8 +49,7 @@ type SqliteIndex struct {
 }
 
 func (s *SqliteIndex) Open() error {
-	db, err := sql.Open("sqlite3", path.Join(s.base, "index.db")+"?busy_timeout=1000")
-
+	db, err := sql.Open(tracedSQLDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
 	if err != nil {
 		return err
 	}
