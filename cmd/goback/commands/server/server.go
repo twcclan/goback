@@ -10,6 +10,7 @@ import (
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
+	"cloud.google.com/go/profiler"
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/codegangsta/cli"
 	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
@@ -39,9 +40,20 @@ var Command = cli.Command{
 }
 
 func enableStackdriver(projectID string) {
-	sd, err := stackdriver.NewExporter(stackdriver.Options{})
+	sd, err := stackdriver.NewExporter(stackdriver.Options{
+		ProjectID: projectID,
+	})
 	if err != nil {
 		log.Fatalf("failed to create stackdriver exporter: %s", err)
+	}
+
+	err = profiler.Start(profiler.Config{
+		ProjectID:      projectID,
+		MutexProfiling: true,
+		Service:        "goback",
+	})
+	if err != nil {
+		log.Fatalf("failed setting up stackdriver profiler: %s", err)
 	}
 
 	view.RegisterExporter(sd)

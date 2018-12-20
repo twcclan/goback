@@ -2,7 +2,7 @@ module github.com/twcclan/goback
 
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
-	cloud.google.com/go v0.32.0
+	cloud.google.com/go v0.34.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.8.0
 	contrib.go.opencensus.io/integrations/ocsql v0.1.2
 	git.apache.org/thrift.git v0.0.0-20181103064550-f216dfb7168b // indirect
@@ -13,6 +13,7 @@ require (
 	github.com/golang/lint v0.0.0-20181026193005-c67002cb31c3 // indirect
 	github.com/golang/protobuf v1.2.0
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
+	github.com/google/pprof v0.0.0-20181206194817-3ea8567a2e57 // indirect
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/grpc-ecosystem/grpc-gateway v1.5.1 // indirect
 	github.com/joho/godotenv v1.2.0
