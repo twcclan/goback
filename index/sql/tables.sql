@@ -1,10 +1,3 @@
-CREATE TABLE IF NOT EXISTS `objects`(
-	`ref`	BLOB NOT NULL,
-	`type` INTEGER NOT NULL,
-	`indexed` INTEGER NOT NULL,
-	PRIMARY KEY(ref)
-) WITHOUT ROWID;
-
 CREATE TABLE IF NOT EXISTS `files`(
 	`path` TEXT NOT NULL,
 	`mode` INTEGER NOT NULL,
@@ -12,15 +5,14 @@ CREATE TABLE IF NOT EXISTS `files`(
 	--`group` TEXT NOT NULL,
 	`timestamp` INTEGER NOT NULL,
 	`size` INTEGER NOT NULL,
-	'ref' BLOB NOT NULL,
-	PRIMARY KEY(`path`, `timestamp`),
-	FOREIGN KEY(ref) REFERENCES objects(ref)
-	--FOREIGN KEY(data) REFERENCES chunks(sum)
+	`ref` BLOB NOT NULL,
+	`commit` BLOB NOT NULL,
+	PRIMARY KEY(`path`, `commit`)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS `commits`(
+  `ref` BLOB NOT NULL,
 	`timestamp` INTEGER NOT NULL,
-	'tree' BLOB NOT NULL,
-	PRIMARY KEY(timestamp),
-	FOREIGN KEY(tree) REFERENCES objects(ref)
+	`tree` BLOB NOT NULL,
+	PRIMARY KEY(timestamp)
 ) WITHOUT ROWID;

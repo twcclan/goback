@@ -16,8 +16,3 @@ type Index interface {
 	CommitInfo(ctx context.Context, notAfter time.Time, count int) ([]proto.Commit, error)
 	ReIndex(ctx context.Context) error
 }
-
-type SnapshotPointer struct {
-	Info *proto.Commit
-	Ref  *proto.Ref
-}
