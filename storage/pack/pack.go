@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"go.opencensus.io/trace"
-
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/willf/bloom"
+	"go.opencensus.io/stats"
+	"go.opencensus.io/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -390,14 +390,19 @@ func (ps *PackStorage) doCompaction() error {
 	ctx := context.Background()
 
 	var (
-		candidates []*archive
-		obsolete   []*archive
-		total      uint64
+		candidates   []*archive
+		obsolete     []*archive
+		total        uint64
+		totalObjects int64
 	)
 
 	ps.mtx.RLock()
 	for _, candidate := range ps.archives {
 		candidate.mtx.RLock()
+
+		if candidate.readOnly {
+			totalObjects += int64(len(candidate.readIndex))
+		}
 
 		// we only care about finalized archives
 		if candidate.readOnly && (candidate.size < ps.maxSize || ps.calculateWaste(candidate) > 0.1) {
@@ -408,6 +413,8 @@ func (ps *PackStorage) doCompaction() error {
 		candidate.mtx.RUnlock()
 	}
 	ps.mtx.RUnlock()
+
+	stats.Record(ctx, TotalLiveObjects.M(totalObjects))
 
 	closeArchive := func(a *archive) error {
 		err := a.CloseWriter()

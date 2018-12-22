@@ -13,6 +13,7 @@ var (
 	ArchiveWriteLatency = stats.Float64("goback.io/storage/pack/archive_write_latency", "duration of archive writes", stats.UnitMilliseconds)
 	ArchiveReadSize     = stats.Int64("goback.io/storage/pack/archive_read_size", "size of archive reads", stats.UnitBytes)
 	ArchiveWriteSize    = stats.Int64("goback.io/storage/pack/archive_write_size", "size of archive writes", stats.UnitBytes)
+	TotalLiveObjects    = stats.Int64("goback.io/storage/pack/total_live_objects", "number of live objects before", stats.UnitDimensionless)
 
 	KeyObjectType, _ = tag.NewKey("object_type")
 
@@ -83,6 +84,13 @@ var (
 		TagKeys:     []tag.Key{KeyObjectType},
 	}
 
+	TotalLiveObjectsView = &view.View{
+		Name:        "goback.io/storage/pack/total_live_objects",
+		Description: "total number of live objects",
+		Measure:     TotalLiveObjects,
+		Aggregation: view.LastValue(),
+	}
+
 	DefaultViews = []*view.View{
 		ArchiveReadLatencyView,
 		ArchiveReadSizeView,
@@ -92,5 +100,6 @@ var (
 		ObjectsStoredView,
 		PutObjectSizeView,
 		GetObjectSizeView,
+		TotalLiveObjectsView,
 	}
 )
