@@ -30,6 +30,7 @@ message ObjectHeader {
   Compression compression = 4;
   google.protobuf.Timestamp timestamp = 5;
   ObjectType type = 6;
+  Ref tombstone_for = 7;
 }
 
 message Object {

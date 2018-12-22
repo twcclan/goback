@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"io"
 	"log"
 	"os"
@@ -268,13 +269,23 @@ func (a *archive) Put(ctx context.Context, object *proto.Object) error {
 	ref := object.Ref()
 
 	hdr := &proto.ObjectHeader{
-		Size:        uint64(len(bytes)),
 		Compression: proto.Compression_GZIP,
 		Ref:         ref,
 		Type:        object.Type(),
 	}
 
 	return a.putRaw(ctx, hdr, bytes)
+}
+
+func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref) error {
+	tombstoneRef := &proto.Ref{Sha1: sha1.Sum(ref.Sha1)[:]}
+
+	hdr := &proto.ObjectHeader{
+		Ref:          tombstoneRef,
+		TombstoneFor: ref,
+	}
+
+	return a.putRaw(ctx, hdr, nil)
 }
 
 func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
@@ -301,8 +312,15 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 		hdr.Type = obj.Type()
 	}
 
-	hdr.Timestamp = ptypes.TimestampNow()
 	hdr.Predecessor = a.last
+	hdr.Size = uint64(len(bytes))
+
+	// keep the timestamp if it's already present. this is important,
+	// because we rely on the information of when a certain object
+	// first entered our system
+	if hdr.Timestamp == nil {
+		hdr.Timestamp = ptypes.TimestampNow()
+	}
 
 	hdrBytes := proto.Bytes(hdr)
 	hdrBytesSize := uint64(len(hdrBytes))
