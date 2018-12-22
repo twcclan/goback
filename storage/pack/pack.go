@@ -444,7 +444,7 @@ func (ps *PackStorage) doCompaction() error {
 	}
 
 	// use some heuristic to decide whether we should do a compaction
-	if len(candidates) > 10 {
+	if len(candidates) > 1000 || total >= ps.maxSize {
 		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
 		var droppedObjects, droppedSize uint64
