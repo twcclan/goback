@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"sort"
 
@@ -14,9 +15,13 @@ type index []indexRecord
 
 var indexEndianness = binary.BigEndian
 
-func (b index) Len() int           { return len(b) }
-func (b index) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b index) Less(i, j int) bool { return bytes.Compare(b[i].Sum[:], b[j].Sum[:]) < 0 }
+// increment when you make backwards-incompatible changes
+var indexFileMagicBytes = []byte("GOBACKIDX_0001")
+var errIndexHeaderMismatch = errors.New("received unexpected index file header")
+
+func (idx index) Len() int           { return len(idx) }
+func (idx index) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
+func (idx index) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
 
 func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)
@@ -25,7 +30,17 @@ func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 
 	source := io.TeeReader(buf, byteCounter)
 
-	err := binary.Read(source, indexEndianness, &count)
+	magic := make([]byte, len(indexFileMagicBytes))
+	_, err := io.ReadFull(source, magic)
+	if err != nil {
+		return byteCounter.count, err
+	}
+
+	if !bytes.Equal(magic, indexFileMagicBytes) {
+		return byteCounter.count, errIndexHeaderMismatch
+	}
+
+	err = binary.Read(source, indexEndianness, &count)
 	if err != nil {
 		return 0, err
 	}
@@ -63,7 +78,12 @@ func (idx index) WriteTo(writer io.Writer) (int64, error) {
 
 	target := io.MultiWriter(buf, byteCounter)
 
-	err := binary.Write(target, indexEndianness, count)
+	n, err := target.Write(indexFileMagicBytes)
+	if err != nil {
+		return int64(n), err
+	}
+
+	err = binary.Write(target, indexEndianness, count)
 	if err != nil {
 		return 0, err
 	}
@@ -82,6 +102,7 @@ type indexRecord struct {
 	Sum    [20]byte
 	Offset uint32
 	Length uint32
+	Type   uint32
 }
 
 var _ io.WriterTo = (index)(nil)

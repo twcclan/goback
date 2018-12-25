@@ -39,6 +39,7 @@ func TestOpenArchive(t *testing.T) {
 		indexRecord{
 			Length: 1,
 			Offset: 2,
+			Type:   3,
 		},
 	}
 	idxBuffer := new(bytes.Buffer)

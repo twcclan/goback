@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math/rand"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -15,6 +16,7 @@ func TestIndex(t *testing.T) {
 	for i := range idx {
 		idx[i].Offset = rand.Uint32()
 		idx[i].Length = rand.Uint32()
+		idx[i].Type = rand.Uint32()
 		for j := range idx[i].Sum {
 			idx[i].Sum[j] = byte(rand.Intn(256))
 		}
@@ -28,4 +30,10 @@ func TestIndex(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, idx, newIdx)
+}
+
+func TestIndexSize(t *testing.T) {
+	rec := indexRecord{}
+
+	t.Logf("index record size: %d", unsafe.Sizeof(rec))
 }

@@ -101,6 +101,7 @@ func (a *archive) recoverIndex(err error) error {
 		record := indexRecord{
 			Offset: offset,
 			Length: length,
+			Type:   uint32(o.Type),
 		}
 		copy(record.Sum[:], o.Ref.Sha1)
 
@@ -331,6 +332,7 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	record := &indexRecord{
 		Offset: uint32(a.size),
 		Length: uint32(len(hdrBytes) + len(bytes)),
+		Type:   uint32(hdr.Type),
 	}
 
 	copy(record.Sum[:], ref.Sha1)
