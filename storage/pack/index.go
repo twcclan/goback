@@ -44,16 +44,16 @@ func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 	return byteCounter.count, nil
 }
 
-func (idx index) lookup(ref *proto.Ref) *indexRecord {
+func (idx index) lookup(ref *proto.Ref) (uint, *indexRecord) {
 	n := sort.Search(len(idx), func(i int) bool {
 		return bytes.Compare(idx[i].Sum[:], ref.Sha1) >= 0
 	})
 
 	if n < len(idx) && bytes.Equal(idx[n].Sum[:], ref.Sha1) {
-		return &idx[n]
+		return uint(n), &idx[n]
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (idx index) WriteTo(writer io.Writer) (int64, error) {

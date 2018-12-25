@@ -383,6 +383,82 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 	return float64(waste) / float64(total)
 }
 
+func (ps *PackStorage) doMark() {
+	var archives []*archive
+	ps.withReadLock(func() {
+		// get a list of all finalized archives
+		for _, archive := range ps.archives {
+			archive.mtx.RLock()
+			if archive.readOnly {
+				archives = append(archives, archive)
+			}
+			archive.mtx.RUnlock()
+		}
+	})
+
+	for _, arch := range archives {
+		// TODO: if we change the index to also contain the type, we can avoid having to skip through all the
+		// archives, given that commits probably make up only a small fraction of our data this should save
+		// a lot of time.
+		// we also have most of the metadata cached locally, so this should be really fast
+		err := arch.foreach(loadNone, func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error {
+			if hdr.Type == proto.ObjectType_COMMIT {
+				return ps.markRecursively(hdr.Ref)
+			}
+			return nil
+		})
+
+		if err != nil {
+			log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
+			return
+		}
+	}
+}
+
+func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
+	obj, err := ps.Get(context.Background(), ref)
+	if err != nil {
+		return err
+	}
+
+	ps.markObject(ref)
+
+	switch obj.Type() {
+	// mark the tree of the commit
+	case proto.ObjectType_COMMIT:
+		return ps.markRecursively(obj.GetCommit().Tree)
+	// for trees we need to mark each individual node
+	case proto.ObjectType_TREE:
+		for _, node := range obj.GetTree().Nodes {
+			err = ps.markRecursively(node.Ref)
+			if err != nil {
+				return err
+			}
+
+		}
+	// and for a file we mark each part
+	case proto.ObjectType_FILE:
+		for _, part := range obj.GetFile().Parts {
+			ps.markObject(part.Ref)
+		}
+	default:
+		return nil
+	}
+}
+
+func (ps *PackStorage) markObject(ref *proto.Ref) {
+	// TODO: maybe remove the double lookup at some point
+	a, _ := ps.indexLocation(context.Background(), ref)
+
+	if a != nil {
+		a.markObject(ref)
+	}
+}
+
+func (ps *PackStorage) doSweep() {
+
+}
+
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()

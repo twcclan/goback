@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/willf/bitset"
 	"github.com/willf/bloom"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
@@ -58,6 +59,7 @@ type archive struct {
 	size       uint64
 	writeIndex map[string]*indexRecord
 	readIndex  index
+	gcBits     *bitset.BitSet
 	mtx        sync.RWMutex
 	last       *proto.Ref
 	storage    ArchiveStorage
@@ -143,6 +145,7 @@ func (a *archive) open() (err error) {
 
 	if a.readOnly {
 		defer a.rebuildBloomFilter()
+		defer a.setupGCBits()
 
 		info, err := readFile.Stat()
 		if err != nil {
@@ -182,11 +185,12 @@ func (a *archive) indexLocation(ref *proto.Ref, locations []uint64) *indexRecord
 
 	if a.readOnly {
 		// use a bloom filter to make lookups faster
-		if !a.bloom.Test(ref.Sha1) {
+		if !a.bloom.TestLocations(locations) {
 			return nil
 		}
 
-		return a.readIndex.lookup(ref)
+		_, record := a.readIndex.lookup(ref)
+		return record
 	}
 
 	return a.writeIndex[string(ref.Sha1)]
@@ -349,6 +353,14 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	return nil
 }
 
+func (a *archive) markObject(ref *proto.Ref) {
+	n, record := a.readIndex.lookup(ref)
+	if record != nil {
+		// TODO: locking?
+		a.gcBits.Set(n)
+	}
+}
+
 type loadPredicate func(*proto.ObjectHeader) bool
 
 func loadAll(hdr *proto.ObjectHeader) bool  { return true }
@@ -496,6 +508,10 @@ func (a *archive) rebuildBloomFilter() {
 	}
 }
 
+func (a *archive) setupGCBits() {
+	a.gcBits = bitset.New(uint(len(a.readIndex)))
+}
+
 func (a *archive) Close() error {
 	a.CloseReader()
 	err := a.CloseWriter()
@@ -533,6 +549,7 @@ func (a *archive) CloseWriter() error {
 	// release write index
 	a.writeIndex = nil
 	a.rebuildBloomFilter()
+	a.setupGCBits()
 
 	return err
 }

@@ -34,7 +34,7 @@ require (
 	github.com/spaolacci/murmur3 v0.0.0-20170819071325-9f5d223c6079 // indirect
 	github.com/stretchr/testify v1.2.2
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
-	github.com/willf/bitset v1.1.3 // indirect
+	github.com/willf/bitset v1.1.3
 	github.com/willf/bloom v2.0.3+incompatible
 	go.opencensus.io v0.18.0
 	go4.org v0.0.0-20180417224846-9599cf28b011
