@@ -383,42 +383,50 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 	return float64(waste) / float64(total)
 }
 
-func (ps *PackStorage) doMark() {
+func (ps *PackStorage) doMark() error {
+	start := time.Now()
+	defer func() {
+		stats.Record(context.Background(), GCMarkTime.M(float64(time.Since(start))/float64(time.Millisecond)))
+	}()
+
 	var archives []*archive
 	ps.withReadLock(func() {
 		// get a list of all finalized archives
 		for _, archive := range ps.archives {
-			archive.mtx.RLock()
+			archive.mtx.Lock()
 			if archive.readOnly {
+				archive.gcBits.ClearAll()
 				archives = append(archives, archive)
 			}
-			archive.mtx.RUnlock()
+			archive.mtx.Unlock()
 		}
 	})
 
 	for _, arch := range archives {
-		// TODO: if we change the index to also contain the type, we can avoid having to skip through all the
-		// archives, given that commits probably make up only a small fraction of our data this should save
-		// a lot of time.
-		// we also have most of the metadata cached locally, so this should be really fast
-		err := arch.foreach(loadNone, func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error {
-			if hdr.Type == proto.ObjectType_COMMIT {
-				return ps.markRecursively(hdr.Ref)
-			}
-			return nil
-		})
+		for i := range arch.readIndex {
+			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
+				err := ps.markRecursively(&proto.Ref{Sha1: arch.readIndex[i].Sum[:]})
 
-		if err != nil {
-			log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
-			return
+				if err != nil {
+					log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
+					return err
+				}
+			}
 		}
 	}
+
+	return nil
 }
 
 func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
 	obj, err := ps.Get(context.Background(), ref)
 	if err != nil {
 		return err
+	}
+
+	// skip objects that are already marked
+	if ps.isObjectReachable(ref) {
+		return nil
 	}
 
 	ps.markObject(ref)
@@ -441,9 +449,16 @@ func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
 		for _, part := range obj.GetFile().Parts {
 			ps.markObject(part.Ref)
 		}
-	default:
-		return nil
+
+		for _, split := range obj.GetFile().GetSplits() {
+			err = ps.markRecursively(split)
+			if err != nil {
+				return err
+			}
+		}
 	}
+
+	return nil
 }
 
 func (ps *PackStorage) markObject(ref *proto.Ref) {
@@ -455,13 +470,25 @@ func (ps *PackStorage) markObject(ref *proto.Ref) {
 	}
 }
 
-func (ps *PackStorage) doSweep() {
+func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
+	// find archive that is holding the ref
+	a, _ := ps.indexLocation(context.Background(), ref)
+	if a == nil {
+		return false
+	}
 
+	idx, _ := a.readIndex.lookup(ref)
+
+	return a.gcBits.Test(idx)
 }
 
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
+
+	if !ps.compaction {
+		return nil
+	}
 
 	ctx := context.Background()
 

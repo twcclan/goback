@@ -15,6 +15,8 @@ var (
 	ArchiveWriteSize    = stats.Int64("goback.io/storage/pack/archive_write_size", "size of archive writes", stats.UnitBytes)
 	TotalLiveObjects    = stats.Int64("goback.io/storage/pack/total_live_objects", "number of live objects before", stats.UnitDimensionless)
 
+	GCMarkTime = stats.Float64("goback.io/storage/pack/gc_mark_time", "duration of gc mark runs", stats.UnitMilliseconds)
+
 	KeyObjectType, _ = tag.NewKey("object_type")
 
 	DefaultBytesDistribution        = view.Distribution(0, 256, 512, 1024, 2048, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216)
@@ -91,6 +93,13 @@ var (
 		Aggregation: view.LastValue(),
 	}
 
+	GCMarkTimeView = &view.View{
+		Name:        "goback.io/storage/pack/gc_mark_time",
+		Description: "duration of GC mark runs",
+		Measure:     GCMarkTime,
+		Aggregation: DefaultMillisecondsDistribution,
+	}
+
 	DefaultViews = []*view.View{
 		ArchiveReadLatencyView,
 		ArchiveReadSizeView,
@@ -101,5 +110,6 @@ var (
 		PutObjectSizeView,
 		GetObjectSizeView,
 		TotalLiveObjectsView,
+		GCMarkTimeView,
 	}
 )
