@@ -431,6 +431,8 @@ func (ps *PackStorage) doMark() error {
 		archiveChan <- arch
 	}
 
+	close(archiveChan)
+
 	return group.Wait()
 }
 
