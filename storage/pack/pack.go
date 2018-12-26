@@ -477,6 +477,14 @@ func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
 		return false
 	}
 
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	// assume not finalized objects are reachable
+	if !a.readOnly {
+		return true
+	}
+
 	idx, _ := a.readIndex.lookup(ref)
 
 	return a.gcBits.Test(idx)
