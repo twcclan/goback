@@ -386,6 +386,7 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 func (ps *PackStorage) doMark() error {
 	start := time.Now()
 	defer func() {
+		log.Printf("Finished gc mark phase after %s", time.Since(start))
 		stats.Record(context.Background(), GCMarkTime.M(float64(time.Since(start))/float64(time.Millisecond)))
 	}()
 
