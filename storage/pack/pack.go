@@ -519,10 +519,13 @@ func (ps *PackStorage) doCompaction() error {
 
 	ctx := context.Background()
 
-	err := ps.doMark()
-	if err != nil {
-		return errors.Wrap(err, "failed gc mark phase")
-	}
+	/*
+		err := ps.doMark()
+		if err != nil {
+			return errors.Wrap(err, "failed gc mark phase")
+		}
+
+	*/
 
 	var (
 		candidates   []*archive
