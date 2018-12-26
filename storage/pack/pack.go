@@ -419,14 +419,15 @@ func (ps *PackStorage) doMark() error {
 }
 
 func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
-	obj, err := ps.Get(context.Background(), ref)
-	if err != nil {
-		return err
-	}
-
 	// skip objects that are already marked
 	if ps.isObjectReachable(ref) {
 		return nil
+	}
+
+	stats.Record(context.Background(), GCObjectsScanned.M(1))
+	obj, err := ps.Get(context.Background(), ref)
+	if err != nil {
+		return err
 	}
 
 	ps.markObject(ref)
