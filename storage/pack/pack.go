@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -403,20 +404,34 @@ func (ps *PackStorage) doMark() error {
 		}
 	})
 
-	for _, arch := range archives {
-		for i := range arch.readIndex {
-			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
-				err := ps.markRecursively(&proto.Ref{Sha1: arch.readIndex[i].Sum[:]})
+	archiveChan := make(chan *archive)
 
-				if err != nil {
-					log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
-					return err
+	// run parallel mark
+	group := errgroup.Group{}
+	for i := 0; i < runtime.NumCPU(); i++ {
+		group.Go(func() error {
+			for arch := range archiveChan {
+				for i := range arch.readIndex {
+					if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
+						err := ps.markRecursively(&proto.Ref{Sha1: arch.readIndex[i].Sum[:]})
+
+						if err != nil {
+							log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
+							return err
+						}
+					}
 				}
 			}
-		}
+
+			return nil
+		})
 	}
 
-	return nil
+	for _, arch := range archives {
+		archiveChan <- arch
+	}
+
+	return group.Wait()
 }
 
 func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
