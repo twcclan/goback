@@ -356,9 +356,11 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 }
 
 func (a *archive) markObject(ref *proto.Ref) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
 	n, record := a.readIndex.lookup(ref)
 	if record != nil {
-		// TODO: locking?
 		a.gcBits.Set(n)
 	}
 }
