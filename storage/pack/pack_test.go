@@ -64,7 +64,6 @@ func TestPack(t *testing.T) {
 	storage := NewLocalArchiveStorage(base)
 	options := []PackOption{
 		WithArchiveStorage(storage),
-		WithCompaction(false),
 		WithMaxSize(1024 * 1024 * 5),
 	}
 	store, err := NewPackStorage(options...)

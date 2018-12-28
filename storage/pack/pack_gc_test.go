@@ -120,7 +120,6 @@ func TestMark(t *testing.T) {
 	storage := NewLocalArchiveStorage(base)
 	options := []PackOption{
 		WithArchiveStorage(storage),
-		WithCompaction(false),
 		WithMaxParallel(4),
 		WithMaxSize(1024 * 1024),
 	}
