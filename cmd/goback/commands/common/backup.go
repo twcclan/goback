@@ -49,6 +49,10 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(loc)),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
+		pack.WithCompaction(pack.CompactionConfig{
+			OnClose:           true,
+			MinimumCandidates: 100,
+		}),
 	)
 }
 
