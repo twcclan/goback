@@ -30,6 +30,7 @@ var gcsLogger = logrus.WithField("storage", "gcs")
 
 var _ io.ReadSeeker = (*gcsReader)(nil)
 var _ io.WriterTo = (*gcsReader)(nil)
+var _ io.ReaderAt = (*gcsFile)(nil)
 
 type gcsReader struct {
 	logger logrus.FieldLogger
@@ -122,6 +123,14 @@ func (s *gcsFile) Close() error {
 func (s *gcsFile) Read(buf []byte) (int, error) {
 	if s.readOnly {
 		return s.gcsReader.Read(buf)
+	}
+
+	return 0, errors.New("Read only supported for readonly files")
+}
+
+func (s *gcsFile) ReadAt(buf []byte, off int64) (int, error) {
+	if s.readOnly {
+		return s.gcsReader.ReadAt(buf, off)
 	}
 
 	return 0, errors.New("Read only supported for readonly files")
