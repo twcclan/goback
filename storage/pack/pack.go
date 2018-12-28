@@ -407,27 +407,19 @@ func (ps *PackStorage) doMark() error {
 		}
 	})
 
-	archiveChan := make(chan *archive)
+	refs := make(chan *proto.Ref, runtime.NumCPU()*2)
 
 	// run parallel mark
-	group := errgroup.Group{}
+	group, ctx := errgroup.WithContext(context.Background())
 	for i := 0; i < runtime.NumCPU(); i++ {
 		group.Go(func() error {
-			for arch := range archiveChan {
+			for ref := range refs {
+				err := ps.markRecursively(ref)
 
-				archStart := time.Now()
-				for i := range arch.readIndex {
-					if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
-						err := ps.markRecursively(&proto.Ref{Sha1: arch.readIndex[i].Sum[:]})
-
-						if err != nil {
-							log.Printf("Couldn't run garbage collector mark step on archive %s: %s", arch.name, err)
-							return err
-						}
-					}
+				if err != nil {
+					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Sha1, err)
+					return err
 				}
-
-				log.Printf("Finished scanning archive %s after %s", arch.name, time.Since(archStart))
 			}
 
 			return nil
@@ -435,10 +427,19 @@ func (ps *PackStorage) doMark() error {
 	}
 
 	for _, arch := range archives {
-		archiveChan <- arch
+		for i := range arch.readIndex {
+			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
+				select {
+				case refs <- &proto.Ref{Sha1: arch.readIndex[i].Sum[:]}:
+				case <-ctx.Done():
+					close(refs)
+					return ctx.Err()
+				}
+			}
+		}
 	}
 
-	close(archiveChan)
+	close(refs)
 
 	return group.Wait()
 }
