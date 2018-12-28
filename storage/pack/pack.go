@@ -411,7 +411,7 @@ func (ps *PackStorage) doMark() error {
 
 	// run parallel mark
 	group, ctx := errgroup.WithContext(context.Background())
-	for i := 0; i < runtime.NumCPU(); i++ {
+	for i := 0; i < runtime.NumCPU()/2; i++ {
 		group.Go(func() error {
 			for ref := range refs {
 				err := ps.markRecursively(ref)
