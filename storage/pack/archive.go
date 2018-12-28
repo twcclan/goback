@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/willf/bitset"
-	"github.com/willf/bloom"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 	"go.opencensus.io/trace"
@@ -64,7 +63,6 @@ type archive struct {
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
-	bloom      *bloom.BloomFilter
 }
 
 func newArchive(storage ArchiveStorage) (*archive, error) {
@@ -145,7 +143,6 @@ func (a *archive) open() (err error) {
 	a.readFile = readFile
 
 	if a.readOnly {
-		defer a.rebuildBloomFilter()
 		defer a.setupGCBits()
 
 		info, err := readFile.Stat()
@@ -180,16 +177,11 @@ func (a *archive) open() (err error) {
 	return nil
 }
 
-func (a *archive) indexLocation(ref *proto.Ref, locations []uint64) *indexRecord {
+func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
 	if a.readOnly {
-		// use a bloom filter to make lookups faster
-		if !a.bloom.TestLocations(locations) {
-			return nil
-		}
-
 		_, record := a.readIndex.lookup(ref)
 		return record
 	}
@@ -505,13 +497,6 @@ func (a *archive) storeIndex() error {
 	return a.storeReadIndex(idx)
 }
 
-func (a *archive) rebuildBloomFilter() {
-	a.bloom = bloom.New(bloomFilterM, bloomFilterK)
-	for _, rec := range a.readIndex {
-		a.bloom.Add(rec.Sum[:])
-	}
-}
-
 func (a *archive) setupGCBits() {
 	a.gcBits = bitset.New(uint(len(a.readIndex)))
 }
@@ -552,7 +537,6 @@ func (a *archive) CloseWriter() error {
 
 	// release write index
 	a.writeIndex = nil
-	a.rebuildBloomFilter()
 	a.setupGCBits()
 
 	return err

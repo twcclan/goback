@@ -14,9 +14,8 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
-	humanize "github.com/dustin/go-humanize"
+	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
-	"github.com/willf/bloom"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/trace"
 	"golang.org/x/sync/errgroup"
@@ -173,10 +172,8 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 	defer ps.mtx.RUnlock()
 	span.Annotate(nil, "acquired lock")
 
-	locations := bloom.Locations(ref.Sha1, bloomFilterK)
-
 	for _, archive := range ps.archives {
-		if rec := archive.indexLocation(ref, locations); rec != nil {
+		if rec := archive.indexLocation(ref); rec != nil {
 			return archive, rec
 		}
 	}
@@ -190,10 +187,8 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	locations := bloom.Locations(ref.Sha1, bloomFilterK)
-
 	for name, archive := range ps.archives {
-		if rec := archive.indexLocation(ref, locations); rec != nil {
+		if rec := archive.indexLocation(ref); rec != nil {
 			if exclude == nil || !exclude[name] {
 				return archive, rec
 			}
