@@ -451,10 +451,10 @@ func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
 	idx, _ := arch.readIndex.lookup(ref)
 
 	arch.mtx.RLock()
-	marked := arch.gcBits.Test(idx)
+	skip := !arch.readOnly || arch.gcBits.Test(idx)
 	arch.mtx.RUnlock()
 
-	if marked {
+	if skip {
 		return nil
 	}
 
@@ -538,20 +538,22 @@ func (ps *PackStorage) doCompaction() error {
 			return errors.Wrap(err, "failed gc mark phase")
 		}
 
+		var total, reachable int
+
 		ps.withReadLock(func() {
-			for name, a := range ps.archives {
+			for _, a := range ps.archives {
 				a.mtx.RLock()
 
 				if a.gcBits != nil {
-					total := len(a.readIndex)
-					reachable := a.gcBits.Count()
-
-					log.Printf("Reachability for archive %s: %d/%d (%f %%)", name, reachable, total, float64(reachable)/float64(total)*100)
+					total += len(a.readIndex)
+					reachable += int(a.gcBits.Count())
 				}
 
 				a.mtx.RUnlock()
 			}
 		})
+
+		log.Printf("object reachability %d/%d (%f %%)", reachable, total, float64(reachable)/float64(total)*100)
 	}
 
 	var (
