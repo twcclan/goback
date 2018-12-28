@@ -419,6 +419,8 @@ func (ps *PackStorage) doMark() error {
 	for i := 0; i < runtime.NumCPU(); i++ {
 		group.Go(func() error {
 			for arch := range archiveChan {
+
+				archStart := time.Now()
 				for i := range arch.readIndex {
 					if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
 						err := ps.markRecursively(&proto.Ref{Sha1: arch.readIndex[i].Sum[:]})
@@ -429,6 +431,8 @@ func (ps *PackStorage) doMark() error {
 						}
 					}
 				}
+
+				log.Printf("Finished scanning archive %s after %s", arch.name, time.Since(archStart))
 			}
 
 			return nil
@@ -445,18 +449,33 @@ func (ps *PackStorage) doMark() error {
 }
 
 func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
-	// skip objects that are already marked
-	if ps.isObjectReachable(ref) {
+	arch, loc := ps.indexLocation(context.Background(), ref)
+
+	// skip already marked objects
+	idx, _ := arch.readIndex.lookup(ref)
+
+	arch.mtx.RLock()
+	marked := arch.gcBits.Test(idx)
+	arch.mtx.RUnlock()
+
+	if marked {
 		return nil
 	}
 
 	stats.Record(context.Background(), GCObjectsScanned.M(1))
+	arch.mtx.Lock()
+	arch.gcBits.Set(idx)
+	arch.mtx.Unlock()
+
+	// no need to recurse into blobs
+	if proto.ObjectType(loc.Type) == proto.ObjectType_BLOB {
+		return nil
+	}
+
 	obj, err := ps.Get(context.Background(), ref)
 	if err != nil {
 		return err
 	}
-
-	ps.markObject(ref)
 
 	switch obj.Type() {
 	// mark the tree of the commit
@@ -474,7 +493,10 @@ func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
 	// and for a file we mark each part
 	case proto.ObjectType_FILE:
 		for _, part := range obj.GetFile().Parts {
-			ps.markObject(part.Ref)
+			err = ps.markRecursively(part.Ref)
+			if err != nil {
+				return err
+			}
 		}
 
 		for _, split := range obj.GetFile().GetSplits() {
@@ -486,15 +508,6 @@ func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
 	}
 
 	return nil
-}
-
-func (ps *PackStorage) markObject(ref *proto.Ref) {
-	// TODO: maybe remove the double lookup at some point
-	a, _ := ps.indexLocation(context.Background(), ref)
-
-	if a != nil {
-		a.markObject(ref)
-	}
 }
 
 func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
