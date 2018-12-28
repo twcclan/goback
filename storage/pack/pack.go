@@ -35,9 +35,11 @@ const (
 
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	opts := &packOptions{
-		compaction:  true,
 		maxParallel: 1,
 		maxSize:     1024 * 1024 * 1024,
+		compaction: CompactionConfig{
+			MinimumCandidates: 1000,
+		},
 	}
 
 	for _, opt := range options {
@@ -64,7 +66,7 @@ type PackStorage struct {
 	writable         chan *archive
 	archiveSemaphore *semaphore.Weighted
 	storage          ArchiveStorage
-	compaction       bool
+	compaction       CompactionConfig
 	maxSize          uint64
 	closeBeforeRead  bool
 	cache            backup.ObjectStore
@@ -73,7 +75,9 @@ type PackStorage struct {
 	mtx      sync.RWMutex
 	archives map[string]*archive
 
-	compactorMtx sync.Mutex
+	compactorMtx    sync.Mutex
+	compactorTicker *time.Ticker
+	compactorClose  chan struct{}
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
@@ -385,6 +389,10 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 }
 
 func (ps *PackStorage) doMark() error {
+	// TODO:
+	//  * restrict reachability tests to selected archives
+	//	* disable bloom filter lookups (because it's just double the work when all objects exist)
+
 	start := time.Now()
 	defer func() {
 		log.Printf("Finished gc mark phase after %s", time.Since(start))
@@ -513,19 +521,29 @@ func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
-	if !ps.compaction {
-		return nil
-	}
-
 	ctx := context.Background()
 
-	/*
+	if ps.compaction.GarbageCollection {
 		err := ps.doMark()
 		if err != nil {
 			return errors.Wrap(err, "failed gc mark phase")
 		}
 
-	*/
+		ps.withReadLock(func() {
+			for name, a := range ps.archives {
+				a.mtx.RLock()
+
+				if a.gcBits != nil {
+					total := len(a.readIndex)
+					reachable := a.gcBits.Count()
+
+					log.Printf("Reachability for archive %s: %d/%d (%f %%)", name, reachable, total, float64(reachable)/float64(total)*100)
+				}
+
+				a.mtx.RUnlock()
+			}
+		})
+	}
 
 	var (
 		candidates   []*archive
@@ -589,7 +607,7 @@ func (ps *PackStorage) doCompaction() error {
 	}
 
 	// use some heuristic to decide whether we should do a compaction
-	if len(candidates) > 1000 || total >= ps.maxSize {
+	if len(candidates) > ps.compaction.MinimumCandidates || total >= ps.maxSize {
 		log.Printf("Compacting %d archives with %s total size", len(candidates), humanize.Bytes(total))
 
 		var droppedObjects, droppedSize uint64
@@ -674,12 +692,24 @@ func (ps *PackStorage) doCompaction() error {
 }
 
 func (ps *PackStorage) backgroundCompaction() {
+	log.Println("Running compaction")
 	err := ps.doCompaction()
 
 	if err != nil {
 		log.Println("Failed running compaction", err)
 	} else {
 		log.Print("Compaction successful")
+	}
+}
+
+func (ps *PackStorage) periodicCompaction() {
+	for {
+		select {
+		case <-ps.compactorTicker.C:
+			ps.backgroundCompaction()
+		case <-ps.compactorClose:
+			break
+		}
 	}
 }
 
@@ -711,17 +741,26 @@ func (ps *PackStorage) Flush() error {
 		}
 	})
 
-	defer func() {
-		go ps.backgroundCompaction()
-	}()
+	if ps.compaction.AfterFlush {
+		defer func() {
+			go ps.backgroundCompaction()
+		}()
+	}
 
 	return grp.Wait()
 }
 
 func (ps *PackStorage) Close() error {
-	// if ps.compaction {
-	// 	return ps.doCompaction()
-	// }
+	if ps.compaction.OnClose {
+		// this wil block, but only log potential errors
+		ps.backgroundCompaction()
+	}
+
+	if ps.compactorTicker != nil {
+		ps.compactorTicker.Stop()
+		close(ps.compactorClose)
+		ps.compactorTicker = nil
+	}
 
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -763,6 +802,13 @@ func (ps *PackStorage) Open() error {
 
 			return ps.openArchive(name)
 		})
+	}
+
+	if ps.compaction.Periodically > time.Duration(0) {
+		ps.compactorTicker = time.NewTicker(ps.compaction.Periodically)
+		ps.compactorClose = make(chan struct{})
+
+		go ps.periodicCompaction()
 	}
 
 	return group.Wait()

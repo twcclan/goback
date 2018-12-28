@@ -1,9 +1,13 @@
 package pack
 
-import "github.com/twcclan/goback/backup"
+import (
+	"time"
+
+	"github.com/twcclan/goback/backup"
+)
 
 type packOptions struct {
-	compaction      bool
+	compaction      CompactionConfig
 	maxParallel     uint
 	maxSize         uint64
 	closeBeforeRead bool
@@ -13,9 +17,33 @@ type packOptions struct {
 
 type PackOption func(p *packOptions)
 
-func WithCompaction(enabled bool) PackOption {
+type CompactionConfig struct {
+	// AfterFlush controls whether background compaction is triggered
+	// after a Flush happens on the store
+	AfterFlush bool
+
+	// OnClose controls whether a compaction is done when closing the
+	// PackStore
+	OnClose bool
+
+	// If Periodically is set to a non zero value the store will spawn
+	// a goroutine that will periodically run a compaction
+	Periodically time.Duration
+
+	// MinimumCandidates specifies the minimum number of eligible archives
+	// that need to exist before a compaction happens
+	MinimumCandidates int
+
+	// GarbageCollection will enable the garbage collector on this store.
+	// Before running a compaction, it will do a full reachability check
+	// on all objects stored to figure out which can be removed, because
+	// they are not referenced by a commit anymore
+	GarbageCollection bool
+}
+
+func WithCompaction(config CompactionConfig) PackOption {
 	return func(p *packOptions) {
-		p.compaction = enabled
+		p.compaction = config
 	}
 }
 

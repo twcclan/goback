@@ -306,6 +306,11 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
 		pack.WithMaxSize(1024 * 1024 * 1024),
+		pack.WithCompaction(pack.CompactionConfig{
+			Periodically:      24 * time.Hour,
+			MinimumCandidates: 1000,
+			GarbageCollection: true,
+		}),
 	}
 
 	if cacheDir != "" {
@@ -316,7 +321,7 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 
 		cache, err := pack.NewPackStorage(
 			pack.WithMaxParallel(1),
-			pack.WithCompaction(true),
+			pack.WithCompaction(pack.CompactionConfig{}),
 			pack.WithArchiveStorage(pack.NewLocalArchiveStorage(cacheDir)),
 		)
 		if err != nil {
