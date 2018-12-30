@@ -28,8 +28,6 @@ const (
 	ArchivePattern     = "*" + ArchiveSuffix
 	IndexExt           = ".idx"
 	varIntMaxSize      = 10
-	bloomFilterM       = 150000
-	bloomFilterK       = 7
 )
 
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
@@ -50,7 +48,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	}
 
 	return &PackStorage{
-		archives:         make(map[string]*archive),
+		archives:         make([]*archive, 0),
 		writable:         make(chan *archive, opts.maxParallel),
 		archiveSemaphore: semaphore.NewWeighted(int64(opts.maxParallel)),
 		storage:          opts.storage,
@@ -72,7 +70,7 @@ type PackStorage struct {
 
 	// all of these are guarded by mtx
 	mtx      sync.RWMutex
-	archives map[string]*archive
+	archives []*archive
 
 	compactorMtx    sync.Mutex
 	compactorTicker *time.Ticker
@@ -164,13 +162,8 @@ func (ps *PackStorage) putRaw(ctx context.Context, hdr *proto.ObjectHeader, byte
 // indexLocation returns the indexRecord for the provided ref or nil if it's
 // not in this store.
 func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*archive, *indexRecord) {
-	ctx, span := trace.StartSpan(ctx, "PackStorage.indexLocation")
-	defer span.End()
-
-	span.Annotate(nil, "waiting for lock")
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
-	span.Annotate(nil, "acquired lock")
 
 	for _, archive := range ps.archives {
 		if rec := archive.indexLocation(ref); rec != nil {
@@ -187,9 +180,9 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bo
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	for name, archive := range ps.archives {
+	for _, archive := range ps.archives {
 		if rec := archive.indexLocation(ref); rec != nil {
-			if exclude == nil || !exclude[name] {
+			if exclude == nil || !exclude[archive.name] {
 				return archive, rec
 			}
 		}
@@ -279,7 +272,13 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 // unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore)
 func (ps *PackStorage) unloadArchive(a *archive) {
 	ps.mtx.Lock()
-	delete(ps.archives, a.name)
+	filtered := make([]*archive, 0, len(ps.archives))
+	for _, arch := range ps.archives {
+		if arch.name != a.name {
+			filtered = append(filtered, arch)
+		}
+	}
+	ps.archives = filtered
 	ps.mtx.Unlock()
 }
 
@@ -300,7 +299,7 @@ func (ps *PackStorage) newArchive() error {
 	}
 
 	ps.mtx.Lock()
-	ps.archives[a.name] = a
+	ps.archives = append(ps.archives, a)
 	ps.putWritableArchive(a)
 	ps.mtx.Unlock()
 
@@ -314,7 +313,7 @@ func (ps *PackStorage) openArchive(name string) error {
 	}
 
 	ps.mtx.Lock()
-	ps.archives[a.name] = a
+	ps.archives = append(ps.archives, a)
 	ps.mtx.Unlock()
 
 	return nil
@@ -590,7 +589,7 @@ func (ps *PackStorage) doCompaction() error {
 		}
 
 		ps.mtx.Lock()
-		ps.archives[a.name] = a
+		ps.archives = append(ps.archives, a)
 		ps.mtx.Unlock()
 
 		return nil
