@@ -419,7 +419,9 @@ func (ps *PackStorage) doMark() error {
 	for i := 0; i < runtime.NumCPU()/2; i++ {
 		group.Go(func() error {
 			for ref := range refs {
+				startCommit := time.Now()
 				err := ps.markRecursively(ref)
+				stats.Record(context.Background(), GCCommitMarkLatency.M(float64(time.Since(startCommit))/float64(time.Millisecond)))
 
 				if err != nil {
 					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Sha1, err)

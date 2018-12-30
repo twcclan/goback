@@ -15,8 +15,9 @@ var (
 	ArchiveWriteSize    = stats.Int64("goback.io/storage/pack/archive_write_size", "size of archive writes", stats.UnitBytes)
 	TotalLiveObjects    = stats.Int64("goback.io/storage/pack/total_live_objects", "number of live objects before", stats.UnitDimensionless)
 
-	GCMarkTime       = stats.Float64("goback.io/storage/pack/gc_mark_time", "duration of gc mark runs", stats.UnitMilliseconds)
-	GCObjectsScanned = stats.Int64("goback.io/storage/pack/gc_objects_scanned", "total number of objects scanned durign gc run", stats.UnitDimensionless)
+	GCMarkTime          = stats.Float64("goback.io/storage/pack/gc_mark_time", "duration of gc mark runs", stats.UnitMilliseconds)
+	GCObjectsScanned    = stats.Int64("goback.io/storage/pack/gc_objects_scanned", "total number of objects scanned durign gc run", stats.UnitDimensionless)
+	GCCommitMarkLatency = stats.Float64("goback.io/storage/pack/gc_commit_mark_latency", "time it took to recursively mark a commit", stats.UnitMilliseconds)
 
 	KeyObjectType, _ = tag.NewKey("object_type")
 
@@ -108,6 +109,20 @@ var (
 		Aggregation: view.Count(),
 	}
 
+	GCCommitMarkLatencyView = &view.View{
+		Name:        "goback.io/storage/pack/gc_commit_mark_latency",
+		Description: "time it took to recursively mark a commit",
+		Measure:     GCCommitMarkLatency,
+		Aggregation: DefaultMillisecondsDistribution,
+	}
+
+	GCCommitMarkCountView = &view.View{
+		Name:        "goback.io/storage/pack/gc_commit_mark_count",
+		Description: "number of commits marked",
+		Measure:     GCCommitMarkLatency,
+		Aggregation: view.Count(),
+	}
+
 	DefaultViews = []*view.View{
 		ArchiveReadLatencyView,
 		ArchiveReadSizeView,
@@ -120,5 +135,7 @@ var (
 		TotalLiveObjectsView,
 		GCMarkTimeView,
 		GCObjectsScannedView,
+		GCCommitMarkLatencyView,
+		GCCommitMarkCountView,
 	}
 )
