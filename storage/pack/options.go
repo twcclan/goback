@@ -26,6 +26,10 @@ type CompactionConfig struct {
 	// PackStore
 	OnClose bool
 
+	// OnOpen controls whether a compaction is done after opening the
+	// PackStore
+	OnOpen bool
+
 	// If Periodically is set to a non zero value the store will spawn
 	// a goroutine that will periodically run a compaction
 	Periodically time.Duration

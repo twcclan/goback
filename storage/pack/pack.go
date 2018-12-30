@@ -834,6 +834,12 @@ func (ps *PackStorage) Open() error {
 		go ps.periodicCompaction()
 	}
 
+	if ps.compaction.OnOpen {
+		defer func() {
+			go ps.backgroundCompaction()
+		}()
+	}
+
 	return group.Wait()
 }
 
