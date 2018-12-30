@@ -72,14 +72,21 @@ type PackStorage struct {
 	mtx      sync.RWMutex
 	archives []*archive
 
-	compactorMtx    sync.Mutex
-	compactorTicker *time.Ticker
-	compactorClose  chan struct{}
+	compactorMtx     sync.Mutex
+	compactorTicker  *time.Ticker
+	compactorClose   chan struct{}
+	compactorRunning bool
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
 
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
+	// can't guarantee anything while compaction is in progress.
+	// potential duplicates will be removed during later compaction runs
+	if ps.compactorRunning {
+		return false, nil
+	}
+
 	_, loc := ps.indexLocation(ctx, ref)
 
 	return loc != nil, nil
@@ -385,7 +392,6 @@ func (ps *PackStorage) calculateWaste(a *archive) float64 {
 func (ps *PackStorage) doMark() error {
 	// TODO:
 	//  * restrict reachability tests to selected archives
-	//	* disable bloom filter lookups (because it's just double the work when all objects exist)
 
 	start := time.Now()
 	defer func() {
@@ -528,6 +534,11 @@ func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
+
+	ps.compactorRunning = true
+	defer func() {
+		ps.compactorRunning = false
+	}()
 
 	ctx := context.Background()
 
