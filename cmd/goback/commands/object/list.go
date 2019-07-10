@@ -2,6 +2,7 @@ package object
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
 	"os"
@@ -18,19 +19,36 @@ func (o *object) list() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer out.Close()
 
-	err = o.store.Walk(context.Background(), false, o.objectType, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
-		if hdr.Size > 1<<20 {
-			fmt.Fprintf(out, "%x,%d\n", hdr.Ref.Sha1, hdr.Size)
-		}
-		return nil
+	writer := csv.NewWriter(out)
+	err = writer.Write([]string{"ref", "timestamp", "set"})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = o.store.Walk(context.Background(), true, o.objectType, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+		return writer.Write(
+			[]string{
+				fmt.Sprintf("%x", hdr.Ref.Sha1),
+				fmt.Sprint(obj.GetCommit().GetTimestamp()),
+				obj.GetCommit().GetBackupSet(),
+			})
 	})
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	writer.Flush()
+	err = writer.Error()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = out.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func listAction(c *cli.Context) {
@@ -49,9 +67,4 @@ var listCmd = cli.Command{
 	Name:        "list",
 	Description: "List all objects",
 	Action:      listAction,
-	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name: "type",
-		},
-	},
 }
