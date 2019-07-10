@@ -20,20 +20,20 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var tracedSQLDriver = ""
+var tracedSQLiteDriver = ""
 
 func init() {
 	var err error
 
 	// register openconsensus database wrapper
-	tracedSQLDriver, err = ocsql.Register("sqlite3", ocsql.WithAllTraceOptions())
+	tracedSQLiteDriver, err = ocsql.Register("sqlite3", ocsql.WithAllTraceOptions())
 	if err != nil {
 		log.Fatalf("failed to register ocsql driver: %s", err)
 	}
 }
 
-func NewSqliteIndex(base string, store backup.ObjectStore) *SqliteIndex {
-	idx := &SqliteIndex{base: base, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
+func NewSqliteIndex(base, backupSet string, store backup.ObjectStore) *SqliteIndex {
+	idx := &SqliteIndex{base: base, backupSet: backupSet, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
 	return idx
 }
 
@@ -42,14 +42,15 @@ var _ backup.Index = (*SqliteIndex)(nil)
 //go:generate go-bindata -pkg index sql/
 type SqliteIndex struct {
 	backup.ObjectStore
-	base   string
-	db     *sql.DB
-	single *singleflight.Group
-	txMtx  *sync.Mutex
+	base      string
+	backupSet string
+	db        *sql.DB
+	single    *singleflight.Group
+	txMtx     *sync.Mutex
 }
 
 func (s *SqliteIndex) Open() error {
-	db, err := sql.Open(tracedSQLDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
+	db, err := sql.Open(tracedSQLiteDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
 	if err != nil {
 		return err
 	}
@@ -128,6 +129,10 @@ func (s *SqliteIndex) Close() error {
 
 func (s *SqliteIndex) ReIndex(ctx context.Context) error {
 	return s.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+		if obj.GetCommit().GetBackupSet() != s.backupSet {
+			return nil
+		}
+
 		return s.index(ctx, obj.GetCommit())
 	})
 }

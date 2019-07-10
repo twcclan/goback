@@ -73,6 +73,9 @@ func main() {
 			Name:  "index",
 			Value: "index",
 		},
+		cli.StringFlag{
+			Name: "set, s",
+		},
 	}
 
 	app.Run(os.Args)

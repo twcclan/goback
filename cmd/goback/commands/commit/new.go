@@ -151,7 +151,7 @@ func newAction(c *cli.Context) {
 	log.Println(index.Open())
 
 	s := &commit{
-		backup:   backup.NewBackupWriter(index, c.String("set")),
+		backup:   backup.NewBackupWriter(index, c.GlobalString("set")),
 		base:     filepath.ToSlash(filepath.Clean(base)),
 		index:    index,
 		includes: c.StringSlice("include"),
@@ -184,10 +184,6 @@ var newCmd = cli.Command{
 		cli.IntFlag{
 			Name:  "workers, w",
 			Value: runtime.NumCPU(),
-		},
-		cli.StringFlag{
-			Name:  "set, s",
-			Value: "",
 		},
 	},
 }

@@ -126,5 +126,5 @@ func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	if err != nil {
 		log.Fatalf("Could not initialise index driver: %v", err)
 	}
-	return index.NewSqliteIndex(loc, store)
+	return index.NewSqliteIndex(loc, c.GlobalString("set"), store)
 }
