@@ -6,7 +6,7 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.8.0
 	contrib.go.opencensus.io/integrations/ocsql v0.1.2
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
-	github.com/bmatcuk/doublestar v1.1.1
+	github.com/bmatcuk/doublestar v1.1.5
 	github.com/codegangsta/cli v1.20.0
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dustin/go-humanize v1.0.0
