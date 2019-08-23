@@ -23,7 +23,7 @@ require (
 	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/mattn/go-runewidth v0.0.2 // indirect
 	github.com/mattn/go-sqlite3 v1.10.0
-	github.com/ncw/swift v1.0.39
+	github.com/ncw/swift v1.0.49
 	github.com/onsi/ginkgo v1.7.0 // indirect
 	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/openzipkin/zipkin-go v0.1.2
