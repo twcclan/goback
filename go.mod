@@ -31,7 +31,7 @@ require (
 	github.com/prometheus/client_golang v0.9.0
 	github.com/prometheus/common v0.0.0-20181020173914-7e9e6cabbd39 // indirect
 	github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d // indirect
-	github.com/sirupsen/logrus v1.2.0
+	github.com/sirupsen/logrus v1.4.2
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
 	github.com/stretchr/testify v1.2.2
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
