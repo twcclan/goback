@@ -35,7 +35,7 @@ require (
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
 	github.com/stretchr/testify v1.2.2
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
-	github.com/willf/bitset v1.1.3
+	github.com/willf/bitset v1.1.10
 	go.opencensus.io v0.18.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/build v0.0.0-20181221181159-b67de002b30e // indirect
