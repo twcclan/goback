@@ -27,7 +27,7 @@ require (
 	github.com/onsi/ginkgo v1.7.0 // indirect
 	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/openzipkin/zipkin-go v0.1.2
-	github.com/pkg/errors v0.8.0
+	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v0.9.0
 	github.com/prometheus/common v0.0.0-20181020173914-7e9e6cabbd39 // indirect
 	github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d // indirect
