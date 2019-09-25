@@ -2,7 +2,7 @@ module github.com/twcclan/goback
 
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
-	cloud.google.com/go v0.34.0
+	cloud.google.com/go v0.46.3
 	contrib.go.opencensus.io/exporter/stackdriver v0.8.0
 	contrib.go.opencensus.io/integrations/ocsql v0.1.2
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
