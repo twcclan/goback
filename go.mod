@@ -12,7 +12,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/gogo/protobuf v1.2.0 // indirect
-	github.com/golang-migrate/migrate/v4 v4.2.1
+	github.com/golang-migrate/migrate/v4 v4.6.2
 	github.com/golang/protobuf v1.3.2
 	github.com/google/pprof v0.0.0-20181206194817-3ea8567a2e57 // indirect
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
