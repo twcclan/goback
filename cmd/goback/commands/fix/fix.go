@@ -6,7 +6,7 @@ import (
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 var Command = cli.Command{

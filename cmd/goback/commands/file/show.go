@@ -7,8 +7,8 @@ import (
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
-	"github.com/codegangsta/cli"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
 )
 
 func (f *file) show() error {

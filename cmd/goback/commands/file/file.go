@@ -5,7 +5,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 type file struct {

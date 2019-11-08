@@ -13,7 +13,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 func (f *file) restore() error {

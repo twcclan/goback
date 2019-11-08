@@ -11,7 +11,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/proto"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 func (o *object) list() {

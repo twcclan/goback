@@ -4,7 +4,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 )
 
 var Command = cli.Command{

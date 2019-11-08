@@ -16,8 +16,8 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/codegangsta/cli"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
 	"go4.org/syncutil"
 	"golang.org/x/sync/errgroup"
 )

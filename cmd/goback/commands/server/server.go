@@ -12,9 +12,9 @@ import (
 
 	"cloud.google.com/go/profiler"
 	"contrib.go.opencensus.io/exporter/stackdriver"
-	"github.com/codegangsta/cli"
+	"contrib.go.opencensus.io/exporter/zipkin"
 	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
-	"go.opencensus.io/exporter/zipkin"
+	"github.com/urfave/cli"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"

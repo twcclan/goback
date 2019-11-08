@@ -3,11 +3,10 @@ package commit
 import (
 	"time"
 
-	"go4.org/syncutil"
-
 	"github.com/twcclan/goback/backup"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
+	"go4.org/syncutil"
 )
 
 type commit struct {

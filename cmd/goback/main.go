@@ -17,10 +17,10 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/server"
 	"github.com/twcclan/goback/storage/pack"
 
-	"github.com/codegangsta/cli"
+	"contrib.go.opencensus.io/exporter/prometheus"
 	_ "github.com/joho/godotenv/autoload"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"go.opencensus.io/exporter/prometheus"
+	"github.com/urfave/cli"
 	"go.opencensus.io/stats/view"
 )
 

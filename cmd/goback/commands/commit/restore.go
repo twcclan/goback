@@ -13,8 +13,8 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/proto"
 
-	"github.com/codegangsta/cli"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
 )
 
 func (c *commit) restore() {
