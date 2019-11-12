@@ -16,7 +16,7 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
-	github.com/mattn/go-sqlite3 v1.10.0
+	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/ncw/swift v1.0.49
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pkg/errors v0.8.1
