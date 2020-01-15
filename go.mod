@@ -27,7 +27,7 @@ require (
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.1
 	github.com/willf/bitset v1.1.10
-	go.opencensus.io v0.22.1
+	go.opencensus.io v0.22.2
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/build v0.0.0-20181221181159-b67de002b30e // indirect
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
