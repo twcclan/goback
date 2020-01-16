@@ -19,7 +19,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.13.0
 	github.com/ncw/swift v1.0.49
 	github.com/openzipkin/zipkin-go v0.2.2
-	github.com/pkg/errors v0.8.1
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/sirupsen/logrus v1.4.2
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
