@@ -12,7 +12,7 @@ require (
 	github.com/bmatcuk/doublestar v1.1.5
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dustin/go-humanize v1.0.0
-	github.com/golang-migrate/migrate/v4 v4.7.0
+	github.com/golang-migrate/migrate/v4 v4.10.0
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
