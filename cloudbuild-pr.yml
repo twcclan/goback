@@ -5,12 +5,5 @@ steps:
       '--branch_name', '$BRANCH_NAME'
     ]
   - name: 'gcr.io/cloud-builders/docker'
-    entrypoint: 'bash'
-    args: ['-c', 'docker pull eu.gcr.io/$PROJECT_ID/goback-builder || true']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'eu.gcr.io/$PROJECT_ID/goback-builder', '--cache-from', 'eu.gcr.io/$PROJECT_ID/goback-builder', '--target', 'builder', '.']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '--cache-from', 'eu.gcr.io/$PROJECT_ID/goback-builder', '.']
-secrets:
-images: ['eu.gcr.io/$PROJECT_ID/goback-builder']
+    args: ['build', '.']
 timeout: 1200s
