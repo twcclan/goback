@@ -2,7 +2,7 @@ module github.com/twcclan/goback
 
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
-	cloud.google.com/go v0.47.0
+	cloud.google.com/go v0.50.0
 	cloud.google.com/go/storage v1.5.0
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.12.8
@@ -23,17 +23,19 @@ require (
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/sirupsen/logrus v1.4.2
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.4.0
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.1
 	github.com/willf/bitset v1.1.10
 	go.opencensus.io v0.22.2
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/build v0.0.0-20181221181159-b67de002b30e // indirect
-	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	golang.org/x/sync v0.0.0-20190423024810-112230192c58
-	google.golang.org/api v0.9.0
+	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553
+	golang.org/x/oauth2 v0.0.0-20191202225959-858c2ad4c8b6
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
+	google.golang.org/api v0.15.0
 	google.golang.org/grpc v1.26.0
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 )
+
+go 1.13
