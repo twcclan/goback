@@ -2,8 +2,8 @@ module github.com/twcclan/goback
 
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
-	cloud.google.com/go v0.53.0
-	cloud.google.com/go/storage v1.5.0
+	cloud.google.com/go v0.56.0
+	cloud.google.com/go/storage v1.6.0
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.1
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
@@ -13,7 +13,7 @@ require (
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/golang-migrate/migrate/v4 v4.11.0
-	github.com/golang/protobuf v1.3.3
+	github.com/golang/protobuf v1.3.5
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
 	github.com/mattn/go-sqlite3 v1.13.0
@@ -30,10 +30,10 @@ require (
 	go.opencensus.io v0.22.3
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/build v0.0.0-20181221181159-b67de002b30e // indirect
-	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
+	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	google.golang.org/api v0.17.0
+	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
+	google.golang.org/api v0.24.0
 	google.golang.org/grpc v1.29.1
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 )
