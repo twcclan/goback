@@ -1,4 +1,9 @@
 steps:
+  - name: 'gcr.io/$PROJECT_ID/cancelot'
+    args: [
+        '--current_build_id', '$BUILD_ID',
+        '--branch_name', '$BRANCH_NAME'
+      ]
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args: ['-c', 'docker login --username=$${_DOCKER_HUB_USERNAME} --password=$${_DOCKER_HUB_PASSWORD}']
