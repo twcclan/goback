@@ -21,7 +21,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.6.0
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
