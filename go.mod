@@ -17,7 +17,7 @@ require (
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
 	github.com/mattn/go-sqlite3 v1.13.0
-	github.com/ncw/swift v1.0.49
+	github.com/ncw/swift v1.0.52
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
