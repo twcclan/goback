@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/index"
+	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -126,5 +126,5 @@ func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	if err != nil {
 		log.Fatalf("Could not initialise index driver: %v", err)
 	}
-	return index.NewSqliteIndex(loc, c.GlobalString("set"), store)
+	return sqlite.NewSqliteIndex(loc, c.GlobalString("set"), store)
 }

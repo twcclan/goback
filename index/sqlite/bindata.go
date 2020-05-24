@@ -4,18 +4,18 @@
 // sql/tables.sql
 // DO NOT EDIT!
 
-package index
+package sqlite
 
 import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
-	"strings"
-	"os"
-	"time"
 	"io/ioutil"
+	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 func bindataRead(data []byte, name string) ([]byte, error) {
@@ -162,7 +162,7 @@ func AssetNames() []string {
 // _bindata is a table, holding each asset generator, mapped to its name.
 var _bindata = map[string]func() (*asset, error){
 	"sql/settings.sql": sqlSettingsSql,
-	"sql/tables.sql": sqlTablesSql,
+	"sql/tables.sql":   sqlTablesSql,
 }
 
 // AssetDir returns the file names below a certain

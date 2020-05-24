@@ -1,4 +1,4 @@
-package index
+package sqlite
 
 import (
 	"context"
