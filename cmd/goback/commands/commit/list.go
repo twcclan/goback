@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -25,7 +26,10 @@ func (c *commit) list() {
 func listAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
-	log.Println(index.Open())
+	err := index.Open()
+	if err != nil {
+		log.Fatal(fmt.Errorf("couldn't open index: %w", err))
+	}
 
 	s := &commit{
 		index: index,

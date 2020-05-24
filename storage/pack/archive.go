@@ -278,7 +278,8 @@ func (a *archive) Put(ctx context.Context, object *proto.Object) error {
 }
 
 func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref) error {
-	tombstoneRef := &proto.Ref{Sha1: sha1.Sum(ref.Sha1)[:]}
+	tombstoneSha := sha1.Sum(ref.Sha1)
+	tombstoneRef := &proto.Ref{Sha1: tombstoneSha[:]}
 
 	hdr := &proto.ObjectHeader{
 		Ref:          tombstoneRef,

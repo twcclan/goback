@@ -22,14 +22,12 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/sirupsen/logrus v1.6.0
-	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
 	github.com/stretchr/testify v1.5.1
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.4
 	github.com/willf/bitset v1.1.10
 	go.opencensus.io v0.22.3
 	go4.org v0.0.0-20180809161055-417644f6feb5
-	golang.org/x/build v0.0.0-20181221181159-b67de002b30e // indirect
 	golang.org/x/net v0.0.0-20200506145744-7e3656a0809f
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
