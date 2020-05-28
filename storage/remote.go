@@ -2,7 +2,11 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
+	"time"
+
+	"github.com/golang/protobuf/ptypes"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
@@ -21,8 +25,56 @@ func NewRemoteClient(addr string) (*RemoteClient, error) {
 	}, nil
 }
 
+var _ backup.Index = (*RemoteClient)(nil)
+
 type RemoteClient struct {
 	store proto.StoreClient
+}
+
+func (r *RemoteClient) Open() error  { return nil }
+func (r *RemoteClient) Close() error { return nil }
+
+func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
+	na, err := ptypes.TimestampProto(notAfter)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := r.store.FileInfo(ctx, &proto.FileInfoRequest{
+		BackupSet: set,
+		Path:      name,
+		NotAfter:  na,
+		Count:     int32(count),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Files, nil
+}
+
+func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+	na, err := ptypes.TimestampProto(notAfter)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := r.store.CommitInfo(ctx, &proto.CommitInfoRequest{
+		BackupSet: set,
+		NotAfter:  na,
+		Count:     int32(count),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Commits, nil
+}
+
+func (r *RemoteClient) ReIndex(ctx context.Context) error {
+	return errors.New("not supported")
 }
 
 func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
@@ -85,28 +137,62 @@ func (r *RemoteClient) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return response.Has, nil
 }
 
-func NewRemoteServer(store backup.ObjectStore) *RemoteServer {
+func NewRemoteServer(index backup.Index) *RemoteServer {
 	return &RemoteServer{
-		store: store,
+		index: index,
 	}
 }
 
+var _ proto.StoreServer = (*RemoteServer)(nil)
+
 type RemoteServer struct {
-	store backup.ObjectStore
+	index backup.Index
+}
+
+func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
+	notAfter, err := ptypes.Timestamp(request.NotAfter)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := r.index.FileInfo(ctx, request.BackupSet, request.Path, notAfter, int(request.Count))
+	if err != nil {
+		return nil, err
+	}
+
+	return &proto.FileInfoResponse{
+		Files: files,
+	}, nil
+}
+
+func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfoRequest) (*proto.CommitInfoResponse, error) {
+	notAfter, err := ptypes.Timestamp(request.NotAfter)
+	if err != nil {
+		return nil, err
+	}
+
+	commits, err := r.index.CommitInfo(ctx, request.BackupSet, notAfter, int(request.Count))
+	if err != nil {
+		return nil, err
+	}
+
+	return &proto.CommitInfoResponse{
+		Commits: commits,
+	}, nil
 }
 
 func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
-	return &proto.PutResponse{}, r.store.Put(ctx, request.Object)
+	return &proto.PutResponse{}, r.index.Put(ctx, request.Object)
 }
 
 func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
-	obj, err := r.store.Get(ctx, request.Ref)
+	obj, err := r.index.Get(ctx, request.Ref)
 
 	return &proto.GetResponse{Object: obj}, err
 }
 
 func (r *RemoteServer) Delete(ctx context.Context, request *proto.DeleteRequest) (*proto.DeleteResponse, error) {
-	err := r.store.Delete(ctx, request.Ref)
+	err := r.index.Delete(ctx, request.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -114,13 +200,13 @@ func (r *RemoteServer) Delete(ctx context.Context, request *proto.DeleteRequest)
 }
 
 func (r *RemoteServer) Walk(request *proto.WalkRequest, walker proto.Store_WalkServer) error {
-	return r.store.Walk(walker.Context(), request.Load, request.ObjectType, func(header *proto.ObjectHeader, object *proto.Object) error {
+	return r.index.Walk(walker.Context(), request.Load, request.ObjectType, func(header *proto.ObjectHeader, object *proto.Object) error {
 		return walker.Send(&proto.WalkResponse{Object: object, Header: header})
 	})
 }
 
 func (r *RemoteServer) Has(ctx context.Context, request *proto.HasRequest) (*proto.HasResponse, error) {
-	has, err := r.store.Has(ctx, request.Ref)
+	has, err := r.index.Has(ctx, request.Ref)
 
 	if err != nil {
 		return nil, err

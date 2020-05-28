@@ -4,6 +4,9 @@ package proto;
 
 import "object.proto";
 import "ref.proto";
+import "tree.proto";
+import "commit.proto";
+import "google/protobuf/timestamp.proto";
 
 //Put(*proto.Object) error
 message PutRequest {
@@ -53,10 +56,34 @@ message HasResponse {
     bool has = 1;
 }
 
+message FileInfoRequest {
+    string backup_set = 1;
+    string path = 2;
+    google.protobuf.Timestamp notAfter = 3;
+    int32 count = 4;
+
+}
+
+message FileInfoResponse {
+    repeated TreeNode files = 1;
+}
+
+message CommitInfoRequest {
+    string backup_set = 1;
+    google.protobuf.Timestamp notAfter = 2;
+    int32 count = 3;
+}
+
+message CommitInfoResponse {
+    repeated Commit commits = 1;
+}
+
 service Store {
     rpc Put (PutRequest) returns (PutResponse) {}
     rpc Get (GetRequest) returns (GetResponse) {}
     rpc Delete (DeleteRequest) returns (DeleteResponse) {}
     rpc Walk(WalkRequest) returns (stream WalkResponse) {}
     rpc Has(HasRequest) returns (HasResponse) {}
+    rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
+    rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
 }
