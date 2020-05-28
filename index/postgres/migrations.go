@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+//go:generate go run github.com/GeertJohan/go.rice/rice embed-go
+
 type Log struct {
 	verbose bool
 }
