@@ -1,0 +1,2 @@
+DB_URL=postgres://goback:goback@localhost:6655/goback?sslmode=disable
+MIGRATE=go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate

@@ -14,6 +14,7 @@ type file struct {
 	src    string
 	dst    string
 	when   time.Time
+	set    string
 }
 
 var Command = cli.Command{

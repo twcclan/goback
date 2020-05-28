@@ -1,9 +1,10 @@
-package index
+package sqlite
 
 import (
 	"context"
 	"database/sql"
 	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"sync"
@@ -13,7 +14,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
-	"go4.org/syncutil/singleflight"
+	rice "github.com/GeertJohan/go.rice"
 
 	// load sqlite3 driver
 
@@ -32,24 +33,23 @@ func init() {
 	}
 }
 
-func NewSqliteIndex(base, backupSet string, store backup.ObjectStore) *SqliteIndex {
-	idx := &SqliteIndex{base: base, backupSet: backupSet, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
+func NewIndex(base, backupSet string, store backup.ObjectStore) *Index {
+	idx := &Index{base: base, backupSet: backupSet, txMtx: new(sync.Mutex), ObjectStore: store}
 	return idx
 }
 
-var _ backup.Index = (*SqliteIndex)(nil)
+var _ backup.Index = (*Index)(nil)
 
-//go:generate go-bindata -pkg index sql/
-type SqliteIndex struct {
+//go:generate go run github.com/GeertJohan/go.rice/rice embed-go
+type Index struct {
 	backup.ObjectStore
 	base      string
 	backupSet string
 	db        *sql.DB
-	single    *singleflight.Group
 	txMtx     *sync.Mutex
 }
 
-func (s *SqliteIndex) Open() error {
+func (s *Index) Open() error {
 	db, err := sql.Open(tracedSQLiteDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
 	if err != nil {
 		return err
@@ -60,25 +60,34 @@ func (s *SqliteIndex) Open() error {
 		return err
 	}
 
-	sqlFiles, err := AssetDir("sql")
+	box, err := rice.FindBox("sql")
 	if err != nil {
 		return err
 	}
 
-	for _, file := range sqlFiles {
-		queries := MustAsset("sql/" + file)
-
-		_, err := db.Exec(string(queries))
-		if err != nil {
+	err = box.Walk("", func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
 			return err
 		}
+
+		if filepath.Ext(path) == ".sql" {
+			_, err := db.Exec(box.MustString(path))
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	s.db = db
 	return nil
 }
 
-func (s *SqliteIndex) FindMissing(ctx context.Context) error {
+func (s *Index) FindMissing(ctx context.Context) error {
 	refs := make([][]byte, 0)
 	rows, err := s.db.QueryContext(ctx, "SELECT ref FROM objects;")
 	if err != nil {
@@ -123,11 +132,11 @@ func (s *SqliteIndex) FindMissing(ctx context.Context) error {
 	return nil
 }
 
-func (s *SqliteIndex) Close() error {
+func (s *Index) Close() error {
 	return s.db.Close()
 }
 
-func (s *SqliteIndex) ReIndex(ctx context.Context) error {
+func (s *Index) ReIndex(ctx context.Context) error {
 	return s.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
 		if obj.GetCommit().GetBackupSet() != s.backupSet {
 			return nil
@@ -137,7 +146,7 @@ func (s *SqliteIndex) ReIndex(ctx context.Context) error {
 	})
 }
 
-func (s *SqliteIndex) index(ctx context.Context, commit *proto.Commit) error {
+func (s *Index) index(ctx context.Context, commit *proto.Commit) error {
 	log.Printf("Indexing commit: %v", time.Unix(commit.Timestamp, 0))
 
 	// whenever we get to index a commit
@@ -189,7 +198,7 @@ func (s *SqliteIndex) index(ctx context.Context, commit *proto.Commit) error {
 	return tx.Commit()
 }
 
-func (s *SqliteIndex) Put(ctx context.Context, object *proto.Object) error {
+func (s *Index) Put(ctx context.Context, object *proto.Object) error {
 	// store the object first
 	err := s.ObjectStore.Put(ctx, object)
 	if err != nil {
@@ -204,8 +213,8 @@ func (s *SqliteIndex) Put(ctx context.Context, object *proto.Object) error {
 	return nil
 }
 
-func (s *SqliteIndex) FileInfo(ctx context.Context, name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
-	infoList := make([]proto.TreeNode, count)
+func (s *Index) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
+	infoList := make([]*proto.TreeNode, count)
 
 	rows, err := s.db.QueryContext(ctx, "SELECT path, timestamp, size, mode, ref FROM files WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
 	if err != nil {
@@ -226,7 +235,7 @@ func (s *SqliteIndex) FileInfo(ctx context.Context, name string, notAfter time.T
 
 		info.Name = filepath.Base(info.Name)
 
-		infoList[counter] = proto.TreeNode{
+		infoList[counter] = &proto.TreeNode{
 			Stat: info,
 			Ref:  ref,
 		}
@@ -237,8 +246,8 @@ func (s *SqliteIndex) FileInfo(ctx context.Context, name string, notAfter time.T
 	return infoList[:counter], rows.Err()
 }
 
-func (s *SqliteIndex) CommitInfo(ctx context.Context, notAfter time.Time, count int) ([]proto.Commit, error) {
-	infoList := make([]proto.Commit, count)
+func (s *Index) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+	infoList := make([]*proto.Commit, count)
 
 	rows, err := s.db.QueryContext(ctx, "SELECT timestamp, tree FROM commits WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
 	if err != nil {
@@ -249,7 +258,7 @@ func (s *SqliteIndex) CommitInfo(ctx context.Context, notAfter time.Time, count 
 	counter := 0
 	for rows.Next() {
 
-		commit := proto.Commit{}
+		commit := &proto.Commit{}
 		tree := proto.Ref{}
 
 		err = rows.Scan(&commit.Timestamp, &tree.Sha1)

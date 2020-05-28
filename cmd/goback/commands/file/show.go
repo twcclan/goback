@@ -12,7 +12,7 @@ import (
 )
 
 func (f *file) show() error {
-	nodes, err := f.index.FileInfo(context.Background(), f.src, f.when, 10)
+	nodes, err := f.index.FileInfo(context.Background(), f.set, f.src, f.when, 10)
 	if err != nil {
 		return err
 	}
@@ -50,22 +50,19 @@ func showAction(c *cli.Context) error {
 	store := common.GetObjectStore(c)
 	idx := common.GetIndex(c, store)
 
-	if err := idx.Open(); err != nil {
-		return err
-	}
-
 	f := &file{
 		src:   src,
 		index: idx,
 		when:  when,
+		set:   c.GlobalString("set"),
 	}
 
 	if err := f.show(); err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	if err := idx.Close(); err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	return nil

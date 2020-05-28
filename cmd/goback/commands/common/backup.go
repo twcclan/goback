@@ -7,7 +7,8 @@ import (
 	"os"
 
 	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/index"
+	"github.com/twcclan/goback/index/postgres"
+	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -56,16 +57,6 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	)
 }
 
-func initSwift(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewSwiftObjectStore(
-		"teUHDFyfMNqU",
-		"mppPgm529A6MNx6UNFqTxvnYyMv7Wqsy",
-		"https://auth.cloud.ovh.net/v2.0",
-		"1675837378358194",
-		"goback-test",
-	)
-}
-
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewGCSObjectStore(u.Host, u.Query().Get("cache"))
 }
@@ -81,16 +72,32 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewRemoteClient(addr)
 }
 
+func initSqlite(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
+	loc, err := makeLocation(u.Path)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Opening sqlite index at %s", loc)
+
+	return sqlite.NewIndex(loc, c.GlobalString("set"), store), nil
+}
+
+func initPostgres(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
+	log.Printf("Opening postgres index")
+	return postgres.NewIndex(u.String(), store), nil
+}
+
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":       initPack,
 	"file":   initSimple,
-	"swift":  initSwift,
 	"gcs":    initGCS,
 	"goback": initRemote,
 }
 
-func getIndexLocation(c *cli.Context) (string, error) {
-	return makeLocation(c.GlobalString("index"))
+var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){
+	"":         initSqlite,
+	"sqlite":   initSqlite,
+	"postgres": initPostgres,
 }
 
 func GetObjectStore(c *cli.Context) backup.ObjectStore {
@@ -122,9 +129,35 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 }
 
 func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
-	loc, err := getIndexLocation(c)
-	if err != nil {
-		log.Fatalf("Could not initialise index driver: %v", err)
+	// if the provided store already implements index just return it
+	if idx, ok := store.(backup.Index); ok {
+		log.Println("Store implements index")
+		return idx
 	}
-	return index.NewSqliteIndex(loc, c.GlobalString("set"), store)
+
+	location := c.GlobalString("index")
+	u, err := url.Parse(location)
+
+	if err != nil {
+		log.Fatalf("Invalid index location %s: %v", location, err)
+	}
+
+	log.Printf("Loading %s index driver", u.Scheme)
+
+	if driver, ok := indexDrivers[u.Scheme]; ok {
+		idx, err := driver(u, c, store)
+		if err != nil {
+			log.Fatalf("Could not initialise index driver %s: %v", u.Scheme, err)
+		}
+
+		err = idx.Open()
+		if err != nil {
+			log.Fatalf("Could not open object index %s: %v", u.Scheme, err)
+		}
+
+		return idx
+	}
+
+	log.Fatalf("No driver for storage location %s", u.String())
+	return nil
 }

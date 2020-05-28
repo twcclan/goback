@@ -5,8 +5,9 @@ import (
 	"path"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/twcclan/goback/proto"
+
+	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -14,6 +15,8 @@ type concurrentTreeNode struct {
 	prefix string
 	object *proto.Object
 }
+
+var SkipTree = errors.New("skip tree")
 
 type TraverserHandler func(string, *proto.TreeNode) error
 
@@ -69,6 +72,12 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 
 		err := c.traverseFn(path.Join(t.prefix, info.Name), node)
 		if err != nil {
+			// if the TraverseFunc signals that we should skip the tree
+			// we will just continue and won't create a new concurrentTreeNode
+			if errors.Is(err, SkipTree) {
+				continue
+			}
+
 			return err
 		}
 

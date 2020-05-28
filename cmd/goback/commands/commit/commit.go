@@ -19,6 +19,7 @@ type commit struct {
 	includes []string
 	excludes []string
 	gate     *syncutil.Gate
+	set      string
 }
 
 var Command = cli.Command{

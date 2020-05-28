@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=plugins=grpc:. *.proto
+//go:generate protoc --go_out=plugins=grpc:. api.proto blob.proto commit.proto file.proto index.proto object.proto ref.proto tree.proto
 
 import (
 	"bytes"
