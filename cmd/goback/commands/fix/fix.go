@@ -18,7 +18,6 @@ var Command = cli.Command{
 func fixAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
-	log.Println(index.Open())
 
 	err := index.ReIndex(context.Background())
 	if err != nil {

@@ -103,15 +103,15 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 				defer c.gate.Done()
 
 				if info.Mode()&os.ModeSymlink == 0 { // skip symlinks
-					var nodes []proto.TreeNode
-					nodes, err = c.index.FileInfo(context.Background(), strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
+					var nodes []*proto.TreeNode
+					nodes, err = c.index.FileInfo(context.Background(), c.set, strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
 					if err != nil {
 						return errors.Wrapf(err, "Failed checking index for info %s", absPath)
 					}
 
 					if len(nodes) > 0 && nodes[0].Stat.Timestamp == info.ModTime().Unix() {
 						// apparently we have this file already
-						tree.Node(&nodes[0])
+						tree.Node(nodes[0])
 					} else {
 						// store the file
 						return tree.File(context.Background(), info, c.read(absPath))
@@ -157,6 +157,7 @@ func newAction(c *cli.Context) {
 		includes: c.StringSlice("include"),
 		excludes: c.StringSlice("exclude"),
 		gate:     syncutil.NewGate(c.Int("workers")),
+		set:      c.GlobalString("set"),
 	}
 
 	s.take()

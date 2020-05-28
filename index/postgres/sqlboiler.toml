@@ -1,0 +1,8 @@
+[psql]
+dbname = "goback"
+host = "localhost"
+port = 6655
+user = "goback"
+pass = "goback"
+sslmode = "disable"
+blacklist = ["schema_migrations"]

@@ -71,6 +71,7 @@ func enableZipkin(url string) {
 
 func serverAction(ctx *cli.Context) {
 	s := common.GetObjectStore(ctx)
+	idx := common.GetIndex(ctx, s)
 	listener, err := net.Listen("tcp", ctx.String("address"))
 	if err != nil {
 		log.Fatal(err)
@@ -102,7 +103,7 @@ func serverAction(ctx *cli.Context) {
 		},
 	}))
 
-	proto.RegisterStoreServer(srv, storage.NewRemoteServer(s))
+	proto.RegisterStoreServer(srv, storage.NewRemoteServer(idx))
 
 	log.Println("Listening on", listener.Addr().String())
 	log.Fatal(srv.Serve(listener))

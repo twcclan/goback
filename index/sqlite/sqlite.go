@@ -15,7 +15,6 @@ import (
 
 	"contrib.go.opencensus.io/integrations/ocsql"
 	rice "github.com/GeertJohan/go.rice"
-	"go4.org/syncutil/singleflight"
 
 	// load sqlite3 driver
 
@@ -34,8 +33,8 @@ func init() {
 	}
 }
 
-func NewSqliteIndex(base, backupSet string, store backup.ObjectStore) *Index {
-	idx := &Index{base: base, backupSet: backupSet, txMtx: new(sync.Mutex), ObjectStore: store, single: new(singleflight.Group)}
+func NewIndex(base, backupSet string, store backup.ObjectStore) *Index {
+	idx := &Index{base: base, backupSet: backupSet, txMtx: new(sync.Mutex), ObjectStore: store}
 	return idx
 }
 
@@ -47,7 +46,6 @@ type Index struct {
 	base      string
 	backupSet string
 	db        *sql.DB
-	single    *singleflight.Group
 	txMtx     *sync.Mutex
 }
 
@@ -215,8 +213,8 @@ func (s *Index) Put(ctx context.Context, object *proto.Object) error {
 	return nil
 }
 
-func (s *Index) FileInfo(ctx context.Context, name string, notAfter time.Time, count int) ([]proto.TreeNode, error) {
-	infoList := make([]proto.TreeNode, count)
+func (s *Index) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
+	infoList := make([]*proto.TreeNode, count)
 
 	rows, err := s.db.QueryContext(ctx, "SELECT path, timestamp, size, mode, ref FROM files WHERE path = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", name, notAfter.Unix(), count)
 	if err != nil {
@@ -237,7 +235,7 @@ func (s *Index) FileInfo(ctx context.Context, name string, notAfter time.Time, c
 
 		info.Name = filepath.Base(info.Name)
 
-		infoList[counter] = proto.TreeNode{
+		infoList[counter] = &proto.TreeNode{
 			Stat: info,
 			Ref:  ref,
 		}
@@ -248,8 +246,8 @@ func (s *Index) FileInfo(ctx context.Context, name string, notAfter time.Time, c
 	return infoList[:counter], rows.Err()
 }
 
-func (s *Index) CommitInfo(ctx context.Context, notAfter time.Time, count int) ([]proto.Commit, error) {
-	infoList := make([]proto.Commit, count)
+func (s *Index) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+	infoList := make([]*proto.Commit, count)
 
 	rows, err := s.db.QueryContext(ctx, "SELECT timestamp, tree FROM commits WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT ?;", notAfter.UTC().Unix(), count)
 	if err != nil {
@@ -260,7 +258,7 @@ func (s *Index) CommitInfo(ctx context.Context, notAfter time.Time, count int) (
 	counter := 0
 	for rows.Next() {
 
-		commit := proto.Commit{}
+		commit := &proto.Commit{}
 		tree := proto.Ref{}
 
 		err = rows.Scan(&commit.Timestamp, &tree.Sha1)

@@ -13,7 +13,7 @@ import (
 )
 
 func (c *commit) list() {
-	commits, err := c.index.CommitInfo(context.Background(), time.Now(), 10)
+	commits, err := c.index.CommitInfo(context.Background(), c.set, time.Now(), 10)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "Failed reading commit info"))
 	}
@@ -33,6 +33,7 @@ func listAction(c *cli.Context) {
 
 	s := &commit{
 		index: index,
+		set:   c.GlobalString("set"),
 	}
 
 	s.list()

@@ -12,19 +12,25 @@ require (
 	github.com/bmatcuk/doublestar v1.3.0
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dustin/go-humanize v1.0.0
+	github.com/friendsofgo/errors v0.9.2
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
+	github.com/kat-co/vala v0.0.0-20170210184112-42e1d8b61f12
+	github.com/lib/pq v1.3.0
 	github.com/mattn/go-sqlite3 v1.13.0
-	github.com/ncw/swift v1.0.52
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
+	github.com/prometheus/client_golang v0.9.3
 	github.com/sirupsen/logrus v1.6.0
+	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.5.1
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.4
+	github.com/volatiletech/randomize v0.0.1
+	github.com/volatiletech/sqlboiler/v4 v4.1.2
+	github.com/volatiletech/strmangle v0.0.1
 	github.com/willf/bitset v1.1.10
 	go.opencensus.io v0.22.3
 	go4.org v0.0.0-20180809161055-417644f6feb5

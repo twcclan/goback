@@ -17,7 +17,7 @@ import (
 )
 
 func (f *file) restore() error {
-	files, err := f.index.FileInfo(context.Background(), f.src, f.when, 1)
+	files, err := f.index.FileInfo(context.Background(), f.set, f.src, f.when, 1)
 	if err != nil {
 		return err
 	}
@@ -84,16 +84,13 @@ func restoreAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	idx := common.GetIndex(c, store)
 
-	if err := idx.Open(); err != nil {
-		log.Fatal(err)
-	}
-
 	f := &file{
 		reader: backup.NewBackupReader(store),
 		src:    src,
 		dst:    dst,
 		when:   when,
 		index:  idx,
+		set:    c.GlobalString("set"),
 	}
 
 	if err := f.restore(); err != nil {

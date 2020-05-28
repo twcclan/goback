@@ -18,7 +18,7 @@ import (
 )
 
 func (c *commit) restore() {
-	commits, err := c.index.CommitInfo(context.Background(), c.when, 1)
+	commits, err := c.index.CommitInfo(context.Background(), c.set, c.when, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -120,6 +120,7 @@ func restoreAction(c *cli.Context) {
 		when:   when,
 		from:   c.String("from"),
 		reader: backup.NewBackupReader(store),
+		set:    c.GlobalString("set"),
 	}
 
 	s.restore()
