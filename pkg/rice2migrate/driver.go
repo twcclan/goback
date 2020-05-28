@@ -1,12 +1,14 @@
 package rice2migrate
 
 import (
+	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 
 	"github.com/pkg/errors"
 
-	"github.com/GeertJohan/go.rice"
+	rice "github.com/GeertJohan/go.rice"
 	"github.com/golang-migrate/migrate/v4/source"
 )
 
@@ -27,8 +29,8 @@ func WithInstance(box *rice.Box) (source.Driver, error) {
 		box:        box,
 	}
 
-	err := r.box.Walk("/", func(p string, info os.FileInfo, err error) error {
-		if err != nil {
+	err := r.box.Walk("", func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
 			return err
 		}
 
@@ -104,5 +106,11 @@ func (r *Rice) open(m *source.Migration) (io.ReadCloser, string, error) {
 		return nil, "", err
 	}
 
-	return file, m.Identifier, nil
+	buf := bytes.NewBuffer(nil)
+	_, err = buf.ReadFrom(file)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return ioutil.NopCloser(buf), m.Identifier, nil
 }
