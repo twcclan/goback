@@ -9,7 +9,7 @@ require (
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
-	github.com/bmatcuk/doublestar v1.3.0
+	github.com/bmatcuk/doublestar v1.3.1
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
