@@ -3,7 +3,7 @@ module github.com/twcclan/goback
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
 	cloud.google.com/go v0.57.0
-	cloud.google.com/go/storage v1.8.0
+	cloud.google.com/go/storage v1.9.0
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.1
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
@@ -34,7 +34,7 @@ require (
 	github.com/willf/bitset v1.1.10
 	go.opencensus.io v0.22.3
 	go4.org v0.0.0-20180809161055-417644f6feb5
-	golang.org/x/net v0.0.0-20200506145744-7e3656a0809f
+	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 	google.golang.org/api v0.26.0
