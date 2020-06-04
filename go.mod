@@ -4,7 +4,7 @@ require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
 	cloud.google.com/go v0.57.0
 	cloud.google.com/go/storage v1.8.0
-	contrib.go.opencensus.io/exporter/prometheus v0.1.0
+	contrib.go.opencensus.io/exporter/prometheus v0.2.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.1
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
@@ -22,7 +22,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.13.0
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v0.9.4
+	github.com/prometheus/client_golang v1.2.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.6.0
