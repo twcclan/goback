@@ -8,7 +8,6 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -194,11 +193,6 @@ func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref)
 		return err
 	}
 
-	filesBefore, err := models.Files().Count(ctx, tx)
-	if err != nil {
-		log.Printf("Couldn't count files before: %s", err)
-		return err
-	}
 	start := time.Now()
 
 	set, err := models.Sets(models.SetWhere.Name.EQ(commit.GetBackupSet())).One(ctx, tx)
@@ -218,7 +212,6 @@ func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref)
 		}
 	}
 
-	var filesAdded int64
 	var txMtx sync.Mutex
 	err = backup.TraverseTree(ctx, i.ObjectStore, treeObj, 64, func(filepath string, node *proto.TreeNode) error {
 		// seems pg doesn't appreciate concurrent inserts on the same transactions,
@@ -260,22 +253,15 @@ func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref)
 			Size:      info.Size,
 		}
 
-		atomic.AddInt64(&filesAdded, 1)
-
 		return file.Upsert(ctx, tx, false, nil, boil.Infer(), boil.Infer())
 	})
 	if err != nil {
-		log.Printf("Failed traversing tree: %s", err)
-		return err
+		log.Printf("Ignoring commit %x, failed traversing tree: %s", proto.NewObject(commit).Ref().Sha1, err)
+		return nil
 	}
 
 	duration := time.Since(start)
-	filesAfter, err := models.Files().Count(ctx, tx)
-	if err != nil {
-		log.Printf("Couldn't count files after: %s", err)
-		return err
-	}
-	log.Printf("Indexed commit(%s) in %v %d %d %d %f", set.Name, duration, filesBefore, filesAdded, filesAfter, 100*float64(filesAfter-filesBefore)/float64(filesAdded))
+	log.Printf("Indexed commit(%s) in %v", set.Name, duration)
 
 	c := &models.Commit{
 		Ref:       ref.Sha1,
