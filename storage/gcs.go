@@ -319,7 +319,7 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 			Periodically:      24 * time.Hour,
 			MinimumCandidates: 1000,
 			GarbageCollection: true,
-			OnOpen:            true,
+			OnOpen:            false,
 		}),
 	}
 
