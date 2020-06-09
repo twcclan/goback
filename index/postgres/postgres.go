@@ -21,13 +21,13 @@ import (
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
-var tracedSQLiteDriver = ""
+var tracedPgDriver = ""
 
 func init() {
 	var err error
 
 	// register openconsensus database wrapper
-	tracedSQLiteDriver, err = ocsql.Register("postgres", ocsql.WithAllTraceOptions())
+	tracedPgDriver, err = ocsql.Register("postgres", ocsql.WithAllTraceOptions())
 	if err != nil {
 		log.Fatalf("failed to register ocsql driver: %s", err)
 	}
@@ -53,7 +53,7 @@ func (i *Index) Open() error {
 		return err
 	}
 
-	db, err := sql.Open(tracedSQLiteDriver, i.dsn)
+	db, err := sql.Open(tracedPgDriver, i.dsn)
 	if err != nil {
 		return err
 	}
