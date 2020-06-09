@@ -158,7 +158,7 @@ func (i *Index) Put(ctx context.Context, object *proto.Object) error {
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-		return i.index(boil.WithDebug(ctx, true), object.GetCommit(), object.Ref())
+		return i.index(ctx, object.GetCommit(), object.Ref())
 	}
 
 	return nil
