@@ -318,7 +318,7 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 		pack.WithCompaction(pack.CompactionConfig{
 			Periodically:      24 * time.Hour,
 			MinimumCandidates: 1000,
-			GarbageCollection: true,
+			GarbageCollection: false,
 			OnOpen:            false,
 		}),
 	}
