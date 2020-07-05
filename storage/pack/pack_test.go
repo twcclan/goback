@@ -127,7 +127,7 @@ func TestPack(t *testing.T) {
 	}
 }
 
-func printIndex(t *testing.T, idx index) {
+func printIndex(t *testing.T, idx IndexFile) {
 	for _, rec := range idx {
 		t.Logf("hash: %x offset: %d", rec.Sum[:], rec.Offset)
 	}

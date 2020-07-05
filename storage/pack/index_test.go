@@ -14,7 +14,7 @@ import (
 
 func TestIndex(t *testing.T) {
 	buf := new(bytes.Buffer)
-	idx := make(index, 1000)
+	idx := make(IndexFile, 1000)
 
 	for i := range idx {
 		idx[i].Offset = rand.Uint32()
@@ -27,7 +27,7 @@ func TestIndex(t *testing.T) {
 	_, err := idx.WriteTo(buf)
 	assert.Nil(t, err)
 
-	var newIdx index
+	var newIdx IndexFile
 
 	_, err = (&newIdx).ReadFrom(bytes.NewReader(buf.Bytes()))
 	assert.Nil(t, err)
@@ -42,7 +42,7 @@ func TestIndexSize(t *testing.T) {
 }
 
 func BenchmarkIndex(b *testing.B) {
-	idx := make(index, b.N)
+	idx := make(IndexFile, b.N)
 	refs := make([]proto.Ref, b.N)
 
 	for i := range idx {

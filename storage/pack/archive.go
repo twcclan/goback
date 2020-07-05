@@ -58,7 +58,7 @@ type archive struct {
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*IndexRecord
-	readIndex  index
+	readIndex  IndexFile
 	gcBits     *bitset.BitSet
 	mtx        sync.RWMutex
 	last       *proto.Ref
@@ -94,7 +94,7 @@ func openArchive(storage ArchiveStorage, name string) (*archive, error) {
 func (a *archive) recoverIndex(err error) error {
 	log.Printf("Attempting index recovery. couldn't open index: %v", err)
 
-	recoveredIndex := make(index, 0)
+	recoveredIndex := make(IndexFile, 0)
 
 	err = a.foreach(loadNone, func(o *proto.ObjectHeader, _ []byte, offset, length uint32) error {
 		record := IndexRecord{
@@ -488,7 +488,7 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 	return a.foreachReader(file, load, callback)
 }
 
-func (a *archive) storeReadIndex(idx index) error {
+func (a *archive) storeReadIndex(idx IndexFile) error {
 	sort.Sort(idx)
 
 	a.readIndex = idx
@@ -507,7 +507,7 @@ func (a *archive) storeReadIndex(idx index) error {
 }
 
 func (a *archive) storeIndex() error {
-	idx := make(index, 0, len(a.writeIndex))
+	idx := make(IndexFile, 0, len(a.writeIndex))
 
 	for _, loc := range a.writeIndex {
 		idx = append(idx, *loc)

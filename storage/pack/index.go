@@ -11,7 +11,7 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
-type index []IndexRecord
+type IndexFile []IndexRecord
 
 var indexEndianness = binary.BigEndian
 
@@ -19,11 +19,11 @@ var indexEndianness = binary.BigEndian
 var indexFileMagicBytes = []byte("GOBACKIDX_0001")
 var errIndexHeaderMismatch = errors.New("received unexpected index file header")
 
-func (idx index) Len() int           { return len(idx) }
-func (idx index) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
-func (idx index) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
+func (idx IndexFile) Len() int           { return len(idx) }
+func (idx IndexFile) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
+func (idx IndexFile) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
 
-func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
+func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)
 	var count uint32
 	byteCounter := &countingWriter{}
@@ -59,7 +59,7 @@ func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 	return byteCounter.count, nil
 }
 
-func (idx index) lookup(ref *proto.Ref) (uint, *IndexRecord) {
+func (idx IndexFile) lookup(ref *proto.Ref) (uint, *IndexRecord) {
 	n := sort.Search(len(idx), func(i int) bool {
 		return bytes.Compare(idx[i].Sum[:], ref.Sha1) >= 0
 	})
@@ -71,7 +71,7 @@ func (idx index) lookup(ref *proto.Ref) (uint, *IndexRecord) {
 	return 0, nil
 }
 
-func (idx index) WriteTo(writer io.Writer) (int64, error) {
+func (idx IndexFile) WriteTo(writer io.Writer) (int64, error) {
 	buf := bufio.NewWriter(writer)
 	count := uint32(len(idx))
 	byteCounter := &countingWriter{}
@@ -105,8 +105,8 @@ type IndexRecord struct {
 	Type   uint32
 }
 
-var _ io.WriterTo = (index)(nil)
-var _ io.ReaderFrom = (*index)(nil)
+var _ io.WriterTo = (IndexFile)(nil)
+var _ io.ReaderFrom = (*IndexFile)(nil)
 
 type countingWriter struct {
 	count int64

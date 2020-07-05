@@ -35,7 +35,7 @@ func TestOpenArchive(t *testing.T) {
 	fileInfo := &mockFileInfo{}
 
 	name := "test"
-	idx := index{
+	idx := IndexFile{
 		IndexRecord{
 			Length: 1,
 			Offset: 2,
