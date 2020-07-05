@@ -168,7 +168,7 @@ func (ps *PackStorage) putRaw(ctx context.Context, hdr *proto.ObjectHeader, byte
 
 // indexLocation returns the indexRecord for the provided ref or nil if it's
 // not in this store.
-func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*archive, *indexRecord) {
+func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*archive, *IndexRecord) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
@@ -183,7 +183,7 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 
 // indexLocationExcept checks if a given ref exists in an archive that is not in
 // the provided map of exclusions
-func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bool) (*archive, *indexRecord) {
+func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bool) (*archive, *IndexRecord) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 

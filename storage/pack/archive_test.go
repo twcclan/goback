@@ -36,7 +36,7 @@ func TestOpenArchive(t *testing.T) {
 
 	name := "test"
 	idx := index{
-		indexRecord{
+		IndexRecord{
 			Length: 1,
 			Offset: 2,
 			Type:   3,
@@ -76,7 +76,7 @@ func TestArchiveFile(t *testing.T) {
 	buffer := new(bytes.Buffer)
 
 	ar := &archive{
-		writeIndex: make(map[string]*indexRecord),
+		writeIndex: make(map[string]*IndexRecord),
 	}
 
 	objects := makeTestData(t, 10)

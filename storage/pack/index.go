@@ -11,7 +11,7 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
-type index []indexRecord
+type index []IndexRecord
 
 var indexEndianness = binary.BigEndian
 
@@ -45,7 +45,7 @@ func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	*idx = make([]indexRecord, count)
+	*idx = make([]IndexRecord, count)
 
 	for i := 0; i < int(count); i++ {
 
@@ -59,7 +59,7 @@ func (idx *index) ReadFrom(reader io.Reader) (int64, error) {
 	return byteCounter.count, nil
 }
 
-func (idx index) lookup(ref *proto.Ref) (uint, *indexRecord) {
+func (idx index) lookup(ref *proto.Ref) (uint, *IndexRecord) {
 	n := sort.Search(len(idx), func(i int) bool {
 		return bytes.Compare(idx[i].Sum[:], ref.Sha1) >= 0
 	})
@@ -98,7 +98,7 @@ func (idx index) WriteTo(writer io.Writer) (int64, error) {
 	return byteCounter.count, buf.Flush()
 }
 
-type indexRecord struct {
+type IndexRecord struct {
 	Sum    [20]byte
 	Offset uint32
 	Length uint32

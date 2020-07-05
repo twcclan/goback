@@ -36,7 +36,7 @@ func TestIndex(t *testing.T) {
 }
 
 func TestIndexSize(t *testing.T) {
-	rec := indexRecord{}
+	rec := IndexRecord{}
 
 	t.Logf("index record size: %d", unsafe.Sizeof(rec))
 }

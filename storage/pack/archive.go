@@ -57,7 +57,7 @@ type archive struct {
 	readFile   readFile
 	readOnly   bool
 	size       uint64
-	writeIndex map[string]*indexRecord
+	writeIndex map[string]*IndexRecord
 	readIndex  index
 	gcBits     *bitset.BitSet
 	mtx        sync.RWMutex
@@ -97,7 +97,7 @@ func (a *archive) recoverIndex(err error) error {
 	recoveredIndex := make(index, 0)
 
 	err = a.foreach(loadNone, func(o *proto.ObjectHeader, _ []byte, offset, length uint32) error {
-		record := indexRecord{
+		record := IndexRecord{
 			Offset: offset,
 			Length: length,
 			Type:   uint32(o.Type),
@@ -134,7 +134,7 @@ func (a *archive) open() (err error) {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
 
-		a.writeIndex = make(map[string]*indexRecord)
+		a.writeIndex = make(map[string]*IndexRecord)
 	}
 
 	readFile, err := a.storage.Open(a.archiveName())
@@ -178,7 +178,7 @@ func (a *archive) open() (err error) {
 	return nil
 }
 
-func (a *archive) indexLocation(ref *proto.Ref) *indexRecord {
+func (a *archive) indexLocation(ref *proto.Ref) *IndexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
@@ -198,7 +198,7 @@ func (a *archive) indexName() string {
 	return a.name + IndexExt
 }
 
-func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *indexRecord) (*proto.Object, error) {
+func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) (*proto.Object, error) {
 	ctx, span := trace.StartSpan(ctx, "archive.getRaw")
 	defer span.End()
 
@@ -340,7 +340,7 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 
 	writeLatency := float64(time.Since(start)) / float64(time.Millisecond)
 
-	record := &indexRecord{
+	record := &IndexRecord{
 		Offset: uint32(a.size),
 		Length: uint32(len(hdrBytes) + len(bytes)),
 		Type:   uint32(hdr.Type),
