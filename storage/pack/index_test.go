@@ -12,9 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIndex(t *testing.T) {
-	buf := new(bytes.Buffer)
-	idx := make(IndexFile, 1000)
+func makeIndex() IndexFile {
+	idx := make(IndexFile, 150000)
 
 	for i := range idx {
 		idx[i].Offset = rand.Uint32()
@@ -24,6 +23,14 @@ func TestIndex(t *testing.T) {
 			idx[i].Sum[j] = byte(rand.Intn(256))
 		}
 	}
+
+	return idx
+}
+
+func TestIndex(t *testing.T) {
+	buf := new(bytes.Buffer)
+	idx := makeIndex()
+
 	_, err := idx.WriteTo(buf)
 	assert.Nil(t, err)
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -294,7 +295,7 @@ var _ os.FileInfo = (*gcsFileInfo)(nil)
 
 var _ pack.ArchiveStorage = (*gcsStore)(nil)
 
-func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
+func NewGCSObjectStore(bucket, indexDir, cacheDir string) (backup.ObjectStore, error) {
 	credentials, err := google.FindDefaultCredentials(context.Background(), storage.ScopeReadWrite)
 	if err != nil {
 		return nil, err
@@ -310,8 +311,16 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 		openFiles: make(map[string]*gcsFile),
 	}
 
+	err = os.MkdirAll(indexDir, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	idx, err := pack.NewBadgerIndex(indexDir)
+
 	options := []pack.PackOption{
 		pack.WithArchiveStorage(storage),
+		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
 		pack.WithMaxSize(1024 * 1024 * 1024),
@@ -329,12 +338,15 @@ func NewGCSObjectStore(bucket, cacheDir string) (backup.ObjectStore, error) {
 			return nil, err
 		}
 
+		idx, err := pack.NewBadgerIndex(filepath.Join(cacheDir, "index"))
+
 		cache, err := pack.NewPackStorage(
 			pack.WithMaxParallel(1),
 			pack.WithCompaction(pack.CompactionConfig{
 				Periodically: 7 * 24 * time.Hour,
 			}),
 			pack.WithArchiveStorage(pack.NewLocalArchiveStorage(cacheDir)),
+			pack.WithArchiveIndex(idx),
 		)
 		if err != nil {
 			return nil, err

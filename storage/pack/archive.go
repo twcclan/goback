@@ -58,7 +58,6 @@ type archive struct {
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*IndexRecord
-	readIndex  IndexFile
 	gcBits     *bitset.BitSet
 	mtx        sync.RWMutex
 	last       *proto.Ref
@@ -91,7 +90,7 @@ func openArchive(storage ArchiveStorage, name string) (*archive, error) {
 	return a, a.open()
 }
 
-func (a *archive) recoverIndex(err error) error {
+func (a *archive) recoverIndex(err error) (IndexFile, error) {
 	log.Printf("Attempting index recovery. couldn't open index: %v", err)
 
 	recoveredIndex := make(IndexFile, 0)
@@ -110,18 +109,42 @@ func (a *archive) recoverIndex(err error) error {
 	})
 
 	if err != nil {
-		return errors.Wrap(err, "Couldn't read achive to recover index")
+		return nil, errors.Wrap(err, "Couldn't read archive to recover index")
 	}
 
 	log.Printf("Recovered %d index records", len(recoveredIndex))
 
-	recErr := a.storeReadIndex(recoveredIndex)
-	if recErr != nil {
-		// we tried hard, have to fail here
-		return errors.Wrap(recErr, "failed index recovery")
+	return recoveredIndex, a.storeReadIndex(recoveredIndex)
+}
+
+func (a *archive) getIndex() (IndexFile, error) {
+	idxFile, err := a.storage.Open(a.indexName())
+	if err != nil {
+		// attempt to recover index
+		// TODO: make this configurable since it may potentially take very long
+
+		return a.recoverIndex(err)
+	}
+	defer idxFile.Close()
+
+	idxBuf := bytes.NewBuffer(nil)
+	_, err = io.Copy(idxBuf, idxFile)
+	if err != nil {
+		idx, err := a.recoverIndex(err)
+
+		return idx, errors.Wrap(err, "Couldn't read index file")
 	}
 
-	return nil
+	var index IndexFile
+
+	_, err = (&index).ReadFrom(idxBuf)
+	if err != nil {
+		index, err = a.recoverIndex(err)
+
+		return index, errors.Wrap(err, "Couldn't read index file")
+	}
+
+	return index, nil
 }
 
 func (a *archive) open() (err error) {
@@ -144,8 +167,6 @@ func (a *archive) open() (err error) {
 	a.readFile = readFile
 
 	if a.readOnly {
-		defer a.setupGCBits()
-
 		info, err := readFile.Stat()
 		if err != nil {
 			return err
@@ -154,25 +175,6 @@ func (a *archive) open() (err error) {
 		// store the size of the archive here for later
 		a.size = uint64(info.Size())
 
-		idxFile, err := a.storage.Open(a.indexName())
-		if err != nil {
-			// attempt to recover index
-			// TODO: make this configurable since it may potentially take very long
-
-			return a.recoverIndex(err)
-		}
-		defer idxFile.Close()
-
-		idxBuf := bytes.NewBuffer(nil)
-		_, err = io.Copy(idxBuf, idxFile)
-		if err != nil {
-			return errors.Wrap(a.recoverIndex(err), "Couldn't read index file")
-		}
-
-		_, err = (&a.readIndex).ReadFrom(idxBuf)
-		if err != nil {
-			return errors.Wrap(a.recoverIndex(err), "Couldn't read index file")
-		}
 	}
 
 	return nil
@@ -181,11 +183,6 @@ func (a *archive) open() (err error) {
 func (a *archive) indexLocation(ref *proto.Ref) *IndexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
-
-	if a.readOnly {
-		_, record := a.readIndex.lookup(ref)
-		return record
-	}
 
 	return a.writeIndex[string(ref.Sha1)]
 }
@@ -366,15 +363,15 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	return nil
 }
 
-func (a *archive) markObject(ref *proto.Ref) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
-	n, record := a.readIndex.lookup(ref)
-	if record != nil {
-		a.gcBits.Set(n)
-	}
-}
+//func (a *archive) markObject(ref *proto.Ref) {
+//	a.mtx.Lock()
+//	defer a.mtx.Unlock()
+//
+//	n, record := a.readIndex.lookup(ref)
+//	if record != nil {
+//		a.gcBits.Set(n)
+//	}
+//}
 
 type loadPredicate func(*proto.ObjectHeader) bool
 
@@ -491,14 +488,12 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 func (a *archive) storeReadIndex(idx IndexFile) error {
 	sort.Sort(idx)
 
-	a.readIndex = idx
-
 	idxFile, err := a.storage.Create(a.indexName())
 	if err != nil {
 		return errors.Wrap(err, "Failed creating index file")
 	}
 
-	_, err = a.readIndex.WriteTo(idxFile)
+	_, err = idx.WriteTo(idxFile)
 	if err != nil {
 		return errors.Wrap(err, "Couldn't encode index file")
 	}
@@ -506,23 +501,19 @@ func (a *archive) storeReadIndex(idx IndexFile) error {
 	return errors.Wrap(idxFile.Close(), "Failed closing index file")
 }
 
-func (a *archive) storeIndex() error {
+func (a *archive) storeIndex() (IndexFile, error) {
 	idx := make(IndexFile, 0, len(a.writeIndex))
 
 	for _, loc := range a.writeIndex {
 		idx = append(idx, *loc)
 	}
 
-	return a.storeReadIndex(idx)
-}
-
-func (a *archive) setupGCBits() {
-	a.gcBits = bitset.New(uint(len(a.readIndex)))
+	return idx, a.storeReadIndex(idx)
 }
 
 func (a *archive) Close() error {
 	a.CloseReader()
-	err := a.CloseWriter()
+	_, err := a.CloseWriter()
 
 	// this should be a nop here
 	if err == errAlreadyClosed {
@@ -536,27 +527,26 @@ func (a *archive) CloseReader() error {
 	return a.readFile.Close()
 }
 
-func (a *archive) CloseWriter() error {
+func (a *archive) CloseWriter() (IndexFile, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
 	if a.readOnly {
-		return errAlreadyClosed
+		return nil, errAlreadyClosed
 	}
 
 	err := a.writeFile.Close()
 	if err != nil {
-		return errors.Wrap(err, "Failed closing file")
+		return nil, errors.Wrap(err, "Failed closing file")
 	}
 
 	// switch to read-only mode
 	a.readOnly = true
 
-	err = a.storeIndex()
+	idx, err := a.storeIndex()
 
 	// release write index
 	a.writeIndex = nil
-	a.setupGCBits()
 
-	return err
+	return idx, err
 }

@@ -12,6 +12,7 @@ type packOptions struct {
 	maxSize         uint64
 	closeBeforeRead bool
 	storage         ArchiveStorage
+	index           ArchiveIndex
 	cache           backup.ObjectStore
 }
 
@@ -78,5 +79,11 @@ func WithCloseBeforeRead(do bool) PackOption {
 func WithMetadataCache(cache backup.ObjectStore) PackOption {
 	return func(p *packOptions) {
 		p.cache = cache
+	}
+}
+
+func WithArchiveIndex(index ArchiveIndex) PackOption {
+	return func(p *packOptions) {
+		p.index = index
 	}
 }

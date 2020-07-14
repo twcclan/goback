@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index/postgres"
@@ -41,13 +42,24 @@ func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 }
 
 func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	loc, err := makeLocation(u.Path)
+	archiveLocation, err := makeLocation(u.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	indexLocation, err := makeLocation(filepath.Join(u.Path, "index"))
+	if err != nil {
+		return nil, err
+	}
+
+	idx, err := pack.NewBadgerIndex(indexLocation)
 	if err != nil {
 		return nil, err
 	}
 
 	return pack.NewPackStorage(
-		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(loc)),
+		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(archiveLocation)),
+		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
 		pack.WithCompaction(pack.CompactionConfig{
@@ -58,7 +70,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewGCSObjectStore(u.Host, u.Query().Get("cache"))
+	return storage.NewGCSObjectStore(u.Host, u.Query().Get("index"), u.Query().Get("cache"))
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {

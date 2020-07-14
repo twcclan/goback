@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
-	"go.opencensus.io/stats"
 	"go.opencensus.io/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -47,6 +45,10 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		return nil, errors.New("No archive storage provided")
 	}
 
+	if opts.index == nil {
+		return nil, errors.New("No archive index provided")
+	}
+
 	return &PackStorage{
 		archives:         make([]*archive, 0),
 		writable:         make(chan *archive, opts.maxParallel),
@@ -56,6 +58,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		maxSize:          opts.maxSize,
 		closeBeforeRead:  opts.closeBeforeRead,
 		cache:            opts.cache,
+		index:            opts.index,
 	}, nil
 }
 
@@ -67,6 +70,7 @@ type PackStorage struct {
 	maxSize          uint64
 	closeBeforeRead  bool
 	cache            backup.ObjectStore
+	index            ArchiveIndex
 
 	// all of these are guarded by mtx
 	mtx      sync.RWMutex
@@ -172,10 +176,19 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
+	loc, err := ps.index.Locate(ref)
+	if err != nil {
+		return nil, nil
+	}
+
 	for _, archive := range ps.archives {
-		if rec := archive.indexLocation(ref); rec != nil {
-			return archive, rec
+		if archive.name == loc.Archive {
+			return archive, &loc.Record
 		}
+
+		//if rec := archive.indexLocation(ref); rec != nil {
+		//return archive, rec
+		//}
 	}
 
 	return nil, nil
@@ -290,9 +303,14 @@ func (ps *PackStorage) unloadArchive(a *archive) {
 }
 
 func (ps *PackStorage) finalizeArchive(a *archive) error {
-	err := a.CloseWriter()
+	index, err := a.CloseWriter()
 	if err == errAlreadyClosed {
 		return nil
+	}
+
+	err = ps.index.Index(a.name, index)
+	if err != nil {
+		return err
 	}
 
 	ps.archiveSemaphore.Release(1)
@@ -317,6 +335,23 @@ func (ps *PackStorage) openArchive(name string) error {
 	a, err := openArchive(ps.storage, name)
 	if err != nil {
 		return err
+	}
+
+	hasArchive, err := ps.index.Has(name)
+	if err != nil {
+		return err
+	}
+
+	if !hasArchive {
+		idx, err := a.getIndex()
+		if err != nil {
+			return err
+		}
+
+		err = ps.index.Index(name, idx)
+		if err != nil {
+			return err
+		}
 	}
 
 	ps.mtx.Lock()
@@ -371,167 +406,149 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 	ps.writable <- ar
 }
 
-func (ps *PackStorage) calculateWaste(a *archive) float64 {
-	objects := make(map[string]bool)
-	var total, waste uint64
+//func (ps *PackStorage) doMark() error {
+//	// TODO:
+//	//  * restrict reachability tests to selected archives
+//
+//	start := time.Now()
+//	defer func() {
+//		log.Printf("Finished gc mark phase after %s", time.Since(start))
+//		stats.Record(context.Background(), GCMarkTime.M(float64(time.Since(start))/float64(time.Millisecond)))
+//	}()
+//
+//	var archives []*archive
+//	ps.withReadLock(func() {
+//		// get a list of all finalized archives
+//		for _, archive := range ps.archives {
+//			archive.mtx.Lock()
+//			if archive.readOnly {
+//				archive.gcBits.ClearAll()
+//				archives = append(archives, archive)
+//			}
+//			archive.mtx.Unlock()
+//		}
+//	})
+//
+//	refs := make(chan *proto.Ref, runtime.NumCPU()*2)
+//
+//	// run parallel mark
+//	group, ctx := errgroup.WithContext(context.Background())
+//	for i := 0; i < runtime.NumCPU()/2; i++ {
+//		group.Go(func() error {
+//			for ref := range refs {
+//				startCommit := time.Now()
+//				err := ps.markRecursively(ref)
+//				stats.Record(context.Background(), GCCommitMarkLatency.M(float64(time.Since(startCommit))/float64(time.Millisecond)))
+//
+//				if err != nil {
+//					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Sha1, err)
+//					return err
+//				}
+//			}
+//
+//			return nil
+//		})
+//	}
+//
+//	for _, arch := range archives {
+//		for i := range arch.readIndex {
+//			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
+//				select {
+//				case refs <- &proto.Ref{Sha1: arch.readIndex[i].Sum[:]}:
+//				case <-ctx.Done():
+//					close(refs)
+//					return ctx.Err()
+//				}
+//			}
+//		}
+//	}
+//
+//	close(refs)
+//
+//	return group.Wait()
+//}
 
-	for _, record := range a.readIndex {
-		total += uint64(record.Length)
-		objRefString := string(record.Sum[:])
-
-		if objects[objRefString] {
-			waste += uint64(record.Length)
-		} else {
-			objects[objRefString] = true
-		}
-	}
-
-	return float64(waste) / float64(total)
-}
-
-func (ps *PackStorage) doMark() error {
-	// TODO:
-	//  * restrict reachability tests to selected archives
-
-	start := time.Now()
-	defer func() {
-		log.Printf("Finished gc mark phase after %s", time.Since(start))
-		stats.Record(context.Background(), GCMarkTime.M(float64(time.Since(start))/float64(time.Millisecond)))
-	}()
-
-	var archives []*archive
-	ps.withReadLock(func() {
-		// get a list of all finalized archives
-		for _, archive := range ps.archives {
-			archive.mtx.Lock()
-			if archive.readOnly {
-				archive.gcBits.ClearAll()
-				archives = append(archives, archive)
-			}
-			archive.mtx.Unlock()
-		}
-	})
-
-	refs := make(chan *proto.Ref, runtime.NumCPU()*2)
-
-	// run parallel mark
-	group, ctx := errgroup.WithContext(context.Background())
-	for i := 0; i < runtime.NumCPU()/2; i++ {
-		group.Go(func() error {
-			for ref := range refs {
-				startCommit := time.Now()
-				err := ps.markRecursively(ref)
-				stats.Record(context.Background(), GCCommitMarkLatency.M(float64(time.Since(startCommit))/float64(time.Millisecond)))
-
-				if err != nil {
-					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Sha1, err)
-					return err
-				}
-			}
-
-			return nil
-		})
-	}
-
-	for _, arch := range archives {
-		for i := range arch.readIndex {
-			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
-				select {
-				case refs <- &proto.Ref{Sha1: arch.readIndex[i].Sum[:]}:
-				case <-ctx.Done():
-					close(refs)
-					return ctx.Err()
-				}
-			}
-		}
-	}
-
-	close(refs)
-
-	return group.Wait()
-}
-
-func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
-	arch, loc := ps.indexLocation(context.Background(), ref)
-
-	// skip already marked objects
-	idx, _ := arch.readIndex.lookup(ref)
-
-	arch.mtx.RLock()
-	skip := !arch.readOnly || arch.gcBits.Test(idx)
-	arch.mtx.RUnlock()
-
-	if skip {
-		return nil
-	}
-
-	stats.Record(context.Background(), GCObjectsScanned.M(1))
-	arch.mtx.Lock()
-	arch.gcBits.Set(idx)
-	arch.mtx.Unlock()
-
-	// no need to recurse into blobs
-	if proto.ObjectType(loc.Type) == proto.ObjectType_BLOB {
-		return nil
-	}
-
-	obj, err := ps.Get(context.Background(), ref)
-	if err != nil {
-		return err
-	}
-
-	switch obj.Type() {
-	// mark the tree of the commit
-	case proto.ObjectType_COMMIT:
-		return ps.markRecursively(obj.GetCommit().Tree)
-	// for trees we need to mark each individual node
-	case proto.ObjectType_TREE:
-		for _, node := range obj.GetTree().Nodes {
-			err = ps.markRecursively(node.Ref)
-			if err != nil {
-				return err
-			}
-
-		}
-	// and for a file we mark each part
-	case proto.ObjectType_FILE:
-		for _, part := range obj.GetFile().Parts {
-			err = ps.markRecursively(part.Ref)
-			if err != nil {
-				return err
-			}
-		}
-
-		for _, split := range obj.GetFile().GetSplits() {
-			err = ps.markRecursively(split)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
-	// find archive that is holding the ref
-	a, _ := ps.indexLocation(context.Background(), ref)
-	if a == nil {
-		return false
-	}
-
-	a.mtx.RLock()
-	defer a.mtx.RUnlock()
-
-	// assume not finalized objects are reachable
-	if !a.readOnly {
-		return true
-	}
-
-	idx, _ := a.readIndex.lookup(ref)
-
-	return a.gcBits.Test(idx)
-}
+//func (ps *PackStorage) markRecursively(ref *proto.Ref) error {
+//	arch, loc := ps.indexLocation(context.Background(), ref)
+//
+//	// skip already marked objects
+//	idx, _ := arch.readIndex.lookup(ref)
+//
+//	arch.mtx.RLock()
+//	skip := !arch.readOnly || arch.gcBits.Test(idx)
+//	arch.mtx.RUnlock()
+//
+//	if skip {
+//		return nil
+//	}
+//
+//	stats.Record(context.Background(), GCObjectsScanned.M(1))
+//	arch.mtx.Lock()
+//	arch.gcBits.Set(idx)
+//	arch.mtx.Unlock()
+//
+//	// no need to recurse into blobs
+//	if proto.ObjectType(loc.Type) == proto.ObjectType_BLOB {
+//		return nil
+//	}
+//
+//	obj, err := ps.Get(context.Background(), ref)
+//	if err != nil {
+//		return err
+//	}
+//
+//	switch obj.Type() {
+//	// mark the tree of the commit
+//	case proto.ObjectType_COMMIT:
+//		return ps.markRecursively(obj.GetCommit().Tree)
+//	// for trees we need to mark each individual node
+//	case proto.ObjectType_TREE:
+//		for _, node := range obj.GetTree().Nodes {
+//			err = ps.markRecursively(node.Ref)
+//			if err != nil {
+//				return err
+//			}
+//
+//		}
+//	// and for a file we mark each part
+//	case proto.ObjectType_FILE:
+//		for _, part := range obj.GetFile().Parts {
+//			err = ps.markRecursively(part.Ref)
+//			if err != nil {
+//				return err
+//			}
+//		}
+//
+//		for _, split := range obj.GetFile().GetSplits() {
+//			err = ps.markRecursively(split)
+//			if err != nil {
+//				return err
+//			}
+//		}
+//	}
+//
+//	return nil
+//}
+//
+//func (ps *PackStorage) isObjectReachable(ref *proto.Ref) bool {
+//	// find archive that is holding the ref
+//	a, _ := ps.indexLocation(context.Background(), ref)
+//	if a == nil {
+//		return false
+//	}
+//
+//	a.mtx.RLock()
+//	defer a.mtx.RUnlock()
+//
+//	// assume not finalized objects are reachable
+//	if !a.readOnly {
+//		return true
+//	}
+//
+//	idx, _ := a.readIndex.lookup(ref)
+//
+//	return a.gcBits.Test(idx)
+//}
 
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
@@ -544,35 +561,35 @@ func (ps *PackStorage) doCompaction() error {
 
 	ctx := context.Background()
 
-	if ps.compaction.GarbageCollection {
-		err := ps.doMark()
-		if err != nil {
-			return errors.Wrap(err, "failed gc mark phase")
-		}
-
-		var total, reachable int
-
-		ps.withReadLock(func() {
-			for _, a := range ps.archives {
-				a.mtx.RLock()
-
-				if a.gcBits != nil {
-					total += len(a.readIndex)
-					reachable += int(a.gcBits.Count())
-				}
-
-				a.mtx.RUnlock()
-			}
-		})
-
-		log.Printf("object reachability %d/%d (%f %%)", reachable, total, float64(reachable)/float64(total)*100)
-	}
+	//if ps.compaction.GarbageCollection {
+	//	err := ps.doMark()
+	//	if err != nil {
+	//		return errors.Wrap(err, "failed gc mark phase")
+	//	}
+	//
+	//	var total, reachable int
+	//
+	//	ps.withReadLock(func() {
+	//		for _, a := range ps.archives {
+	//			a.mtx.RLock()
+	//
+	//			if a.gcBits != nil {
+	//				total += len(a.readIndex)
+	//				reachable += int(a.gcBits.Count())
+	//			}
+	//
+	//			a.mtx.RUnlock()
+	//		}
+	//	})
+	//
+	//	log.Printf("object reachability %d/%d (%f %%)", reachable, total, float64(reachable)/float64(total)*100)
+	//}
 
 	var (
-		candidates   []*archive
-		obsolete     []*archive
-		total        uint64
-		totalObjects int64
+		candidates []*archive
+		obsolete   []*archive
+		total      uint64
+		//totalObjects int64
 	)
 
 	ps.mtx.RLock()
@@ -580,11 +597,11 @@ func (ps *PackStorage) doCompaction() error {
 		candidate.mtx.RLock()
 
 		if candidate.readOnly {
-			totalObjects += int64(len(candidate.readIndex))
+			//totalObjects += int64(len(candidate.readIndex))
 		}
 
 		// we only care about finalized archives
-		if candidate.readOnly && (candidate.size < ps.maxSize || ps.calculateWaste(candidate) > 0.1) {
+		if candidate.readOnly && candidate.size < ps.maxSize {
 			// this may be a candidate for compaction
 			candidates = append(candidates, candidate)
 			total += candidate.size
@@ -593,10 +610,10 @@ func (ps *PackStorage) doCompaction() error {
 	}
 	ps.mtx.RUnlock()
 
-	stats.Record(ctx, TotalLiveObjects.M(totalObjects))
+	//stats.Record(ctx, TotalLiveObjects.M(totalObjects))
 
 	closeArchive := func(a *archive) error {
-		err := a.CloseWriter()
+		_, err := a.CloseWriter()
 		if err != nil && err != errAlreadyClosed {
 			return err
 		}
@@ -700,7 +717,12 @@ func (ps *PackStorage) doCompaction() error {
 			log.Printf("Failed closing obsolete archive after compaction: %v", e)
 		}
 
-		err := ps.storage.Delete(archive.indexName())
+		err := ps.index.Delete(archive.name)
+		if err != nil {
+			log.Printf("Failed removing local index %s after compaction: %s", archive.name, err)
+		}
+
+		err = ps.storage.Delete(archive.indexName())
 		if err != nil {
 			log.Printf("Failed deleting index %s after compaction: %v", archive.name, err)
 		}
@@ -859,4 +881,22 @@ type ArchiveStorage interface {
 	Open(name string) (File, error)
 	List() ([]string, error)
 	Delete(name string) error
+}
+
+type IndexLocation struct {
+	Archive string
+	Record  IndexRecord
+}
+
+var (
+	ErrRecordNotFound = errors.New("couldn't find index record")
+)
+
+type ArchiveIndex interface {
+	Locate(ref *proto.Ref) (IndexLocation, error)
+	Has(archive string) (bool, error)
+	Index(archive string, index IndexFile) error
+	Delete(archive string) error
+	Clear() error
+	Close() error
 }
