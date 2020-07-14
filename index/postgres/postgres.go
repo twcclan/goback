@@ -125,6 +125,7 @@ func (i *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 		models.CommitWhere.Timestamp.LTE(notAfter),
 		models.CommitWhere.SetID.EQ(set.ID),
 		qm.Limit(count),
+		qm.OrderBy(fmt.Sprintf("%s DESC", models.CommitColumns.Timestamp)),
 	).All(ctx, i.db)
 
 	if err != nil {

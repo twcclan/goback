@@ -25,7 +25,7 @@ func (c *commit) restore() {
 
 	if len(commits) == 1 {
 		commit := commits[0]
-		log.Printf("Restoring commit %x from %v", proto.NewObject(&commit).Ref().Sha1, commit.Timestamp)
+		log.Printf("Restoring commit %x from %v", proto.NewObject(commit).Ref().Sha1, commit.Timestamp)
 		tree := commit.Tree
 
 		if c.from != "" {
