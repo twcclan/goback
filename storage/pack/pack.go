@@ -191,6 +191,13 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 		//}
 	}
 
+	// go through currently opened archives
+	for _, archive := range ps.archives {
+		if rec := archive.indexLocation(ref); rec != nil {
+			return archive, rec
+		}
+	}
+
 	return nil, nil
 }
 

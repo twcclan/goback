@@ -184,6 +184,10 @@ func (a *archive) indexLocation(ref *proto.Ref) *IndexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
+	if a.readOnly {
+		return nil
+	}
+
 	return a.writeIndex[string(ref.Sha1)]
 }
 
