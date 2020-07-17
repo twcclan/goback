@@ -62,7 +62,6 @@ func TestOpenArchive(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, name, ar.name)
 	assert.EqualValues(t, archiveSize, ar.size)
-	assert.Equal(t, idx, ar.readIndex)
 	assert.Equal(t, archiveFile, ar.readFile)
 	assert.Equal(t, nil, ar.writeFile)
 

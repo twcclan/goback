@@ -1,7 +1,6 @@
 package pack
 
 import (
-	"context"
 	"math/rand"
 	"testing"
 
@@ -115,38 +114,38 @@ func makeGCTestData(t *testing.T) ([]*proto.Object, []*proto.Object) {
 	return reachable, unreachable
 }
 
-func TestMark(t *testing.T) {
-	base := getTempDir(t)
-	storage := NewLocalArchiveStorage(base)
-	options := []PackOption{
-		WithArchiveStorage(storage),
-		WithMaxParallel(4),
-		WithMaxSize(1024 * 1024),
-	}
-	store, err := NewPackStorage(options...)
-	require.Nil(t, err)
-
-	reachable, unreachable := makeGCTestData(t)
-	t.Logf("Storing %d objects", len(reachable)+len(unreachable))
-
-	var allObjects []*proto.Object
-	allObjects = append(allObjects, reachable...)
-	allObjects = append(allObjects, unreachable...)
-
-	for _, i := range rand.Perm(len(allObjects)) {
-		require.Nil(t, store.Put(context.Background(), allObjects[i]))
-	}
-
-	require.Nil(t, store.Flush())
-	require.Nil(t, store.doMark())
-
-	for _, obj := range reachable {
-		require.Truef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be reachable", obj.Ref().Sha1, obj.Type())
-	}
-
-	for _, obj := range unreachable {
-		require.Falsef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be unreachable", obj.Ref().Sha1, obj.Type())
-	}
-
-	require.Nil(t, store.Close())
-}
+//func TestMark(t *testing.T) {
+//	base := getTempDir(t)
+//	storage := NewLocalArchiveStorage(base)
+//	options := []PackOption{
+//		WithArchiveStorage(storage),
+//		WithMaxParallel(4),
+//		WithMaxSize(1024 * 1024),
+//	}
+//	store, err := NewPackStorage(options...)
+//	require.Nil(t, err)
+//
+//	reachable, unreachable := makeGCTestData(t)
+//	t.Logf("Storing %d objects", len(reachable)+len(unreachable))
+//
+//	var allObjects []*proto.Object
+//	allObjects = append(allObjects, reachable...)
+//	allObjects = append(allObjects, unreachable...)
+//
+//	for _, i := range rand.Perm(len(allObjects)) {
+//		require.Nil(t, store.Put(context.Background(), allObjects[i]))
+//	}
+//
+//	require.Nil(t, store.Flush())
+//	require.Nil(t, store.doMark())
+//
+//	for _, obj := range reachable {
+//		require.Truef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be reachable", obj.Ref().Sha1, obj.Type())
+//	}
+//
+//	for _, obj := range unreachable {
+//		require.Falsef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be unreachable", obj.Ref().Sha1, obj.Type())
+//	}
+//
+//	require.Nil(t, store.Close())
+//}

@@ -13,7 +13,7 @@ import (
 )
 
 func makeIndex() IndexFile {
-	idx := make(IndexFile, 150000)
+	idx := make(IndexFile, 1000)
 
 	for i := range idx {
 		idx[i].Offset = rand.Uint32()

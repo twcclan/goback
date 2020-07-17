@@ -57,10 +57,11 @@ type testArchive struct {
 
 func TestBadgerIndex(t *testing.T) {
 	idx := tempIndex(t)
+	n := 10
 
-	archives := make([]testArchive, 100)
+	archives := make([]testArchive, n)
 	for i := range archives {
-		log.Printf("Creating test archive %d/%d", i+1, 100)
+		log.Printf("Creating test archive %d/%d", i+1, n)
 		archives[i] = testArchive{uuid.New().String(), makeIndex()}
 	}
 
