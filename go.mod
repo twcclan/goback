@@ -12,6 +12,7 @@ require (
 	github.com/bmatcuk/doublestar v1.3.1
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dgraph-io/badger/v2 v2.0.3
+	github.com/dgraph-io/ristretto v0.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
 	github.com/golang-migrate/migrate/v4 v4.11.0
@@ -20,6 +21,7 @@ require (
 	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
 	github.com/joho/godotenv v1.3.0
 	github.com/kat-co/vala v0.0.0-20170210184112-42e1d8b61f12
+	github.com/kr/pretty v0.2.0 // indirect
 	github.com/lib/pq v1.7.0
 	github.com/mattn/go-sqlite3 v1.13.0
 	github.com/openzipkin/zipkin-go v0.2.2

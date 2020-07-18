@@ -901,7 +901,7 @@ var (
 )
 
 type ArchiveIndex interface {
-	Locate(ref *proto.Ref) (IndexLocation, error)
+	Locate(ref *proto.Ref, exclude ...string) (IndexLocation, error)
 	Has(archive string) (bool, error)
 	Index(archive string, index IndexFile) error
 	Delete(archive string) error

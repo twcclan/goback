@@ -33,7 +33,10 @@ func tempDir(tb testing.TB) string {
 }
 
 func tempIndex(tb testing.TB) *BadgerIndex {
-	idx, err := NewBadgerIndex("./badger")
+	dir := tempDir(tb)
+
+	tb.Logf("Creating badger index in %s", dir)
+	idx, err := NewBadgerIndex(dir)
 	if err != nil {
 		tb.Fatalf("failed creating index: %s", err)
 	}
@@ -55,9 +58,16 @@ type testArchive struct {
 	index IndexFile
 }
 
-func TestBadgerIndex(t *testing.T) {
+func setupBadger(t *testing.T, n int) (*BadgerIndex, []testArchive) {
+	t.Helper()
+
 	idx := tempIndex(t)
-	n := 10
+	t.Cleanup(func() {
+		err := idx.Close()
+		if err != nil {
+			t.Logf("Failed closing badger index: %s", err)
+		}
+	})
 
 	archives := make([]testArchive, n)
 	for i := range archives {
@@ -65,8 +75,14 @@ func TestBadgerIndex(t *testing.T) {
 		archives[i] = testArchive{uuid.New().String(), makeIndex()}
 	}
 
+	return idx, archives
+}
+
+func TestBadgerIndex(t *testing.T) {
+	idx, archives := setupBadger(t, 10)
+
 	for i, archive := range archives {
-		log.Printf("indexing test archive %d/%d", i+1, 100)
+		log.Printf("indexing test archive %d/%d", i+1, len(archives))
 		err := idx.Index(archive.name, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
@@ -91,5 +107,45 @@ func TestBadgerIndex(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestBadgerIndexExclusion(t *testing.T) {
+	idx, archives := setupBadger(t, 10)
+
+	// replace the second half of the archives with a copy of the first
+	for i := 0; i < len(archives)/2; i++ {
+		to := i + len(archives)/2
+		from := i
+
+		archives[to].index = archives[from].index
+	}
+
+	for _, archive := range archives {
+		err := idx.Index(archive.name, archive.index)
+		if err != nil {
+			t.Fatalf("failed indexing test archive: %s", err)
+		}
+	}
+
+	for _, archive := range archives[:len(archives)/2] {
+		for _, i := range rand.Perm(len(archive.index)) {
+			record := archive.index[i].Sum[:]
+
+			location1, err := idx.Locate(&proto.Ref{Sha1: record})
+			if err != nil {
+				t.Errorf("couldn't find expected index record: %s", err)
+				continue
+			}
+
+			location2, err := idx.Locate(&proto.Ref{Sha1: record}, archive.name)
+			if err != nil {
+				t.Errorf("couldn't find expected index record: %s", err)
+				continue
+			}
+
+			if cmp.Equal(location1.Archive, location2.Archive) {
+				t.Errorf("Expected to find two different archives for record: %x", record)
+			}
+		}
+	}
 }

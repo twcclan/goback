@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 )
 
 var (
@@ -16,8 +17,13 @@ var (
 )
 
 func NewBadgerIndex(path string) (*BadgerIndex, error) {
-	opts := badger.DefaultOptions(path)
-	opts.Truncate = true
+	opts := badger.DefaultOptions(path).
+		WithTruncate(true).
+		WithTableLoadingMode(options.FileIO).
+		WithValueLogLoadingMode(options.FileIO).
+		WithNumMemtables(1).
+		WithCompression(options.Snappy).
+		WithKeepL0InMemory(false)
 
 	db, err := badger.Open(opts)
 	if err != nil {
@@ -54,7 +60,7 @@ func (b *BadgerIndex) Close() error {
 
 var _ ArchiveIndex = (*BadgerIndex)(nil)
 
-func (b *BadgerIndex) Locate(ref *proto.Ref) (IndexLocation, error) {
+func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (IndexLocation, error) {
 	var location IndexLocation
 
 	txErr := b.db.View(func(txn *badger.Txn) error {
@@ -67,9 +73,8 @@ func (b *BadgerIndex) Locate(ref *proto.Ref) (IndexLocation, error) {
 
 		defer iterator.Close()
 
-		iterator.Seek(prefix)
-
-		if iterator.Valid() && iterator.ValidForPrefix(prefix) {
+	outer:
+		for iterator.Seek(nil); iterator.Valid(); iterator.Next() {
 			value := &badgerValue{}
 			err := iterator.Item().Value(func(val []byte) error {
 				return binary.Read(bytes.NewReader(val), badgerIndexEndianness, value)
@@ -82,10 +87,17 @@ func (b *BadgerIndex) Locate(ref *proto.Ref) (IndexLocation, error) {
 			id := badgerIndexEndianness.Uint64(key[len(key)-8:])
 
 			b.archivesMtx.RLock()
-			defer b.archivesMtx.RUnlock()
+			archiveName := b.archiveNames[id]
+			b.archivesMtx.RUnlock()
+
+			for _, excluded := range exclude {
+				if excluded == archiveName {
+					continue outer
+				}
+			}
 
 			location = IndexLocation{
-				Archive: b.archiveNames[id],
+				Archive: archiveName,
 				Record: IndexRecord{
 					Offset: value.Offset,
 					Length: value.Length,
