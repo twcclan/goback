@@ -160,10 +160,6 @@ type badgerValue struct {
 	Type   uint32
 }
 
-type badgerKey struct {
-	archiveId uint64
-}
-
 func (b *BadgerIndex) idValue(id uint64) []byte {
 	d := make([]byte, 8)
 
@@ -240,8 +236,57 @@ func (b *BadgerIndex) Index(archive string, index IndexFile) error {
 	})
 }
 
-func (b *BadgerIndex) Delete(archive string) error {
-	panic("implement me")
+func (b *BadgerIndex) Delete(archive string, index IndexFile) error {
+	// check if the archive actually exists
+	b.archivesMtx.RLock()
+	archiveId, ok := b.archiveIds[archive]
+	if !ok {
+		return nil
+	}
+	b.archivesMtx.RUnlock()
+
+	txn := b.db.NewTransaction(true)
+	for _, record := range index {
+
+		key := b.recordKey(record.Sum[:], archiveId)
+
+		err := txn.Delete(key)
+		if errors.Is(err, badger.ErrTxnTooBig) {
+			err = txn.Commit()
+
+			if err != nil {
+				return err
+			}
+
+			txn = b.db.NewTransaction(true)
+
+			err = txn.Delete(key)
+		}
+
+		if err != nil {
+			txn.Discard()
+			return err
+		}
+	}
+
+	err := txn.Commit()
+	if err != nil {
+		return err
+	}
+
+	return b.db.Update(func(txn *badger.Txn) error {
+		err := txn.Delete(b.key(prefixArchive, []byte(archive)))
+		if err != nil {
+			return err
+		}
+
+		b.archivesMtx.Lock()
+		delete(b.archiveNames, archiveId)
+		delete(b.archiveIds, archive)
+		b.archivesMtx.Unlock()
+
+		return nil
+	})
 }
 
 func (b *BadgerIndex) Clear() error {

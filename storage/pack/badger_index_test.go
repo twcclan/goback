@@ -107,6 +107,21 @@ func TestBadgerIndex(t *testing.T) {
 			}
 		}
 	}
+
+	for _, archive := range archives {
+		err := idx.Delete(archive.name, archive.index)
+		if err != nil {
+			t.Errorf("Couldn't delete archive from index: %s", err)
+			continue
+		}
+
+		for _, record := range archive.index {
+			_, err := idx.Locate(&proto.Ref{Sha1: record.Sum[:]})
+			if err != ErrRecordNotFound {
+				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
+			}
+		}
+	}
 }
 
 func TestBadgerIndexExclusion(t *testing.T) {

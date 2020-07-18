@@ -724,7 +724,13 @@ func (ps *PackStorage) doCompaction() error {
 			log.Printf("Failed closing obsolete archive after compaction: %v", e)
 		}
 
-		err := ps.index.Delete(archive.name)
+		idx, err := archive.getIndex()
+		if err != nil {
+			log.Printf("Failed getting archive index for deletion: %s", err)
+			continue
+		}
+
+		err = ps.index.Delete(archive.name, idx)
 		if err != nil {
 			log.Printf("Failed removing local index %s after compaction: %s", archive.name, err)
 		}
@@ -904,7 +910,7 @@ type ArchiveIndex interface {
 	Locate(ref *proto.Ref, exclude ...string) (IndexLocation, error)
 	Has(archive string) (bool, error)
 	Index(archive string, index IndexFile) error
-	Delete(archive string) error
+	Delete(archive string, index IndexFile) error
 	Clear() error
 	Close() error
 }
