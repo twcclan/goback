@@ -750,7 +750,6 @@ func (ps *PackStorage) doCompaction() error {
 }
 
 func (ps *PackStorage) backgroundCompaction() {
-	return
 	log.Println("Running compaction")
 	err := ps.doCompaction()
 
