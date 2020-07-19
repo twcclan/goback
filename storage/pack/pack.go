@@ -203,15 +203,24 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 
 // indexLocationExcept checks if a given ref exists in an archive that is not in
 // the provided map of exclusions
-func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude map[string]bool) (*archive, *IndexRecord) {
+func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) (*archive, *IndexRecord) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	for _, archive := range ps.archives {
-		if rec := archive.indexLocation(ref); rec != nil {
-			if exclude == nil || !exclude[archive.name] {
-				return archive, rec
-			}
+	var exclusions []string
+	for _, archive := range exclude {
+		exclusions = append(exclusions, archive.name)
+	}
+
+	loc, err := ps.index.Locate(ref, exclusions...)
+	if err != nil {
+		return nil, nil
+	}
+
+	var hit *archive
+	for _, arc := range ps.archives {
+		if arc.name == loc.Archive {
+			return hit, &loc.Record
 		}
 	}
 
@@ -684,7 +693,7 @@ func (ps *PackStorage) doCompaction() error {
 				}
 
 				// if we can find a location for this ref in any other archive we just drop it
-				if _, rec := ps.indexLocationExcept(hdr.Ref, exceptions); rec != nil {
+				if _, rec := ps.indexLocationExcept(hdr.Ref, candidates...); rec != nil {
 					droppedObjects++
 					droppedSize += uint64(length)
 					return nil
