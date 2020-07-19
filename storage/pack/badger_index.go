@@ -19,11 +19,11 @@ var (
 func NewBadgerIndex(path string) (*BadgerIndex, error) {
 	opts := badger.DefaultOptions(path).
 		WithTruncate(true).
-		WithTableLoadingMode(options.FileIO).
-		WithValueLogLoadingMode(options.FileIO).
-		WithNumMemtables(1).
-		WithCompression(options.Snappy).
-		WithKeepL0InMemory(false)
+		//WithTableLoadingMode(options.FileIO).
+		//WithValueLogLoadingMode(options.FileIO).
+		//WithNumMemtables(1).
+		//WithKeepL0InMemory(false)
+		WithCompression(options.Snappy)
 
 	db, err := badger.Open(opts)
 	if err != nil {

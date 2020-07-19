@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -20,6 +21,7 @@ import (
 	"github.com/urfave/cli"
 	"go4.org/syncutil"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/windows"
 )
 
 func (c *commit) shouldInclude(fName string) bool {
@@ -60,11 +62,24 @@ func (c *commit) read(file string) func(io.Writer) error {
 	return func(writer io.Writer) error {
 		reader, err := os.Open(file)
 		if err != nil {
-			return errors.Wrapf(err, "Failed opening %s for reading", file)
+			// just ignore permission errors
+			if errors.Is(err, os.ErrPermission) ||
+				errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
+				errors.Is(err, windows.ERROR_CANT_ACCESS_FILE) {
+				log.Printf("Couldn't open file '%s' for reading: %s, ignoring", file, err)
+				return backup.ErrSkipFile
+			}
+
+			return fmt.Errorf("failed opening %s for reading: %w", file, err)
 		}
 		defer reader.Close()
 
 		_, err = io.Copy(writer, reader)
+
+		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			log.Printf("Couldn't read file '%s': %s, ignoring", file, err)
+			return backup.ErrSkipFile
+		}
 
 		return errors.Wrapf(err, "Failed writing file %s", file)
 	}
@@ -76,6 +91,12 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 
 		files, err := ioutil.ReadDir(base)
 		if err != nil {
+			// ignore permission errors
+			if errors.Is(err, os.ErrPermission) {
+				log.Printf("Couldn't open folder '%s' for listing: %s, ignoring", base, err)
+				return nil
+			}
+
 			return errors.Wrapf(err, "Failed opening %s for listing", base)
 		}
 
@@ -102,7 +123,7 @@ func (c *commit) descend(base string) func(backup.TreeWriter) error {
 			group.Go(func() error {
 				defer c.gate.Done()
 
-				if info.Mode()&os.ModeSymlink == 0 { // skip symlinks
+				if info.Mode().IsRegular() { // skip irregular files
 					var nodes []*proto.TreeNode
 					nodes, err = c.index.FileInfo(context.Background(), c.set, strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
 					if err != nil {

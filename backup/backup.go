@@ -20,6 +20,9 @@ var (
 
 	// ErrIllegalOffset is returned when trying to seek past the end of a file
 	ErrIllegalOffset = errors.New("illegal offset")
+
+	// ErrSkipFile can be returned during backup to make the TreeWrite skip/ignore a file
+	ErrSkipFile = errors.New("skip file")
 )
 
 const (

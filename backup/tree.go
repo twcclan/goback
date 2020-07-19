@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"sort"
@@ -33,6 +34,9 @@ func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(Tr
 	// allow the caller to populate this sub-tree
 	err := writer(node)
 	if err != nil {
+		if errors.Is(err, ErrSkipFile) {
+			return nil
+		}
 		return err
 	}
 
@@ -66,12 +70,17 @@ func (bt *backupTree) File(ctx context.Context, info os.FileInfo, writer func(io
 		Stat: proto.GetFileInfo(info),
 	}
 
-	bt.Node(node)
-
 	err := writer(fWriter)
 	if err != nil {
+		// if the writer is asking to skip the file just continue
+		if errors.Is(err, ErrSkipFile) {
+			return nil
+		}
+
 		return err
 	}
+
+	bt.Node(node)
 
 	// closing the writer will finish uploading all parts
 	// and also store the metadata
