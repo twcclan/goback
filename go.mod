@@ -5,7 +5,7 @@ require (
 	cloud.google.com/go v0.58.0
 	cloud.google.com/go/storage v1.9.0
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
-	contrib.go.opencensus.io/exporter/stackdriver v0.13.1
+	contrib.go.opencensus.io/exporter/stackdriver v0.13.4
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
@@ -36,7 +36,7 @@ require (
 	github.com/volatiletech/sqlboiler/v4 v4.1.2
 	github.com/volatiletech/strmangle v0.0.1
 	github.com/willf/bitset v1.1.10
-	go.opencensus.io v0.22.3
+	go.opencensus.io v0.22.4
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
