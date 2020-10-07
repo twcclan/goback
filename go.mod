@@ -36,7 +36,7 @@ require (
 	github.com/volatiletech/sqlboiler/v4 v4.1.2
 	github.com/volatiletech/strmangle v0.0.1
 	github.com/willf/bitset v1.1.10
-	go.opencensus.io v0.22.3
+	go.opencensus.io v0.22.5
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
