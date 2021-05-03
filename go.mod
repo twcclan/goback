@@ -4,12 +4,12 @@ require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
 	cloud.google.com/go v0.81.0
 	cloud.google.com/go/storage v1.15.0
-	contrib.go.opencensus.io/exporter/prometheus v0.2.0
+	contrib.go.opencensus.io/exporter/prometheus v0.3.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.5
-	contrib.go.opencensus.io/exporter/zipkin v0.1.1
+	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
-	github.com/bmatcuk/doublestar v1.3.1
+	github.com/bmatcuk/doublestar v1.3.4
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
 	github.com/dgraph-io/badger/v2 v2.0.3
 	github.com/dgraph-io/ristretto v0.0.2 // indirect
@@ -31,7 +31,7 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.6.1
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
-	github.com/urfave/cli v1.22.4
+	github.com/urfave/cli v1.22.5
 	github.com/volatiletech/randomize v0.0.1
 	github.com/volatiletech/sqlboiler/v4 v4.5.0
 	github.com/volatiletech/strmangle v0.0.1
