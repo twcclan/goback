@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/storage v1.15.0
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.5
-	contrib.go.opencensus.io/exporter/zipkin v0.1.1
+	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
 	github.com/bmatcuk/doublestar v1.3.1
