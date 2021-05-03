@@ -16,9 +16,9 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
 	github.com/golang-migrate/migrate/v4 v4.11.0
-	github.com/golang/protobuf v1.4.2
-	github.com/google/go-cmp v0.4.1
-	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
+	github.com/golang/protobuf v1.4.3
+	github.com/google/go-cmp v0.5.3
+	github.com/google/uuid v1.1.2
 	github.com/joho/godotenv v1.3.0
 	github.com/kat-co/vala v0.0.0-20170210184112-42e1d8b61f12
 	github.com/kr/pretty v0.2.0 // indirect
@@ -36,14 +36,14 @@ require (
 	github.com/volatiletech/sqlboiler/v4 v4.1.2
 	github.com/volatiletech/strmangle v0.0.1
 	github.com/willf/bitset v1.1.10
-	go.opencensus.io v0.22.3
+	go.opencensus.io v0.23.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
-	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
-	golang.org/x/sys v0.0.0-20200523222454-059865788121
+	golang.org/x/sys v0.0.0-20200930185726-fdedc70b468f
 	google.golang.org/api v0.26.0
-	google.golang.org/grpc v1.29.1
+	google.golang.org/grpc v1.33.2
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15
 )
 
