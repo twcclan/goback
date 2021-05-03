@@ -4,7 +4,7 @@ require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
 	cloud.google.com/go v0.81.0
 	cloud.google.com/go/storage v1.15.0
-	contrib.go.opencensus.io/exporter/prometheus v0.2.0
+	contrib.go.opencensus.io/exporter/prometheus v0.3.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.5
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
