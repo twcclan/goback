@@ -21,7 +21,6 @@ import (
 	"github.com/urfave/cli"
 	"go4.org/syncutil"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/windows"
 )
 
 func (c *commit) shouldInclude(fName string) bool {
@@ -63,9 +62,7 @@ func (c *commit) read(file string) func(io.Writer) error {
 		reader, err := os.Open(file)
 		if err != nil {
 			// just ignore permission errors
-			if errors.Is(err, os.ErrPermission) ||
-				errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
-				errors.Is(err, windows.ERROR_CANT_ACCESS_FILE) {
+			if isPermissionError(err) {
 				log.Printf("Couldn't open file '%s' for reading: %s, ignoring", file, err)
 				return backup.ErrSkipFile
 			}
@@ -76,7 +73,7 @@ func (c *commit) read(file string) func(io.Writer) error {
 
 		_, err = io.Copy(writer, reader)
 
-		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		if isLockError(err) {
 			log.Printf("Couldn't read file '%s': %s, ignoring", file, err)
 			return backup.ErrSkipFile
 		}
