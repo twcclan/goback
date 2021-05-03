@@ -7,7 +7,7 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.3.0
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.5
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
-	contrib.go.opencensus.io/integrations/ocsql v0.1.6
+	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/daaku/go.zipexe v0.0.0-20150329023125-a5fe2436ffcb // indirect
