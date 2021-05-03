@@ -17,8 +17,8 @@ require (
 	github.com/friendsofgo/errors v0.9.2
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/protobuf v1.4.2
-	github.com/google/go-cmp v0.4.1
-	github.com/google/uuid v0.0.0-20161128191214-064e2069ce9c
+	github.com/google/go-cmp v0.5.0
+	github.com/google/uuid v1.1.2
 	github.com/joho/godotenv v1.3.0
 	github.com/kat-co/vala v0.0.0-20170210184112-42e1d8b61f12
 	github.com/kr/pretty v0.2.0 // indirect
@@ -43,7 +43,7 @@ require (
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 	golang.org/x/sys v0.0.0-20200523222454-059865788121
 	google.golang.org/api v0.26.0
-	google.golang.org/grpc v1.29.1
+	google.golang.org/grpc v1.37.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15
 )
 
