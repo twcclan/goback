@@ -34,7 +34,7 @@ require (
 	github.com/volatiletech/randomize v0.0.1
 	github.com/volatiletech/sqlboiler/v4 v4.5.0
 	github.com/volatiletech/strmangle v0.0.1
-	github.com/willf/bitset v1.1.10
+	github.com/willf/bitset v1.1.11
 	go.opencensus.io v0.23.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/net v0.0.0-20210503060351-7fd8e65b6420
