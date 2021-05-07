@@ -35,18 +35,18 @@ type writeFile interface {
 	io.WriteCloser
 }
 
-//go:generate mockery -name fileInfo -inpkg -testonly -outpkg pack
+//go:generate go run github.com/vektra/mockery/v2 --name fileInfo --inpackage --testonly --outpkg pack
 type fileInfo interface {
 	os.FileInfo
 }
 
-//go:generate mockery -name readerAt -inpkg -testonly -outpkg pack
+//go:generate go run github.com/vektra/mockery/v2 --name readerAt --inpackage --testonly --outpkg pack
 type readerAt interface {
 	readFile
 	io.ReaderAt
 }
 
-//go:generate mockery -name writerTo -inpkg -testonly -outpkg pack
+//go:generate go run github.com/vektra/mockery/v2 --name writerTo --inpackage --testonly --outpkg pack
 type writerTo interface {
 	File
 	io.WriterTo

@@ -8,7 +8,7 @@ import (
 
 type ObjectReceiver func(*proto.ObjectHeader, *proto.Object) error
 
-//go:generate mockery -testonly -inpkg -name ObjectStore
+//go:generate go run github.com/vektra/mockery/v2 --testonly --inpackage --name ObjectStore
 type ObjectStore interface {
 	Put(context.Context, *proto.Object) error
 	Get(context.Context, *proto.Ref) (*proto.Object, error)

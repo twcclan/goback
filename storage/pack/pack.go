@@ -259,7 +259,9 @@ func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 }
 
 func (ps *PackStorage) Delete(ctx context.Context, ref *proto.Ref) error {
-	panic("not implemented")
+	return ps.withWritableArchive(func(a *archive) error {
+		return a.putTombstone(ctx, ref)
+	})
 }
 
 func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
@@ -887,17 +889,17 @@ func (ps *PackStorage) Open() error {
 	return group.Wait()
 }
 
-//go:generate mockery -name File -inpkg -testonly -outpkg pack
+//go:generate mockery --name File --inpackage --testonly --outpkg pack
 type File interface {
 	io.Reader
 	io.Writer
 	io.Seeker
 	io.Closer
 
-	Stat() (os.FileInfo, error)
+	Stat() (fs.FileInfo, error)
 }
 
-//go:generate mockery -name ArchiveStorage -inpkg -testonly -outpkg pack
+//go:generate mockery --name ArchiveStorage --inpackage --testonly --outpkg pack
 type ArchiveStorage interface {
 	Create(name string) (File, error)
 	Open(name string) (File, error)
