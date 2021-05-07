@@ -6,12 +6,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
-
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func NewRemoteClient(addr string) (*RemoteClient, error) {
@@ -35,10 +34,7 @@ func (r *RemoteClient) Open() error  { return nil }
 func (r *RemoteClient) Close() error { return nil }
 
 func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
-	na, err := ptypes.TimestampProto(notAfter)
-	if err != nil {
-		return nil, err
-	}
+	na := timestamppb.New(notAfter)
 
 	response, err := r.store.FileInfo(ctx, &proto.FileInfoRequest{
 		BackupSet: set,
@@ -55,10 +51,7 @@ func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, no
 }
 
 func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
-	na, err := ptypes.TimestampProto(notAfter)
-	if err != nil {
-		return nil, err
-	}
+	na := timestamppb.New(notAfter)
 
 	response, err := r.store.CommitInfo(ctx, &proto.CommitInfoRequest{
 		BackupSet: set,
@@ -150,10 +143,12 @@ type RemoteServer struct {
 }
 
 func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
-	notAfter, err := ptypes.Timestamp(request.NotAfter)
+	err := request.NotAfter.CheckValid()
 	if err != nil {
 		return nil, err
 	}
+
+	notAfter := request.NotAfter.AsTime()
 
 	files, err := r.index.FileInfo(ctx, request.BackupSet, request.Path, notAfter, int(request.Count))
 	if err != nil {
@@ -166,10 +161,12 @@ func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequ
 }
 
 func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfoRequest) (*proto.CommitInfoResponse, error) {
-	notAfter, err := ptypes.Timestamp(request.NotAfter)
+	err := request.NotAfter.CheckValid()
 	if err != nil {
 		return nil, err
 	}
+
+	notAfter := request.NotAfter.AsTime()
 
 	commits, err := r.index.CommitInfo(ctx, request.BackupSet, notAfter, int(request.Count))
 	if err != nil {
