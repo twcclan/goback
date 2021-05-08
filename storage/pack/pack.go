@@ -5,8 +5,8 @@ package pack
 import (
 	"context"
 	"io"
+	"io/fs"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -83,6 +83,7 @@ type PackStorage struct {
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
+var _ backup.Counter = (*PackStorage)(nil)
 
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	// can't guarantee anything while compaction is in progress.
@@ -136,6 +137,10 @@ func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Obje
 	}
 
 	return nil
+}
+
+func (ps *PackStorage) Count() (uint64, uint64, error) {
+	return ps.index.Count()
 }
 
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
@@ -923,4 +928,5 @@ type ArchiveIndex interface {
 	Delete(archive string, index IndexFile) error
 	Clear() error
 	Close() error
+	Count() (uint64, uint64, error)
 }

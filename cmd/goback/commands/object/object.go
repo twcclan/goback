@@ -13,6 +13,7 @@ var Command = cli.Command{
 	Subcommands: []cli.Command{
 		listCmd,
 		getCmd,
+		countCmd,
 	},
 }
 

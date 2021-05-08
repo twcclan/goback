@@ -54,6 +54,35 @@ type BadgerIndex struct {
 	archiveIds   map[string]uint64
 }
 
+func (b *BadgerIndex) Count() (uint64, uint64, error) {
+	var total uint64
+	var unique uint64
+
+	prefixLength := 20 + len(prefixRecord)
+
+	var last []byte
+
+	return total, unique, b.db.View(func(txn *badger.Txn) error {
+		opts := badger.IteratorOptions{
+			Prefix: b.recordPrefix(nil),
+		}
+		it := txn.NewIterator(opts)
+
+		defer it.Close()
+
+		for it.Rewind(); it.ValidForPrefix(opts.Prefix); it.Next() {
+			total += 1
+			prefix := it.Item().Key()[:prefixLength]
+			if !bytes.Equal(last, prefix) {
+				unique += 1
+				last = prefix
+			}
+		}
+
+		return nil
+	})
+}
+
 func (b *BadgerIndex) Close() error {
 	return b.db.Close()
 }
