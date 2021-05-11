@@ -6,12 +6,12 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 
 	"cloud.google.com/go/storage"
@@ -338,21 +338,7 @@ func NewGCSObjectStore(bucket, indexDir, cacheDir string) (backup.ObjectStore, e
 			return nil, err
 		}
 
-		idx, err := pack.NewBadgerIndex(filepath.Join(cacheDir, "index"))
-
-		cache, err := pack.NewPackStorage(
-			pack.WithMaxParallel(1),
-			pack.WithCompaction(pack.CompactionConfig{
-				Periodically: 7 * 24 * time.Hour,
-			}),
-			pack.WithArchiveStorage(pack.NewLocalArchiveStorage(cacheDir)),
-			pack.WithArchiveIndex(idx),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		err = cache.Open()
+		cache, err := badger.New(cacheDir)
 		if err != nil {
 			return nil, err
 		}

@@ -298,7 +298,7 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 					}
 				}
 
-				return fn(hdr, obj)
+				return fn(obj)
 			}
 
 			return nil

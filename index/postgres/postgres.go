@@ -145,7 +145,7 @@ func (i *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 }
 
 func (i *Index) ReIndex(ctx context.Context) error {
-	return i.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+	return i.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
 		return i.index(ctx, obj.GetCommit(), obj.Ref())
 	})
 }

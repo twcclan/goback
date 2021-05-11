@@ -28,7 +28,7 @@ func (o *object) count() {
 	// ... otherwise fall back to counting ourselves
 	var count uint64
 
-	err := o.store.Walk(context.Background(), false, proto.ObjectType_INVALID, func(header *proto.ObjectHeader, p *proto.Object) error {
+	err := o.store.Walk(context.Background(), false, proto.ObjectType_INVALID, func(p *proto.Object) error {
 		count++
 
 		return nil
