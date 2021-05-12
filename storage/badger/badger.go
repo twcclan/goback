@@ -72,8 +72,36 @@ func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	})
 }
 
-func (s *Store) Walk(_ context.Context, _ bool, _ proto.ObjectType, _ backup.ObjectReceiver) error {
-	return backup.ErrNotImplemented
+func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType, receiver backup.ObjectReceiver) error {
+	ctx, span := trace.StartSpan(ctx, "BadgerStore.Walk")
+	defer span.End()
+
+	return s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			typ := proto.ObjectType(it.Item().UserMeta())
+
+			if typ == filterFor {
+				err := it.Item().Value(func(val []byte) error {
+					obj, err := proto.NewObjectFromCompressedBytes(val)
+					if err != nil {
+						return err
+					}
+
+					return receiver(obj)
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
