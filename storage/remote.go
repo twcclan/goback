@@ -30,6 +30,10 @@ type RemoteClient struct {
 	store proto.StoreClient
 }
 
+func (r *RemoteClient) ReachableCommits(ctx context.Context, f func(commit *proto.Commit) error) error {
+	panic("implement me")
+}
+
 func (r *RemoteClient) Open() error  { return nil }
 func (r *RemoteClient) Close() error { return nil }
 
@@ -112,7 +116,7 @@ func (r *RemoteClient) Walk(ctx context.Context, load bool, typ proto.ObjectType
 			return err
 		}
 
-		err = fn(resp.Header, resp.Object)
+		err = fn(resp.Object)
 		if err != nil {
 			return err
 		}
@@ -197,8 +201,8 @@ func (r *RemoteServer) Delete(ctx context.Context, request *proto.DeleteRequest)
 }
 
 func (r *RemoteServer) Walk(request *proto.WalkRequest, walker proto.Store_WalkServer) error {
-	return r.index.Walk(walker.Context(), request.Load, request.ObjectType, func(header *proto.ObjectHeader, object *proto.Object) error {
-		return walker.Send(&proto.WalkResponse{Object: object, Header: header})
+	return r.index.Walk(walker.Context(), request.Load, request.ObjectType, func(object *proto.Object) error {
+		return walker.Send(&proto.WalkResponse{Object: object})
 	})
 }
 
