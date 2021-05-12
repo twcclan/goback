@@ -49,6 +49,10 @@ type Index struct {
 	txMtx     *sync.Mutex
 }
 
+func (s *Index) ReachableCommits(ctx context.Context, f func(commit *proto.Commit) error) error {
+	panic("implement me")
+}
+
 func (s *Index) Open() error {
 	db, err := sql.Open(tracedSQLiteDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
 	if err != nil {
@@ -137,7 +141,7 @@ func (s *Index) Close() error {
 }
 
 func (s *Index) ReIndex(ctx context.Context) error {
-	return s.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+	return s.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
 		if obj.GetCommit().GetBackupSet() != s.backupSet {
 			return nil
 		}

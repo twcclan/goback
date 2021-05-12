@@ -87,7 +87,7 @@ func (s *SimpleChunkStore) Walk(ctx context.Context, load bool, chunkType proto.
 			}
 		}
 
-		err = fn(&proto.ObjectHeader{}, obj)
+		err = fn(obj)
 		if err != nil {
 			return err
 		}

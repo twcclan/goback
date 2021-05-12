@@ -26,10 +26,10 @@ func (o *object) list() {
 		log.Fatal(err)
 	}
 
-	err = o.store.Walk(context.Background(), true, o.objectType, func(hdr *proto.ObjectHeader, obj *proto.Object) error {
+	err = o.store.Walk(context.Background(), true, o.objectType, func(obj *proto.Object) error {
 		return writer.Write(
 			[]string{
-				fmt.Sprintf("%x", hdr.Ref.Sha1),
+				fmt.Sprintf("%x", obj.Ref().Sha1),
 				fmt.Sprint(obj.GetCommit().GetTimestamp()),
 				obj.GetCommit().GetBackupSet(),
 			})
