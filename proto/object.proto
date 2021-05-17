@@ -16,6 +16,7 @@ enum ObjectType {
   TREE = 2;
   FILE = 3;
   BLOB = 4;
+  TOMBSTONE = 5;
 }
 
 enum Compression {

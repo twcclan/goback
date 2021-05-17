@@ -29,7 +29,7 @@ func (m *Blob) Reset()         { *m = Blob{} }
 func (m *Blob) String() string { return proto.CompactTextString(m) }
 func (*Blob) ProtoMessage()    {}
 func (*Blob) Descriptor() ([]byte, []int) {
-	return fileDescriptor_blob_dc82e1e551278169, []int{0}
+	return fileDescriptor_blob_c2987789d826a227, []int{0}
 }
 func (m *Blob) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Blob.Unmarshal(m, b)
@@ -60,9 +60,9 @@ func init() {
 	proto.RegisterType((*Blob)(nil), "proto.Blob")
 }
 
-func init() { proto.RegisterFile("blob.proto", fileDescriptor_blob_dc82e1e551278169) }
+func init() { proto.RegisterFile("blob.proto", fileDescriptor_blob_c2987789d826a227) }
 
-var fileDescriptor_blob_dc82e1e551278169 = []byte{
+var fileDescriptor_blob_c2987789d826a227 = []byte{
 	// 69 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4a, 0xca, 0xc9, 0x4f,
 	0xd2, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x4a, 0x52, 0x5c, 0x2c, 0x4e, 0x39,

@@ -31,7 +31,7 @@ func (m *Commit) Reset()         { *m = Commit{} }
 func (m *Commit) String() string { return proto.CompactTextString(m) }
 func (*Commit) ProtoMessage()    {}
 func (*Commit) Descriptor() ([]byte, []int) {
-	return fileDescriptor_commit_0deaae49a9269ba2, []int{0}
+	return fileDescriptor_commit_e889e3708043f57e, []int{0}
 }
 func (m *Commit) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Commit.Unmarshal(m, b)
@@ -76,9 +76,9 @@ func init() {
 	proto.RegisterType((*Commit)(nil), "proto.Commit")
 }
 
-func init() { proto.RegisterFile("commit.proto", fileDescriptor_commit_0deaae49a9269ba2) }
+func init() { proto.RegisterFile("commit.proto", fileDescriptor_commit_e889e3708043f57e) }
 
-var fileDescriptor_commit_0deaae49a9269ba2 = []byte{
+var fileDescriptor_commit_e889e3708043f57e = []byte{
 	// 134 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x49, 0xce, 0xcf, 0xcd,
 	0xcd, 0x2c, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x05, 0x53, 0x52, 0x9c, 0x45, 0xa9,

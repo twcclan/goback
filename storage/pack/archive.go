@@ -285,6 +285,7 @@ func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref) error {
 	hdr := &proto.ObjectHeader{
 		Ref:          tombstoneRef,
 		TombstoneFor: ref,
+		Type:         proto.ObjectType_TOMBSTONE,
 	}
 
 	return a.putRaw(ctx, hdr, nil)

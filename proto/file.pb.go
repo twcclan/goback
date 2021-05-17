@@ -37,7 +37,7 @@ func (m *FileInfo) Reset()         { *m = FileInfo{} }
 func (m *FileInfo) String() string { return proto.CompactTextString(m) }
 func (*FileInfo) ProtoMessage()    {}
 func (*FileInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_file_4fdd285a06ed1735, []int{0}
+	return fileDescriptor_file_1ca139b73b0b924b, []int{0}
 }
 func (m *FileInfo) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FileInfo.Unmarshal(m, b)
@@ -120,7 +120,7 @@ func (m *File) Reset()         { *m = File{} }
 func (m *File) String() string { return proto.CompactTextString(m) }
 func (*File) ProtoMessage()    {}
 func (*File) Descriptor() ([]byte, []int) {
-	return fileDescriptor_file_4fdd285a06ed1735, []int{1}
+	return fileDescriptor_file_1ca139b73b0b924b, []int{1}
 }
 func (m *File) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_File.Unmarshal(m, b)
@@ -167,7 +167,7 @@ func (m *FilePart) Reset()         { *m = FilePart{} }
 func (m *FilePart) String() string { return proto.CompactTextString(m) }
 func (*FilePart) ProtoMessage()    {}
 func (*FilePart) Descriptor() ([]byte, []int) {
-	return fileDescriptor_file_4fdd285a06ed1735, []int{2}
+	return fileDescriptor_file_1ca139b73b0b924b, []int{2}
 }
 func (m *FilePart) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FilePart.Unmarshal(m, b)
@@ -214,9 +214,9 @@ func init() {
 	proto.RegisterType((*FilePart)(nil), "proto.FilePart")
 }
 
-func init() { proto.RegisterFile("file.proto", fileDescriptor_file_4fdd285a06ed1735) }
+func init() { proto.RegisterFile("file.proto", fileDescriptor_file_1ca139b73b0b924b) }
 
-var fileDescriptor_file_4fdd285a06ed1735 = []byte{
+var fileDescriptor_file_1ca139b73b0b924b = []byte{
 	// 253 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x54, 0x8f, 0x4f, 0x4b, 0xc4, 0x30,
 	0x10, 0xc5, 0xc9, 0xf6, 0x8f, 0xdb, 0x11, 0x11, 0x82, 0x48, 0x90, 0x3d, 0x84, 0x82, 0x90, 0xd3,
