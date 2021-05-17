@@ -120,6 +120,10 @@ func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	})
 }
 
+func (s *Store) Close() error {
+	return s.db.Close()
+}
+
 const objectKeyPrefix = "objects|"
 
 func objectKey(key []byte) []byte {

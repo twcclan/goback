@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/index/postgres"
 	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"
+	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
@@ -24,30 +25,39 @@ type Closer interface {
 	Close() error
 }
 
-func makeLocation(loc string) (string, error) {
-	err := os.MkdirAll(loc, os.FileMode(0700))
+func createFolders(loc string) (string, error) {
+	abs, err := filepath.Abs(loc)
+	if err != nil {
+		return "", err
+	}
+
+	err = os.MkdirAll(abs, os.FileMode(0700))
 	if err != nil {
 		if os.IsExist(err) {
-			return "", err
+			return abs, err
 		}
 	}
 
-	return loc, nil
+	return abs, nil
+}
+
+func makeLocation(u *url.URL) (string, error) {
+	return createFolders(u.Host + u.Path)
 }
 
 func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	loc, err := makeLocation(u.Path)
+	loc, err := makeLocation(u)
 
 	return storage.NewSimpleObjectStore(loc), err
 }
 
 func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	archiveLocation, err := makeLocation(u.Path)
+	archiveLocation, err := makeLocation(u)
 	if err != nil {
 		return nil, err
 	}
 
-	indexLocation, err := makeLocation(filepath.Join(u.Path, "index"))
+	indexLocation, err := createFolders(filepath.Join(archiveLocation, "index"))
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +94,19 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewRemoteClient(addr)
 }
 
+func initBadger(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	loc, err := makeLocation(u)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Opening badger store at %s", loc)
+
+	return badger.New(loc)
+}
+
 func initSqlite(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
-	loc, err := makeLocation(u.Path)
+	loc, err := makeLocation(u)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +125,7 @@ var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore
 	"file":   initSimple,
 	"gcs":    initGCS,
 	"goback": initRemote,
+	"badger": initBadger,
 }
 
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){
