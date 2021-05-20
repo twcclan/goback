@@ -39,10 +39,10 @@ require (
 	go.opencensus.io v0.23.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/net v0.0.0-20210503060351-7fd8e65b6420
-	golang.org/x/oauth2 v0.0.0-20210427180440-81ed05c6b58c
+	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210503080704-8803ae5d1324
-	google.golang.org/api v0.46.0
+	golang.org/x/sys v0.0.0-20210514084401-e8d321eab015
+	google.golang.org/api v0.47.0
 	google.golang.org/grpc v1.37.1
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15
