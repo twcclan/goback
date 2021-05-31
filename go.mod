@@ -31,7 +31,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.5
-	github.com/vektra/mockery/v2 v2.7.5
+	github.com/vektra/mockery/v2 v2.8.0
 	github.com/volatiletech/randomize v0.0.1
 	github.com/volatiletech/sqlboiler/v4 v4.5.0
 	github.com/volatiletech/strmangle v0.0.1

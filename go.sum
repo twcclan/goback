@@ -659,8 +659,8 @@ github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijb
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/urfave/cli v1.22.5 h1:lNq9sAHXK2qfdI8W+GRItjCEkI+2oR4d+MEHy1CKXoU=
 github.com/urfave/cli v1.22.5/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
-github.com/vektra/mockery/v2 v2.7.5 h1:6j0fRHgYCU/BBeWK973edLaGedt3TnH/IMJNjxcd8m0=
-github.com/vektra/mockery/v2 v2.7.5/go.mod h1:2gU4Cf/f8YyC8oEaSXfCnZBMxMjMl/Ko205rlP0fO90=
+github.com/vektra/mockery/v2 v2.8.0 h1:sSnE//YePazXqH/qHMVfnNAgmXS9B0jNmL0GuhgfwGA=
+github.com/vektra/mockery/v2 v2.8.0/go.mod h1:2gU4Cf/f8YyC8oEaSXfCnZBMxMjMl/Ko205rlP0fO90=
 github.com/volatiletech/inflect v0.0.1 h1:2a6FcMQyhmPZcLa+uet3VJ8gLn/9svWhJxJYwvE8KsU=
 github.com/volatiletech/inflect v0.0.1/go.mod h1:IBti31tG6phkHitLlr5j7shC5SOo//x0AjDzaJU1PLA=
 github.com/volatiletech/null/v8 v8.1.2 h1:kiTiX1PpwvuugKwfvUNX/SU/5A2KGZMXfGD0DUHdKEI=
