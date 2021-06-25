@@ -27,7 +27,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/viper v1.7.1
+	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v0.0.0-20180517124229-e6d6b5291964
 	github.com/urfave/cli v1.22.5
@@ -41,9 +41,9 @@ require (
 	golang.org/x/net v0.0.0-20210503060351-7fd8e65b6420
 	golang.org/x/oauth2 v0.0.0-20210427180440-81ed05c6b58c
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210503080704-8803ae5d1324
+	golang.org/x/sys v0.0.0-20210510120138-977fb7262007
 	google.golang.org/api v0.46.0
-	google.golang.org/grpc v1.37.1
+	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15
 )
