@@ -1,17 +1,17 @@
 package postgres
 
 import (
+	"embed"
 	"log"
 
-	"github.com/twcclan/goback/pkg/rice2migrate"
-
-	rice "github.com/GeertJohan/go.rice"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/pkg/errors"
 )
 
-//go:generate go run github.com/GeertJohan/go.rice/rice embed-go
+//go:embed migrations/*.sql
+var migrations embed.FS
 
 type Log struct {
 	verbose bool
@@ -29,17 +29,13 @@ var _ migrate.Logger = (*Log)(nil)
 
 func runMigrations(databaseURL string) error {
 	log.Println("Looking for database migrations to run")
-	box, err := rice.FindBox("migrations")
-	if err != nil {
-		return errors.Wrap(err, "loading migration files")
-	}
 
-	source, err := rice2migrate.WithInstance(box)
+	source, err := iofs.New(migrations, "migrations")
 	if err != nil {
 		return errors.Wrap(err, "parsing migration files")
 	}
 
-	m, err := migrate.NewWithSourceInstance("rice", source, databaseURL)
+	m, err := migrate.NewWithSourceInstance("iofs", source, databaseURL)
 	if err != nil {
 		return errors.Wrap(err, "preparing migrations")
 	}
