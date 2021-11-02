@@ -2,10 +2,10 @@ module github.com/twcclan/goback
 
 require (
 	camlistore.org v0.0.0-20171230002226-a5a65f0d8b22
-	cloud.google.com/go v0.88.0
+	cloud.google.com/go/profiler v0.1.1
 	cloud.google.com/go/storage v1.15.0
 	contrib.go.opencensus.io/exporter/prometheus v0.3.0
-	contrib.go.opencensus.io/exporter/stackdriver v0.13.6
+	contrib.go.opencensus.io/exporter/stackdriver v0.13.10
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
@@ -37,16 +37,19 @@ require (
 	go.opencensus.io v0.23.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	golang.org/x/net v0.0.0-20211013171255-e13a2654a71e
-	golang.org/x/oauth2 v0.0.0-20210628180205-a41e5a781914
+	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20211013075003-97ac67df715c
-	google.golang.org/api v0.51.0
+	google.golang.org/api v0.59.0
 	google.golang.org/grpc v1.41.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
 
 require (
+	cloud.google.com/go v0.97.0 // indirect
+	cloud.google.com/go/monitoring v1.1.0 // indirect
+	cloud.google.com/go/trace v1.0.0 // indirect
 	github.com/DataDog/zstd v1.4.1 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
@@ -64,15 +67,14 @@ require (
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/pprof v0.0.0-20210715191844-86eeefc3e471 // indirect
-	github.com/googleapis/gax-go/v2 v2.0.5 // indirect
+	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0 // indirect
+	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/jstemmer/go-junit-report v0.9.1 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.1.0 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
@@ -98,14 +100,13 @@ require (
 	github.com/volatiletech/inflect v0.0.1 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.5 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20211013025323-ce878158c4d4 // indirect
+	google.golang.org/genproto v0.0.0-20211018162055-cf77aa76bad2 // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 	gopkg.in/ini.v1 v1.51.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
