@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	badgerIdx "github.com/twcclan/goback/storage/pack/index/badger"
+
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index/postgres"
 	"github.com/twcclan/goback/index/sqlite"
@@ -62,7 +64,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	idx, err := pack.NewBadgerIndex(indexLocation)
+	idx, err := badgerIdx.NewBadgerIndex(indexLocation)
 	if err != nil {
 		return nil, err
 	}

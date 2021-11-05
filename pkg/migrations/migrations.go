@@ -1,17 +1,14 @@
-package postgres
+package migrations
 
 import (
-	"embed"
+	"fmt"
+	"io/fs"
 	"log"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/pkg/errors"
 )
-
-//go:embed migrations/*.sql
-var migrations embed.FS
 
 type Log struct {
 	verbose bool
@@ -27,17 +24,17 @@ func (l *Log) Verbose() bool {
 
 var _ migrate.Logger = (*Log)(nil)
 
-func runMigrations(databaseURL string) error {
+func Run(databaseURL string, migrations fs.FS, path string) error {
 	log.Println("Looking for database migrations to run")
 
-	source, err := iofs.New(migrations, "migrations")
+	source, err := iofs.New(migrations, path)
 	if err != nil {
-		return errors.Wrap(err, "parsing migration files")
+		return fmt.Errorf("failed parsing migration files: %w", err)
 	}
 
 	m, err := migrate.NewWithSourceInstance("iofs", source, databaseURL)
 	if err != nil {
-		return errors.Wrap(err, "preparing migrations")
+		return fmt.Errorf("failed preparing migrations: %w", err)
 	}
 
 	m.Log = &Log{true}

@@ -926,7 +926,6 @@ type ArchiveIndex interface {
 	Has(archive string) (bool, error)
 	Index(archive string, index IndexFile) error
 	Delete(archive string, index IndexFile) error
-	Clear() error
 	Close() error
 	Count() (uint64, uint64, error)
 }

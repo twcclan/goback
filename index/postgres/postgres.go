@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
@@ -12,11 +13,13 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index/postgres/models"
+	"github.com/twcclan/goback/pkg/migrations"
 	"github.com/twcclan/goback/proto"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/volatiletech/sqlboiler/v4/boil"
+	"github.com/volatiletech/sqlboiler/v4/queries"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
@@ -39,6 +42,9 @@ func NewIndex(dsn string, store backup.ObjectStore) *Index {
 	}
 }
 
+//go:embed migrations/*.sql
+var files embed.FS
+
 type Index struct {
 	backup.ObjectStore
 
@@ -47,7 +53,7 @@ type Index struct {
 }
 
 func (i *Index) Open() error {
-	err := runMigrations(i.dsn)
+	err := migrations.Run(i.dsn, files, "migrations")
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
@@ -138,6 +144,7 @@ func (i *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 		infoList[i] = &proto.Commit{
 			Timestamp: commit.Timestamp.Unix(),
 			Tree:      &proto.Ref{Sha1: commit.Tree},
+			BackupSet: backupSet,
 		}
 	}
 
@@ -165,6 +172,9 @@ func (i *Index) Put(ctx context.Context, object *proto.Object) error {
 	return nil
 }
 
+func (i *Index) Delete(ctx context.Context, ref *proto.Ref) error {
+	return errors.New("direct deletion of objects not supported")
+}
 func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref) error {
 	// whenever we get to index a commit
 	// we'll traverse the complete backup tree

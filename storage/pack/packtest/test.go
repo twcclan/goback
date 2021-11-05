@@ -1,85 +1,58 @@
-package pack
+package packtest
 
 import (
-	"io/ioutil"
 	"log"
 	"math/rand"
-	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/twcclan/goback/proto"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/twcclan/goback/storage/pack"
+
 	"github.com/google/uuid"
 )
 
-func tempDir(tb testing.TB) string {
-	dir, err := ioutil.TempDir("", tb.Name())
-	if err != nil {
-		tb.Fatalf("failed creating temporary directory for test: %s", err.Error())
-	}
-
-	tb.Logf("creating temporary directory: %s", dir)
-
-	tb.Cleanup(func() {
-		tb.Logf("removing temporary directory: %s", dir)
-		err := os.RemoveAll(dir)
-		if err != nil {
-			tb.Logf("failed removing temporary directory: %s", err.Error())
-		}
-	})
-
-	return dir
+type TestArchive struct {
+	name  string
+	index pack.IndexFile
 }
 
-func tempIndex(tb testing.TB) *BadgerIndex {
-	dir := tempDir(tb)
+func RandomIndexFile(records int) pack.IndexFile {
+	idx := make(pack.IndexFile, records)
 
-	tb.Logf("Creating badger index in %s", dir)
-	idx, err := NewBadgerIndex(dir)
-	if err != nil {
-		tb.Fatalf("failed creating index: %s", err)
-	}
-
-	tb.Cleanup(func() {
-		tb.Log("closing badger index")
-
-		err := idx.Close()
-		if err != nil {
-			tb.Logf("failed closing index: %s", err)
+	for i := range idx {
+		idx[i].Offset = rand.Uint32()
+		idx[i].Length = rand.Uint32()
+		idx[i].Type = rand.Uint32()
+		for j := range idx[i].Sum {
+			idx[i].Sum[j] = byte(rand.Intn(256))
 		}
-	})
+	}
 
 	return idx
 }
 
-type testArchive struct {
-	name  string
-	index IndexFile
-}
-
-func setupBadger(t *testing.T, n int) (*BadgerIndex, []testArchive) {
-	t.Helper()
-
-	idx := tempIndex(t)
-	t.Cleanup(func() {
-		err := idx.Close()
-		if err != nil {
-			t.Logf("Failed closing badger index: %s", err)
-		}
-	})
-
-	archives := make([]testArchive, n)
-	for i := range archives {
-		log.Printf("Creating test archive %d/%d", i+1, n)
-		archives[i] = testArchive{uuid.New().String(), makeIndex()}
+func RandomArchive(numRecords int) TestArchive {
+	archive := TestArchive{
+		name:  uuid.New().String(),
+		index: RandomIndexFile(numRecords),
 	}
 
-	return idx, archives
+	return archive
 }
 
-func TestBadgerIndex(t *testing.T) {
-	idx, archives := setupBadger(t, 10)
+func getTestArchives(num int) []TestArchive {
+	archives := make([]TestArchive, num)
+	for i := range archives {
+		archives[i] = RandomArchive(1000)
+	}
+
+	return archives
+}
+
+func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
+	archives := getTestArchives(10)
 
 	for i, archive := range archives {
 		log.Printf("indexing test archive %d/%d", i+1, len(archives))
@@ -90,7 +63,7 @@ func TestBadgerIndex(t *testing.T) {
 	}
 
 	for i, archive := range archives {
-		log.Printf("searching test archive %d/%d", i+1, 100)
+		log.Printf("searching test archive %d/%d", i+1, 128)
 		for _, i := range rand.Perm(len(archive.index)) {
 			location, err := idx.Locate(&proto.Ref{Sha1: archive.index[i].Sum[:]})
 			if err != nil {
@@ -108,7 +81,8 @@ func TestBadgerIndex(t *testing.T) {
 		}
 	}
 
-	for _, archive := range archives {
+	for i, archive := range archives {
+		log.Printf("deleting test archive %d/%d", i+1, 128)
 		err := idx.Delete(archive.name, archive.index)
 		if err != nil {
 			t.Errorf("Couldn't delete archive from index: %s", err)
@@ -117,15 +91,15 @@ func TestBadgerIndex(t *testing.T) {
 
 		for _, record := range archive.index {
 			_, err := idx.Locate(&proto.Ref{Sha1: record.Sum[:]})
-			if err != ErrRecordNotFound {
+			if err != pack.ErrRecordNotFound {
 				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
 			}
 		}
 	}
 }
 
-func TestBadgerIndexExclusion(t *testing.T) {
-	idx, archives := setupBadger(t, 10)
+func TestBadgerIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
+	archives := getTestArchives(128)
 
 	// replace the second half of the archives with a copy of the first
 	for i := 0; i < len(archives)/2; i++ {
@@ -161,6 +135,35 @@ func TestBadgerIndexExclusion(t *testing.T) {
 			if cmp.Equal(location1.Archive, location2.Archive) {
 				t.Errorf("Expected to find two different archives for record: %x", record)
 			}
+		}
+	}
+}
+
+func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
+	archives := getTestArchives(10)
+
+	for _, archive := range archives {
+		err := idx.Index(archive.name, archive.index)
+		if err != nil {
+			b.Fatalf("failed indexing test archive: %s", err)
+		}
+	}
+
+	lookups := make([]*proto.Ref, b.N)
+	for i := range lookups {
+		randomArchive := archives[rand.Intn(len(archives))]
+		randomObject := randomArchive.index[rand.Intn(len(randomArchive.index))].Sum[:]
+
+		lookups[i] = &proto.Ref{Sha1: randomObject}
+	}
+
+	b.ResetTimer()
+
+	for _, ref := range lookups {
+		_, err := idx.Locate(ref)
+		if err != nil {
+			b.Errorf("couldn't find expected index record: %s", err)
+			continue
 		}
 	}
 }

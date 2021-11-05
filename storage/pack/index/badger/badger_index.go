@@ -1,4 +1,4 @@
-package pack
+package badger
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/badger/v2/options"
@@ -87,10 +88,10 @@ func (b *BadgerIndex) Close() error {
 	return b.db.Close()
 }
 
-var _ ArchiveIndex = (*BadgerIndex)(nil)
+var _ pack.ArchiveIndex = (*BadgerIndex)(nil)
 
-func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (IndexLocation, error) {
-	var location IndexLocation
+func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
+	var location pack.IndexLocation
 
 	txErr := b.db.View(func(txn *badger.Txn) error {
 		prefix := b.recordPrefix(ref.Sha1)
@@ -125,9 +126,9 @@ func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (IndexLocation, 
 				}
 			}
 
-			location = IndexLocation{
+			location = pack.IndexLocation{
 				Archive: archiveName,
-				Record: IndexRecord{
+				Record: pack.IndexRecord{
 					Offset: value.Offset,
 					Length: value.Length,
 					Type:   value.Type,
@@ -138,7 +139,7 @@ func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (IndexLocation, 
 			return nil
 		}
 
-		return ErrRecordNotFound
+		return pack.ErrRecordNotFound
 	})
 
 	return location, txErr
@@ -197,7 +198,7 @@ func (b *BadgerIndex) idValue(id uint64) []byte {
 	return d
 }
 
-func (b *BadgerIndex) Index(archive string, index IndexFile) error {
+func (b *BadgerIndex) Index(archive string, index pack.IndexFile) error {
 	// check if the archive already exists
 	b.archivesMtx.RLock()
 	if _, ok := b.archiveIds[archive]; ok {
@@ -265,7 +266,7 @@ func (b *BadgerIndex) Index(archive string, index IndexFile) error {
 	})
 }
 
-func (b *BadgerIndex) Delete(archive string, index IndexFile) error {
+func (b *BadgerIndex) Delete(archive string, index pack.IndexFile) error {
 	// check if the archive actually exists
 	b.archivesMtx.RLock()
 	archiveId, ok := b.archiveIds[archive]

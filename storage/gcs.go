@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	badgerIdx "github.com/twcclan/goback/storage/pack/index/badger"
+
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
@@ -316,7 +318,7 @@ func NewGCSObjectStore(bucket, indexDir, cacheDir string) (backup.ObjectStore, e
 		return nil, err
 	}
 
-	idx, err := pack.NewBadgerIndex(indexDir)
+	idx, err := badgerIdx.NewBadgerIndex(indexDir)
 
 	options := []pack.PackOption{
 		pack.WithArchiveStorage(storage),
