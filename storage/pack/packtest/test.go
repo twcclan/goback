@@ -98,8 +98,8 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	}
 }
 
-func TestBadgerIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
-	archives := getTestArchives(128)
+func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
+	archives := getTestArchives(10)
 
 	// replace the second half of the archives with a copy of the first
 	for i := 0; i < len(archives)/2; i++ {
@@ -149,21 +149,34 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 		}
 	}
 
-	lookups := make([]*proto.Ref, b.N)
-	for i := range lookups {
-		randomArchive := archives[rand.Intn(len(archives))]
-		randomObject := randomArchive.index[rand.Intn(len(randomArchive.index))].Sum[:]
+	b.Run("lookups", func(b *testing.B) {
+		lookups := make([]*proto.Ref, b.N)
+		for i := range lookups {
+			randomArchive := archives[rand.Intn(len(archives))]
+			randomObject := randomArchive.index[rand.Intn(len(randomArchive.index))].Sum[:]
 
-		lookups[i] = &proto.Ref{Sha1: randomObject}
-	}
+			lookups[i] = &proto.Ref{Sha1: randomObject}
+		}
+
+		b.ResetTimer()
+
+		for _, ref := range lookups {
+			_, err := idx.Locate(ref)
+			if err != nil {
+				b.Errorf("couldn't find expected index record: %s", err)
+				continue
+			}
+		}
+	})
+}
+
+func BenchmarkIndex(b *testing.B, idx pack.ArchiveIndex) {
+	archive := RandomArchive(b.N)
 
 	b.ResetTimer()
 
-	for _, ref := range lookups {
-		_, err := idx.Locate(ref)
-		if err != nil {
-			b.Errorf("couldn't find expected index record: %s", err)
-			continue
-		}
+	err := idx.Index(archive.name, archive.index)
+	if err != nil {
+		b.Fatal(err)
 	}
 }

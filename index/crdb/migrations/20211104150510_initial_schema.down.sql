@@ -2,6 +2,5 @@ BEGIN;
 
 DROP TABLE objects;
 DROP TABLE archives;
-DROP DATABASE pack;
 
 COMMIT;

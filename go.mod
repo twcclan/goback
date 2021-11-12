@@ -10,6 +10,7 @@ require (
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/GeertJohan/go.rice v0.0.0-20181229193832-0af3f3b09a0a
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/cockroachdb/cockroach-go/v2 v2.1.1
 	github.com/dgraph-io/badger/v2 v2.2007.2
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
@@ -65,7 +66,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403 // indirect
 	github.com/cncf/xds/go v0.0.0-20210805033703-aa0b78936158 // indirect
-	github.com/cockroachdb/cockroach-go/v2 v2.1.1 // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect

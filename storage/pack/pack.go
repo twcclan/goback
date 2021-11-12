@@ -112,7 +112,7 @@ func (ps *PackStorage) cacheable(obj *proto.Object) bool {
 
 func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err error) error {
 	if ps.cache != nil && err == nil && ps.cacheable(obj) {
-		ps.cache.Put(ctx, obj)
+		_ = ps.cache.Put(ctx, obj)
 	}
 
 	return err
@@ -121,7 +121,7 @@ func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err
 func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, error) (*proto.Object, error) {
 	return func(obj *proto.Object, err error) (*proto.Object, error) {
 		if ps.cache != nil && err == nil && ps.cacheable(obj) {
-			ps.cache.Put(ctx, obj)
+			_ = ps.cache.Put(ctx, obj)
 		}
 
 		return obj, err
@@ -371,6 +371,7 @@ func (ps *PackStorage) openArchive(name string) error {
 			return err
 		}
 
+		log.Printf("indexing archive %s", name)
 		err = ps.index.Index(name, idx)
 		if err != nil {
 			return err

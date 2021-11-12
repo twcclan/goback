@@ -1,8 +1,5 @@
 BEGIN;
 
-CREATE
-    DATABASE pack;
-
 CREATE TABLE archives
 (
     name   text primary key not null
@@ -14,7 +11,7 @@ CREATE TABLE objects
     start      integer not null,
     length     integer not null,
     type       integer not null,
-    archive_id text     not null references archives (name),
+    archive_id text     not null references archives (name) on delete cascade,
 
     primary key (ref, archive_id)
 );

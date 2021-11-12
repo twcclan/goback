@@ -73,8 +73,12 @@ func withCrdb(tb testing.TB, ctx context.Context) *Index {
 	return idx
 }
 
-func TestCRDB(t *testing.T) {
+func TestCRDBIndex(t *testing.T) {
 	packtest.TestArchiveIndex(t, withCrdb(t, context.Background()))
+}
+
+func TestCRDBIndexExclusions(t *testing.T) {
+	packtest.TestArchiveIndexExclusion(t, withCrdb(t, context.Background()))
 }
 
 func BenchmarkLookup(b *testing.B) {
@@ -82,5 +86,13 @@ func BenchmarkLookup(b *testing.B) {
 
 	b.Run("lookup", func(b *testing.B) {
 		packtest.BenchmarkLookup(b, idx)
+	})
+}
+
+func BenchmarkIndex(b *testing.B) {
+	idx := withCrdb(b, context.Background())
+
+	b.Run("insert", func(b *testing.B) {
+		packtest.BenchmarkIndex(b, idx)
 	})
 }

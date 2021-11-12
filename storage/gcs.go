@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	badgerIdx "github.com/twcclan/goback/storage/pack/index/badger"
-
 	"github.com/twcclan/goback/backup"
+	badgerIdx "github.com/twcclan/goback/index/badger"
 	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 

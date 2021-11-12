@@ -15,3 +15,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres_init:/docker-entrypoint-initdb.d
+  cockroach:
+    image: cockroachdb/cockroach:latest-v21.1
+    command:
+      - start-single-node
+      - --insecure
+    ports:
+      - 26257:26257
+      - 26258:8080

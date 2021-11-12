@@ -71,7 +71,7 @@ func TestBadgerIndex(t *testing.T) {
 func TestBadgerIndexExclusion(t *testing.T) {
 	idx := setupBadger(t)
 
-	packtest.TestBadgerIndexExclusion(t, idx)
+	packtest.TestArchiveIndexExclusion(t, idx)
 }
 
 func BenchmarkLookup(b *testing.B) {
@@ -79,5 +79,12 @@ func BenchmarkLookup(b *testing.B) {
 
 	b.Run("lookup", func(b *testing.B) {
 		packtest.BenchmarkLookup(b, idx)
+	})
+}
+func BenchmarkIndex(b *testing.B) {
+	idx := setupBadger(b)
+
+	b.Run("insert", func(b *testing.B) {
+		packtest.BenchmarkIndex(b, idx)
 	})
 }
