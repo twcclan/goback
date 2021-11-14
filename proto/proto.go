@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=plugins=grpc:. api.proto blob.proto commit.proto file.proto index.proto object.proto ref.proto tree.proto
+//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto ref.proto tree.proto transactional.proto
 
 import (
 	"bytes"
@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	pb "github.com/golang/protobuf/proto"
-)
+	"google.golang.org/protobuf/encoding/protowire"
 
-var testMap = map[pb.Message][]byte{}
+	pb "google.golang.org/protobuf/proto"
+)
 
 func Bytes(m pb.Message) []byte {
 	if data, err := pb.Marshal(m); err != nil {
@@ -70,12 +70,12 @@ func Size(msg pb.Message) int {
 	return pb.Size(msg)
 }
 
-func EncodeVarint(x uint64) []byte {
-	return pb.EncodeVarint(x)
+func EncodeVarint(buf []byte, x uint64) []byte {
+	return protowire.AppendVarint(buf, x)
 }
 
 func DecodeVarint(buf []byte) (x uint64, n int) {
-	return pb.DecodeVarint(buf)
+	return protowire.ConsumeVarint(buf)
 }
 
 func (o *Object) Type() ObjectType {
@@ -204,44 +204,3 @@ func (bi *backupFileInfo) Sys() interface{} {
 func GetOSFileInfo(info *FileInfo) os.FileInfo {
 	return &backupFileInfo{info}
 }
-
-/*
-func GetMetaChunk(msg proto.Message, chunkType ChunkType) *Chunk {
-	data, err := proto.Marshal(msg)
-	if err != nil {
-		panic(err)
-	}
-
-	sum := sha1.Sum(data)
-
-	chunk := &Chunk{
-		Ref: &ChunkRef{
-			Sum:  sum[:],
-			Type: chunkType,
-		},
-		Data: data,
-	}
-
-	return chunk
-}
-
-func ReadMetaChunk(chunk *Chunk, msg proto.Message) {
-	err := proto.Unmarshal(chunk.Data, msg)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func GetTypedRef(ref *ChunkRef, chunkType ChunkType) *ChunkRef {
-	return &ChunkRef{
-		Sum:  ref.Sum,
-		Type: chunkType,
-	}
-}
-
-func GetUntypedRef(ref *ChunkRef) *ChunkRef {
-	return &ChunkRef{
-		Sum: ref.Sum,
-	}
-}
-*/

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package proto;
 
+option go_package = "github.com/twcclan/goback/proto";
+
 import "ref.proto";
 
 message Commit {

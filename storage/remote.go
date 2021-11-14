@@ -143,6 +143,7 @@ func NewRemoteServer(index backup.Index) *RemoteServer {
 var _ proto.StoreServer = (*RemoteServer)(nil)
 
 type RemoteServer struct {
+	proto.UnsafeStoreServer
 	index backup.Index
 }
 

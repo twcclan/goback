@@ -4,6 +4,10 @@ package proto;
 
 option go_package = "github.com/twcclan/goback/proto";
 
-message Blob {
-  bytes data = 1;
+message TransactionRequest {
+
+}
+
+message TransactionResponse {
+
 }

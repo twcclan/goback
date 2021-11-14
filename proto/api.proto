@@ -2,10 +2,13 @@ syntax = "proto3";
 
 package proto;
 
+option go_package = "github.com/twcclan/goback/proto";
+
 import "object.proto";
 import "ref.proto";
 import "tree.proto";
 import "commit.proto";
+import "transactional.proto";
 import "google/protobuf/timestamp.proto";
 
 //Put(*proto.Object) error
@@ -86,4 +89,6 @@ service Store {
     rpc Has(HasRequest) returns (HasResponse) {}
     rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
     rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
+
+    //rpc BeginTransaction(stream TransactionRequest) returns (stream TransactionResponse) {}
 }

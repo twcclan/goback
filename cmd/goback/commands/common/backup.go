@@ -7,9 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	badgerIdx "github.com/twcclan/goback/storage/pack/index/badger"
-
 	"github.com/twcclan/goback/backup"
+	badgerIdx "github.com/twcclan/goback/index/badger"
 	"github.com/twcclan/goback/index/postgres"
 	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"

@@ -14,7 +14,6 @@ import (
 
 	"github.com/twcclan/goback/proto"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/willf/bitset"
@@ -22,6 +21,7 @@ import (
 	"go.opencensus.io/tag"
 	"go.opencensus.io/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var errAlreadyClosed = errors.New("Writer is already closed")
@@ -322,14 +322,14 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	// because we rely on the information of when a certain object
 	// first entered our system
 	if hdr.Timestamp == nil {
-		hdr.Timestamp = ptypes.TimestampNow()
+		hdr.Timestamp = timestamppb.Now()
 	}
 
 	hdrBytes := proto.Bytes(hdr)
 	hdrBytesSize := uint64(len(hdrBytes))
 
 	// construct a buffer with our header preceeded by a varint describing its size
-	hdrBytes = append(proto.EncodeVarint(hdrBytesSize), hdrBytes...)
+	hdrBytes = append(proto.EncodeVarint(nil, hdrBytesSize), hdrBytes...)
 
 	// add our payload
 	data := append(hdrBytes, bytes...)
