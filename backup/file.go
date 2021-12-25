@@ -340,7 +340,7 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 				}
 
 				if obj == nil {
-					log.Printf("Warning: couldn't find part %d (%x) of file %X", req.index, req.part.Ref.Sha1, proto.NewObject(bfr.file).Ref().Sha1)
+					log.Printf("Warning: couldn't find part %d (%x) of file %x", req.index, req.part.Ref.Sha1, proto.NewObject(bfr.file).Ref().Sha1)
 					obj = proto.NewObject(&proto.Blob{
 						Data: make([]byte, req.part.Length),
 					})

@@ -6,3 +6,6 @@
 test/
 .idea
 vendor
+.gobincache
+cmd/goback/storage
+cmd/goback/index

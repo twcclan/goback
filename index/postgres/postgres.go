@@ -18,6 +18,7 @@ import (
 
 	"contrib.go.opencensus.io/integrations/ocsql"
 	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/lib/pq"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
@@ -85,6 +86,11 @@ func (i *Index) FileInfo(ctx context.Context, backupSet string, path string, not
 		models.SetWhere.Name.EQ(backupSet),
 	).One(ctx, i.db)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// if the backup set does not exist, we also won't have the file
+			return nil, nil
+		}
+
 		return nil, err
 	}
 
@@ -124,6 +130,11 @@ func (i *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 		models.SetWhere.Name.EQ(backupSet),
 	).One(ctx, i.db)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// if the backup set does not exist, we also won't have the commit
+			return nil, nil
+		}
+
 		return nil, err
 	}
 
@@ -175,6 +186,38 @@ func (i *Index) Put(ctx context.Context, object *proto.Object) error {
 func (i *Index) Delete(ctx context.Context, ref *proto.Ref) error {
 	return errors.New("direct deletion of objects not supported")
 }
+
+func (i *Index) ReachableCommits(ctx context.Context, f func(commit *proto.Commit) error) error {
+	rows, err := queries.Raw(reachableCommits, "14", "30", "90").Query(i.db) //.Bind(ctx, i.db, &commits)
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+
+	for {
+		commit := &models.Commit{}
+		err := queries.Bind(rows, commit)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				break
+			}
+
+			return err
+		}
+
+		err = f(&proto.Commit{
+			Timestamp: commit.Timestamp.Unix(),
+			Tree:      &proto.Ref{Sha1: commit.Tree},
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref) error {
 	// whenever we get to index a commit
 	// we'll traverse the complete backup tree
@@ -288,5 +331,26 @@ func (i *Index) index(ctx context.Context, commit *proto.Commit, ref *proto.Ref)
 
 	return tx.Commit()
 }
+
+const reachableCommits = `
+SELECT *
+FROM   (
+           SELECT   *,
+                    rank() OVER (PARTITION BY set_id,
+                        CASE
+                            WHEN timestamp >= CURRENT_DATE - interval $1 day THEN date_trunc('hour', timestamp)
+
+                            WHEN timestamp < CURRENT_DATE - interval $1 day
+								AND timestamp >= CURRENT_DATE - interval $2 day THEN date_trunc('day', timestamp)
+
+                            WHEN timestamp < CURRENT_DATE - interval $2 day
+								AND timestamp >= CURRENT_DATE - interval $3 day THEN date_trunc('week', timestamp)
+
+                            ELSE date_trunc('month', timestamp)
+                            END ORDER BY timestamp) AS rnk
+           FROM     commits
+       ) AS partitioned
+WHERE  rnk = 1
+`
 
 var _ backup.Index = (*Index)(nil)
