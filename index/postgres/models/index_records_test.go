@@ -21,24 +21,24 @@ var (
 	_ = queries.Equal
 )
 
-func testFiles(t *testing.T) {
+func testIndexRecords(t *testing.T) {
 	t.Parallel()
 
-	query := Files()
+	query := IndexRecords()
 
 	if query.Query == nil {
 		t.Error("expected a query, got nothing")
 	}
 }
 
-func testFilesDelete(t *testing.T) {
+func testIndexRecordsDelete(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -54,7 +54,7 @@ func testFilesDelete(t *testing.T) {
 		t.Error("should only have deleted one row, but affected:", rowsAff)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -64,14 +64,14 @@ func testFilesDelete(t *testing.T) {
 	}
 }
 
-func testFilesQueryDeleteAll(t *testing.T) {
+func testIndexRecordsQueryDeleteAll(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -81,13 +81,13 @@ func testFilesQueryDeleteAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	if rowsAff, err := Files().DeleteAll(ctx, tx); err != nil {
+	if rowsAff, err := IndexRecords().DeleteAll(ctx, tx); err != nil {
 		t.Error(err)
 	} else if rowsAff != 1 {
 		t.Error("should only have deleted one row, but affected:", rowsAff)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -97,14 +97,14 @@ func testFilesQueryDeleteAll(t *testing.T) {
 	}
 }
 
-func testFilesSliceDeleteAll(t *testing.T) {
+func testIndexRecordsSliceDeleteAll(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -114,7 +114,7 @@ func testFilesSliceDeleteAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	slice := FileSlice{o}
+	slice := IndexRecordSlice{o}
 
 	if rowsAff, err := slice.DeleteAll(ctx, tx); err != nil {
 		t.Error(err)
@@ -122,7 +122,7 @@ func testFilesSliceDeleteAll(t *testing.T) {
 		t.Error("should only have deleted one row, but affected:", rowsAff)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -132,14 +132,14 @@ func testFilesSliceDeleteAll(t *testing.T) {
 	}
 }
 
-func testFilesExists(t *testing.T) {
+func testIndexRecordsExists(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -149,23 +149,23 @@ func testFilesExists(t *testing.T) {
 		t.Error(err)
 	}
 
-	e, err := FileExists(ctx, tx, o.Path, o.Timestamp, o.SetID)
+	e, err := IndexRecordExists(ctx, tx, o.Ref, o.ArchiveID)
 	if err != nil {
-		t.Errorf("Unable to check if File exists: %s", err)
+		t.Errorf("Unable to check if IndexRecord exists: %s", err)
 	}
 	if !e {
-		t.Errorf("Expected FileExists to return true, but got false.")
+		t.Errorf("Expected IndexRecordExists to return true, but got false.")
 	}
 }
 
-func testFilesFind(t *testing.T) {
+func testIndexRecordsFind(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -175,24 +175,24 @@ func testFilesFind(t *testing.T) {
 		t.Error(err)
 	}
 
-	fileFound, err := FindFile(ctx, tx, o.Path, o.Timestamp, o.SetID)
+	indexRecordFound, err := FindIndexRecord(ctx, tx, o.Ref, o.ArchiveID)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if fileFound == nil {
+	if indexRecordFound == nil {
 		t.Error("want a record, got nil")
 	}
 }
 
-func testFilesBind(t *testing.T) {
+func testIndexRecordsBind(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -202,19 +202,19 @@ func testFilesBind(t *testing.T) {
 		t.Error(err)
 	}
 
-	if err = Files().Bind(ctx, tx, o); err != nil {
+	if err = IndexRecords().Bind(ctx, tx, o); err != nil {
 		t.Error(err)
 	}
 }
 
-func testFilesOne(t *testing.T) {
+func testIndexRecordsOne(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -224,38 +224,38 @@ func testFilesOne(t *testing.T) {
 		t.Error(err)
 	}
 
-	if x, err := Files().One(ctx, tx); err != nil {
+	if x, err := IndexRecords().One(ctx, tx); err != nil {
 		t.Error(err)
 	} else if x == nil {
 		t.Error("expected to get a non nil record")
 	}
 }
 
-func testFilesAll(t *testing.T) {
+func testIndexRecordsAll(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	fileOne := &File{}
-	fileTwo := &File{}
-	if err = randomize.Struct(seed, fileOne, fileDBTypes, false, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	indexRecordOne := &IndexRecord{}
+	indexRecordTwo := &IndexRecord{}
+	if err = randomize.Struct(seed, indexRecordOne, indexRecordDBTypes, false, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
-	if err = randomize.Struct(seed, fileTwo, fileDBTypes, false, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err = randomize.Struct(seed, indexRecordTwo, indexRecordDBTypes, false, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
-	if err = fileOne.Insert(ctx, tx, boil.Infer()); err != nil {
+	if err = indexRecordOne.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Error(err)
 	}
-	if err = fileTwo.Insert(ctx, tx, boil.Infer()); err != nil {
+	if err = indexRecordTwo.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Error(err)
 	}
 
-	slice, err := Files().All(ctx, tx)
+	slice, err := IndexRecords().All(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -265,31 +265,31 @@ func testFilesAll(t *testing.T) {
 	}
 }
 
-func testFilesCount(t *testing.T) {
+func testIndexRecordsCount(t *testing.T) {
 	t.Parallel()
 
 	var err error
 	seed := randomize.NewSeed()
-	fileOne := &File{}
-	fileTwo := &File{}
-	if err = randomize.Struct(seed, fileOne, fileDBTypes, false, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	indexRecordOne := &IndexRecord{}
+	indexRecordTwo := &IndexRecord{}
+	if err = randomize.Struct(seed, indexRecordOne, indexRecordDBTypes, false, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
-	if err = randomize.Struct(seed, fileTwo, fileDBTypes, false, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err = randomize.Struct(seed, indexRecordTwo, indexRecordDBTypes, false, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
-	if err = fileOne.Insert(ctx, tx, boil.Infer()); err != nil {
+	if err = indexRecordOne.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Error(err)
 	}
-	if err = fileTwo.Insert(ctx, tx, boil.Infer()); err != nil {
+	if err = indexRecordTwo.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Error(err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -299,155 +299,155 @@ func testFilesCount(t *testing.T) {
 	}
 }
 
-func fileBeforeInsertHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordBeforeInsertHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileAfterInsertHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordAfterInsertHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileAfterSelectHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordAfterSelectHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileBeforeUpdateHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordBeforeUpdateHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileAfterUpdateHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordAfterUpdateHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileBeforeDeleteHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordBeforeDeleteHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileAfterDeleteHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordAfterDeleteHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileBeforeUpsertHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordBeforeUpsertHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func fileAfterUpsertHook(ctx context.Context, e boil.ContextExecutor, o *File) error {
-	*o = File{}
+func indexRecordAfterUpsertHook(ctx context.Context, e boil.ContextExecutor, o *IndexRecord) error {
+	*o = IndexRecord{}
 	return nil
 }
 
-func testFilesHooks(t *testing.T) {
+func testIndexRecordsHooks(t *testing.T) {
 	t.Parallel()
 
 	var err error
 
 	ctx := context.Background()
-	empty := &File{}
-	o := &File{}
+	empty := &IndexRecord{}
+	o := &IndexRecord{}
 
 	seed := randomize.NewSeed()
-	if err = randomize.Struct(seed, o, fileDBTypes, false); err != nil {
-		t.Errorf("Unable to randomize File object: %s", err)
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, false); err != nil {
+		t.Errorf("Unable to randomize IndexRecord object: %s", err)
 	}
 
-	AddFileHook(boil.BeforeInsertHook, fileBeforeInsertHook)
+	AddIndexRecordHook(boil.BeforeInsertHook, indexRecordBeforeInsertHook)
 	if err = o.doBeforeInsertHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doBeforeInsertHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected BeforeInsertHook function to empty object, but got: %#v", o)
 	}
-	fileBeforeInsertHooks = []FileHook{}
+	indexRecordBeforeInsertHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.AfterInsertHook, fileAfterInsertHook)
+	AddIndexRecordHook(boil.AfterInsertHook, indexRecordAfterInsertHook)
 	if err = o.doAfterInsertHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doAfterInsertHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected AfterInsertHook function to empty object, but got: %#v", o)
 	}
-	fileAfterInsertHooks = []FileHook{}
+	indexRecordAfterInsertHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.AfterSelectHook, fileAfterSelectHook)
+	AddIndexRecordHook(boil.AfterSelectHook, indexRecordAfterSelectHook)
 	if err = o.doAfterSelectHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doAfterSelectHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected AfterSelectHook function to empty object, but got: %#v", o)
 	}
-	fileAfterSelectHooks = []FileHook{}
+	indexRecordAfterSelectHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.BeforeUpdateHook, fileBeforeUpdateHook)
+	AddIndexRecordHook(boil.BeforeUpdateHook, indexRecordBeforeUpdateHook)
 	if err = o.doBeforeUpdateHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doBeforeUpdateHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected BeforeUpdateHook function to empty object, but got: %#v", o)
 	}
-	fileBeforeUpdateHooks = []FileHook{}
+	indexRecordBeforeUpdateHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.AfterUpdateHook, fileAfterUpdateHook)
+	AddIndexRecordHook(boil.AfterUpdateHook, indexRecordAfterUpdateHook)
 	if err = o.doAfterUpdateHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doAfterUpdateHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected AfterUpdateHook function to empty object, but got: %#v", o)
 	}
-	fileAfterUpdateHooks = []FileHook{}
+	indexRecordAfterUpdateHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.BeforeDeleteHook, fileBeforeDeleteHook)
+	AddIndexRecordHook(boil.BeforeDeleteHook, indexRecordBeforeDeleteHook)
 	if err = o.doBeforeDeleteHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doBeforeDeleteHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected BeforeDeleteHook function to empty object, but got: %#v", o)
 	}
-	fileBeforeDeleteHooks = []FileHook{}
+	indexRecordBeforeDeleteHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.AfterDeleteHook, fileAfterDeleteHook)
+	AddIndexRecordHook(boil.AfterDeleteHook, indexRecordAfterDeleteHook)
 	if err = o.doAfterDeleteHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doAfterDeleteHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected AfterDeleteHook function to empty object, but got: %#v", o)
 	}
-	fileAfterDeleteHooks = []FileHook{}
+	indexRecordAfterDeleteHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.BeforeUpsertHook, fileBeforeUpsertHook)
+	AddIndexRecordHook(boil.BeforeUpsertHook, indexRecordBeforeUpsertHook)
 	if err = o.doBeforeUpsertHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doBeforeUpsertHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected BeforeUpsertHook function to empty object, but got: %#v", o)
 	}
-	fileBeforeUpsertHooks = []FileHook{}
+	indexRecordBeforeUpsertHooks = []IndexRecordHook{}
 
-	AddFileHook(boil.AfterUpsertHook, fileAfterUpsertHook)
+	AddIndexRecordHook(boil.AfterUpsertHook, indexRecordAfterUpsertHook)
 	if err = o.doAfterUpsertHooks(ctx, nil); err != nil {
 		t.Errorf("Unable to execute doAfterUpsertHooks: %s", err)
 	}
 	if !reflect.DeepEqual(o, empty) {
 		t.Errorf("Expected AfterUpsertHook function to empty object, but got: %#v", o)
 	}
-	fileAfterUpsertHooks = []FileHook{}
+	indexRecordAfterUpsertHooks = []IndexRecordHook{}
 }
 
-func testFilesInsert(t *testing.T) {
+func testIndexRecordsInsert(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -457,7 +457,7 @@ func testFilesInsert(t *testing.T) {
 		t.Error(err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -467,24 +467,24 @@ func testFilesInsert(t *testing.T) {
 	}
 }
 
-func testFilesInsertWhitelist(t *testing.T) {
+func testIndexRecordsInsertWhitelist(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
-	if err = o.Insert(ctx, tx, boil.Whitelist(fileColumnsWithoutDefault...)); err != nil {
+	if err = o.Insert(ctx, tx, boil.Whitelist(indexRecordColumnsWithoutDefault...)); err != nil {
 		t.Error(err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -494,32 +494,32 @@ func testFilesInsertWhitelist(t *testing.T) {
 	}
 }
 
-func testFileToOneSetUsingSet(t *testing.T) {
+func testIndexRecordToOneArchiveUsingArchive(t *testing.T) {
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
 
-	var local File
-	var foreign Set
+	var local IndexRecord
+	var foreign Archive
 
 	seed := randomize.NewSeed()
-	if err := randomize.Struct(seed, &local, fileDBTypes, false, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err := randomize.Struct(seed, &local, indexRecordDBTypes, false, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
-	if err := randomize.Struct(seed, &foreign, setDBTypes, false, setColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize Set struct: %s", err)
+	if err := randomize.Struct(seed, &foreign, archiveDBTypes, false, archiveColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize Archive struct: %s", err)
 	}
 
 	if err := foreign.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Fatal(err)
 	}
 
-	local.SetID = foreign.ID
+	local.ArchiveID = foreign.ID
 	if err := local.Insert(ctx, tx, boil.Infer()); err != nil {
 		t.Fatal(err)
 	}
 
-	check, err := local.Set().One(ctx, tx)
+	check, err := local.Archive().One(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,41 +528,41 @@ func testFileToOneSetUsingSet(t *testing.T) {
 		t.Errorf("want: %v, got %v", foreign.ID, check.ID)
 	}
 
-	slice := FileSlice{&local}
-	if err = local.L.LoadSet(ctx, tx, false, (*[]*File)(&slice), nil); err != nil {
+	slice := IndexRecordSlice{&local}
+	if err = local.L.LoadArchive(ctx, tx, false, (*[]*IndexRecord)(&slice), nil); err != nil {
 		t.Fatal(err)
 	}
-	if local.R.Set == nil {
+	if local.R.Archive == nil {
 		t.Error("struct should have been eager loaded")
 	}
 
-	local.R.Set = nil
-	if err = local.L.LoadSet(ctx, tx, true, &local, nil); err != nil {
+	local.R.Archive = nil
+	if err = local.L.LoadArchive(ctx, tx, true, &local, nil); err != nil {
 		t.Fatal(err)
 	}
-	if local.R.Set == nil {
+	if local.R.Archive == nil {
 		t.Error("struct should have been eager loaded")
 	}
 }
 
-func testFileToOneSetOpSetUsingSet(t *testing.T) {
+func testIndexRecordToOneSetOpArchiveUsingArchive(t *testing.T) {
 	var err error
 
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
 
-	var a File
-	var b, c Set
+	var a IndexRecord
+	var b, c Archive
 
 	seed := randomize.NewSeed()
-	if err = randomize.Struct(seed, &a, fileDBTypes, false, strmangle.SetComplement(filePrimaryKeyColumns, fileColumnsWithoutDefault)...); err != nil {
+	if err = randomize.Struct(seed, &a, indexRecordDBTypes, false, strmangle.SetComplement(indexRecordPrimaryKeyColumns, indexRecordColumnsWithoutDefault)...); err != nil {
 		t.Fatal(err)
 	}
-	if err = randomize.Struct(seed, &b, setDBTypes, false, strmangle.SetComplement(setPrimaryKeyColumns, setColumnsWithoutDefault)...); err != nil {
+	if err = randomize.Struct(seed, &b, archiveDBTypes, false, strmangle.SetComplement(archivePrimaryKeyColumns, archiveColumnsWithoutDefault)...); err != nil {
 		t.Fatal(err)
 	}
-	if err = randomize.Struct(seed, &c, setDBTypes, false, strmangle.SetComplement(setPrimaryKeyColumns, setColumnsWithoutDefault)...); err != nil {
+	if err = randomize.Struct(seed, &c, archiveDBTypes, false, strmangle.SetComplement(archivePrimaryKeyColumns, archiveColumnsWithoutDefault)...); err != nil {
 		t.Fatal(err)
 	}
 
@@ -573,24 +573,24 @@ func testFileToOneSetOpSetUsingSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i, x := range []*Set{&b, &c} {
-		err = a.SetSet(ctx, tx, i != 0, x)
+	for i, x := range []*Archive{&b, &c} {
+		err = a.SetArchive(ctx, tx, i != 0, x)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if a.R.Set != x {
+		if a.R.Archive != x {
 			t.Error("relationship struct not set to correct value")
 		}
 
-		if x.R.Files[0] != &a {
+		if x.R.IndexRecords[0] != &a {
 			t.Error("failed to append to foreign relationship struct")
 		}
-		if a.SetID != x.ID {
-			t.Error("foreign key was wrong value", a.SetID)
+		if a.ArchiveID != x.ID {
+			t.Error("foreign key was wrong value", a.ArchiveID)
 		}
 
-		if exists, err := FileExists(ctx, tx, a.Path, a.Timestamp, a.SetID); err != nil {
+		if exists, err := IndexRecordExists(ctx, tx, a.Ref, a.ArchiveID); err != nil {
 			t.Fatal(err)
 		} else if !exists {
 			t.Error("want 'a' to exist")
@@ -599,14 +599,14 @@ func testFileToOneSetOpSetUsingSet(t *testing.T) {
 	}
 }
 
-func testFilesReload(t *testing.T) {
+func testIndexRecordsReload(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -621,14 +621,14 @@ func testFilesReload(t *testing.T) {
 	}
 }
 
-func testFilesReloadAll(t *testing.T) {
+func testIndexRecordsReloadAll(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -638,21 +638,21 @@ func testFilesReloadAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	slice := FileSlice{o}
+	slice := IndexRecordSlice{o}
 
 	if err = slice.ReloadAll(ctx, tx); err != nil {
 		t.Error(err)
 	}
 }
 
-func testFilesSelect(t *testing.T) {
+func testIndexRecordsSelect(t *testing.T) {
 	t.Parallel()
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -662,7 +662,7 @@ func testFilesSelect(t *testing.T) {
 		t.Error(err)
 	}
 
-	slice, err := Files().All(ctx, tx)
+	slice, err := IndexRecords().All(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -673,25 +673,25 @@ func testFilesSelect(t *testing.T) {
 }
 
 var (
-	fileDBTypes = map[string]string{`Path`: `text`, `Timestamp`: `timestamp with time zone`, `SetID`: `integer`, `Ref`: `bytea`, `Mode`: `integer`, `User`: `text`, `Group`: `text`, `Size`: `bigint`}
-	_           = bytes.MinRead
+	indexRecordDBTypes = map[string]string{`Ref`: `bytea`, `Offset`: `integer`, `Length`: `integer`, `Type`: `integer`, `ArchiveID`: `integer`}
+	_                  = bytes.MinRead
 )
 
-func testFilesUpdate(t *testing.T) {
+func testIndexRecordsUpdate(t *testing.T) {
 	t.Parallel()
 
-	if 0 == len(filePrimaryKeyColumns) {
+	if 0 == len(indexRecordPrimaryKeyColumns) {
 		t.Skip("Skipping table with no primary key columns")
 	}
-	if len(fileAllColumns) == len(filePrimaryKeyColumns) {
+	if len(indexRecordAllColumns) == len(indexRecordPrimaryKeyColumns) {
 		t.Skip("Skipping table with only primary key columns")
 	}
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -701,7 +701,7 @@ func testFilesUpdate(t *testing.T) {
 		t.Error(err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -710,8 +710,8 @@ func testFilesUpdate(t *testing.T) {
 		t.Error("want one record, got:", count)
 	}
 
-	if err = randomize.Struct(seed, o, fileDBTypes, true, filePrimaryKeyColumns...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordPrimaryKeyColumns...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	if rowsAff, err := o.Update(ctx, tx, boil.Infer()); err != nil {
@@ -721,18 +721,18 @@ func testFilesUpdate(t *testing.T) {
 	}
 }
 
-func testFilesSliceUpdateAll(t *testing.T) {
+func testIndexRecordsSliceUpdateAll(t *testing.T) {
 	t.Parallel()
 
-	if len(fileAllColumns) == len(filePrimaryKeyColumns) {
+	if len(indexRecordAllColumns) == len(indexRecordPrimaryKeyColumns) {
 		t.Skip("Skipping table with only primary key columns")
 	}
 
 	seed := randomize.NewSeed()
 	var err error
-	o := &File{}
-	if err = randomize.Struct(seed, o, fileDBTypes, true, fileColumnsWithDefault...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := &IndexRecord{}
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordColumnsWithDefault...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
@@ -742,7 +742,7 @@ func testFilesSliceUpdateAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -751,18 +751,18 @@ func testFilesSliceUpdateAll(t *testing.T) {
 		t.Error("want one record, got:", count)
 	}
 
-	if err = randomize.Struct(seed, o, fileDBTypes, true, filePrimaryKeyColumns...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err = randomize.Struct(seed, o, indexRecordDBTypes, true, indexRecordPrimaryKeyColumns...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	// Remove Primary keys and unique columns from what we plan to update
 	var fields []string
-	if strmangle.StringSliceMatch(fileAllColumns, filePrimaryKeyColumns) {
-		fields = fileAllColumns
+	if strmangle.StringSliceMatch(indexRecordAllColumns, indexRecordPrimaryKeyColumns) {
+		fields = indexRecordAllColumns
 	} else {
 		fields = strmangle.SetComplement(
-			fileAllColumns,
-			filePrimaryKeyColumns,
+			indexRecordAllColumns,
+			indexRecordPrimaryKeyColumns,
 		)
 	}
 
@@ -780,7 +780,7 @@ func testFilesSliceUpdateAll(t *testing.T) {
 		}
 	}
 
-	slice := FileSlice{o}
+	slice := IndexRecordSlice{o}
 	if rowsAff, err := slice.UpdateAll(ctx, tx, updateMap); err != nil {
 		t.Error(err)
 	} else if rowsAff != 1 {
@@ -788,29 +788,29 @@ func testFilesSliceUpdateAll(t *testing.T) {
 	}
 }
 
-func testFilesUpsert(t *testing.T) {
+func testIndexRecordsUpsert(t *testing.T) {
 	t.Parallel()
 
-	if len(fileAllColumns) == len(filePrimaryKeyColumns) {
+	if len(indexRecordAllColumns) == len(indexRecordPrimaryKeyColumns) {
 		t.Skip("Skipping table with only primary key columns")
 	}
 
 	seed := randomize.NewSeed()
 	var err error
 	// Attempt the INSERT side of an UPSERT
-	o := File{}
-	if err = randomize.Struct(seed, &o, fileDBTypes, true); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	o := IndexRecord{}
+	if err = randomize.Struct(seed, &o, indexRecordDBTypes, true); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	ctx := context.Background()
 	tx := MustTx(boil.BeginTx(ctx, nil))
 	defer func() { _ = tx.Rollback() }()
 	if err = o.Upsert(ctx, tx, false, nil, boil.Infer(), boil.Infer()); err != nil {
-		t.Errorf("Unable to upsert File: %s", err)
+		t.Errorf("Unable to upsert IndexRecord: %s", err)
 	}
 
-	count, err := Files().Count(ctx, tx)
+	count, err := IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -819,15 +819,15 @@ func testFilesUpsert(t *testing.T) {
 	}
 
 	// Attempt the UPDATE side of an UPSERT
-	if err = randomize.Struct(seed, &o, fileDBTypes, false, filePrimaryKeyColumns...); err != nil {
-		t.Errorf("Unable to randomize File struct: %s", err)
+	if err = randomize.Struct(seed, &o, indexRecordDBTypes, false, indexRecordPrimaryKeyColumns...); err != nil {
+		t.Errorf("Unable to randomize IndexRecord struct: %s", err)
 	}
 
 	if err = o.Upsert(ctx, tx, true, nil, boil.Infer(), boil.Infer()); err != nil {
-		t.Errorf("Unable to upsert File: %s", err)
+		t.Errorf("Unable to upsert IndexRecord: %s", err)
 	}
 
-	count, err = Files().Count(ctx, tx)
+	count, err = IndexRecords().Count(ctx, tx)
 	if err != nil {
 		t.Error(err)
 	}
