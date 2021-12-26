@@ -45,7 +45,7 @@ func RandomArchive(numRecords int) TestArchive {
 func getTestArchives(num int) []TestArchive {
 	archives := make([]TestArchive, num)
 	for i := range archives {
-		archives[i] = RandomArchive(1000)
+		archives[i] = RandomArchive(2345)
 	}
 
 	return archives

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/lib/pq"
 	"github.com/twcclan/goback/pkg/migrations"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
@@ -18,6 +17,7 @@ import (
 	"github.com/cockroachdb/cockroach-go/v2/crdb"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/cockroachdb"
+	"github.com/lib/pq"
 )
 
 //go:embed migrations/*.sql
@@ -28,6 +28,8 @@ func New(dsn string) *Index {
 		dsn: dsn,
 	}
 }
+
+var _ pack.ArchiveIndex = (*Index)(nil)
 
 type Index struct {
 	dsn string
@@ -157,6 +159,7 @@ func (c *Index) Index(archive string, index pack.IndexFile) error {
 	}
 
 	batchSize := 1000
+	batch := 0
 
 	for len(index) > 0 {
 		stop := len(index)
@@ -164,19 +167,20 @@ func (c *Index) Index(archive string, index pack.IndexFile) error {
 			stop = batchSize
 		}
 
-		err := crdb.ExecuteTx(context.Background(), c.db, nil, c.indexBatch(archive, index[:stop]))
+		err := crdb.ExecuteTx(context.Background(), c.db, nil, c.indexBatch(archive, batch*batchSize, index[:stop]))
 
 		if err != nil {
 			return err
 		}
 
 		index = index[stop:]
+		batch++
 	}
 
 	return nil
 }
 
-func (c *Index) indexBatch(archive string, index pack.IndexFile) func(tx *sql.Tx) error {
+func (c *Index) indexBatch(archive string, offset int, index pack.IndexFile) func(tx *sql.Tx) error {
 	return func(tx *sql.Tx) error {
 		values := []interface{}{archive}
 
@@ -184,23 +188,24 @@ func (c *Index) indexBatch(archive string, index pack.IndexFile) func(tx *sql.Tx
 		var placeholders []string
 
 		for i, record := range index {
-			values = append(values, index[i].Sum[:], record.Offset, record.Length, record.Type)
+			values = append(values, index[i].Sum[:], record.Offset, record.Length, record.Type, offset+i)
 
 			placeholders = append(
 				placeholders,
 				fmt.Sprintf(
-					"($%d, $%d, $%d, $%d, $1)",
+					"($%d, $%d, $%d, $%d, $%d, $1)",
 					placeholder,
 					placeholder+1,
 					placeholder+2,
 					placeholder+3,
+					placeholder+4,
 				),
 			)
 
-			placeholder += 4
+			placeholder += 5
 		}
 
-		_, err := tx.Exec(`INSERT INTO objects (ref, start, length, type, archive_id) VALUES `+strings.Join(placeholders, ",")+` ON CONFLICT DO NOTHING`, values...)
+		_, err := tx.Exec(`INSERT INTO objects (ref, start, length, type, rank, archive_id) VALUES `+strings.Join(placeholders, ",")+` ON CONFLICT DO NOTHING`, values...)
 
 		return err
 	}

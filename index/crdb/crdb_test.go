@@ -12,11 +12,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-type crdbContainer struct {
-	testcontainers.Container
-	URI string
-}
-
 func withCrdb(tb testing.TB, ctx context.Context) *Index {
 	tb.Helper()
 	tb.Logf("creating temporary crdb node")
@@ -55,6 +50,8 @@ func withCrdb(tb testing.TB, ctx context.Context) *Index {
 	}
 
 	uri := fmt.Sprintf("postgres://root@%s:%s/defaultdb?sslmode=disable", hostIP, mappedPort.Port())
+
+	tb.Logf("Connecting to %s", uri)
 
 	idx := New(uri)
 
