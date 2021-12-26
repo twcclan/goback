@@ -3,8 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"log"
-	"os"
 	"path"
 	"path/filepath"
 	"sync"
@@ -14,10 +14,6 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
-	rice "github.com/GeertJohan/go.rice"
-
-	// load sqlite3 driver
-
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -40,7 +36,6 @@ func NewIndex(base, backupSet string, store backup.ObjectStore) *Index {
 
 var _ backup.Index = (*Index)(nil)
 
-//go:generate go run github.com/GeertJohan/go.rice/rice embed-go
 type Index struct {
 	backup.ObjectStore
 	base      string
@@ -53,6 +48,9 @@ func (s *Index) ReachableCommits(ctx context.Context, f func(commit *proto.Commi
 	panic("implement me")
 }
 
+//go:embed sql/*.sql
+var files embed.FS
+
 func (s *Index) Open() error {
 	db, err := sql.Open(tracedSQLiteDriver, path.Join(s.base, "index.db")+"?busy_timeout=1000")
 	if err != nil {
@@ -64,27 +62,21 @@ func (s *Index) Open() error {
 		return err
 	}
 
-	box, err := rice.FindBox("sql")
+	sqlFiles, err := files.ReadDir("sql")
 	if err != nil {
 		return err
 	}
 
-	err = box.Walk("", func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	for _, file := range sqlFiles {
+		data, err := files.ReadFile(path.Join("sql", file.Name()))
+		if err != nil {
 			return err
 		}
 
-		if filepath.Ext(path) == ".sql" {
-			_, err := db.Exec(box.MustString(path))
-			if err != nil {
-				return err
-			}
+		_, err = db.Exec(string(data))
+		if err != nil {
+			return err
 		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	s.db = db
