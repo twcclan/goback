@@ -63,7 +63,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	}
 
 	for i, archive := range archives {
-		log.Printf("searching test archive %d/%d", i+1, 128)
+		log.Printf("searching test archive %d/%d", i+1, len(archives))
 		for _, i := range rand.Perm(len(archive.index)) {
 			location, err := idx.Locate(&proto.Ref{Sha1: archive.index[i].Sum[:]})
 			if err != nil {
@@ -82,7 +82,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	}
 
 	for i, archive := range archives {
-		log.Printf("deleting test archive %d/%d", i+1, 128)
+		log.Printf("deleting test archive %d/%d", i+1, len(archives))
 		err := idx.Delete(archive.name, archive.index)
 		if err != nil {
 			t.Errorf("Couldn't delete archive from index: %s", err)

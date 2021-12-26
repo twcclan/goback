@@ -75,7 +75,7 @@ func (c *Index) Open() error {
 		return err
 	}
 
-	c.locate, err = db.Prepare(`SELECT ref, start, length, type, archive_id FROM objects WHERE ref = $1 AND NOT (archive_id = ANY ($2))`)
+	c.locate, err = db.Prepare(`SELECT ref, start, length, type, archive_id FROM objects WHERE ref = $1 AND NOT (archive_id = ANY ($2)) LIMIT 1`)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,8 @@ func (c *Index) Open() error {
 func (c *Index) Locate(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
 	loc := pack.IndexLocation{}
 
-	rows, err := c.locate.Query(ref.Sha1, pq.StringArray(exclude))
+	// TODO: need to add a dummy value to the array here, otherwise the query does not work. need to figure out why!
+	rows, err := c.locate.Query(ref.Sha1, pq.StringArray(append(exclude, "dummy")))
 	if err != nil {
 		log.Printf("failed locating object %x: %v", ref.Sha1, err)
 		return loc, err
@@ -95,21 +96,24 @@ func (c *Index) Locate(ref *proto.Ref, exclude ...string) (pack.IndexLocation, e
 	defer rows.Close()
 	sum := make([]byte, 20)
 
-	for rows.Next() {
-		err = rows.Scan(
-			&sum,
-			&loc.Record.Offset,
-			&loc.Record.Length,
-			&loc.Record.Type,
-			&loc.Archive,
-		)
-		if err != nil {
-			log.Printf("failed scanning object %x: %v", ref.Sha1, err)
-			return loc, err
-		}
-
-		copy(loc.Record.Sum[:], sum)
+	// we get either one or zero results, no need to loop
+	if !rows.Next() {
+		return loc, pack.ErrRecordNotFound
 	}
+
+	err = rows.Scan(
+		&sum,
+		&loc.Record.Offset,
+		&loc.Record.Length,
+		&loc.Record.Type,
+		&loc.Archive,
+	)
+	if err != nil {
+		log.Printf("failed scanning object %x: %v", ref.Sha1, err)
+		return loc, err
+	}
+
+	copy(loc.Record.Sum[:], sum)
 
 	return loc, rows.Err()
 }
@@ -211,8 +215,12 @@ func (c *Index) indexBatch(archive string, offset int, index pack.IndexFile) fun
 	}
 }
 
-func (c *Index) Delete(archive string, index pack.IndexFile) error {
-	panic("implement me")
+func (c *Index) Delete(archive string, _ pack.IndexFile) error {
+	return crdb.ExecuteTx(context.Background(), c.db, nil, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`DELETE FROM archives WHERE name = $1`, archive)
+
+		return err
+	})
 }
 
 func (c *Index) Close() error {
