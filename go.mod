@@ -13,6 +13,7 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
+	github.com/glerchundi/sqlboiler-crdb/v4 v4.0.0-20201119171748-b99619cae813
 	github.com/golang-migrate/migrate/v4 v4.15.1
 	github.com/google/go-cmp v0.5.6
 	github.com/google/uuid v1.3.0
