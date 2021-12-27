@@ -55,7 +55,7 @@ type BadgerIndex struct {
 	archiveIds   map[string]uint64
 }
 
-func (b *BadgerIndex) Count() (uint64, uint64, error) {
+func (b *BadgerIndex) CountObjects() (uint64, uint64, error) {
 	var total uint64
 	var unique uint64
 
@@ -90,7 +90,7 @@ func (b *BadgerIndex) Close() error {
 
 var _ pack.ArchiveIndex = (*BadgerIndex)(nil)
 
-func (b *BadgerIndex) Locate(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
+func (b *BadgerIndex) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
 	var location pack.IndexLocation
 
 	txErr := b.db.View(func(txn *badger.Txn) error {
@@ -175,7 +175,7 @@ func (b *BadgerIndex) loadArchives() error {
 	})
 }
 
-func (b *BadgerIndex) Has(archive string) (bool, error) {
+func (b *BadgerIndex) HasArchive(archive string) (bool, error) {
 	b.archivesMtx.RLock()
 	defer b.archivesMtx.RUnlock()
 
@@ -198,7 +198,7 @@ func (b *BadgerIndex) idValue(id uint64) []byte {
 	return d
 }
 
-func (b *BadgerIndex) Index(archive string, index pack.IndexFile) error {
+func (b *BadgerIndex) IndexArchive(archive string, index pack.IndexFile) error {
 	// check if the archive already exists
 	b.archivesMtx.RLock()
 	if _, ok := b.archiveIds[archive]; ok {
@@ -266,7 +266,7 @@ func (b *BadgerIndex) Index(archive string, index pack.IndexFile) error {
 	})
 }
 
-func (b *BadgerIndex) Delete(archive string, index pack.IndexFile) error {
+func (b *BadgerIndex) DeleteArchive(archive string, index pack.IndexFile) error {
 	// check if the archive actually exists
 	b.archivesMtx.RLock()
 	archiveId, ok := b.archiveIds[archive]

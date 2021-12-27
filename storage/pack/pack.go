@@ -140,7 +140,7 @@ func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Obje
 }
 
 func (ps *PackStorage) Count() (uint64, uint64, error) {
-	return ps.index.Count()
+	return ps.index.CountObjects()
 }
 
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
@@ -181,7 +181,7 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	loc, err := ps.index.Locate(ref)
+	loc, err := ps.index.LocateObject(ref)
 	if err != nil {
 		return nil, nil
 	}
@@ -217,7 +217,7 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) 
 		exclusions = append(exclusions, archive.name)
 	}
 
-	loc, err := ps.index.Locate(ref, exclusions...)
+	loc, err := ps.index.LocateObject(ref, exclusions...)
 	if err != nil {
 		return nil, nil
 	}
@@ -331,7 +331,7 @@ func (ps *PackStorage) finalizeArchive(a *archive) error {
 		return nil
 	}
 
-	err = ps.index.Index(a.name, index)
+	err = ps.index.IndexArchive(a.name, index)
 	if err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (ps *PackStorage) openArchive(name string) error {
 		return err
 	}
 
-	hasArchive, err := ps.index.Has(name)
+	hasArchive, err := ps.index.HasArchive(name)
 	if err != nil {
 		return err
 	}
@@ -372,7 +372,7 @@ func (ps *PackStorage) openArchive(name string) error {
 		}
 
 		log.Printf("indexing archive %s", name)
-		err = ps.index.Index(name, idx)
+		err = ps.index.IndexArchive(name, idx)
 		if err != nil {
 			return err
 		}
@@ -747,7 +747,7 @@ func (ps *PackStorage) doCompaction() error {
 			continue
 		}
 
-		err = ps.index.Delete(archive.name, idx)
+		err = ps.index.DeleteArchive(archive.name, idx)
 		if err != nil {
 			log.Printf("Failed removing local index %s after compaction: %s", archive.name, err)
 		}
@@ -923,10 +923,10 @@ var (
 )
 
 type ArchiveIndex interface {
-	Locate(ref *proto.Ref, exclude ...string) (IndexLocation, error)
-	Has(archive string) (bool, error)
-	Index(archive string, index IndexFile) error
-	Delete(archive string, index IndexFile) error
+	LocateObject(ref *proto.Ref, exclude ...string) (IndexLocation, error)
+	HasArchive(archive string) (bool, error)
+	IndexArchive(archive string, index IndexFile) error
+	DeleteArchive(archive string, index IndexFile) error
 	Close() error
-	Count() (uint64, uint64, error)
+	CountObjects() (uint64, uint64, error)
 }

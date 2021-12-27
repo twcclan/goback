@@ -56,7 +56,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 
 	for i, archive := range archives {
 		log.Printf("indexing test archive %d/%d", i+1, len(archives))
-		err := idx.Index(archive.name, archive.index)
+		err := idx.IndexArchive(archive.name, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -65,7 +65,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	for i, archive := range archives {
 		log.Printf("searching test archive %d/%d", i+1, len(archives))
 		for _, i := range rand.Perm(len(archive.index)) {
-			location, err := idx.Locate(&proto.Ref{Sha1: archive.index[i].Sum[:]})
+			location, err := idx.LocateObject(&proto.Ref{Sha1: archive.index[i].Sum[:]})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -83,14 +83,14 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 
 	for i, archive := range archives {
 		log.Printf("deleting test archive %d/%d", i+1, len(archives))
-		err := idx.Delete(archive.name, archive.index)
+		err := idx.DeleteArchive(archive.name, archive.index)
 		if err != nil {
 			t.Errorf("Couldn't delete archive from index: %s", err)
 			continue
 		}
 
 		for _, record := range archive.index {
-			_, err := idx.Locate(&proto.Ref{Sha1: record.Sum[:]})
+			_, err := idx.LocateObject(&proto.Ref{Sha1: record.Sum[:]})
 			if err != pack.ErrRecordNotFound {
 				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
 			}
@@ -110,7 +110,7 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 	}
 
 	for _, archive := range archives {
-		err := idx.Index(archive.name, archive.index)
+		err := idx.IndexArchive(archive.name, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -120,13 +120,13 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 		for _, i := range rand.Perm(len(archive.index)) {
 			record := archive.index[i].Sum[:]
 
-			location1, err := idx.Locate(&proto.Ref{Sha1: record})
+			location1, err := idx.LocateObject(&proto.Ref{Sha1: record})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
 			}
 
-			location2, err := idx.Locate(&proto.Ref{Sha1: record}, archive.name)
+			location2, err := idx.LocateObject(&proto.Ref{Sha1: record}, archive.name)
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -143,7 +143,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
 	for _, archive := range archives {
-		err := idx.Index(archive.name, archive.index)
+		err := idx.IndexArchive(archive.name, archive.index)
 		if err != nil {
 			b.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -161,7 +161,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 		b.ResetTimer()
 
 		for _, ref := range lookups {
-			_, err := idx.Locate(ref)
+			_, err := idx.LocateObject(ref)
 			if err != nil {
 				b.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -175,7 +175,7 @@ func BenchmarkIndex(b *testing.B, idx pack.ArchiveIndex) {
 
 	b.ResetTimer()
 
-	err := idx.Index(archive.name, archive.index)
+	err := idx.IndexArchive(archive.name, archive.index)
 	if err != nil {
 		b.Fatal(err)
 	}
