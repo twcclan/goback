@@ -9,12 +9,19 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+func NewReader(storage ArchiveStorage, index ArchiveIndex) *Reader {
+	return &Reader{
+		storage: storage,
+		index:   index,
+	}
+}
+
 type Reader struct {
 	storage ArchiveStorage
 	index   ArchiveIndex
 }
 
-func (r *Reader) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
+func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 	_, err := r.index.LocateObject(ref)
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
