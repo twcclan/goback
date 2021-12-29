@@ -13,6 +13,7 @@ type ObjectReceiver func(*proto.Object) error
 var (
 	ErrNotImplemented = errors.New("the store doesn't implement this feature")
 	ErrAlreadyMarked  = errors.New("object already marked")
+	ErrNotFound       = errors.New("the requested object was not found")
 )
 
 //go:generate go run github.com/vektra/mockery/v2 --testonly --inpackage --name ObjectStore
