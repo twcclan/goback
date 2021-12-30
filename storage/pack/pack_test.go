@@ -2,17 +2,17 @@ package pack
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
 
-	"context"
-
-	"github.com/stretchr/testify/require"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
+
+	"github.com/stretchr/testify/require"
 )
 
 // number of objects to generate for the tests

@@ -462,6 +462,7 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 
 	defer file.Close()
 
+	// use streaming if the underlying storage supports it
 	if writerTo, ok := file.(io.WriterTo); ok {
 		pReader, pWriter := io.Pipe()
 		var grp errgroup.Group
