@@ -1,15 +1,13 @@
 package packtest
 
 import (
-	"log"
 	"math/rand"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/twcclan/goback/proto"
-
 	"github.com/twcclan/goback/storage/pack"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 )
 
@@ -54,16 +52,14 @@ func getTestArchives(num int) []TestArchive {
 func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
-	for i, archive := range archives {
-		log.Printf("indexing test archive %d/%d", i+1, len(archives))
+	for _, archive := range archives {
 		err := idx.IndexArchive(archive.name, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
 		}
 	}
 
-	for i, archive := range archives {
-		log.Printf("searching test archive %d/%d", i+1, len(archives))
+	for _, archive := range archives {
 		for _, i := range rand.Perm(len(archive.index)) {
 			location, err := idx.LocateObject(&proto.Ref{Sha1: archive.index[i].Sum[:]})
 			if err != nil {
@@ -81,8 +77,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 		}
 	}
 
-	for i, archive := range archives {
-		log.Printf("deleting test archive %d/%d", i+1, len(archives))
+	for _, archive := range archives {
 		err := idx.DeleteArchive(archive.name, archive.index)
 		if err != nil {
 			t.Errorf("Couldn't delete archive from index: %s", err)

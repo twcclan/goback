@@ -60,12 +60,17 @@ func makeTestData(t *testing.T, num int) []*proto.Object {
 }
 
 func TestPack(t *testing.T) {
-	base := getTempDir(t)
+	base := t.TempDir()
+
 	storage := NewLocalArchiveStorage(base)
+	index := NewInMemoryIndex()
+
 	options := []PackOption{
 		WithArchiveStorage(storage),
+		WithArchiveIndex(index),
 		WithMaxSize(1024 * 1024 * 5),
 	}
+
 	store, err := NewPackStorage(options...)
 	require.Nil(t, err)
 
@@ -207,7 +212,7 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 }
 
 func BenchmarkArchiveStorage(b *testing.B) {
-	storage, err := NewPackStorage(WithArchiveStorage(NewLocalArchiveStorage(getTempDir(b))))
+	storage, err := NewPackStorage(WithArchiveStorage(NewLocalArchiveStorage(b.TempDir())))
 	if err != nil {
 		b.Fatal(err)
 	}

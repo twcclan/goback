@@ -518,15 +518,19 @@ func (a *archive) storeIndex() (IndexFile, error) {
 }
 
 func (a *archive) Close() error {
-	a.CloseReader()
-	_, err := a.CloseWriter()
+	err := a.CloseReader()
+	if err != nil {
+		return err
+	}
+
+	_, err = a.CloseWriter()
 
 	// this should be a nop here
 	if err == errAlreadyClosed {
 		err = nil
 	}
 
-	return nil
+	return err
 }
 
 func (a *archive) CloseReader() error {

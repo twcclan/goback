@@ -107,6 +107,11 @@ func (w *Writer) putWritableArchive(ar *archive) {
 }
 
 func (w *Writer) finalizeArchive(a *archive) error {
+	err := a.CloseReader()
+	if err != nil {
+		return err
+	}
+
 	index, err := a.CloseWriter()
 	if err == errAlreadyClosed {
 		return nil
