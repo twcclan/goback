@@ -2,15 +2,15 @@ package pack
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 
-	"context"
+	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/twcclan/goback/proto"
 )
 
 func TestNewArchive(t *testing.T) {

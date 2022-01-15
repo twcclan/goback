@@ -28,6 +28,10 @@ const (
 	varIntMaxSize      = 10
 )
 
+var (
+	ErrFileNotFound = errors.New("requested file was not found")
+)
+
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	opts := &packOptions{
 		maxParallel: 1,
