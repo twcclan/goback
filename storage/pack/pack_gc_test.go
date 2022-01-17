@@ -116,7 +116,7 @@ func makeGCTestData(t *testing.T) ([]*proto.Object, []*proto.Object) {
 
 //func TestMark(t *testing.T) {
 //	base := getTempDir(t)
-//	storage := NewLocalArchiveStorage(base)
+//	storage := newLocal(base)
 //	options := []PackOption{
 //		WithArchiveStorage(storage),
 //		WithMaxParallel(4),

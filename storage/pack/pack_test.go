@@ -62,7 +62,7 @@ func makeTestData(t *testing.T, num int) []*proto.Object {
 func TestPack(t *testing.T) {
 	base := t.TempDir()
 
-	storage := NewLocalArchiveStorage(base)
+	storage := newLocal(base)
 	index := NewInMemoryIndex()
 
 	options := []PackOption{
@@ -212,7 +212,7 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 }
 
 func BenchmarkArchiveStorage(b *testing.B) {
-	storage, err := NewPackStorage(WithArchiveStorage(NewLocalArchiveStorage(b.TempDir())))
+	storage, err := NewPackStorage(WithArchiveStorage(newLocal(b.TempDir())))
 	if err != nil {
 		b.Fatal(err)
 	}

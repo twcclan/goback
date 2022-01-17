@@ -3,27 +3,31 @@ package storage
 import (
 	"context"
 	"fmt"
-	"gocloud.dev/blob"
-	"gocloud.dev/gcerrors"
 	"io"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/pkg/errors"
+	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 )
 
-const blobObjectKey = "pack/%s/%s" // pack/<extension>/<filename>
+const (
+	blobObjectPrefix   = "pack/"
+	blobObjectKey      = blobObjectPrefix + "%s/%s" // pack/<extension>/<filename>
+	blobChildrenPrefix = "children/%s/"             // children/<name>
+)
 
 var _ io.ReadSeeker = (*cloudFile)(nil)
 var _ io.WriterTo = (*cloudFile)(nil)
 var _ io.ReaderAt = (*cloudFile)(nil)
 var _ os.FileInfo = (*cloudFileInfo)(nil)
 var _ pack.ArchiveStorage = (*cloudStore)(nil)
+var _ pack.Parent = (*cloudStore)(nil)
 
 func (s *cloudFile) Read(buf []byte) (int, error) {
 	s.mtx.Lock()
@@ -160,6 +164,39 @@ type cloudStore struct {
 	openFiles    map[string]*cloudFile
 }
 
+func (c *cloudStore) Child(name string) (pack.ArchiveStorage, error) {
+	prefix := fmt.Sprintf(blobChildrenPrefix, name)
+
+	return &cloudStore{
+		bucket:    blob.PrefixedBucket(c.bucket, prefix),
+		openFiles: make(map[string]*cloudFile),
+	}, nil
+}
+
+func (c *cloudStore) Children() ([]string, error) {
+	iterator := c.bucket.List(&blob.ListOptions{
+		Prefix:    path.Clean(fmt.Sprintf(blobChildrenPrefix, "")),
+		Delimiter: "/",
+	})
+
+	var names []string
+
+	for {
+		item, err := iterator.Next(context.Background())
+		if err != nil {
+			if err == io.EOF {
+				return names, nil
+			}
+
+			return nil, err
+		}
+
+		if item.IsDir {
+			names = append(names, path.Base(item.Key))
+		}
+	}
+}
+
 func (c *cloudStore) openGCSFile(key string) (pack.File, error) {
 	gcsLogger.WithField("key", key).Debug("Opening file")
 	// if this is a file we are currently uploading
@@ -229,10 +266,47 @@ func (c *cloudStore) Delete(name string) error {
 	return c.bucket.Delete(context.Background(), c.key(name))
 }
 
-func (c *cloudStore) List() ([]string, error) {
+func (c *cloudStore) DeleteAll() error {
 	iter := c.bucket.List(&blob.ListOptions{
-		Prefix:    fmt.Sprintf(blobObjectKey, pack.ArchiveSuffix, ""),
-		Delimiter: "/",
+		Prefix: blobObjectPrefix,
+	})
+
+	for {
+		attrs, err := iter.Next(context.Background())
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+
+			return err
+		}
+
+		if attrs.IsDir {
+			continue
+		}
+
+		err = c.bucket.Delete(context.Background(), attrs.Key)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (c *cloudStore) List(extension string) ([]string, error) {
+	prefix := blobObjectPrefix
+	delimiter := ""
+	if extension != "" {
+		if len(extension) < 2 || extension[0] != '.' {
+			return nil, pack.ErrInvalidExtension
+		}
+
+		prefix = fmt.Sprintf(blobObjectKey, extension, "")
+		delimiter = "/"
+	}
+
+	iter := c.bucket.List(&blob.ListOptions{
+		Prefix:    prefix,
+		Delimiter: delimiter,
 	})
 
 	var names []string
@@ -247,8 +321,11 @@ func (c *cloudStore) List() ([]string, error) {
 			return names, err
 		}
 
-		name := strings.TrimSuffix(path.Base(attrs.Key), path.Ext(attrs.Key))
-		names = append(names, name)
+		if attrs.IsDir {
+			continue
+		}
+
+		names = append(names, path.Base(attrs.Key))
 	}
 
 	return names, nil

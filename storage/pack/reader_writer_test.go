@@ -13,7 +13,7 @@ import (
 func TestReaderWriter(t *testing.T) {
 	base := t.TempDir()
 
-	storage := NewLocalArchiveStorage(base)
+	storage := newLocal(base)
 	index := NewInMemoryIndex()
 	objects := makeTestData(t, numObjects)
 

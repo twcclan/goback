@@ -53,7 +53,7 @@ func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 }
 
 func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
-	archives, err := w.storage.List()
+	archives, err := w.storage.List(ArchiveSuffix)
 	if err != nil {
 		return err
 	}

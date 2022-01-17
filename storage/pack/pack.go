@@ -29,7 +29,8 @@ const (
 )
 
 var (
-	ErrFileNotFound = errors.New("requested file was not found")
+	ErrFileNotFound     = errors.New("requested file was not found")
+	ErrInvalidExtension = errors.New("the provided extension is invalid")
 )
 
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
@@ -861,7 +862,7 @@ func (ps *PackStorage) Close() error {
 }
 
 func (ps *PackStorage) Open() error {
-	matches, err := ps.storage.List()
+	matches, err := ps.storage.List(ArchiveSuffix)
 	if err != nil {
 		return errors.Wrap(err, "failed listing archive names")
 	}
@@ -899,7 +900,7 @@ func (ps *PackStorage) Open() error {
 	return group.Wait()
 }
 
-//go:generate mockery --name File --inpackage --testonly --outpkg pack
+//go:generate go run github.com/vektra/mockery/v2 --name File --inpackage --testonly --outpkg pack
 type File interface {
 	io.Reader
 	io.Writer
@@ -909,12 +910,18 @@ type File interface {
 	Stat() (fs.FileInfo, error)
 }
 
-//go:generate mockery --name ArchiveStorage --inpackage --testonly --outpkg pack
+//go:generate go run github.com/vektra/mockery/v2 --name ArchiveStorage --inpackage --testonly --outpkg pack
 type ArchiveStorage interface {
 	Create(name string) (File, error)
 	Open(name string) (File, error)
-	List() ([]string, error)
+	List(extension string) ([]string, error)
 	Delete(name string) error
+	DeleteAll() error
+}
+
+type Parent interface {
+	Child(name string) (ArchiveStorage, error)
+	Children() ([]string, error)
 }
 
 type IndexLocation struct {

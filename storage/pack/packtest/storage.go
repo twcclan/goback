@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -24,16 +25,34 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		{"create files", testCreateFiles},
 		{"read files", testReadFiles},
 		{"missing file", testMissingFiles},
-		{"list files", testListFiles},
+		{"list files", testListAllFiles},
+		{"list files filtered", testListSomeFiles},
+		{"test delete all", testDeleteAll},
 	}
 
 	// get test data
 	files := getStorageTestFiles(t)
+	runTests := func(t *testing.T, store pack.ArchiveStorage) {
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				test.fn(t, store, files)
+			})
+		}
+	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			test.fn(t, store, files)
+	// run standard tests
+	runTests(t, store)
+
+	if parent, ok := store.(pack.Parent); ok {
+		t.Run("nested", func(t *testing.T) {
+			nested, err := parent.Child("test1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			runTests(t, nested)
 		})
+
 	}
 }
 
@@ -106,8 +125,28 @@ func testReadFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
 	}
 }
 
-func testListFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
-	names, err := store.List()
+func testListAllFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
+	names, err := store.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var expected []string
+	for _, f := range files {
+		expected = append(expected, path.Base(f.key))
+	}
+
+	sort.Strings(names)
+	sort.Strings(expected)
+
+	if diff := cmp.Diff(expected, names); diff != "" {
+		t.Error("unexpected list of files")
+		t.Fatal(diff)
+	}
+}
+
+func testListSomeFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
+	names, err := store.List(".goback")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,16 +154,43 @@ func testListFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
 	var expected []string
 	for _, f := range files {
 		if path.Ext(f.key) == ".goback" {
-
-			name := strings.TrimSuffix(path.Base(f.key), path.Ext(f.key))
-			expected = append(expected, name)
+			expected = append(expected, path.Base(f.key))
 		}
 	}
+
+	sort.Strings(names)
+	sort.Strings(expected)
 
 	if diff := cmp.Diff(expected, names); diff != "" {
 		t.Error("unexpected list of files")
 		t.Fatal(diff)
 	}
+}
+
+func testDeleteAll(t *testing.T, store pack.ArchiveStorage, files []file) {
+	list, err := store.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(list) == 0 {
+		t.Fatal("store should contain files")
+	}
+
+	err = store.DeleteAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, err = store.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(list) != 0 {
+		t.Fatal("store should not contain files:", list)
+	}
+
 }
 
 type file struct {
