@@ -3,159 +3,171 @@ package pack
 import (
 	"context"
 	"errors"
-	"log"
 	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/proto"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
-func NewWriter(storage ArchiveStorage, index ArchiveIndex, maxParallel uint, maxSize uint64) *Writer {
-	return &Writer{
-		index:            index,
-		storage:          storage,
-		maxSize:          maxSize,
-		writable:         make(chan *archive, maxParallel),
-		archiveSemaphore: semaphore.NewWeighted(int64(maxParallel)),
+type ArchiveIndexer interface {
+	IndexArchive(name string, index IndexFile) error
+}
+
+func NewWriter(storage ArchiveStorage, index ArchiveIndexer, maxParallel uint, maxSize uint64) (*Writer, error) {
+	grp, ctx := errgroup.WithContext(context.Background())
+
+	writer := &Writer{
+		index:     index,
+		storage:   storage,
+		maxSize:   maxSize,
+		objects:   make(chan *archiveWrite),
+		ctx:       ctx,
+		grp:       grp,
+		timeout:   5 * time.Second,
+		semaphore: semaphore.NewWeighted(int64(maxParallel)),
 	}
+
+	err := writer.newArchiver()
+	if err != nil {
+		return nil, err
+	}
+
+	return writer, nil
 }
 
 var (
 	ErrWriterClosed = errors.New("the writer is already closed")
 )
 
+type archiveWrite struct {
+	obj *proto.Object
+	err chan error
+	ctx context.Context
+}
+
 type Writer struct {
-	index   ArchiveIndex
 	storage ArchiveStorage
+	index   ArchiveIndexer
 
-	// writable is a buffered channel containing archives that are open for writing
-	writable         chan *archive
-	archiveSemaphore *semaphore.Weighted
+	// objects is the channel that writers read from to write data
+	objects chan *archiveWrite
 
-	// maxSize is the maximum size in bytes that we allow archives to have
+	// grp is an errgroup to keep track of the archive writers
+	grp *errgroup.Group
+
+	// ctx will be cancelled as soon as the first archive writer errors
+	ctx context.Context
+
+	// timeout is the duration that a writer will wait for a write before finalizing an archive
+	timeout time.Duration
+
+	// semaphore is used to limit the number of archive writers
+	semaphore *semaphore.Weighted
+
+	// err stores the first error returned by any of the writers
+	err atomic.Value
+
+	// maxSize is the maximum size in bytes that we want archives to have
 	maxSize uint64
-
-	// archives counts the number of open archives
-	archives int32
-
-	// closing is 1 if we are in the process of closing the writer
-	closing int32
 }
 
-func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
-	if atomic.LoadInt32(&w.closing) == 1 {
-		return ErrWriterClosed
+func (w *Writer) newArchiver() error {
+	if err := w.err.Load(); err != nil {
+		return err.(error)
 	}
 
-	return w.withWritableArchive(func(a *archive) error {
-		return a.Put(ctx, object)
-	})
-}
-
-func (w *Writer) withWritableArchive(writer func(*archive) error) error {
-	for {
-		select {
-		// try to grab an idle open archive
-		case a := <-w.writable:
-			// a would be nil if the writer was closed while trying to find a writable archive
-			if a == nil {
-				return ErrWriterClosed
+	if w.semaphore.TryAcquire(1) {
+		w.grp.Go(func() error {
+			archive, err := newArchive(w.storage)
+			if err != nil {
+				w.err.Store(err)
+				return err
 			}
 
-			// lock this archive for writing
-			a.mtx.RLock()
-			readOnly := a.readOnly
-			size := a.size
-			a.mtx.RUnlock()
-
-			// skip archives that have already been finalized
-			if readOnly {
-				continue
+			err = w.archiver(w.ctx, archive)
+			if err != nil {
+				w.err.Store(err)
+				return err
 			}
 
-			// close this archive if it's full and retry
-			if size >= w.maxSize {
-				log.Printf("Closing archive because it's full: %s", a.name)
-				err := w.finalizeArchive(a)
-				if err != nil {
-					return err
-				}
-
-				continue
-			}
-
-			defer w.putWritableArchive(a)
-
-			return writer(a)
-		case <-time.After(10 * time.Millisecond):
-			if w.archiveSemaphore.TryAcquire(1) {
-				err := w.newArchive()
-				if err != nil {
-					// release if archive could not be created
-					w.archiveSemaphore.Release(1)
-					return err
-				}
-			}
-		}
+			return err
+		})
 	}
-}
-
-func (w *Writer) putWritableArchive(ar *archive) {
-	w.writable <- ar
-}
-
-func (w *Writer) finalizeArchive(a *archive) error {
-	err := a.CloseReader()
-	if err != nil {
-		return err
-	}
-
-	index, err := a.CloseWriter()
-	if err == errAlreadyClosed {
-		return nil
-	}
-
-	err = w.index.IndexArchive(a.name, index)
-	if err != nil {
-		return err
-	}
-
-	atomic.AddInt32(&w.archives, -1)
-	w.archiveSemaphore.Release(1)
-	return err
-}
-
-func (w *Writer) newArchive() error {
-	if atomic.LoadInt32(&w.closing) == 1 {
-		return ErrWriterClosed
-	}
-
-	a, err := newArchive(w.storage)
-	if err != nil {
-		return err
-	}
-
-	atomic.AddInt32(&w.archives, 1)
-	w.putWritableArchive(a)
 
 	return nil
 }
 
-func (w *Writer) Close() error {
-	atomic.StoreInt32(&w.closing, 1)
+func (w *Writer) archiver(ctx context.Context, a *archive) error {
+	defer w.semaphore.Release(1)
 
-	for atomic.LoadInt32(&w.archives) > 0 {
-		archive := <-w.writable
-
-		err := w.finalizeArchive(archive)
+	exit := func() error {
+		idx, err := a.CloseWriter()
 		if err != nil {
 			return err
 		}
+
+		return w.index.IndexArchive(a.name, idx)
 	}
 
-	close(w.writable)
+	for {
+		select {
+		case <-ctx.Done():
+			return exit()
 
-	return nil
+		case write := <-w.objects:
+			// if the channel was closed, we just exit here
+			if write == nil {
+				return exit()
+			}
+
+			// write the object and notify the caller
+			write.err <- a.Put(write.ctx, write.obj)
+
+			// do some house-keeping before we accept the next write
+			if a.size >= w.maxSize {
+				return exit()
+			}
+
+		case <-time.After(w.timeout):
+			// if we haven't received a write for some time => exit
+			return exit()
+		}
+	}
+}
+
+func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
+	write := &archiveWrite{
+		obj: object,
+		err: make(chan error, 1),
+		ctx: ctx,
+	}
+
+	// if we cannot send the write to an idle archive in 10ms, try to create a new archiver
+	for {
+		select {
+		case w.objects <- write:
+			return <-write.err
+		case <-time.After(10 * time.Millisecond):
+			// if there was an error in one of the archives we stop here
+			if err := w.err.Load(); err != nil {
+				return err.(error)
+			}
+
+			// otherwise, attempt to create a new archive
+			err := w.newArchiver()
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (w *Writer) Close() error {
+	// close the objects channel to make all the archive writer exit
+	close(w.objects)
+
+	return w.grp.Wait()
 }

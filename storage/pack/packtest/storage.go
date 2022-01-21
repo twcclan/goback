@@ -190,7 +190,6 @@ func testDeleteAll(t *testing.T, store pack.ArchiveStorage, files []file) {
 	if len(list) != 0 {
 		t.Fatal("store should not contain files:", list)
 	}
-
 }
 
 type file struct {

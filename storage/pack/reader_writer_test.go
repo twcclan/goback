@@ -18,7 +18,10 @@ func TestReaderWriter(t *testing.T) {
 	objects := makeTestData(t, numObjects)
 
 	t.Run("writer", func(t *testing.T) {
-		writer := NewWriter(storage, index, 5, 1024*1024*1024)
+		writer, err := NewWriter(storage, index, 5, 1024*1024*1024)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		wg := sync.WaitGroup{}
 
@@ -37,7 +40,7 @@ func TestReaderWriter(t *testing.T) {
 
 		wg.Wait()
 
-		err := writer.Close()
+		err = writer.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
