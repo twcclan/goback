@@ -52,8 +52,32 @@ func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 	return archive.getRaw(ctx, ref, &location.Record)
 }
 
-func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
-	archives, err := w.storage.List(ArchiveSuffix)
+func (r *Reader) WriteTo(ctx context.Context, w *Writer) error {
+	archives, err := r.storage.List(ArchiveSuffix)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range archives {
+		archive, err := openArchive(r.storage, name)
+		if err != nil {
+			return err
+		}
+
+		err = archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+			return w.putRaw(ctx, hdr, bytes)
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *Reader) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
+	archives, err := r.storage.List(ArchiveSuffix)
 	if err != nil {
 		return err
 	}
@@ -70,7 +94,7 @@ func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 	}
 
 	for _, name := range archives {
-		archive, err := openArchive(w.storage, name)
+		archive, err := openArchive(r.storage, name)
 		if err != nil {
 			return err
 		}

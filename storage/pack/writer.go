@@ -46,6 +46,10 @@ type archiveWrite struct {
 	obj *proto.Object
 	err chan error
 	ctx context.Context
+
+	raw   bool
+	hdr   *proto.ObjectHeader
+	bytes []byte
 }
 
 type Writer struct {
@@ -123,8 +127,12 @@ func (w *Writer) archiver(ctx context.Context, a *archive) error {
 				return exit()
 			}
 
-			// write the object and notify the caller
-			write.err <- a.Put(write.ctx, write.obj)
+			if write.raw {
+				write.err <- a.putRaw(write.ctx, write.hdr, write.bytes)
+			} else {
+				// write the object and notify the caller
+				write.err <- a.Put(write.ctx, write.obj)
+			}
 
 			// do some house-keeping before we accept the next write
 			if a.size >= w.maxSize {
@@ -138,13 +146,7 @@ func (w *Writer) archiver(ctx context.Context, a *archive) error {
 	}
 }
 
-func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
-	write := &archiveWrite{
-		obj: object,
-		err: make(chan error, 1),
-		ctx: ctx,
-	}
-
+func (w *Writer) write(write *archiveWrite) error {
 	// if we cannot send the write to an idle archive in 10ms, try to create a new archiver
 	for {
 		select {
@@ -163,6 +165,24 @@ func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
 			}
 		}
 	}
+}
+
+func (w *Writer) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
+	return w.write(&archiveWrite{
+		err:   make(chan error, 1),
+		ctx:   ctx,
+		raw:   true,
+		hdr:   hdr,
+		bytes: bytes,
+	})
+}
+
+func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
+	return w.write(&archiveWrite{
+		obj: object,
+		err: make(chan error, 1),
+		ctx: ctx,
+	})
 }
 
 func (w *Writer) Close() error {
