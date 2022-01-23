@@ -21,6 +21,15 @@ type Reader struct {
 	index   ArchiveIndex
 }
 
+func (r *Reader) open(name string) (*archiveReader, error) {
+	file, err := r.storage.Open(archiveFileName(name))
+	if err != nil {
+		return nil, err
+	}
+
+	return readArchive(file)
+}
+
 func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 	_, err := r.index.LocateObject(ref)
 	if err != nil {
@@ -43,7 +52,7 @@ func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 		return nil, err
 	}
 
-	archive, err := openArchive(r.storage, location.Archive)
+	archive, err := r.open(location.Archive)
 	if err != nil {
 		return nil, err
 	}
@@ -59,12 +68,12 @@ func (r *Reader) WriteTo(ctx context.Context, w *Writer) error {
 	}
 
 	for _, name := range archives {
-		archive, err := openArchive(r.storage, name)
+		file, err := r.storage.Open(archiveFileName(name))
 		if err != nil {
 			return err
 		}
 
-		err = archive.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+		err = streamArchive(file, loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			return w.putRaw(ctx, hdr, bytes)
 		})
 
@@ -94,13 +103,13 @@ func (r *Reader) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 	}
 
 	for _, name := range archives {
-		archive, err := openArchive(r.storage, name)
+		file, err := r.storage.Open(archiveFileName(name))
 		if err != nil {
 			return err
 		}
 
-		log.Printf("Reading archive: %s", archive.name)
-		err = archive.foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+		log.Printf("Reading archiveWriter: %s", name)
+		err = streamArchive(file, pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			if t == proto.ObjectType_INVALID || hdr.Type == t {
 				var obj *proto.Object
 				var err error

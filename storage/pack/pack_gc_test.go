@@ -122,7 +122,7 @@ func makeGCTestData(t *testing.T) ([]*proto.Object, []*proto.Object) {
 //		WithMaxParallel(4),
 //		WithMaxSize(1024 * 1024),
 //	}
-//	store, err := NewPackStorage(options...)
+//	store, err := New(options...)
 //	require.Nil(t, err)
 //
 //	reachable, unreachable := makeGCTestData(t)

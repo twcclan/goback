@@ -8,6 +8,7 @@ import (
 
 	"github.com/twcclan/goback/proto"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -20,14 +21,15 @@ func NewWriter(storage ArchiveStorage, index ArchiveIndexer, maxParallel uint, m
 	grp, ctx := errgroup.WithContext(context.Background())
 
 	writer := &Writer{
-		index:     index,
-		storage:   storage,
-		maxSize:   maxSize,
-		objects:   make(chan *archiveWrite),
-		ctx:       ctx,
-		grp:       grp,
-		timeout:   5 * time.Second,
-		semaphore: semaphore.NewWeighted(int64(maxParallel)),
+		index:       index,
+		storage:     storage,
+		maxSize:     maxSize,
+		objects:     make(chan *archiveWrite),
+		ctx:         ctx,
+		grp:         grp,
+		timeout:     5 * time.Second,
+		maxParallel: maxParallel,
+		semaphore:   semaphore.NewWeighted(int64(maxParallel)),
 	}
 
 	err := writer.newArchiver()
@@ -59,16 +61,16 @@ type Writer struct {
 	// objects is the channel that writers read from to write data
 	objects chan *archiveWrite
 
-	// grp is an errgroup to keep track of the archive writers
+	// grp is an errgroup to keep track of the archiveWriter writers
 	grp *errgroup.Group
 
-	// ctx will be cancelled as soon as the first archive writer errors
+	// ctx will be cancelled as soon as the first archiveWriter writer errors
 	ctx context.Context
 
-	// timeout is the duration that a writer will wait for a write before finalizing an archive
+	// timeout is the duration that a writer will wait for a write before finalizing an archiveWriter
 	timeout time.Duration
 
-	// semaphore is used to limit the number of archive writers
+	// semaphore is used to limit the number of archiveWriter writers
 	semaphore *semaphore.Weighted
 
 	// err stores the first error returned by any of the writers
@@ -76,6 +78,9 @@ type Writer struct {
 
 	// maxSize is the maximum size in bytes that we want archives to have
 	maxSize uint64
+
+	// maxParallel is the maximum number of archives that are opened in parallel
+	maxParallel uint
 }
 
 func (w *Writer) newArchiver() error {
@@ -85,7 +90,19 @@ func (w *Writer) newArchiver() error {
 
 	if w.semaphore.TryAcquire(1) {
 		w.grp.Go(func() error {
-			archive, err := newArchive(w.storage)
+			id, err := uuid.NewRandom()
+			if err != nil {
+				return err
+			}
+
+			name := id.String()
+
+			file, err := w.storage.Create(archiveFileName(name))
+			if err != nil {
+				return err
+			}
+
+			archive, err := writeArchive(file, name)
 			if err != nil {
 				w.err.Store(err)
 				return err
@@ -104,16 +121,16 @@ func (w *Writer) newArchiver() error {
 	return nil
 }
 
-func (w *Writer) archiver(ctx context.Context, a *archive) error {
+func (w *Writer) archiver(ctx context.Context, a *archiveWriter) error {
 	defer w.semaphore.Release(1)
 
 	exit := func() error {
-		idx, err := a.CloseWriter()
+		err := a.Close()
 		if err != nil {
 			return err
 		}
 
-		return w.index.IndexArchive(a.name, idx)
+		return w.index.IndexArchive(a.name, a.getIndex())
 	}
 
 	for {
@@ -147,7 +164,7 @@ func (w *Writer) archiver(ctx context.Context, a *archive) error {
 }
 
 func (w *Writer) write(write *archiveWrite) error {
-	// if we cannot send the write to an idle archive in 10ms, try to create a new archiver
+	// if we cannot send the write to an idle archiveWriter in 10ms, try to create a new archiver
 	for {
 		select {
 		case w.objects <- write:
@@ -158,7 +175,7 @@ func (w *Writer) write(write *archiveWrite) error {
 				return err.(error)
 			}
 
-			// otherwise, attempt to create a new archive
+			// otherwise, attempt to create a new archiveWriter
 			err := w.newArchiver()
 			if err != nil {
 				return err
@@ -186,7 +203,7 @@ func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
 }
 
 func (w *Writer) Close() error {
-	// close the objects channel to make all the archive writer exit
+	// close the objects channel to make all the archiveWriter writer exit
 	close(w.objects)
 
 	return w.grp.Wait()

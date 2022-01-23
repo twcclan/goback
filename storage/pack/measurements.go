@@ -9,10 +9,10 @@ import (
 var (
 	GetObjectSize       = stats.Int64("goback.io/storage/pack/get_object_size", "size of objects retrieved", stats.UnitBytes)
 	PutObjectSize       = stats.Int64("goback.io/storage/pack/put_object_size", "size of objects stored", stats.UnitBytes)
-	ArchiveReadLatency  = stats.Float64("goback.io/storage/pack/archive_read_latency", "duration of archive reads", stats.UnitMilliseconds)
-	ArchiveWriteLatency = stats.Float64("goback.io/storage/pack/archive_write_latency", "duration of archive writes", stats.UnitMilliseconds)
-	ArchiveReadSize     = stats.Int64("goback.io/storage/pack/archive_read_size", "size of archive reads", stats.UnitBytes)
-	ArchiveWriteSize    = stats.Int64("goback.io/storage/pack/archive_write_size", "size of archive writes", stats.UnitBytes)
+	ArchiveReadLatency  = stats.Float64("goback.io/storage/pack/archive_read_latency", "duration of archiveWriter reads", stats.UnitMilliseconds)
+	ArchiveWriteLatency = stats.Float64("goback.io/storage/pack/archive_write_latency", "duration of archiveWriter writes", stats.UnitMilliseconds)
+	ArchiveReadSize     = stats.Int64("goback.io/storage/pack/archive_read_size", "size of archiveWriter reads", stats.UnitBytes)
+	ArchiveWriteSize    = stats.Int64("goback.io/storage/pack/archive_write_size", "size of archiveWriter writes", stats.UnitBytes)
 	TotalLiveObjects    = stats.Int64("goback.io/storage/pack/total_live_objects", "number of live objects before", stats.UnitDimensionless)
 
 	GCMarkTime          = stats.Float64("goback.io/storage/pack/gc_mark_time", "duration of gc mark runs", stats.UnitMilliseconds)
@@ -58,7 +58,7 @@ var (
 
 	ArchiveReadLatencyView = &view.View{
 		Name:        "goback.io/storage/pack/archive_read_latency",
-		Description: "duration of archive reads",
+		Description: "duration of archiveWriter reads",
 		Measure:     ArchiveReadLatency,
 		Aggregation: DefaultMillisecondsDistribution,
 		TagKeys:     []tag.Key{KeyObjectType},
@@ -66,7 +66,7 @@ var (
 
 	ArchiveWriteLatencyView = &view.View{
 		Name:        "goback.io/storage/pack/archive_write_latency",
-		Description: "duration of archive writes",
+		Description: "duration of archiveWriter writes",
 		Measure:     ArchiveWriteLatency,
 		Aggregation: DefaultMillisecondsDistribution,
 		TagKeys:     []tag.Key{KeyObjectType},
@@ -74,7 +74,7 @@ var (
 
 	ArchiveReadSizeView = &view.View{
 		Name:        "goback.io/storage/pack/archive_read_size",
-		Description: "size of archive reads",
+		Description: "size of archiveWriter reads",
 		Measure:     ArchiveReadSize,
 		Aggregation: DefaultBytesDistribution,
 		TagKeys:     []tag.Key{KeyObjectType},
@@ -82,7 +82,7 @@ var (
 
 	ArchiveWriteSizeView = &view.View{
 		Name:        "goback.io/storage/pack/archive_write_size",
-		Description: "duration of archive writes",
+		Description: "duration of archiveWriter writes",
 		Measure:     ArchiveWriteSize,
 		Aggregation: DefaultBytesDistribution,
 		TagKeys:     []tag.Key{KeyObjectType},

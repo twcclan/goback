@@ -71,7 +71,7 @@ func TestPack(t *testing.T) {
 		WithMaxSize(1024 * 1024 * 5),
 	}
 
-	store, err := NewPackStorage(options...)
+	store, err := New(options...)
 	require.Nil(t, err)
 
 	objects := makeTestData(t, numObjects)
@@ -108,6 +108,8 @@ func TestPack(t *testing.T) {
 		}
 	}
 
+	require.Nil(t, store.Flush())
+
 	readObjects(t)
 
 	t.Log("Closing pack store")
@@ -117,10 +119,7 @@ func TestPack(t *testing.T) {
 	}
 
 	t.Log("Reopening pack store")
-	store, err = NewPackStorage(options...)
-	require.Nil(t, err)
-
-	err = store.Open()
+	store, err = New(options...)
 	require.Nil(t, err)
 
 	readObjects(t)
@@ -212,7 +211,7 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 }
 
 func BenchmarkArchiveStorage(b *testing.B) {
-	storage, err := NewPackStorage(WithArchiveStorage(newLocal(b.TempDir())))
+	storage, err := New(WithArchiveStorage(newLocal(b.TempDir())))
 	if err != nil {
 		b.Fatal(err)
 	}
