@@ -2,6 +2,8 @@ package pack
 
 import (
 	"context"
+	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"io/fs"
 	"sync"
@@ -20,8 +22,9 @@ const (
 )
 
 var (
-	ErrFileNotFound     = errors.New("requested file was not found")
-	ErrInvalidExtension = errors.New("the provided extension is invalid")
+	ErrFileNotFound            = errors.New("requested file was not found")
+	ErrInvalidExtension        = errors.New("the provided extension is invalid")
+	ErrTransactionsUnsupported = errors.New("backing storage does not support transactions")
 )
 
 func New(options ...PackOption) (*Store, error) {
@@ -42,13 +45,10 @@ func New(options ...PackOption) (*Store, error) {
 	}
 
 	if opts.index == nil {
-		return nil, errors.New("No archiveWriter index provided")
+		return nil, errors.New("No archiveWriter locator provided")
 	}
 
-	writer, err := NewWriter(opts.storage, opts.index, opts.maxParallel, opts.maxSize)
-	if err != nil {
-		return nil, err
-	}
+	writer := NewWriter(opts.storage, opts.index, opts.maxParallel, opts.maxSize)
 
 	return &Store{
 		Reader: NewReader(opts.storage, opts.index),
@@ -69,17 +69,15 @@ type Store struct {
 }
 
 var _ backup.ObjectStore = (*Store)(nil)
+var _ backup.Transactioner = (*Store)(nil)
 
 func (s *Store) Flush() error {
 	s.writerMtx.Lock()
 	defer s.writerMtx.Unlock()
 
-	writer, err := NewWriter(s.Writer.storage, s.Writer.index, s.Writer.maxParallel, s.Writer.maxSize)
-	if err != nil {
-		return err
-	}
+	writer := NewWriter(s.Writer.storage, s.Writer.index, s.Writer.maxParallel, s.Writer.maxSize)
 
-	err = s.Writer.Close()
+	err := s.Writer.Close()
 	if err != nil {
 		return err
 	}
@@ -93,6 +91,73 @@ func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	defer s.writerMtx.RUnlock()
 
 	return s.Writer.Put(ctx, object)
+}
+
+func (s *Store) Begin(ctx context.Context) (backup.Transaction, error) {
+	if p, ok := s.Writer.storage.(Parent); ok {
+		txId, err := uuid.NewRandom()
+		if err != nil {
+			return nil, fmt.Errorf("couldn't create transaction id: %w", err)
+		}
+
+		nested, err := p.Child(txId.String())
+		if err != nil {
+			return nil, err
+		}
+
+		txWriter := NewWriter(nested, &nopIndexer{}, s.Writer.maxParallel, s.Writer.maxSize)
+
+		return &packTx{Writer: txWriter, store: s}, nil
+	}
+
+	return nil, ErrTransactionsUnsupported
+}
+
+type nopIndexer struct{}
+
+func (n *nopIndexer) IndexArchive(name string, index IndexFile) error { return nil }
+
+type nopLocator struct{}
+
+func (n *nopLocator) LocateObject(ref *proto.Ref, exclude ...string) (IndexLocation, error) {
+	return IndexLocation{}, nil
+}
+
+var _ backup.Transaction = (*packTx)(nil)
+
+type packTx struct {
+	*Writer
+
+	store *Store
+}
+
+func (p *packTx) Commit(ctx context.Context) error {
+	// close the tx writer first
+	err := p.Writer.Close()
+	if err != nil {
+		return err
+	}
+
+	// create a new writer for the main storage
+	writer := NewWriter(p.store.Writer.storage, p.index, 1, p.maxSize)
+	defer writer.Close()
+
+	reader := NewReader(p.Writer.storage, &nopLocator{})
+	err = reader.WriteTo(ctx, writer)
+	if err != nil {
+		return err
+	}
+
+	return writer.Close()
+}
+
+func (p *packTx) Rollback() error {
+	err := p.Writer.Close()
+	if err != nil {
+		return err
+	}
+
+	return p.storage.DeleteAll()
 }
 
 //

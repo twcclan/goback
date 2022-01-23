@@ -17,27 +17,23 @@ type ArchiveIndexer interface {
 	IndexArchive(name string, index IndexFile) error
 }
 
-func NewWriter(storage ArchiveStorage, index ArchiveIndexer, maxParallel uint, maxSize uint64) (*Writer, error) {
+func NewWriter(storage ArchiveStorage, index ArchiveIndexer, maxParallel uint, maxSize uint64) *Writer {
 	grp, ctx := errgroup.WithContext(context.Background())
 
 	writer := &Writer{
-		index:       index,
-		storage:     storage,
-		maxSize:     maxSize,
-		objects:     make(chan *archiveWrite),
-		ctx:         ctx,
-		grp:         grp,
-		timeout:     5 * time.Second,
-		maxParallel: maxParallel,
-		semaphore:   semaphore.NewWeighted(int64(maxParallel)),
+		index:        index,
+		storage:      storage,
+		maxSize:      maxSize,
+		objects:      make(chan *archiveWrite),
+		ctx:          ctx,
+		grp:          grp,
+		idleTimeout:  5 * time.Second,
+		totalTimeout: 5 * time.Minute,
+		maxParallel:  maxParallel,
+		semaphore:    semaphore.NewWeighted(int64(maxParallel)),
 	}
 
-	err := writer.newArchiver()
-	if err != nil {
-		return nil, err
-	}
-
-	return writer, nil
+	return writer
 }
 
 var (
@@ -67,8 +63,11 @@ type Writer struct {
 	// ctx will be cancelled as soon as the first archiveWriter writer errors
 	ctx context.Context
 
-	// timeout is the duration that a writer will wait for a write before finalizing an archiveWriter
-	timeout time.Duration
+	// idleTimeout is the duration that a writer will wait for a write before finalizing an archiveWriter
+	idleTimeout time.Duration
+
+	// the archives will be closed, if they are still active after totalTimeout
+	totalTimeout time.Duration
 
 	// semaphore is used to limit the number of archiveWriter writers
 	semaphore *semaphore.Weighted
@@ -133,6 +132,8 @@ func (w *Writer) archiver(ctx context.Context, a *archiveWriter) error {
 		return w.index.IndexArchive(a.name, a.getIndex())
 	}
 
+	timeout := time.After(w.totalTimeout)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -156,7 +157,10 @@ func (w *Writer) archiver(ctx context.Context, a *archiveWriter) error {
 				return exit()
 			}
 
-		case <-time.After(w.timeout):
+		case <-timeout:
+			// if we reached the total timeout => exit
+			return exit()
+		case <-time.After(w.idleTimeout):
 			// if we haven't received a write for some time => exit
 			return exit()
 		}
@@ -203,8 +207,13 @@ func (w *Writer) Put(ctx context.Context, object *proto.Object) error {
 }
 
 func (w *Writer) Close() error {
+	if w.objects == nil {
+		return nil
+	}
+
 	// close the objects channel to make all the archiveWriter writer exit
 	close(w.objects)
+	w.objects = nil
 
 	return w.grp.Wait()
 }

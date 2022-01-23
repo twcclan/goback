@@ -9,16 +9,20 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
-func NewReader(storage ArchiveStorage, index ArchiveIndex) *Reader {
+type objectLocator interface {
+	LocateObject(ref *proto.Ref, exclude ...string) (IndexLocation, error)
+}
+
+func NewReader(storage ArchiveStorage, locator objectLocator) *Reader {
 	return &Reader{
 		storage: storage,
-		index:   index,
+		locator: locator,
 	}
 }
 
 type Reader struct {
 	storage ArchiveStorage
-	index   ArchiveIndex
+	locator objectLocator
 }
 
 func (r *Reader) open(name string) (*archiveReader, error) {
@@ -31,7 +35,7 @@ func (r *Reader) open(name string) (*archiveReader, error) {
 }
 
 func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
-	_, err := r.index.LocateObject(ref)
+	_, err := r.locator.LocateObject(ref)
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
 			return false, nil
@@ -44,7 +48,7 @@ func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 }
 
 func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	location, err := r.index.LocateObject(ref)
+	location, err := r.locator.LocateObject(ref)
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
 			return nil, backup.ErrNotFound
