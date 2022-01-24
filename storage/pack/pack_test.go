@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -77,20 +78,22 @@ func TestPack(t *testing.T) {
 	objects := makeTestData(t, numObjects)
 	t.Logf("Storing %d objects", numObjects)
 
-	readObjects := func(t *testing.T) {
+	objectsTx := makeTestData(t, numObjects)
+
+	readObjects := func(t *testing.T, objects []*proto.Object) {
 		t.Helper()
 
 		t.Logf("Reading back %d objects", numObjects)
-		for _, i := range rand.Perm(numObjects) {
+		for _, i := range rand.Perm(len(objects)) {
 			original := objects[i]
 
 			object, err := store.Get(context.Background(), original.Ref())
 			if err != nil {
-				t.Fatal(err)
-			}
-
-			if object == nil {
-				t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
+				if errors.Is(err, backup.ErrNotFound) {
+					t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
+				} else {
+					t.Fatal(err)
+				}
 			}
 
 			if !bytes.Equal(object.Bytes(), original.Bytes()) {
@@ -110,7 +113,20 @@ func TestPack(t *testing.T) {
 
 	require.Nil(t, store.Flush())
 
-	readObjects(t)
+	readObjects(t, objects)
+
+	tx, err := store.Begin(context.Background())
+	require.Nil(t, err)
+
+	for _, object := range objectsTx {
+		err := tx.Put(context.Background(), object)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	require.Nil(t, tx.Commit(context.Background()))
+	readObjects(t, objectsTx)
 
 	t.Log("Closing pack store")
 	err = store.Close()
@@ -122,7 +138,8 @@ func TestPack(t *testing.T) {
 	store, err = New(options...)
 	require.Nil(t, err)
 
-	readObjects(t)
+	readObjects(t, objects)
+	readObjects(t, objectsTx)
 
 	t.Log("Closing pack store")
 	err = store.Close()

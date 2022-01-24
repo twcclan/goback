@@ -2,7 +2,6 @@ package pack
 
 import (
 	"errors"
-
 	"github.com/twcclan/goback/proto"
 )
 

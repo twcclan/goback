@@ -347,5 +347,5 @@ func NewGCSObjectStore(bucket, indexDir, cacheDir string) (backup.ObjectStore, e
 		options = append(options, pack.WithMetadataCache(cache))
 	}
 
-	return pack.NewPackStorage(options...)
+	return pack.New(options...)
 }

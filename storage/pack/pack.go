@@ -135,17 +135,17 @@ func (p *packTx) Commit(ctx context.Context) error {
 	// close the tx writer first
 	err := p.Writer.Close()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to close transaction writer: %w", err)
 	}
 
 	// create a new writer for the main storage
-	writer := NewWriter(p.store.Writer.storage, p.index, 1, p.maxSize)
+	writer := NewWriter(p.store.Writer.storage, p.store.Writer.index, 1, p.Writer.maxSize)
 	defer writer.Close()
 
 	reader := NewReader(p.Writer.storage, &nopLocator{})
 	err = reader.WriteTo(ctx, writer)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to copy objects: %w", err)
 	}
 
 	return writer.Close()

@@ -369,7 +369,7 @@ func NewCloudStore(bucket *blob.Bucket) *cloudStore {
 	return storage
 }
 
-//func NewCloudObjectStore(bucket, indexDir, cacheDir string) (*pack.PackStorage, error) {
+//func NewCloudObjectStore(bucket, indexDir, cacheDir string) (*pack.Store, error) {
 //	credentials, err := google.FindDefaultCredentials(context.Background(), storage.ScopeReadWrite)
 //	if err != nil {
 //		return nil, err
@@ -421,5 +421,5 @@ func NewCloudStore(bucket *blob.Bucket) *cloudStore {
 //		options = append(options, pack.WithMetadataCache(cache))
 //	}
 //
-//	return pack.NewPackStorage(options...)
+//	return pack.New(options...)
 //}

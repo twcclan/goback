@@ -72,7 +72,7 @@ func (r *Reader) WriteTo(ctx context.Context, w *Writer) error {
 	}
 
 	for _, name := range archives {
-		file, err := r.storage.Open(archiveFileName(name))
+		file, err := r.storage.Open(name)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func (r *Reader) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 	}
 
 	for _, name := range archives {
-		file, err := r.storage.Open(archiveFileName(name))
+		file, err := r.storage.Open(name)
 		if err != nil {
 			return err
 		}
