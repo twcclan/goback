@@ -9,7 +9,7 @@ require (
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/bmatcuk/doublestar v1.3.4
-	github.com/cockroachdb/cockroach-go/v2 v2.2.5
+	github.com/cockroachdb/cockroach-go/v2 v2.2.6
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
