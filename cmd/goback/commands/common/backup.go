@@ -10,7 +10,6 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	badgerIdx "github.com/twcclan/goback/index/badger"
-	"github.com/twcclan/goback/index/crdb"
 	"github.com/twcclan/goback/index/postgres"
 	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"
@@ -18,6 +17,7 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
+	"gocloud.dev/blob/fileblob"
 )
 
 type Opener interface {
@@ -70,8 +70,13 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
+	file, err := fileblob.OpenBucket(archiveLocation, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	return pack.New(
-		pack.WithArchiveStorage(storage.NewLocalArchiveStorage(archiveLocation)),
+		pack.WithArchiveStorage(storage.NewCloudStore(file)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
@@ -135,7 +140,7 @@ func initServerless(u *url.URL, context *cli.Context) (backup.ObjectStore, error
 		return nil, errors.New("database url must be provided")
 	}
 
-	index := crdb.New(database)
+	//index := crdb.New(database)
 
 	return storage.NewGCSObjectStore(u.Host, u.Query().Get("index"), u.Query().Get("cache"))
 }
