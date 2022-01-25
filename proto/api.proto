@@ -13,7 +13,7 @@ import "google/protobuf/timestamp.proto";
 
 //Put(*proto.Object) error
 message PutRequest {
-    Object object = 1;
+  Object object = 1;
 }
 
 message PutResponse {
@@ -23,16 +23,16 @@ message PutResponse {
 
 //Get(*proto.Ref) (*proto.Object, error)
 message GetRequest {
-    Ref ref = 1;
+  Ref ref = 1;
 }
 
 message GetResponse {
-    Object object = 1;
+  Object object = 1;
 }
 
 //Delete(*proto.Ref) error
 message DeleteRequest {
-    Ref ref = 1;
+  Ref ref = 1;
 }
 
 message DeleteResponse {
@@ -41,54 +41,72 @@ message DeleteResponse {
 
 //Walk(bool, proto.ObjectType, ObjectReceiver) error
 message WalkRequest {
-    bool load = 1;
-    ObjectType objectType = 2;
+  bool load = 1;
+  ObjectType objectType = 2;
 }
 
 message WalkResponse {
-    ObjectHeader header = 1;
-    Object object = 2;
+  ObjectHeader header = 1;
+  Object object = 2;
 }
 
 //Has(context.Context, *proto.Ref) (bool, error)
 message HasRequest {
-    Ref ref = 1;
+  Ref ref = 1;
 }
 
 message HasResponse {
-    bool has = 1;
+  bool has = 1;
 }
 
 message FileInfoRequest {
-    string backup_set = 1;
-    string path = 2;
-    google.protobuf.Timestamp notAfter = 3;
-    int32 count = 4;
+  string backup_set = 1;
+  string path = 2;
+  google.protobuf.Timestamp notAfter = 3;
+  int32 count = 4;
 
 }
 
 message FileInfoResponse {
-    repeated TreeNode files = 1;
+  repeated TreeNode files = 1;
 }
 
 message CommitInfoRequest {
-    string backup_set = 1;
-    google.protobuf.Timestamp notAfter = 2;
-    int32 count = 3;
+  string backup_set = 1;
+  google.protobuf.Timestamp notAfter = 2;
+  int32 count = 3;
 }
 
 message CommitInfoResponse {
-    repeated Commit commits = 1;
+  repeated Commit commits = 1;
+}
+
+message TransactionRequest {
+  enum ActionType {
+    INVALID = 0;
+    COMMIT = 1;
+    ROLLBACK = 2;
+  }
+
+  oneof request {
+    Object object = 1;
+    ActionType action = 2;
+  }
+}
+
+message TransactionResponse {
+  bool success = 1;
+  Transaction transaction = 2;
 }
 
 service Store {
-    rpc Put (PutRequest) returns (PutResponse) {}
-    rpc Get (GetRequest) returns (GetResponse) {}
-    rpc Delete (DeleteRequest) returns (DeleteResponse) {}
-    rpc Walk(WalkRequest) returns (stream WalkResponse) {}
-    rpc Has(HasRequest) returns (HasResponse) {}
-    rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
-    rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
+  rpc Put (PutRequest) returns (PutResponse) {}
+  rpc Get (GetRequest) returns (GetResponse) {}
+  rpc Delete (DeleteRequest) returns (DeleteResponse) {}
+  rpc Walk(WalkRequest) returns (stream WalkResponse) {}
+  rpc Has(HasRequest) returns (HasResponse) {}
+  rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
+  rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
 
-    //rpc BeginTransaction(stream TransactionRequest) returns (stream TransactionResponse) {}
+  rpc Transaction(stream TransactionRequest) returns (TransactionResponse) {}
 }

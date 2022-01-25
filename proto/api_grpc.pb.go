@@ -25,6 +25,7 @@ type StoreClient interface {
 	Has(ctx context.Context, in *HasRequest, opts ...grpc.CallOption) (*HasResponse, error)
 	FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error)
 	CommitInfo(ctx context.Context, in *CommitInfoRequest, opts ...grpc.CallOption) (*CommitInfoResponse, error)
+	Transaction(ctx context.Context, opts ...grpc.CallOption) (Store_TransactionClient, error)
 }
 
 type storeClient struct {
@@ -121,6 +122,40 @@ func (c *storeClient) CommitInfo(ctx context.Context, in *CommitInfoRequest, opt
 	return out, nil
 }
 
+func (c *storeClient) Transaction(ctx context.Context, opts ...grpc.CallOption) (Store_TransactionClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[1], "/proto.Store/Transaction", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &storeTransactionClient{stream}
+	return x, nil
+}
+
+type Store_TransactionClient interface {
+	Send(*TransactionRequest) error
+	CloseAndRecv() (*TransactionResponse, error)
+	grpc.ClientStream
+}
+
+type storeTransactionClient struct {
+	grpc.ClientStream
+}
+
+func (x *storeTransactionClient) Send(m *TransactionRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *storeTransactionClient) CloseAndRecv() (*TransactionResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(TransactionResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // StoreServer is the server API for Store service.
 // All implementations must embed UnimplementedStoreServer
 // for forward compatibility
@@ -132,6 +167,7 @@ type StoreServer interface {
 	Has(context.Context, *HasRequest) (*HasResponse, error)
 	FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error)
 	CommitInfo(context.Context, *CommitInfoRequest) (*CommitInfoResponse, error)
+	Transaction(Store_TransactionServer) error
 	mustEmbedUnimplementedStoreServer()
 }
 
@@ -159,6 +195,9 @@ func (UnimplementedStoreServer) FileInfo(context.Context, *FileInfoRequest) (*Fi
 }
 func (UnimplementedStoreServer) CommitInfo(context.Context, *CommitInfoRequest) (*CommitInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CommitInfo not implemented")
+}
+func (UnimplementedStoreServer) Transaction(Store_TransactionServer) error {
+	return status.Errorf(codes.Unimplemented, "method Transaction not implemented")
 }
 func (UnimplementedStoreServer) mustEmbedUnimplementedStoreServer() {}
 
@@ -302,6 +341,32 @@ func _Store_CommitInfo_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Store_Transaction_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(StoreServer).Transaction(&storeTransactionServer{stream})
+}
+
+type Store_TransactionServer interface {
+	SendAndClose(*TransactionResponse) error
+	Recv() (*TransactionRequest, error)
+	grpc.ServerStream
+}
+
+type storeTransactionServer struct {
+	grpc.ServerStream
+}
+
+func (x *storeTransactionServer) SendAndClose(m *TransactionResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *storeTransactionServer) Recv() (*TransactionRequest, error) {
+	m := new(TransactionRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // Store_ServiceDesc is the grpc.ServiceDesc for Store service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -339,6 +404,11 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Walk",
 			Handler:       _Store_Walk_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "Transaction",
+			Handler:       _Store_Transaction_Handler,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "api.proto",

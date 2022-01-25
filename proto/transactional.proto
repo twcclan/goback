@@ -4,10 +4,14 @@ package proto;
 
 option go_package = "github.com/twcclan/goback/proto";
 
-message TransactionRequest {
+message Transaction {
+  enum Status {
+    INVALID = 0;
+    OPEN = 1;
+    COMMITTED = 2;
+    DISCARDED = 3;
+  }
 
-}
-
-message TransactionResponse {
-
+  string transaction_id = 1;
+  Status status = 2;
 }

@@ -10,12 +10,13 @@ import (
 	"github.com/twcclan/goback/pkg/migrations"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/cockroachdb"
+	"github.com/golang-migrate/migrate/v4/database/cockroachdb"
 	"github.com/lib/pq"
 )
 
-// ensure import remains
+// ensure imports remain
 var _ pq.Driver
+var _ cockroachdb.Config
 
 //go:embed migrations/*.sql
 var files embed.FS

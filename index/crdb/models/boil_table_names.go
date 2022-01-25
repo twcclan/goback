@@ -4,13 +4,17 @@
 package models
 
 var TableNames = struct {
-	Commits string
-	Files   string
-	Sets    string
-	Trees   string
+	Commits             string
+	Files               string
+	Sets                string
+	TransactionArchives string
+	Transactions        string
+	Trees               string
 }{
-	Commits: "commits",
-	Files:   "files",
-	Sets:    "sets",
-	Trees:   "trees",
+	Commits:             "commits",
+	Files:               "files",
+	Sets:                "sets",
+	TransactionArchives: "transaction_archives",
+	Transactions:        "transactions",
+	Trees:               "trees",
 }

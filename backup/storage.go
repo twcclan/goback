@@ -25,6 +25,16 @@ type ObjectStore interface {
 	Has(context.Context, *proto.Ref) (bool, error)
 }
 
+type Transactioner interface {
+	Begin(ctx context.Context) (Transaction, error)
+}
+
+type Transaction interface {
+	Put(ctx context.Context, object *proto.Object) error
+	Commit(ctx context.Context) error
+	Rollback() error
+}
+
 type Counter interface {
 	Count() (total uint64, unique uint64, err error)
 }

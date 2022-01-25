@@ -50,3 +50,14 @@ func makeCacheKey(cols boil.Columns, nzDefaults []string) string {
 	strmangle.PutBuffer(buf)
 	return str
 }
+
+// Enum values for TransactionStatus
+const (
+	TransactionStatusInvalid = "invalid"
+
+	TransactionStatusOpen = "open"
+
+	TransactionStatusCommitted = "committed"
+
+	TransactionStatusDiscarded = "discarded"
+)

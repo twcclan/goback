@@ -20,14 +20,69 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type TransactionRequest struct {
+type Transaction_Status int32
+
+const (
+	Transaction_INVALID   Transaction_Status = 0
+	Transaction_OPEN      Transaction_Status = 1
+	Transaction_COMMITTED Transaction_Status = 2
+	Transaction_DISCARDED Transaction_Status = 3
+)
+
+// Enum value maps for Transaction_Status.
+var (
+	Transaction_Status_name = map[int32]string{
+		0: "INVALID",
+		1: "OPEN",
+		2: "COMMITTED",
+		3: "DISCARDED",
+	}
+	Transaction_Status_value = map[string]int32{
+		"INVALID":   0,
+		"OPEN":      1,
+		"COMMITTED": 2,
+		"DISCARDED": 3,
+	}
+)
+
+func (x Transaction_Status) Enum() *Transaction_Status {
+	p := new(Transaction_Status)
+	*p = x
+	return p
+}
+
+func (x Transaction_Status) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Transaction_Status) Descriptor() protoreflect.EnumDescriptor {
+	return file_transactional_proto_enumTypes[0].Descriptor()
+}
+
+func (Transaction_Status) Type() protoreflect.EnumType {
+	return &file_transactional_proto_enumTypes[0]
+}
+
+func (x Transaction_Status) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Transaction_Status.Descriptor instead.
+func (Transaction_Status) EnumDescriptor() ([]byte, []int) {
+	return file_transactional_proto_rawDescGZIP(), []int{0, 0}
+}
+
+type Transaction struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
+
+	TransactionId string             `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	Status        Transaction_Status `protobuf:"varint,2,opt,name=status,proto3,enum=proto.Transaction_Status" json:"status,omitempty"`
 }
 
-func (x *TransactionRequest) Reset() {
-	*x = TransactionRequest{}
+func (x *Transaction) Reset() {
+	*x = Transaction{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_transactional_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -35,13 +90,13 @@ func (x *TransactionRequest) Reset() {
 	}
 }
 
-func (x *TransactionRequest) String() string {
+func (x *Transaction) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TransactionRequest) ProtoMessage() {}
+func (*Transaction) ProtoMessage() {}
 
-func (x *TransactionRequest) ProtoReflect() protoreflect.Message {
+func (x *Transaction) ProtoReflect() protoreflect.Message {
 	mi := &file_transactional_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -53,60 +108,43 @@ func (x *TransactionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TransactionRequest.ProtoReflect.Descriptor instead.
-func (*TransactionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use Transaction.ProtoReflect.Descriptor instead.
+func (*Transaction) Descriptor() ([]byte, []int) {
 	return file_transactional_proto_rawDescGZIP(), []int{0}
 }
 
-type TransactionResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-}
-
-func (x *TransactionResponse) Reset() {
-	*x = TransactionResponse{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_transactional_proto_msgTypes[1]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
+func (x *Transaction) GetTransactionId() string {
+	if x != nil {
+		return x.TransactionId
 	}
+	return ""
 }
 
-func (x *TransactionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TransactionResponse) ProtoMessage() {}
-
-func (x *TransactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transactional_proto_msgTypes[1]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+func (x *Transaction) GetStatus() Transaction_Status {
+	if x != nil {
+		return x.Status
 	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TransactionResponse.ProtoReflect.Descriptor instead.
-func (*TransactionResponse) Descriptor() ([]byte, []int) {
-	return file_transactional_proto_rawDescGZIP(), []int{1}
+	return Transaction_INVALID
 }
 
 var File_transactional_proto protoreflect.FileDescriptor
 
 var file_transactional_proto_rawDesc = []byte{
 	0x0a, 0x13, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x61, 0x6c, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x14, 0x0a, 0x12,
-	0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65,
-	0x73, 0x74, 0x22, 0x15, 0x0a, 0x13, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
-	0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x21, 0x5a, 0x1f, 0x67, 0x69, 0x74,
-	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x77, 0x63, 0x63, 0x6c, 0x61, 0x6e, 0x2f,
-	0x67, 0x6f, 0x62, 0x61, 0x63, 0x6b, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xa6, 0x01, 0x0a,
+	0x0b, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x25, 0x0a, 0x0e,
+	0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x49, 0x64, 0x12, 0x31, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0e, 0x32, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x72, 0x61, 0x6e,
+	0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06,
+	0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x22, 0x3d, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
+	0x12, 0x0b, 0x0a, 0x07, 0x49, 0x4e, 0x56, 0x41, 0x4c, 0x49, 0x44, 0x10, 0x00, 0x12, 0x08, 0x0a,
+	0x04, 0x4f, 0x50, 0x45, 0x4e, 0x10, 0x01, 0x12, 0x0d, 0x0a, 0x09, 0x43, 0x4f, 0x4d, 0x4d, 0x49,
+	0x54, 0x54, 0x45, 0x44, 0x10, 0x02, 0x12, 0x0d, 0x0a, 0x09, 0x44, 0x49, 0x53, 0x43, 0x41, 0x52,
+	0x44, 0x45, 0x44, 0x10, 0x03, 0x42, 0x21, 0x5a, 0x1f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x77, 0x63, 0x63, 0x6c, 0x61, 0x6e, 0x2f, 0x67, 0x6f, 0x62, 0x61,
+	0x63, 0x6b, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -121,17 +159,19 @@ func file_transactional_proto_rawDescGZIP() []byte {
 	return file_transactional_proto_rawDescData
 }
 
-var file_transactional_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_transactional_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_transactional_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_transactional_proto_goTypes = []interface{}{
-	(*TransactionRequest)(nil),  // 0: proto.TransactionRequest
-	(*TransactionResponse)(nil), // 1: proto.TransactionResponse
+	(Transaction_Status)(0), // 0: proto.Transaction.Status
+	(*Transaction)(nil),     // 1: proto.Transaction
 }
 var file_transactional_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: proto.Transaction.status:type_name -> proto.Transaction.Status
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_transactional_proto_init() }
@@ -141,19 +181,7 @@ func file_transactional_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_transactional_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TransactionRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_transactional_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TransactionResponse); i {
+			switch v := v.(*Transaction); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -170,13 +198,14 @@ func file_transactional_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_transactional_proto_rawDesc,
-			NumEnums:      0,
-			NumMessages:   2,
+			NumEnums:      1,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_transactional_proto_goTypes,
 		DependencyIndexes: file_transactional_proto_depIdxs,
+		EnumInfos:         file_transactional_proto_enumTypes,
 		MessageInfos:      file_transactional_proto_msgTypes,
 	}.Build()
 	File_transactional_proto = out.File

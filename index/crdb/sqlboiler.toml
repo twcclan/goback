@@ -1,7 +1,7 @@
 [crdb]
 dbname = "defaultdb"
 host = "localhost"
-port = 50301
+port = 56742
 user = "root"
 sslmode = "disable"
 blacklist = ["schema_migrations", "schema_lock", "objects", "archives"]

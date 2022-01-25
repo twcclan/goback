@@ -239,10 +239,25 @@ func (s *gcsStore) Delete(name string) error {
 	return s.gcs.Bucket(s.bucket).Object(s.key(name)).Delete(context.Background())
 }
 
-func (s *gcsStore) List() ([]string, error) {
+func (s *gcsStore) DeleteAll() error {
+	return errors.New("not implemented")
+}
+
+func (s *gcsStore) List(extension string) ([]string, error) {
+	prefix := blobObjectPrefix
+	delimiter := ""
+	if extension != "" {
+		if len(extension) < 2 || extension[0] != '.' {
+			return nil, pack.ErrInvalidExtension
+		}
+
+		prefix = fmt.Sprintf(blobObjectKey, extension, "")
+		delimiter = "/"
+	}
+
 	iter := s.gcs.Bucket(s.bucket).Objects(context.Background(), &storage.Query{
-		Prefix:    fmt.Sprintf(gcsObjectKey, pack.ArchiveSuffix, ""),
-		Delimiter: "/",
+		Prefix:    prefix,
+		Delimiter: delimiter,
 	})
 
 	var names []string

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"log"
 	"net"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	badgerIdx "github.com/twcclan/goback/index/badger"
+	"github.com/twcclan/goback/index/crdb"
 	"github.com/twcclan/goback/index/postgres"
 	"github.com/twcclan/goback/index/sqlite"
 	"github.com/twcclan/goback/storage"
@@ -68,8 +70,8 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return pack.NewPackStorage(
-		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(archiveLocation)),
+	return pack.New(
+		pack.WithArchiveStorage(storage.NewLocalArchiveStorage(archiveLocation)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
@@ -121,18 +123,36 @@ func initPostgres(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.
 	return postgres.NewIndex(u.String(), store), nil
 }
 
-var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":       initPack,
-	"file":   initSimple,
-	"gcs":    initGCS,
-	"goback": initRemote,
-	"badger": initBadger,
+func initCrdb(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
+	log.Printf("Opening postgres index")
+	return postgres.NewIndex(u.String(), store), nil
 }
 
+func initServerless(u *url.URL, context *cli.Context) (backup.ObjectStore, error) {
+	database := u.Query().Get("database")
+
+	if database == "" {
+		return nil, errors.New("database url must be provided")
+	}
+
+	index := crdb.New(database)
+
+	return storage.NewGCSObjectStore(u.Host, u.Query().Get("index"), u.Query().Get("cache"))
+}
+
+var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
+	"":           initPack,
+	"file":       initSimple,
+	"gcs":        initGCS,
+	"goback":     initRemote,
+	"badger":     initBadger,
+	"serverless": initServerless,
+}
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){
 	"":         initSqlite,
 	"sqlite":   initSqlite,
 	"postgres": initPostgres,
+	"crdb":     initCrdb,
 }
 
 func GetObjectStore(c *cli.Context) backup.ObjectStore {
