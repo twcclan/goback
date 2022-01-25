@@ -16,6 +16,7 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
+	"gocloud.dev/blob/fileblob"
 )
 
 type Opener interface {
@@ -68,8 +69,13 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
+	file, err := fileblob.OpenBucket(archiveLocation, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	return pack.NewPackStorage(
-		pack.WithArchiveStorage(pack.NewLocalArchiveStorage(archiveLocation)),
+		pack.WithArchiveStorage(storage.NewCloudStore(file)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),

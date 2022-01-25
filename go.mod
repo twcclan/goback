@@ -11,6 +11,7 @@ require (
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/cockroachdb/cockroach-go/v2 v2.2.5
 	github.com/dgraph-io/badger/v2 v2.2007.4
+	github.com/dustin/go-humanize v1.0.0
 	github.com/friendsofgo/errors v0.9.2
 	github.com/glerchundi/sqlboiler-crdb/v4 v4.0.0-20201119171748-b99619cae813
 	github.com/golang-migrate/migrate/v4 v4.15.1
@@ -30,10 +31,10 @@ require (
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/urfave/cli v1.22.5
 	github.com/vektra/mockery/v2 v2.9.4
-	github.com/volatiletech/null/v8 v8.1.2
 	github.com/volatiletech/randomize v0.0.1
 	github.com/volatiletech/sqlboiler/v4 v4.8.3
 	github.com/volatiletech/strmangle v0.0.1
+	github.com/willf/bitset v1.1.11
 	go.opencensus.io v0.23.0
 	go4.org v0.0.0-20180809161055-417644f6feb5
 	gocloud.dev v0.24.0
@@ -70,7 +71,6 @@ require (
 	github.com/docker/docker v20.10.11+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/envoyproxy/go-control-plane v0.10.1 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.6.2 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
