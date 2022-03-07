@@ -38,8 +38,8 @@ type Index struct {
 	locate        *sql.Stmt
 }
 
-func (c *Index) Open() error {
-	db, err := sql.Open("postgres", c.dsn)
+func (i *Index) Open() error {
+	db, err := sql.Open("postgres", i.dsn)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (c *Index) Open() error {
 		return err
 	}
 
-	u, err := url.Parse(c.dsn)
+	u, err := url.Parse(i.dsn)
 	if err != nil {
 		return err
 	}
@@ -60,20 +60,20 @@ func (c *Index) Open() error {
 		return err
 	}
 
-	c.db = db
-	c.db.SetMaxOpenConns(100)
+	i.db = db
+	i.db.SetMaxOpenConns(100)
 
-	c.insertArchive, err = db.Prepare("INSERT INTO archives (name) VALUES ($1) ON CONFLICT DO NOTHING")
+	i.insertArchive, err = db.Prepare("INSERT INTO archives (name) VALUES ($1) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
 	}
 
-	c.insertObject, err = db.Prepare(`INSERT INTO objects (ref, start, length, type, archive_id) VALUES($1, $2, $3, $4, $5)`)
+	i.insertObject, err = db.Prepare(`INSERT INTO objects (ref, start, length, type, archive_id) VALUES($1, $2, $3, $4, $5)`)
 	if err != nil {
 		return err
 	}
 
-	c.locate, err = db.Prepare(`SELECT ref, start, length, type, archive_id FROM objects WHERE ref = $1 AND NOT (archive_id = ANY ($2)) LIMIT 1`)
+	i.locate, err = db.Prepare(`SELECT ref, start, length, type, archive_id FROM objects WHERE ref = $1 AND NOT (archive_id = ANY ($2)) LIMIT 1`)
 	if err != nil {
 		return err
 	}

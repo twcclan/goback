@@ -16,11 +16,11 @@ import (
 
 var _ pack.ArchiveIndex = (*Index)(nil)
 
-func (c *Index) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
+func (i *Index) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
 	loc := pack.IndexLocation{}
 
 	// TODO: need to add a dummy value to the array here, otherwise the query does not work. need to figure out why!
-	rows, err := c.locate.Query(ref.Sha1, pq.StringArray(append(exclude, "dummy")))
+	rows, err := i.locate.Query(ref.Sha1, pq.StringArray(append(exclude, "dummy")))
 	if err != nil {
 		log.Printf("failed locating object %x: %v", ref.Sha1, err)
 		return loc, err
@@ -51,8 +51,8 @@ func (c *Index) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocat
 	return loc, rows.Err()
 }
 
-func (c *Index) HasArchive(archive string) (bool, error) {
-	row := c.db.QueryRow(`SELECT * FROM archives WHERE name = $1`, archive)
+func (i *Index) HasArchive(archive string) (bool, error) {
+	row := i.db.QueryRow(`SELECT * FROM archives WHERE name = $1`, archive)
 
 	var dummy string
 	err := row.Scan(&dummy)
@@ -66,10 +66,10 @@ func (c *Index) HasArchive(archive string) (bool, error) {
 	return true, nil
 }
 
-func (c *Index) IndexArchive(archive string, index pack.IndexFile) error {
+func (i *Index) IndexArchive(archive string, index pack.IndexFile) error {
 	var archiveExists bool
-	err := crdb.ExecuteTx(context.Background(), c.db, nil, func(tx *sql.Tx) error {
-		result, err := tx.Stmt(c.insertArchive).Exec(archive)
+	err := crdb.ExecuteTx(context.Background(), i.db, nil, func(tx *sql.Tx) error {
+		result, err := tx.Stmt(i.insertArchive).Exec(archive)
 		if err != nil {
 			return err
 		}
@@ -104,7 +104,7 @@ func (c *Index) IndexArchive(archive string, index pack.IndexFile) error {
 			stop = batchSize
 		}
 
-		err := crdb.ExecuteTx(context.Background(), c.db, nil, c.indexBatch(archive, batch*batchSize, index[:stop]))
+		err := crdb.ExecuteTx(context.Background(), i.db, nil, i.indexBatch(archive, batch*batchSize, index[:stop]))
 
 		if err != nil {
 			return err
@@ -117,7 +117,7 @@ func (c *Index) IndexArchive(archive string, index pack.IndexFile) error {
 	return nil
 }
 
-func (c *Index) indexBatch(archive string, offset int, index pack.IndexFile) func(tx *sql.Tx) error {
+func (i *Index) indexBatch(archive string, offset int, index pack.IndexFile) func(tx *sql.Tx) error {
 	return func(tx *sql.Tx) error {
 		values := []interface{}{archive}
 
@@ -148,21 +148,21 @@ func (c *Index) indexBatch(archive string, offset int, index pack.IndexFile) fun
 	}
 }
 
-func (c *Index) DeleteArchive(archive string, _ pack.IndexFile) error {
-	return crdb.ExecuteTx(context.Background(), c.db, nil, func(tx *sql.Tx) error {
+func (i *Index) DeleteArchive(archive string, _ pack.IndexFile) error {
+	return crdb.ExecuteTx(context.Background(), i.db, nil, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`DELETE FROM archives WHERE name = $1`, archive)
 
 		return err
 	})
 }
 
-func (c *Index) Close() error {
-	db := c.db
-	c.db = nil
+func (i *Index) Close() error {
+	db := i.db
+	i.db = nil
 
 	return db.Close()
 }
 
-func (c *Index) CountObjects() (uint64, uint64, error) {
+func (i *Index) CountObjects() (uint64, uint64, error) {
 	panic("implement me")
 }

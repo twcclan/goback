@@ -20,10 +20,10 @@ import (
 
 var _ backup.Index = (*Index)(nil)
 
-func (c *Index) FileInfo(ctx context.Context, backupSet string, path string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
+func (i *Index) FileInfo(ctx context.Context, backupSet string, path string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
 	set, err := models.Sets(
 		models.SetWhere.Name.EQ(backupSet),
-	).One(ctx, c.db)
+	).One(ctx, i.db)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// if the backup set does not exist, we also won't have the file
@@ -39,7 +39,7 @@ func (c *Index) FileInfo(ctx context.Context, backupSet string, path string, not
 		models.FileWhere.SetID.EQ(set.ID),
 		qm.OrderBy(fmt.Sprintf(`"%s" DESC`, models.FileColumns.Timestamp)),
 		qm.Limit(count),
-	).All(ctx, c.db)
+	).All(ctx, i.db)
 
 	if err != nil {
 		return nil, err
@@ -64,10 +64,10 @@ func (c *Index) FileInfo(ctx context.Context, backupSet string, path string, not
 	return infoList, nil
 }
 
-func (c *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+func (i *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*proto.Commit, error) {
 	set, err := models.Sets(
 		models.SetWhere.Name.EQ(backupSet),
-	).One(ctx, c.db)
+	).One(ctx, i.db)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// if the backup set does not exist, we also won't have the commit
@@ -82,7 +82,7 @@ func (c *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 		models.CommitWhere.SetID.EQ(set.ID),
 		qm.Limit(count),
 		qm.OrderBy(fmt.Sprintf("%s DESC", models.CommitColumns.Timestamp)),
-	).All(ctx, c.db)
+	).All(ctx, i.db)
 
 	if err != nil {
 		return nil, err
@@ -101,16 +101,16 @@ func (c *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 	return infoList, nil
 }
 
-func (c *Index) Put(ctx context.Context, object *proto.Object) error {
+func (i *Index) Put(ctx context.Context, object *proto.Object) error {
 	// store the object first
-	err := c.ObjectStore.Put(ctx, object)
+	err := i.ObjectStore.Put(ctx, object)
 	if err != nil {
 		return err
 	}
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-		return c.indexCommit(ctx, object.GetCommit(), object.Ref())
+		return i.indexCommit(ctx, object.GetCommit(), object.Ref())
 	}
 
 	return nil
@@ -233,7 +233,7 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	return tx.Commit()
 }
 
-func (c *Index) Delete(ctx context.Context, ref *proto.Ref) error {
+func (i *Index) Delete(ctx context.Context, ref *proto.Ref) error {
 	return errors.New("direct deletion of objects not supported")
 }
 
