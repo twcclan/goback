@@ -4,14 +4,19 @@ package proto;
 
 option go_package = "github.com/twcclan/goback/proto";
 
+import "google/protobuf/timestamp.proto";
+
 message Transaction {
   enum Status {
     INVALID = 0;
     OPEN = 1;
-    COMMITTED = 2;
-    DISCARDED = 3;
+    PREPARED = 2;
+    COMMITTED = 3;
+    ABORTED = 4;
   }
 
   string transaction_id = 1;
   Status status = 2;
+  google.protobuf.Timestamp createdAt = 3;
+  google.protobuf.Timestamp updatedAt = 4;
 }
