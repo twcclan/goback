@@ -334,7 +334,7 @@ func NewGCSObjectStore(bucket, indexDir, cacheDir string) (backup.ObjectStore, e
 
 	idx, err := badgerIdx.NewBadgerIndex(indexDir)
 
-	options := []pack.PackOption{
+	options := []pack.Option{
 		pack.WithArchiveStorage(storage),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(64),

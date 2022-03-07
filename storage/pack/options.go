@@ -1,22 +1,60 @@
 package pack
 
 import (
+	"errors"
 	"time"
-
-	"github.com/twcclan/goback/backup"
 )
 
-type packOptions struct {
-	compaction      CompactionConfig
-	maxParallel     uint
-	maxSize         uint64
-	closeBeforeRead bool
-	storage         ArchiveStorage
-	index           ArchiveIndex
-	cache           backup.ObjectStore
+var defaultOptions = Options{
+	MaxParallel: 1,
+	MaxSize:     1024 * 1024 * 1024,
+	Compaction: CompactionConfig{
+		MinimumCandidates: 1000,
+	},
 }
 
-type PackOption func(p *packOptions)
+func GetOptions(options ...Option) *Options {
+	return CopyOptions(defaultOptions, options...)
+}
+
+func CopyOptions(original Options, with ...Option) *Options {
+	for _, opt := range with {
+		opt(&original)
+	}
+
+	return &original
+}
+
+func validateOptions(opts *Options) (*Options, error) {
+	if opts.Storage == nil {
+		return nil, errors.New("no archive storage provided")
+	}
+
+	if opts.Index == nil {
+		return nil, errors.New("no archive locator provided")
+	}
+
+	return opts, nil
+}
+
+type Options struct {
+	// Storage is the backing storage for the archive files
+	Storage ArchiveStorage
+
+	// Index is used to index and lookup archive contents
+	Index ArchiveIndex
+
+	// Compaction defines when and how compaction should take place
+	Compaction CompactionConfig
+
+	// MaxParallel is the maximum number of archives that will be written to in parallel
+	MaxParallel uint
+
+	// MaxSize is the maximum number of bytes that will be written to an archive file
+	MaxSize uint64
+}
+
+type Option func(p *Options)
 
 type CompactionConfig struct {
 	// AfterFlush controls whether background compaction is triggered
@@ -46,44 +84,32 @@ type CompactionConfig struct {
 	GarbageCollection bool
 }
 
-func WithCompaction(config CompactionConfig) PackOption {
-	return func(p *packOptions) {
-		p.compaction = config
+func WithCompaction(config CompactionConfig) Option {
+	return func(p *Options) {
+		p.Compaction = config
 	}
 }
 
-func WithMaxParallel(max uint) PackOption {
-	return func(p *packOptions) {
-		p.maxParallel = max
+func WithMaxParallel(max uint) Option {
+	return func(p *Options) {
+		p.MaxParallel = max
 	}
 }
 
-func WithMaxSize(max uint64) PackOption {
-	return func(p *packOptions) {
-		p.maxSize = max
+func WithMaxSize(max uint64) Option {
+	return func(p *Options) {
+		p.MaxSize = max
 	}
 }
 
-func WithArchiveStorage(storage ArchiveStorage) PackOption {
-	return func(p *packOptions) {
-		p.storage = storage
+func WithArchiveStorage(storage ArchiveStorage) Option {
+	return func(p *Options) {
+		p.Storage = storage
 	}
 }
 
-func WithCloseBeforeRead(do bool) PackOption {
-	return func(p *packOptions) {
-		p.closeBeforeRead = do
-	}
-}
-
-func WithMetadataCache(cache backup.ObjectStore) PackOption {
-	return func(p *packOptions) {
-		p.cache = cache
-	}
-}
-
-func WithArchiveIndex(index ArchiveIndex) PackOption {
-	return func(p *packOptions) {
-		p.index = index
+func WithArchiveIndex(index ArchiveIndex) Option {
+	return func(p *Options) {
+		p.Index = index
 	}
 }

@@ -66,7 +66,7 @@ func TestPack(t *testing.T) {
 	storage := newLocal(base)
 	index := NewInMemoryIndex()
 
-	options := []PackOption{
+	options := []Option{
 		WithArchiveStorage(storage),
 		WithArchiveIndex(index),
 		WithMaxSize(1024 * 1024 * 5),

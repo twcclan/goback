@@ -2,7 +2,6 @@ package pack
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"time"
 
@@ -35,10 +34,6 @@ func NewWriter(storage ArchiveStorage, index ArchiveIndexer, maxParallel uint, m
 
 	return writer
 }
-
-var (
-	ErrWriterClosed = errors.New("the writer is already closed")
-)
 
 type archiveWrite struct {
 	obj *proto.Object

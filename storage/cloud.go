@@ -393,7 +393,7 @@ func NewCloudStore(bucket *blob.Bucket) *cloudStore {
 //
 //	idx, err := badgerIdx.NewBadgerIndex(indexDir)
 //
-//	options := []pack.PackOption{
+//	options := []pack.Option{
 //		pack.WithArchiveStorage(storage),
 //		pack.WithArchiveIndex(idx),
 //		pack.WithMaxParallel(64),

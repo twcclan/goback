@@ -2,8 +2,6 @@ package pack
 
 import (
 	"context"
-	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"io/fs"
 	"sync"
@@ -27,31 +25,20 @@ var (
 	ErrTransactionsUnsupported = errors.New("backing storage does not support transactions")
 )
 
-func New(options ...PackOption) (*Store, error) {
-	opts := &packOptions{
-		maxParallel: 1,
-		maxSize:     1024 * 1024 * 1024,
-		compaction: CompactionConfig{
-			MinimumCandidates: 1000,
-		},
+func New(options ...Option) (*Store, error) {
+	return NewWithOptions(GetOptions(options...))
+}
+
+func NewWithOptions(opts *Options) (*Store, error) {
+	opts, err := validateOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, opt := range options {
-		opt(opts)
-	}
-
-	if opts.storage == nil {
-		return nil, errors.New("No archiveWriter storage provided")
-	}
-
-	if opts.index == nil {
-		return nil, errors.New("No archiveWriter locator provided")
-	}
-
-	writer := NewWriter(opts.storage, opts.index, opts.maxParallel, opts.maxSize)
+	writer := NewWriter(opts.Storage, opts.Index, opts.MaxParallel, opts.MaxSize)
 
 	return &Store{
-		Reader: NewReader(opts.storage, opts.index),
+		Reader: NewReader(opts.Storage, opts.Index),
 		Writer: writer,
 	}, nil
 }
@@ -69,7 +56,6 @@ type Store struct {
 }
 
 var _ backup.ObjectStore = (*Store)(nil)
-var _ backup.Transactioner = (*Store)(nil)
 
 func (s *Store) Flush() error {
 	s.writerMtx.Lock()
@@ -93,71 +79,42 @@ func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	return s.Writer.Put(ctx, object)
 }
 
-func (s *Store) Begin(ctx context.Context) (backup.Transaction, error) {
-	if p, ok := s.Writer.storage.(Parent); ok {
-		txId, err := uuid.NewRandom()
-		if err != nil {
-			return nil, fmt.Errorf("couldn't create transaction id: %w", err)
-		}
+func (s *Store) MergeFrom(ctx context.Context, writerTo WriterTo) error {
+	writer := NewWriter(s.Writer.storage, s.Writer.index, 1, s.Writer.maxSize)
 
-		nested, err := p.Child(txId.String())
-		if err != nil {
-			return nil, err
-		}
-
-		txWriter := NewWriter(nested, &nopIndexer{}, s.Writer.maxParallel, s.Writer.maxSize)
-
-		return &packTx{Writer: txWriter, store: s}, nil
-	}
-
-	return nil, ErrTransactionsUnsupported
-}
-
-type nopIndexer struct{}
-
-func (n *nopIndexer) IndexArchive(name string, index IndexFile) error { return nil }
-
-type nopLocator struct{}
-
-func (n *nopLocator) LocateObject(ref *proto.Ref, exclude ...string) (IndexLocation, error) {
-	return IndexLocation{}, nil
-}
-
-var _ backup.Transaction = (*packTx)(nil)
-
-type packTx struct {
-	*Writer
-
-	store *Store
-}
-
-func (p *packTx) Commit(ctx context.Context) error {
-	// close the tx writer first
-	err := p.Writer.Close()
+	err := writerTo.WriteTo(ctx, writer)
 	if err != nil {
-		return fmt.Errorf("failed to close transaction writer: %w", err)
-	}
-
-	// create a new writer for the main storage
-	writer := NewWriter(p.store.Writer.storage, p.store.Writer.index, 1, p.Writer.maxSize)
-	defer writer.Close()
-
-	reader := NewReader(p.Writer.storage, &nopLocator{})
-	err = reader.WriteTo(ctx, writer)
-	if err != nil {
-		return fmt.Errorf("failed to copy objects: %w", err)
+		return err
 	}
 
 	return writer.Close()
 }
 
-func (p *packTx) Rollback() error {
-	err := p.Writer.Close()
-	if err != nil {
-		return err
+func (s *Store) Transaction(ctx context.Context, tx *proto.Transaction) (backup.Transaction, error) {
+	p, ok := s.Writer.storage.(Parent)
+	if !ok {
+		return nil, ErrTransactionsUnsupported
 	}
 
-	return p.storage.DeleteAll()
+	switch tx.GetStatus() {
+	case proto.Transaction_OPEN,
+		proto.Transaction_PREPARED,
+		proto.Transaction_COMMITTED,
+		proto.Transaction_ABORTED:
+	default:
+		return nil, backup.ErrUnhandledTransactionStatus
+	}
+
+	nested, err := p.Child(tx.TransactionId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &packTx{
+		store:  s,
+		writer: NewWriter(nested, &nopIndexer{}, s.Writer.maxParallel, s.Writer.maxSize),
+		reader: NewReader(nested, &nopLocator{}),
+	}, nil
 }
 
 //
@@ -605,6 +562,10 @@ type ArchiveIndex interface {
 	DeleteArchive(archive string, index IndexFile) error
 	Close() error
 	CountObjects() (uint64, uint64, error)
+}
+
+type WriterTo interface {
+	WriteTo(ctx context.Context, w *Writer) error
 }
 
 func archiveFileName(name string) string {
