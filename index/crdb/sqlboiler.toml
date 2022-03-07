@@ -1,7 +1,11 @@
 [crdb]
 dbname = "defaultdb"
 host = "localhost"
-port = 56742
+port = 64273
 user = "root"
 sslmode = "disable"
 blacklist = ["schema_migrations", "schema_lock", "objects", "archives"]
+
+[auto-columns]
+created = "created_at"
+updated = "updated_at"

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/twcclan/goback/storage/pack/packtest"
+	"github.com/twcclan/goback/transactional/txtest"
 
 	_ "github.com/lib/pq"
 	"github.com/testcontainers/testcontainers-go"
@@ -76,6 +77,10 @@ func TestCRDBIndex(t *testing.T) {
 
 func TestCRDBIndexExclusions(t *testing.T) {
 	packtest.TestArchiveIndexExclusion(t, withCrdb(t, context.Background()))
+}
+
+func TestCRDBTransactionStore(t *testing.T) {
+	txtest.TestTransactionStore(t, withCrdb(t, context.Background()))
 }
 
 func BenchmarkLookup(b *testing.B) {

@@ -8,13 +8,18 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/wrapped"
+	"github.com/twcclan/goback/transactional"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func NewRemoteClient(addr string) (*RemoteClient, error) {
-	con, err := grpc.Dial(addr, grpc.WithInsecure())
+	con, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
@@ -26,12 +31,50 @@ func NewRemoteClient(addr string) (*RemoteClient, error) {
 
 var _ backup.Index = (*RemoteClient)(nil)
 
+// var _ backup.Transactioner = (*RemoteClient)(nil)
+
 type RemoteClient struct {
 	store proto.StoreClient
 }
 
-func (r *RemoteClient) ReachableCommits(ctx context.Context, f func(commit *proto.Commit) error) error {
-	panic("implement me")
+func (r *RemoteClient) Transaction(ctx context.Context, fn func(transaction backup.ObjectReceiver) error) (*proto.Transaction, error) {
+	client, err := r.store.Transaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	receiver := func(obj *proto.Object) error {
+		return client.Send(&proto.TransactionRequest{
+			Request: &proto.TransactionRequest_Object{Object: obj},
+		})
+	}
+
+	err = fn(receiver)
+	if err != nil {
+		// do a best-effort rollback, if it doesn't work the backend will remove the transaction eventually
+		_ = client.Send(&proto.TransactionRequest{
+			Request: &proto.TransactionRequest_Action{Action: proto.TransactionRequest_ROLLBACK},
+		})
+
+		return nil, err
+	}
+
+	err = client.Send(&proto.TransactionRequest{
+		Request: &proto.TransactionRequest_Action{
+			Action: proto.TransactionRequest_COMMIT,
+		},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := client.CloseAndRecv()
+	if err != nil {
+		return nil, err
+	}
+
+	return tx.Transaction, nil
 }
 
 func (r *RemoteClient) Open() error  { return nil }
@@ -145,6 +188,58 @@ var _ proto.StoreServer = (*RemoteServer)(nil)
 type RemoteServer struct {
 	proto.UnsafeStoreServer
 	index backup.Index
+
+	tx *transactional.Manager
+}
+
+func (r *RemoteServer) Transaction(stream proto.Store_TransactionServer) error {
+	ctx := stream.Context()
+	var txStore backup.Transactioner
+
+	if !wrapped.As(r.index, &txStore) {
+		return errors.New("backing store does not support transactions")
+	}
+
+	tx, err := r.tx.Transaction(ctx, func(transaction backup.Transaction) error {
+		for {
+			msg, err := stream.Recv()
+			// if the client closes the stream without indicating intent, TODO: figure out what to do
+			//if errors.Is(err, io.EOF) {
+			//
+			//}
+			if err != nil {
+				return err
+			}
+
+			switch req := msg.GetRequest().(type) {
+			case *proto.TransactionRequest_Object:
+				err = transaction.Put(stream.Context(), req.Object)
+				if err != nil {
+					return err
+				}
+
+			case *proto.TransactionRequest_Action:
+				switch req.Action {
+				case proto.TransactionRequest_COMMIT:
+					return nil
+				case proto.TransactionRequest_ROLLBACK:
+					return backup.ErrRollback
+
+				default:
+					return status.Error(codes.InvalidArgument, "unknown action requested")
+				}
+			}
+		}
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return stream.SendAndClose(&proto.TransactionResponse{
+		Success:     tx.GetStatus() == proto.Transaction_PREPARED || tx.GetStatus() == proto.Transaction_COMMITTED,
+		Transaction: tx,
+	})
 }
 
 func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
