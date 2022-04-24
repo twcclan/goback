@@ -283,7 +283,7 @@ type gcsFileInfo struct {
 	attrs *storage.ObjectAttrs
 }
 
-func (s *gcsFileInfo) Sys() interface{} {
+func (s *gcsFileInfo) Sys() any {
 	return nil
 }
 

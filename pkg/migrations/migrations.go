@@ -14,7 +14,7 @@ type Log struct {
 	verbose bool
 }
 
-func (l *Log) Printf(format string, args ...interface{}) {
+func (l *Log) Printf(format string, args ...any) {
 	log.Printf(format, args...)
 }
 

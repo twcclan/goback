@@ -336,7 +336,7 @@ type cloudFileInfo struct {
 	attrs *blob.Attributes
 }
 
-func (s *cloudFileInfo) Sys() interface{} {
+func (s *cloudFileInfo) Sys() any {
 	return s.attrs
 }
 

@@ -23,8 +23,8 @@ const numObjects = 1000
 const ObjectSize = 1024 * 8
 
 type testingInterface interface {
-	Logf(string, ...interface{})
-	Fatalf(string, ...interface{})
+	Logf(string, ...any)
+	Fatalf(string, ...any)
 }
 
 func makeRef() *proto.Ref {
@@ -235,7 +235,7 @@ func BenchmarkArchiveStorage(b *testing.B) {
 	benchmarkStorage(b, storage)
 }
 
-func testIndex(t interface{}) {
+func testIndex(t any) {
 	// First ask Go to give us some information about the MyData type
 	typ := reflect.TypeOf(t)
 	fmt.Printf("Struct is %d bytes long\n", typ.Size())

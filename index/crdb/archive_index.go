@@ -119,7 +119,7 @@ func (i *Index) IndexArchive(archive string, index pack.IndexFile) error {
 
 func (i *Index) indexBatch(archive string, offset int, index pack.IndexFile) func(tx *sql.Tx) error {
 	return func(tx *sql.Tx) error {
-		values := []interface{}{archive}
+		values := []any{archive}
 
 		placeholder := 2
 		var placeholders []string

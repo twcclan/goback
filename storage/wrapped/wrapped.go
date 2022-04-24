@@ -18,7 +18,7 @@ func Unwrap(store backup.ObjectStore) backup.ObjectStore {
 	return nil
 }
 
-func As(store backup.ObjectStore, target interface{}) bool {
+func As(store backup.ObjectStore, target any) bool {
 	if target == nil {
 		panic("wrapped: target cannot be nil")
 	}

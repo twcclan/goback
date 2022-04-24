@@ -105,7 +105,7 @@ func (o *Object) CompressedBytes() []byte {
 	return CompressedBytes(o)
 }
 
-func NewObject(in interface{}) *Object {
+func NewObject(in any) *Object {
 	var out isObject_Object
 
 	switch t := in.(type) {
@@ -196,7 +196,7 @@ func (bi *backupFileInfo) Size() int64 {
 	return bi.FileInfo.Size
 }
 
-func (bi *backupFileInfo) Sys() interface{} {
+func (bi *backupFileInfo) Sys() any {
 	return nil
 }
 
