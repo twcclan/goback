@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // number of objects to generate for the tests
@@ -65,6 +66,12 @@ func TestPack(t *testing.T) {
 
 	storage := newLocal(base)
 	index := NewInMemoryIndex()
+	txInfo := &proto.Transaction{
+		TransactionId: "test",
+		Status:        proto.Transaction_OPEN,
+		CreatedAt:     timestamppb.Now(),
+		UpdatedAt:     timestamppb.Now(),
+	}
 
 	options := []Option{
 		WithArchiveStorage(storage),
@@ -115,7 +122,7 @@ func TestPack(t *testing.T) {
 
 	readObjects(t, objects)
 
-	tx, err := store.Begin(context.Background())
+	tx, err := store.Transaction(context.Background(), txInfo)
 	require.Nil(t, err)
 
 	for _, object := range objectsTx {
@@ -125,6 +132,7 @@ func TestPack(t *testing.T) {
 		}
 	}
 
+	require.Nil(t, tx.Prepare(context.Background()))
 	require.Nil(t, tx.Commit(context.Background()))
 	readObjects(t, objectsTx)
 
