@@ -81,6 +81,9 @@ func (r *Reader) WriteTo(ctx context.Context, w *Writer) error {
 			return w.putRaw(ctx, hdr, bytes)
 		})
 
+		// close the reader
+		_ = file.Close()
+
 		if err != nil {
 			return err
 		}
