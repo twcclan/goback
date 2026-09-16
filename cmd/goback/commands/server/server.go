@@ -3,7 +3,6 @@ package server
 import (
 	"log"
 	"net"
-	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/proto"
@@ -11,7 +10,6 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"cloud.google.com/go/profiler"
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"contrib.go.opencensus.io/exporter/zipkin"
 	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
 	"github.com/urfave/cli"
@@ -31,7 +29,8 @@ var Command = cli.Command{
 			Value: ":6060",
 		},
 		cli.StringFlag{
-			Name: "stackdriver-project",
+			Name:  "profiler-project",
+			Usage: "GCP project to send Cloud Profiler data to",
 		},
 		cli.StringFlag{
 			Name: "zipkin-url",
@@ -39,26 +38,15 @@ var Command = cli.Command{
 	},
 }
 
-func enableStackdriver(projectID string) {
-	sd, err := stackdriver.NewExporter(stackdriver.Options{
-		ProjectID: projectID,
-	})
-	if err != nil {
-		log.Fatalf("failed to create stackdriver exporter: %s", err)
-	}
-
-	err = profiler.Start(profiler.Config{
+func enableProfiler(projectID string) {
+	err := profiler.Start(profiler.Config{
 		ProjectID:      projectID,
 		MutexProfiling: true,
 		Service:        "goback",
 	})
 	if err != nil {
-		log.Fatalf("failed setting up stackdriver profiler: %s", err)
+		log.Fatalf("failed setting up cloud profiler: %s", err)
 	}
-
-	view.RegisterExporter(sd)
-	view.SetReportingPeriod(60 * time.Second)
-	trace.RegisterExporter(sd)
 }
 
 func enableZipkin(url string) {
@@ -87,8 +75,8 @@ func serverAction(ctx *cli.Context) {
 		log.Fatalf("failed to register grpc server views: %s", err)
 	}
 
-	if projectID := ctx.String("stackdriver-project"); projectID != "" {
-		enableStackdriver(projectID)
+	if projectID := ctx.String("profiler-project"); projectID != "" {
+		enableProfiler(projectID)
 	}
 
 	if url := ctx.String("zipkin-url"); url != "" {
