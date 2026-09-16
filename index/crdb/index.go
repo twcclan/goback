@@ -53,11 +53,10 @@ func (c *Index) FileInfo(ctx context.Context, backupSet string, path string, not
 				Mode:      uint32(file.Mode),
 				User:      file.User,
 				Group:     file.Group,
-				Timestamp: file.Timestamp.Unix(),
+				MtimeNs:   file.Timestamp.UnixNano(),
 				Size:      file.Size,
-				Tree:      false,
 			},
-			Ref: &proto.Ref{Sha1: file.Ref},
+			Ref: &proto.Ref{Hash: file.Ref},
 		}
 	}
 
@@ -93,7 +92,7 @@ func (c *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 	for i, commit := range commits {
 		infoList[i] = &proto.Commit{
 			Timestamp: commit.Timestamp.Unix(),
-			Tree:      &proto.Ref{Sha1: commit.Tree},
+			Tree:      &proto.Ref{Hash: commit.Tree},
 			BackupSet: backupSet,
 		}
 	}
@@ -102,21 +101,27 @@ func (c *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 }
 
 func (c *Index) Put(ctx context.Context, object *proto.Object) error {
-	// store the object first
-	err := c.ObjectStore.Put(ctx, object)
+	err := backup.CheckReferences(ctx, c.ObjectStore, object)
+	if err != nil {
+		return err
+	}
+
+	err = c.ObjectStore.Put(ctx, object)
 	if err != nil {
 		return err
 	}
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-		return c.indexCommit(ctx, object.GetCommit(), object.Ref())
+		return c.indexCommit(ctx, object.GetCommit(), object.Ref(), true)
 	}
 
 	return nil
 }
 
-func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref) error {
+// indexCommit records a commit's files. In strict mode a commit whose tree
+// cannot be traversed is rejected with backup.ErrDanglingRef.
+func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, strict bool) error {
 	// whenever we get to index a commit
 	// we'll traverse the complete backup tree
 	// to create our filesystem path index
@@ -125,14 +130,18 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	// 	kind of asynchronous batch processing
 
 	treeObj, err := i.ObjectStore.Get(ctx, commit.Tree)
+	if errors.Is(err, backup.ErrNotFound) {
+		if strict {
+			return fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.Hash)
+		}
+
+		log.Printf("Root tree %x could not be retrieved", commit.Tree.Hash)
+		return nil
+	}
+
 	if err != nil {
 		log.Printf("Failed getting root tree: %s", err)
 		return err
-	}
-
-	if treeObj == nil {
-		log.Printf("Root tree %x could not be retrieved", commit.Tree.Sha1)
-		return nil
 	}
 
 	tx, err := i.db.Begin()
@@ -142,7 +151,7 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	}
 	defer tx.Rollback()
 
-	_, err = models.FindCommit(ctx, tx, ref.Sha1)
+	_, err = models.FindCommit(ctx, tx, ref.Hash)
 	if !errors.Is(err, sql.ErrNoRows) {
 		// if the commit exists already, we can skip here
 		return err
@@ -175,13 +184,17 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		defer txMtx.Unlock()
 
 		info := node.GetStat()
-		if info.GetTree() {
-			dbTree, err := models.FindTree(ctx, tx, node.Ref.Sha1, filepath, set.ID)
+		if info.GetType() == proto.NodeType_NODE_SYMLINK {
+			return nil
+		}
+
+		if info.IsDir() {
+			dbTree, err := models.FindTree(ctx, tx, node.Ref.Hash, filepath, set.ID)
 			if errors.Is(err, sql.ErrNoRows) {
 				// if we get here, it means the tree doesn't currently exist in the database,
 				// so we'll create it so we can skip indexing this sub-tree next time we see it
 				dbTree = &models.Tree{
-					Ref:   node.Ref.Sha1,
+					Ref:   node.Ref.Hash,
 					Path:  filepath,
 					SetID: set.ID,
 				}
@@ -199,9 +212,9 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 
 		file := &models.File{
 			Path:      filepath,
-			Timestamp: time.Unix(info.GetTimestamp(), 0),
+			Timestamp: time.Unix(0, info.GetMtimeNs()),
 			SetID:     set.ID,
-			Ref:       node.GetRef().Sha1,
+			Ref:       node.GetRef().Hash,
 			Mode:      int64(info.Mode),
 			User:      info.User,
 			Group:     info.Group,
@@ -211,7 +224,11 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		return file.Upsert(ctx, tx, false, nil, boil.Infer(), boil.Infer())
 	})
 	if err != nil {
-		log.Printf("Ignoring commit %x, failed traversing tree: %s", proto.NewObject(commit).Ref().Sha1, err)
+		if strict {
+			return fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
+		}
+
+		log.Printf("Ignoring commit %x, failed traversing tree: %s", ref.Hash, err)
 		return nil
 	}
 
@@ -219,9 +236,9 @@ func (i *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	log.Printf("Indexed commit(%s) in %v", set.Name, duration)
 
 	c := &models.Commit{
-		Ref:       ref.Sha1,
+		Ref:       ref.Hash,
 		Timestamp: time.Unix(commit.Timestamp, 0),
-		Tree:      treeObj.Ref().Sha1,
+		Tree:      treeObj.Ref().Hash,
 		SetID:     set.ID,
 	}
 
@@ -237,8 +254,34 @@ func (c *Index) Delete(ctx context.Context, ref *proto.Ref) error {
 	return errors.New("direct deletion of objects not supported")
 }
 
+// LatestCommit implements backup.Index.
+func (i *Index) LatestCommit(ctx context.Context, backupSet string) (*proto.Ref, error) {
+	set, err := models.Sets(models.SetWhere.Name.EQ(backupSet)).One(ctx, i.db)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, backup.ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	commit, err := models.Commits(
+		models.CommitWhere.SetID.EQ(set.ID),
+		qm.OrderBy(fmt.Sprintf("%s DESC", models.CommitColumns.Timestamp)),
+	).One(ctx, i.db)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, backup.ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	return &proto.Ref{Hash: commit.Ref}, nil
+}
+
 func (i *Index) ReIndex(ctx context.Context) error {
 	return i.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
-		return i.indexCommit(ctx, obj.GetCommit(), obj.Ref())
+		return i.indexCommit(ctx, obj.GetCommit(), obj.Ref(), false)
 	})
 }

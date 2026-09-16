@@ -5,8 +5,7 @@ package proto
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/sha1"
-	"io/ioutil"
+	"io"
 	"os"
 	"time"
 
@@ -14,22 +13,22 @@ import (
 	pb "google.golang.org/protobuf/proto"
 )
 
+// Bytes marshals a message and panics on the (unreachable) marshal errors.
 func Bytes(m pb.Message) []byte {
-	if data, err := pb.Marshal(m); err != nil {
-		// there are only a few very specific error conditions
-		// that shouldn't ever affect us
+	data, err := pb.Marshal(m)
+	if err != nil {
 		panic(err)
-	} else {
-		return data
 	}
-	//return []byte(pb.MarshalTextString(o))
+
+	return data
 }
 
-func CompressedBytes(m pb.Message) []byte {
+// Compress gzips a payload.
+func Compress(payload []byte) []byte {
 	buf := new(bytes.Buffer)
 	writer := gzip.NewWriter(buf)
 
-	_, err := writer.Write(Bytes(m))
+	_, err := writer.Write(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -42,14 +41,18 @@ func CompressedBytes(m pb.Message) []byte {
 	return buf.Bytes()
 }
 
+// CompressedBytes marshals and gzips a message.
+func CompressedBytes(m pb.Message) []byte {
+	return Compress(Bytes(m))
+}
+
 func decompressedBytes(compressed []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		return nil, err
 	}
 
-	b, err := ioutil.ReadAll(reader)
-
+	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -92,17 +95,10 @@ func (o *Object) Type() ObjectType {
 	}
 }
 
-func (o *Object) Ref() *Ref {
-	sum := sha1.Sum(o.Bytes())
-	return &Ref{Sha1: sum[:]}
-}
-
+// Bytes marshals the Object wrapper; it is a transport encoding, not the
+// hashed payload (see Canonical).
 func (o *Object) Bytes() []byte {
 	return Bytes(o)
-}
-
-func (o *Object) CompressedBytes() []byte {
-	return CompressedBytes(o)
 }
 
 func NewObject(in interface{}) *Object {
@@ -130,16 +126,7 @@ func NewObjectHeaderFromBytes(bytes []byte) (*ObjectHeader, error) {
 	return hdr, pb.Unmarshal(bytes, hdr)
 }
 
-func NewObjectFromCompressedBytes(bytes []byte) (*Object, error) {
-	b, err := decompressedBytes(bytes)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return NewObjectFromBytes(b)
-}
-
+// NewObjectFromBytes decodes an Object wrapper written by Object.Bytes.
 func NewObjectFromBytes(bytes []byte) (*Object, error) {
 	obj := new(Object)
 
@@ -148,7 +135,6 @@ func NewObjectFromBytes(bytes []byte) (*Object, error) {
 
 func NewIndexFromCompressedBytes(bytes []byte) (*Index, error) {
 	b, err := decompressedBytes(bytes)
-
 	if err != nil {
 		return nil, err
 	}
@@ -162,14 +148,65 @@ func NewIndexFromBytes(bytes []byte) (*Index, error) {
 	return idx, pb.Unmarshal(bytes, idx)
 }
 
+// GetFileInfo converts stat data into a FileInfo. Owner names and the
+// symlink target come from a FileInfo returned by Sys(), as WithDetails
+// and GetOSFileInfo arrange.
 func GetFileInfo(info os.FileInfo) *FileInfo {
-	return &FileInfo{
-		Name:      info.Name(),
-		Mode:      uint32(info.Mode()),
-		Timestamp: info.ModTime().UTC().Unix(),
-		Size:      info.Size(),
-		Tree:      info.IsDir(),
+	fi := &FileInfo{
+		Name:    info.Name(),
+		Mode:    uint32(info.Mode()),
+		MtimeNs: info.ModTime().UnixNano(),
+		Size:    info.Size(),
+		Type:    NodeTypeOf(info.Mode()),
 	}
+
+	if details, ok := info.Sys().(*FileInfo); ok {
+		fi.User = details.User
+		fi.Group = details.Group
+		fi.LinkTarget = details.LinkTarget
+	}
+
+	return fi
+}
+
+// WithDetails attaches owner names and a symlink target to stat data so
+// GetFileInfo records them.
+func WithDetails(info os.FileInfo, user, group, linkTarget string) os.FileInfo {
+	return &detailedFileInfo{
+		FileInfo: info,
+		details:  &FileInfo{User: user, Group: group, LinkTarget: linkTarget},
+	}
+}
+
+type detailedFileInfo struct {
+	os.FileInfo
+	details *FileInfo
+}
+
+func (d *detailedFileInfo) Sys() interface{} {
+	return d.details
+}
+
+// NodeTypeOf maps a file mode to the node type recorded in a tree.
+func NodeTypeOf(mode os.FileMode) NodeType {
+	switch {
+	case mode.IsDir():
+		return NodeType_NODE_DIRECTORY
+	case mode&os.ModeSymlink != 0:
+		return NodeType_NODE_SYMLINK
+	default:
+		return NodeType_NODE_FILE
+	}
+}
+
+// IsDir reports whether the node describes a directory.
+func (fi *FileInfo) IsDir() bool {
+	return fi.GetType() == NodeType_NODE_DIRECTORY
+}
+
+// ModTime returns the recorded modification time.
+func (fi *FileInfo) ModTime() time.Time {
+	return time.Unix(0, fi.GetMtimeNs())
 }
 
 type backupFileInfo struct {
@@ -177,7 +214,7 @@ type backupFileInfo struct {
 }
 
 func (bi *backupFileInfo) IsDir() bool {
-	return bi.Tree
+	return bi.FileInfo.IsDir()
 }
 
 func (bi *backupFileInfo) Name() string {
@@ -185,7 +222,7 @@ func (bi *backupFileInfo) Name() string {
 }
 
 func (bi *backupFileInfo) ModTime() time.Time {
-	return time.Unix(bi.Timestamp, 0)
+	return bi.FileInfo.ModTime()
 }
 
 func (bi *backupFileInfo) Mode() os.FileMode {
@@ -196,8 +233,10 @@ func (bi *backupFileInfo) Size() int64 {
 	return bi.FileInfo.Size
 }
 
+// Sys returns the recorded FileInfo, so restore can read the symlink target
+// and owner names.
 func (bi *backupFileInfo) Sys() interface{} {
-	return nil
+	return bi.FileInfo
 }
 
 func GetOSFileInfo(info *FileInfo) os.FileInfo {

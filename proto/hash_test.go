@@ -1,0 +1,168 @@
+package proto
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	pb "google.golang.org/protobuf/proto"
+)
+
+func refOf(seed string) *Ref {
+	sum := sha256.Sum256([]byte(seed))
+	return &Ref{Hash: sum[:]}
+}
+
+func TestBlobFraming(t *testing.T) {
+	blob := NewObject(&Blob{Data: []byte("hello")})
+
+	want := sha256.Sum256([]byte("blob 5\x00hello"))
+	require.Equal(t, want[:], blob.Ref().Hash)
+	require.Equal(t, "8aec4e4876f854f688d0ebfc8f37598f38e5fd6903cccc850ca36591175aeb60", hex.EncodeToString(blob.Ref().Hash))
+}
+
+func TestTombstoneFraming(t *testing.T) {
+	target := refOf("target")
+
+	want := sha256.Sum256(append([]byte("tombstone 32\x00"), target.Hash...))
+	require.Equal(t, want[:], TombstoneRef(target).Hash)
+}
+
+// Golden vectors pin the canonical encoding; they were produced by an
+// independent encoder, and a change here is a format break.
+func TestCanonicalGoldenVectors(t *testing.T) {
+	tree := refOf("tree")
+	part := refOf("part")
+
+	cases := []struct {
+		name    string
+		object  *Object
+		payload string
+	}{
+		{
+			name:    "commit",
+			object:  NewObject(&Commit{Timestamp: 1700000000, Tree: tree, BackupSet: "world", AgentId: "agent-1", ScanStartNs: 1700000000000000000, Partial: true}),
+			payload: "0880e2cfaa0612220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb82921106221a05776f726c642a076167656e742d31308080a8b1e39fe7cb173801",
+		},
+		{
+			name:    "file",
+			object:  NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 5, Ref: part}}}),
+			payload: "0a2610051a220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed1",
+		},
+		{
+			name:    "inline file",
+			object:  NewObject(&File{Inline: []byte("hi")}),
+			payload: "22026869",
+		},
+		{
+			name:    "empty file",
+			object:  NewObject(&File{}),
+			payload: "",
+		},
+		{
+			name: "tree",
+			object: NewObject(&Tree{Nodes: []*TreeNode{
+				{Stat: &FileInfo{Name: "a", Mode: 0644, Size: 5, MtimeNs: 1}, Ref: part},
+				{Stat: &FileInfo{Name: "b", Mode: 0755 | 1<<31, Type: NodeType_NODE_DIRECTORY}, Ref: tree},
+			}}),
+			payload: "0a300a0a0a016110a4033005400112220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed10a310a0b0a016210ed83808008480112220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb8292110622",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := tc.object.Canonical()
+			require.NoError(t, err)
+			require.Equal(t, tc.payload, hex.EncodeToString(payload))
+
+			// the canonical form must be readable by the generated decoder
+			decoded, err := NewObjectFromPayload(payload, tc.object.Type())
+			require.NoError(t, err)
+			require.True(t, pb.Equal(tc.object, decoded))
+
+			// and re-encoding the decoded form must give the same bytes
+			again, err := decoded.Canonical()
+			require.NoError(t, err)
+			require.Equal(t, payload, again)
+
+			tag, _ := typeTag(tc.object.Type())
+			expected := sha256.Sum256(append([]byte(tag+" "+strconv.Itoa(len(payload))+"\x00"), payload...))
+			require.Equal(t, expected[:], tc.object.Ref().Hash)
+		})
+	}
+}
+
+func TestCanonicalRejects(t *testing.T) {
+	good := refOf("good")
+
+	cases := map[string]*Object{
+		"short ref":          NewObject(&Commit{Tree: &Ref{Hash: []byte("short")}}),
+		"missing ref":        NewObject(&Commit{}),
+		"unsorted tree":      NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "b"}, Ref: good}, {Stat: &FileInfo{Name: "a"}, Ref: good}}}),
+		"duplicate name":     NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a"}, Ref: good}, {Stat: &FileInfo{Name: "a"}, Ref: good}}}),
+		"nameless node":      NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{}, Ref: good}}}),
+		"link target on dir": NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a", Type: NodeType_NODE_DIRECTORY, LinkTarget: "x"}, Ref: good}}}),
+		"invalid utf8":       NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a\xff"}, Ref: good}}}),
+		"nodes and splits":   NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a"}, Ref: good}}, Splits: []*Ref{good}}),
+		"gap in parts":       NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 5, Ref: good}, {Offset: 6, Length: 1, Ref: good}}}),
+		"empty part":         NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 0, Ref: good}}}),
+		"parts and splits":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Splits: []*Ref{good}}),
+		"inline and parts":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Inline: []byte("x")}),
+		"inline too large":   NewObject(&File{Inline: make([]byte, InlineLimit+1)}),
+		"unknown chunker":    NewObject(&File{Chunker: 99}),
+		"empty object":       {},
+	}
+
+	for name, obj := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := obj.Validate()
+			require.ErrorIs(t, err, ErrInvalidObject)
+			require.Panics(t, func() { obj.Ref() })
+		})
+	}
+}
+
+func TestCanonicalRejectsUnknownFields(t *testing.T) {
+	// a commit encoded by a newer schema with a field this build does not know
+	raw := []byte{0x08, 0x01, 0x12, 0x22, 0x0a, 0x20}
+	raw = append(raw, refOf("tree").Hash...)
+	raw = append(raw, 0xf8, 0x7f, 0x01) // field 2047, varint 1
+
+	obj, err := NewObjectFromPayload(raw, ObjectType_COMMIT)
+	require.NoError(t, err)
+	require.ErrorIs(t, obj.Validate(), ErrInvalidObject)
+}
+
+func TestVerifyPayload(t *testing.T) {
+	blob := NewObject(&Blob{Data: []byte(strings.Repeat("compressible ", 100))})
+	payload, err := blob.Canonical()
+	require.NoError(t, err)
+
+	stored, compression := Encode(payload)
+	require.Equal(t, Compression_ZSTD, compression)
+	require.Less(t, len(stored), len(payload))
+
+	obj, err := NewVerifiedObject(stored, compression, ObjectType_BLOB, blob.Ref())
+	require.NoError(t, err)
+	require.True(t, pb.Equal(blob, obj))
+
+	// a wrong type must not verify even with the right bytes
+	_, err = NewVerifiedObject(stored, compression, ObjectType_FILE, blob.Ref())
+	require.ErrorIs(t, err, ErrRefMismatch)
+
+	// a flipped byte must not verify
+	stored[len(stored)/2] ^= 0xff
+	_, err = VerifyPayload(stored, compression, ObjectType_BLOB, blob.Ref())
+	require.Error(t, err)
+
+	// incompressible data is stored as is
+	random := make([]byte, 1024)
+	for i := range random {
+		random[i] = byte(i*7919 ^ i>>3)
+	}
+	_, compression = Encode(random)
+	require.Equal(t, Compression_NONE, compression)
+}

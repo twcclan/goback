@@ -24,6 +24,7 @@ enum ObjectType {
 enum Compression {
   NONE = 0;
   GZIP = 1;
+  ZSTD = 2;
 }
 
 message ObjectHeader {

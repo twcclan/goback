@@ -5,5 +5,5 @@ package proto;
 option go_package = "github.com/twcclan/goback/proto";
 
 message Ref {
-  bytes sha1 = 1;
+  bytes hash = 1;
 }
