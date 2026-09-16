@@ -9,6 +9,10 @@ import "ref.proto";
 
 message Tree {
   repeated TreeNode nodes = 1;
+
+  // an ordered list of tree objects whose nodes, concatenated, form this
+  // tree; set instead of nodes for directories above the fan-out limit
+  repeated Ref splits = 2;
 }
 
 message TreeNode {

@@ -6,6 +6,13 @@ option go_package = "github.com/twcclan/goback/proto";
 
 import "ref.proto";
 
+// NodeType says what kind of filesystem entry a tree node describes.
+enum NodeType {
+	NODE_FILE = 0;
+	NODE_DIRECTORY = 1;
+	NODE_SYMLINK = 2;
+}
+
 // this contains file metadata, which can be different
 // accross backups, even if file content is the same
 message FileInfo {
@@ -13,9 +20,22 @@ message FileInfo {
 	uint32 mode = 2;
 	string user = 3;
 	string group = 4;
-	int64 timestamp = 5;
+	reserved 5, 7;
+	reserved "timestamp", "tree";
 	int64 size = 6;
-	bool tree = 7;
+
+	// modification time in nanoseconds since the Unix epoch
+	int64 mtime_ns = 8;
+	NodeType type = 9;
+
+	// the target of a symlink, empty for every other type
+	string link_target = 10;
+}
+
+// Chunker names the boundary function and parameters that cut a file.
+enum Chunker {
+	// FastCDC with a 16 KiB minimum, 64 KiB target and 256 KiB maximum
+	FASTCDC_64K = 0;
 }
 
 message File {
@@ -24,6 +44,12 @@ message File {
 
 	// an ordered list of references to other file objects
 	repeated Ref splits = 2;
+
+	// the chunker that cut the parts
+	Chunker chunker = 3;
+
+	// the whole content of a small file, stored without a blob
+	bytes inline = 4;
 }
 
 message FilePart {

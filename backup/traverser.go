@@ -66,7 +66,7 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 	// trees nodes are sorted lexicographically
 	for _, node := range t.object.GetTree().GetNodes() {
 		info := node.Stat
-		if !info.Tree {
+		if !info.IsDir() {
 			continue
 		}
 
@@ -81,20 +81,15 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 			return err
 		}
 
-		// retrieve the sub-tree object
-		subTree, err := c.store.Get(ctx, node.Ref)
-
+		// retrieve the sub-tree object, flattening any splits
+		subTree, err := LoadTree(ctx, c.store, node.Ref)
 		if err != nil {
-			return err
-		}
-
-		if subTree == nil {
-			return errors.Errorf("Sub tree %x could not be retrieved", node.Ref.Sha1)
+			return errors.Wrapf(err, "Sub tree %x could not be retrieved", node.Ref.Hash)
 		}
 
 		subTreeNode := &concurrentTreeNode{
 			prefix: path.Join(t.prefix, info.Name),
-			object: subTree,
+			object: proto.NewObject(subTree),
 		}
 
 		c.wg.Add(1)
@@ -115,7 +110,7 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 	// iterate a second time for the files
 	for _, node := range t.object.GetTree().GetNodes() {
 		info := node.Stat
-		if info.Tree {
+		if info.IsDir() {
 			continue
 		}
 

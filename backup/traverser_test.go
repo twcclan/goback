@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/twcclan/goback/proto"
@@ -16,15 +17,15 @@ var testObjects = map[string]*proto.Object{
 			{
 				Stat: &proto.FileInfo{
 					Name: "test.dir",
-					Tree: true,
+					Type: proto.NodeType_NODE_DIRECTORY,
 				},
-				Ref: &proto.Ref{Sha1: []byte("test.dir")},
+				Ref: testRef("test.dir"),
 			},
 			{
 				Stat: &proto.FileInfo{
 					Name: "test.file1",
 				},
-				Ref: &proto.Ref{Sha1: []byte("test.file1")},
+				Ref: testRef("test.file1"),
 			},
 		},
 	}),
@@ -34,7 +35,7 @@ var testObjects = map[string]*proto.Object{
 				Stat: &proto.FileInfo{
 					Name: "test.file2",
 				},
-				Ref: &proto.Ref{Sha1: []byte("test.file2")},
+				Ref: testRef("test.file2"),
 			},
 		},
 	}),
@@ -45,19 +46,22 @@ var testObjects = map[string]*proto.Object{
 func TestConcurrentTreeTraverser(t *testing.T) {
 	for i := 1; i < 10; i++ {
 		store := &MockObjectStore{}
-		store.On("Get", mock.Anything, &proto.Ref{Sha1: []byte("test.dir")}).Return(testObjects["test.dir"], nil).Once()
+		store.On("Get", mock.Anything, testRef("test.dir")).Return(testObjects["test.dir"], nil).Once()
 		expected := map[string]bool{
 			"test.dir":            true,
 			"test.dir/test.file2": true,
 			"test.file1":          true,
 		}
 
+		var mtx sync.Mutex
 		traverser := &concurrentTreeTraverser{
 			store: store,
 			queue: make(chan *concurrentTreeNode),
 
 			traverseFn: func(path string, node *proto.TreeNode) error {
+				mtx.Lock()
 				delete(expected, path)
+				mtx.Unlock()
 				return nil
 			},
 		}
