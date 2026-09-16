@@ -10,4 +10,14 @@ message Commit {
   int64 timestamp = 1;
   Ref tree = 2;
   string backup_set = 3;
+
+  // the commit this one was diffed against, empty for a full run
+  Ref parent = 4;
+  string agent_id = 5;
+
+  // agent wall time in nanoseconds at the start of the walk
+  int64 scan_start_ns = 6;
+
+  // a checkpoint written mid-run, superseded by the final commit
+  bool partial = 7;
 }

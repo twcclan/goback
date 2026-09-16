@@ -2,160 +2,71 @@ package commit
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/statcache"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/badger"
+	"github.com/twcclan/goback/storage/cache"
 
 	"github.com/bmatcuk/doublestar"
-	"github.com/pkg/errors"
 	"github.com/urfave/cli"
-	"go4.org/syncutil"
-	"golang.org/x/sync/errgroup"
 )
 
-func (c *commit) shouldInclude(fName string) bool {
-	// check the patterns against paths relative to our base
-	fName = strings.TrimPrefix(fName, c.base)
+// includeFilter applies the include and exclude patterns to a path relative
+// to the backup root, written with a leading slash.
+func includeFilter(includes, excludes []string) func(string) bool {
+	match := func(patterns []string, name string) bool {
+		for _, pat := range patterns {
+			ok, err := doublestar.Match(pat, name)
+			if err != nil {
+				log.Printf("Malformed pattern: \"%s\" %v", pat, err)
+			}
 
-	// check whitelist first
-	for _, pat := range c.includes {
-		match, err := doublestar.Match(pat, fName)
-		if err != nil {
-			log.Printf("Malformed pattern: \"%s\" %v", pat, err)
+			if ok {
+				return true
+			}
 		}
 
-		if match {
-			//log.Printf("Whitelisted file: %s", fName)
+		return false
+	}
+
+	return func(rel string) bool {
+		name := "/" + rel
+
+		if match(includes, name) {
 			return true
 		}
-	}
 
-	// check blacklist
-	for _, pat := range c.excludes {
-		match, err := doublestar.Match(pat, fName)
-		if err != nil {
-			log.Printf("Malformed pattern: \"%s\" %v", pat, err)
-		}
-
-		if match {
-			//log.Printf("Blacklisted file: %s", fName)
-			return false
-		}
-	}
-
-	// default to allowing
-	return true
-}
-
-func (c *commit) read(file string) func(io.Writer) error {
-	return func(writer io.Writer) error {
-		reader, err := os.Open(file)
-		if err != nil {
-			// just ignore permission errors
-			if isPermissionError(err) {
-				log.Printf("Couldn't open file '%s' for reading: %s, ignoring", file, err)
-				return backup.ErrSkipFile
-			}
-
-			return fmt.Errorf("failed opening %s for reading: %w", file, err)
-		}
-		defer reader.Close()
-
-		_, err = io.Copy(writer, reader)
-
-		if isLockError(err) {
-			log.Printf("Couldn't read file '%s': %s, ignoring", file, err)
-			return backup.ErrSkipFile
-		}
-
-		return errors.Wrapf(err, "Failed writing file %s", file)
+		return !match(excludes, name)
 	}
 }
 
-func (c *commit) descend(base string) func(backup.TreeWriter) error {
-	return func(tree backup.TreeWriter) error {
-		group := errgroup.Group{}
-
-		files, err := ioutil.ReadDir(base)
-		if err != nil {
-			// ignore permission errors
-			if errors.Is(err, os.ErrPermission) {
-				log.Printf("Couldn't open folder '%s' for listing: %s, ignoring", base, err)
-				return nil
-			}
-
-			return errors.Wrapf(err, "Failed opening %s for listing", base)
-		}
-
-		for _, file := range files {
-			info := file
-			absPath := filepath.ToSlash(filepath.Join(base, info.Name()))
-
-			if !c.shouldInclude(absPath) {
-				continue
-			}
-
-			if info.IsDir() {
-				// recurse into the sub folder
-				tErr := tree.Tree(context.Background(), info, c.descend(absPath))
-				if tErr != nil {
-					return tErr
-				}
-
-				continue
-			}
-
-			// spawn a limited number of workers in parallel for file backups
-			c.gate.Start()
-			group.Go(func() error {
-				defer c.gate.Done()
-
-				if info.Mode().IsRegular() { // skip irregular files
-					var nodes []*proto.TreeNode
-					nodes, err = c.index.FileInfo(context.Background(), c.set, strings.TrimPrefix(absPath, c.base+"/"), time.Now(), 1)
-					if err != nil {
-						return errors.Wrapf(err, "Failed checking index for info %s", absPath)
-					}
-
-					if len(nodes) > 0 && nodes[0].Stat.Timestamp == info.ModTime().Unix() {
-						// apparently we have this file already
-						tree.Node(nodes[0])
-					} else {
-						// store the file
-						return tree.File(context.Background(), info, c.read(absPath))
-					}
-				}
-
-				return nil
-			})
-		}
-
-		return group.Wait()
-	}
-}
-
-func (c *commit) take() {
-	err := c.descend(c.base)(c.backup)
-
-	if err != nil {
-		log.Printf("%+v", err)
-		os.Exit(-1)
+// runHook runs a shell command with the process's stdio attached.
+func runHook(name, command string) error {
+	if command == "" {
+		return nil
 	}
 
-	err = c.backup.Close(context.Background())
-	if err != nil {
-		log.Fatal(err)
+	log.Printf("Running %s hook: %s", name, command)
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/C", command)
+	} else {
+		cmd = exec.Command("sh", "-c", command)
 	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
 
 func newAction(c *cli.Context) {
@@ -164,32 +75,93 @@ func newAction(c *cli.Context) {
 		base = c.Args().First()
 	}
 
+	root, err := filepath.Abs(base)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
 	log.Println(index.Open())
 
-	s := &commit{
-		backup:   backup.NewBackupWriter(index, c.GlobalString("set")),
-		base:     filepath.ToSlash(filepath.Clean(base)),
-		index:    index,
-		includes: c.StringSlice("include"),
-		excludes: c.StringSlice("exclude"),
-		gate:     syncutil.NewGate(c.Int("workers")),
-		set:      c.GlobalString("set"),
+	objects := backup.ObjectStore(index)
+
+	var stats *statcache.Cache
+	if dir := c.String("state-dir"); dir != "" {
+		stats, err = statcache.Open(filepath.Join(dir, "stat"))
+		if err != nil {
+			log.Fatalf("opening stat cache: %v", err)
+		}
+		defer stats.Close()
+
+		treeCache, err := badger.New(filepath.Join(dir, "objects"))
+		if err != nil {
+			log.Fatalf("opening object cache: %v", err)
+		}
+		defer treeCache.Close()
+
+		objects = cache.New(treeCache, index)
 	}
 
-	s.take()
+	agent := c.String("agent-id")
+	if agent == "" {
+		agent, _ = os.Hostname()
+	}
+
+	walker := &backup.Walker{
+		Index:              index,
+		Objects:            objects,
+		Set:                c.GlobalString("set"),
+		AgentID:            agent,
+		Root:               root,
+		Include:            includeFilter(c.StringSlice("include"), c.StringSlice("exclude")),
+		Workers:            c.Int("workers"),
+		ForceHashPercent:   c.Int("force-hash"),
+		CheckpointInterval: c.Duration("checkpoint-interval"),
+		ReadRetries:        c.Int("read-retries"),
+		PrefetchDepth:      2,
+	}
+
+	if stats != nil {
+		walker.Cache = stats
+	}
+
+	err = runHook("pre", c.String("pre-hook"))
+	if err != nil {
+		log.Fatalf("pre hook failed: %v", err)
+	}
+
+	result, walkErr := walker.Run(context.Background())
+
+	err = runHook("post", c.String("post-hook"))
+	if err != nil {
+		log.Printf("post hook failed: %v", err)
+	}
+
+	if walkErr != nil {
+		log.Fatalf("%+v", walkErr)
+	}
+
+	log.Printf("Commit %x: %d files, %d reused, %d read, %d checkpoints", result.Ref.Hash, result.Files, result.Reused, result.Read, result.Checkpoints)
+
+	if result.Torn > 0 || result.Unreadable > 0 || result.Skipped > 0 {
+		log.Printf("%d files changed while being read, %d could not be read, %d irregular entries skipped", result.Torn, result.Unreadable, result.Skipped)
+	}
 
 	index.Close()
 
 	if cl, ok := store.(common.Closer); ok {
 		log.Println(cl.Close())
 	}
+
+	if result.Dirty() {
+		os.Exit(1)
+	}
 }
 
 var newCmd = cli.Command{
 	Name:        "new",
-	Description: "Create a new commit",
+	Description: "Create a new commit by diffing the directory against the set's latest commit",
 	Action:      newAction,
 	Flags: []cli.Flag{
 		cli.StringSliceFlag{
@@ -203,6 +175,36 @@ var newCmd = cli.Command{
 		cli.IntFlag{
 			Name:  "workers, w",
 			Value: runtime.NumCPU(),
+		},
+		cli.IntFlag{
+			Name:  "force-hash",
+			Usage: "percent of unchanged files to re-hash locally as a check on the change test",
+		},
+		cli.DurationFlag{
+			Name:  "checkpoint-interval",
+			Usage: "write a partial commit this often so an interrupted run keeps its progress; 0 disables",
+			Value: 30 * time.Minute,
+		},
+		cli.IntFlag{
+			Name:  "read-retries",
+			Usage: "how often to re-read a file that changes while it is being read",
+			Value: 3,
+		},
+		cli.StringFlag{
+			Name:  "state-dir",
+			Usage: "per-machine directory for the stat cache and tree cache; optional",
+		},
+		cli.StringFlag{
+			Name:  "agent-id",
+			Usage: "identifier recorded in the commit; defaults to the hostname",
+		},
+		cli.StringFlag{
+			Name:  "pre-hook",
+			Usage: "shell command run before the walk, for example a save-off over RCON",
+		},
+		cli.StringFlag{
+			Name:  "post-hook",
+			Usage: "shell command run after the walk, even when it fails",
 		},
 	},
 }

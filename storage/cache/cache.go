@@ -50,6 +50,28 @@ func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	return err
 }
 
+// GetTree forwards to the wrapped store's prefetch, if it has one, and keeps
+// the fetched trees so the walker's later Gets are served locally.
+func (s *Store) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
+	fetcher, ok := s.wrapped.(backup.TreeFetcher)
+	if !ok {
+		return nil, backup.ErrNotImplemented
+	}
+
+	objects, err := fetcher.GetTree(ctx, ref, maxDepth)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, obj := range objects {
+		if s.test(obj) {
+			_ = s.cache.Put(ctx, obj)
+		}
+	}
+
+	return objects, nil
+}
+
 func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	obj, _ := s.cache.Get(ctx, ref)
 

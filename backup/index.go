@@ -14,5 +14,7 @@ type Index interface {
 	ObjectStore
 	FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error)
 	CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error)
+	// LatestCommit returns the ref of the set's newest commit, or ErrNotFound.
+	LatestCommit(ctx context.Context, set string) (*proto.Ref, error)
 	ReIndex(ctx context.Context) error
 }

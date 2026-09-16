@@ -14,6 +14,8 @@ import "google/protobuf/timestamp.proto";
 //Put(*proto.Object) error
 message PutRequest {
     Object object = 1;
+    // the ref the client computed for object; the server rejects a mismatch
+    Ref ref = 2;
 }
 
 message PutResponse {
@@ -81,6 +83,26 @@ message CommitInfoResponse {
     repeated Commit commits = 1;
 }
 
+message LatestCommitRequest {
+    string backup_set = 1;
+}
+
+message LatestCommitResponse {
+    // empty when the set has no commit
+    Ref ref = 1;
+}
+
+message GetTreeRequest {
+    Ref ref = 1;
+    // how many directory levels below ref to include; 0 means only ref
+    uint32 max_depth = 2;
+}
+
+message GetTreeResponse {
+    Ref ref = 1;
+    Object object = 2;
+}
+
 service Store {
     rpc Put (PutRequest) returns (PutResponse) {}
     rpc Get (GetRequest) returns (GetResponse) {}
@@ -89,6 +111,9 @@ service Store {
     rpc Has(HasRequest) returns (HasResponse) {}
     rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
     rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
+    rpc LatestCommit(LatestCommitRequest) returns (LatestCommitResponse) {}
+    // GetTree streams a subtree's tree objects breadth-first from the server
+    rpc GetTree(GetTreeRequest) returns (stream GetTreeResponse) {}
 
     //rpc BeginTransaction(stream TransactionRequest) returns (stream TransactionResponse) {}
 }
