@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,9 +27,9 @@ func (f *file) restore() error {
 
 	info := files[0].Stat
 
-	log.Printf("name: %s, size: %d, mod: %s", info.Name, info.Size, time.Unix(info.Timestamp, 0))
+	log.Printf("name: %s, size: %d, mod: %s", info.Name, info.Size, info.ModTime())
 
-	outFile, err := ioutil.TempFile(filepath.Dir(f.dst), filepath.Base(f.dst))
+	outFile, err := os.CreateTemp(filepath.Dir(f.dst), filepath.Base(f.dst))
 	if err != nil {
 		return err
 	}
@@ -48,7 +47,7 @@ func (f *file) restore() error {
 
 	outFile.Close()
 
-	err = os.Chtimes(outFile.Name(), time.Now(), time.Unix(info.Timestamp, 0))
+	err = os.Chtimes(outFile.Name(), time.Now(), info.ModTime())
 	if err != nil {
 		return err
 	}

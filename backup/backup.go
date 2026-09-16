@@ -45,7 +45,7 @@ var _ TreeWriter = (*BackupWriter)(nil)
 
 func (br *BackupWriter) Close(ctx context.Context) error {
 	tree := proto.NewObject(&proto.Tree{
-		Nodes: br.nodes,
+		Nodes: br.sortedNodes(),
 	})
 
 	err := br.store.Put(ctx, tree)
@@ -85,11 +85,7 @@ func NewBackupReader(store ObjectStore) *BackupReader {
 func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSeeker, error) {
 	obj, err := br.store.Get(ctx, ref)
 	if err != nil {
-		return nil, errors.Wrap(err, "Couldn't get object from store")
-	}
-
-	if obj == nil {
-		return nil, errors.New("Object not found")
+		return nil, errors.Wrapf(err, "Couldn't get file %x from store", ref.Hash)
 	}
 
 	if obj.Type() != proto.ObjectType_FILE {
@@ -111,13 +107,13 @@ func (br *BackupReader) walk(ctx context.Context, path string, tree *proto.Tree,
 			return errors.Wrap(err, "WalkFn returned error")
 		}
 
-		if info.Tree {
-			subTree, err := br.store.Get(ctx, node.Ref)
+		if info.IsDir() {
+			subTree, err := LoadTree(ctx, br.store, node.Ref)
 			if err != nil {
-				return errors.Wrap(err, "Failed retrieving sub-tree")
+				return errors.Wrapf(err, "Failed retrieving sub-tree %x for %s", node.Ref.Hash, absPath)
 			}
 
-			err = br.walk(ctx, absPath, subTree.GetTree(), walkFn)
+			err = br.walk(ctx, absPath, subTree, walkFn)
 			if err != nil {
 				return err
 			}
@@ -132,23 +128,15 @@ func (br *BackupReader) GetTree(ctx context.Context, ref *proto.Ref, parts []str
 		return ref, nil
 	}
 
-	obj, err := br.store.Get(ctx, ref)
+	tree, err := LoadTree(ctx, br.store, ref)
 	if err != nil {
-		return nil, errors.Wrap(err, "Couldn't get object from store")
-	}
-
-	if obj == nil {
-		return nil, errors.New("Object not found")
-	}
-
-	if obj.Type() != proto.ObjectType_TREE {
-		return nil, errors.New("Object doesn't describe a tree")
+		return nil, errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
 	}
 
 	name := parts[0]
 	log.Printf("Searching for %s %v", name, parts)
-	for _, node := range obj.GetTree().Nodes {
-		if node.Stat.Tree && node.Stat.Name == name {
+	for _, node := range tree.Nodes {
+		if node.Stat.IsDir() && node.Stat.Name == name {
 			return br.GetTree(ctx, node.Ref, parts[1:])
 		}
 	}
@@ -157,18 +145,10 @@ func (br *BackupReader) GetTree(ctx context.Context, ref *proto.Ref, parts []str
 }
 
 func (br *BackupReader) WalkTree(ctx context.Context, ref *proto.Ref, walkFn WalkFn) error {
-	obj, err := br.store.Get(ctx, ref)
+	tree, err := LoadTree(ctx, br.store, ref)
 	if err != nil {
-		return errors.Wrap(err, "Couldn't get object from store")
+		return errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
 	}
 
-	if obj == nil {
-		return errors.New("Object not found")
-	}
-
-	if obj.Type() != proto.ObjectType_TREE {
-		return errors.New("Object doesn't describe a tree")
-	}
-
-	return br.walk(ctx, "", obj.GetTree(), walkFn)
+	return br.walk(ctx, "", tree, walkFn)
 }

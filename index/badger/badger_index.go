@@ -9,17 +9,24 @@ import (
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
 
-	"github.com/dgraph-io/badger/v2"
-	"github.com/dgraph-io/badger/v2/options"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 )
 
 var (
 	badgerIndexEndianness = binary.BigEndian
 )
 
+// indexFormatVersion is bumped whenever record keys change shape; an index
+// written by another version refuses to open until Reset is called.
+const indexFormatVersion = 2
+
+// ErrIndexVersion is returned by NewBadgerIndex for an index in another
+// format version.
+var ErrIndexVersion = errors.New("badger index was written by another format version; reset it and re-index the archives")
+
 func NewBadgerIndex(path string) (*BadgerIndex, error) {
 	opts := badger.DefaultOptions(path).
-		WithTruncate(true).
 		//WithTableLoadingMode(options.FileIO).
 		//WithValueLogLoadingMode(options.FileIO).
 		//WithNumMemtables(1).
@@ -43,7 +50,58 @@ func NewBadgerIndex(path string) (*BadgerIndex, error) {
 		archiveIds:      map[string]uint64{},
 	}
 
+	err = idx.checkVersion()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return idx, idx.loadArchives()
+}
+
+func (b *BadgerIndex) checkVersion() error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(keyVersion))
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			it := txn.NewIterator(badger.IteratorOptions{Prefix: []byte(prefixArchive)})
+			it.Rewind()
+			populated := it.Valid()
+			it.Close()
+
+			if populated {
+				return ErrIndexVersion
+			}
+
+			return txn.Set([]byte(keyVersion), []byte{indexFormatVersion})
+		}
+
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			if len(val) != 1 || val[0] != indexFormatVersion {
+				return ErrIndexVersion
+			}
+
+			return nil
+		})
+	})
+}
+
+// Reset drops every record so the archives can be re-indexed.
+func (b *BadgerIndex) Reset() error {
+	err := b.db.DropAll()
+	if err != nil {
+		return err
+	}
+
+	b.archivesMtx.Lock()
+	b.archiveNames = map[uint64]string{}
+	b.archiveIds = map[string]uint64{}
+	b.archivesMtx.Unlock()
+
+	return b.checkVersion()
 }
 
 type BadgerIndex struct {
@@ -59,7 +117,7 @@ func (b *BadgerIndex) CountObjects() (uint64, uint64, error) {
 	var total uint64
 	var unique uint64
 
-	prefixLength := 20 + len(prefixRecord)
+	prefixLength := proto.HashSize + len(prefixRecord)
 
 	var last []byte
 
@@ -94,7 +152,7 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, exclude ...string) (pack.Inde
 	var location pack.IndexLocation
 
 	txErr := b.db.View(func(txn *badger.Txn) error {
-		prefix := b.recordPrefix(ref.Sha1)
+		prefix := b.recordPrefix(ref.Hash)
 		iterator := txn.NewIterator(badger.IteratorOptions{
 			PrefetchValues: true,
 			PrefetchSize:   1,
@@ -135,7 +193,7 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, exclude ...string) (pack.Inde
 				},
 			}
 
-			copy(location.Record.Sum[:], ref.Sha1)
+			copy(location.Record.Sum[:], ref.Hash)
 			return nil
 		}
 
@@ -175,11 +233,17 @@ func (b *BadgerIndex) loadArchives() error {
 	})
 }
 
-func (b *BadgerIndex) HasArchive(archive string) (bool, error) {
+func (b *BadgerIndex) archiveID(archive string) (uint64, bool) {
 	b.archivesMtx.RLock()
 	defer b.archivesMtx.RUnlock()
 
-	_, ok := b.archiveIds[archive]
+	id, ok := b.archiveIds[archive]
+
+	return id, ok
+}
+
+func (b *BadgerIndex) HasArchive(archive string) (bool, error) {
+	_, ok := b.archiveID(archive)
 
 	return ok, nil
 }
@@ -199,12 +263,9 @@ func (b *BadgerIndex) idValue(id uint64) []byte {
 }
 
 func (b *BadgerIndex) IndexArchive(archive string, index pack.IndexFile) error {
-	// check if the archive already exists
-	b.archivesMtx.RLock()
-	if _, ok := b.archiveIds[archive]; ok {
+	if _, ok := b.archiveID(archive); ok {
 		return nil
 	}
-	b.archivesMtx.RUnlock()
 
 	archiveId, err := b.archiveSequence.Next()
 	if err != nil {
@@ -267,13 +328,10 @@ func (b *BadgerIndex) IndexArchive(archive string, index pack.IndexFile) error {
 }
 
 func (b *BadgerIndex) DeleteArchive(archive string, index pack.IndexFile) error {
-	// check if the archive actually exists
-	b.archivesMtx.RLock()
-	archiveId, ok := b.archiveIds[archive]
+	archiveId, ok := b.archiveID(archive)
 	if !ok {
 		return nil
 	}
-	b.archivesMtx.RUnlock()
 
 	txn := b.db.NewTransaction(true)
 	for _, record := range index {
@@ -320,12 +378,13 @@ func (b *BadgerIndex) DeleteArchive(archive string, index pack.IndexFile) error 
 }
 
 func (b *BadgerIndex) Clear() error {
-	return b.db.DropAll()
+	return b.Reset()
 }
 
 const (
 	prefixRecord  = "record|"
 	prefixArchive = "archive|"
+	keyVersion    = "meta|version"
 )
 
 func (b *BadgerIndex) recordKey(key []byte, archiveId uint64) []byte {

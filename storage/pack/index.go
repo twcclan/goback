@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+
+	"github.com/twcclan/goback/proto"
 )
 
 type IndexFile []IndexRecord
@@ -13,7 +15,7 @@ type IndexFile []IndexRecord
 var indexEndianness = binary.BigEndian
 
 // increment when you make backwards-incompatible changes
-var indexFileMagicBytes = []byte("GOBACKIDX_0001")
+var indexFileMagicBytes = []byte("GOBACKIDX_0002")
 var errIndexHeaderMismatch = errors.New("received unexpected index file header")
 
 func (idx IndexFile) Len() int           { return len(idx) }
@@ -84,7 +86,7 @@ func (idx IndexFile) WriteTo(writer io.Writer) (int64, error) {
 }
 
 type IndexRecord struct {
-	Sum    [20]byte
+	Sum    [proto.HashSize]byte
 	Offset uint32
 	Length uint32
 	Type   uint32

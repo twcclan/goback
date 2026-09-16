@@ -3,7 +3,6 @@ package pack
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -27,14 +26,14 @@ type testingInterface interface {
 }
 
 func makeRef() *proto.Ref {
-	hash := make([]byte, sha1.Size)
+	hash := make([]byte, proto.HashSize)
 	_, err := rand.Read(hash)
 	if err != nil {
 		panic(err)
 	}
 
 	return &proto.Ref{
-		Sha1: hash,
+		Hash: hash,
 	}
 }
 
@@ -90,7 +89,7 @@ func TestPack(t *testing.T) {
 			}
 
 			if object == nil {
-				t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
+				t.Fatalf("Couldn't find expected object %x", original.Ref().Hash)
 			}
 
 			if !bytes.Equal(object.Bytes(), original.Bytes()) {
@@ -132,10 +131,70 @@ func TestPack(t *testing.T) {
 	}
 }
 
-func printIndex(t *testing.T, idx IndexFile) {
-	for _, rec := range idx {
-		t.Logf("hash: %x offset: %d", rec.Sum[:], rec.Offset)
+func TestPackMissingObject(t *testing.T) {
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(t.TempDir())),
+		WithArchiveIndex(NewInMemoryIndex()),
+	)
+	require.NoError(t, err)
+
+	_, err = store.Get(context.Background(), makeRef())
+	require.ErrorIs(t, err, backup.ErrNotFound)
+
+	has, err := store.Has(context.Background(), makeRef())
+	require.NoError(t, err)
+	require.False(t, has)
+
+	require.NoError(t, store.Close())
+}
+
+// TestPackCompaction writes objects across many small archives, compacts them
+// while the store stays open, and expects every object to remain readable.
+func TestPackCompaction(t *testing.T) {
+	base := t.TempDir()
+	index := NewInMemoryIndex()
+
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(base)),
+		WithArchiveIndex(index),
+		WithMaxSize(1024*64),
+		WithCompaction(CompactionConfig{MinimumCandidates: 0}),
+	)
+	require.NoError(t, err)
+
+	objects := makeTestData(t, numObjects)
+	for _, object := range objects {
+		require.NoError(t, store.Put(context.Background(), object))
 	}
+
+	// store a duplicate so compaction has something to drop
+	require.NoError(t, store.Flush())
+	require.NoError(t, store.Put(context.Background(), objects[0]))
+	require.NoError(t, store.Flush())
+
+	archivesBefore, err := store.storage.List(ArchiveSuffix)
+	require.NoError(t, err)
+	require.Greater(t, len(archivesBefore), 1)
+
+	require.NoError(t, store.doCompaction())
+
+	archivesAfter, err := store.storage.List(ArchiveSuffix)
+	require.NoError(t, err)
+	require.Less(t, len(archivesAfter), len(archivesBefore))
+
+	for _, i := range rand.Perm(numObjects) {
+		original := objects[i]
+
+		object, err := store.Get(context.Background(), original.Ref())
+		require.NoError(t, err, "object %x after compaction", original.Ref().Hash)
+		require.True(t, bytes.Equal(object.Bytes(), original.Bytes()))
+
+		loc, err := index.LocateObject(original.Ref())
+		require.NoError(t, err)
+		require.Contains(t, archivesAfter, loc.Archive+ArchiveSuffix)
+	}
+
+	require.NoError(t, store.Close())
 }
 
 /*

@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
+	"github.com/twcclan/goback/cmd/goback/commands/scrub"
 	"github.com/twcclan/goback/cmd/goback/commands/server"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -62,6 +63,7 @@ func main() {
 		file.Command,
 		fix.Command,
 		object.Command,
+		scrub.Command,
 		server.Command,
 	}
 	app.Flags = []cli.Flag{
@@ -75,6 +77,10 @@ func main() {
 		},
 		cli.StringFlag{
 			Name: "set, s",
+		},
+		cli.BoolFlag{
+			Name:  "reset-index",
+			Usage: "drop the local archive index and rebuild it from the archives",
 		},
 	}
 

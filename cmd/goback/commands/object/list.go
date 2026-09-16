@@ -29,7 +29,7 @@ func (o *object) list() {
 	err = o.store.Walk(context.Background(), true, o.objectType, func(obj *proto.Object) error {
 		return writer.Write(
 			[]string{
-				fmt.Sprintf("%x", obj.Ref().Sha1),
+				fmt.Sprintf("%x", obj.Ref().Hash),
 				fmt.Sprint(obj.GetCommit().GetTimestamp()),
 				obj.GetCommit().GetBackupSet(),
 			})

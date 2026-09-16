@@ -1,8 +1,9 @@
 package packtest
 
 import (
+	"io"
 	"io/fs"
-	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -113,7 +114,7 @@ func testReadFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
 			t.Fatal(diff)
 		}
 
-		data, err := ioutil.ReadAll(file)
+		data, err := io.ReadAll(file)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -224,7 +225,7 @@ func getStorageTestFiles(t *testing.T) []file {
 
 		testKey := filepath.ToSlash(strings.TrimPrefix(p, root))[1:]
 
-		data, err := ioutil.ReadFile(p)
+		data, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}

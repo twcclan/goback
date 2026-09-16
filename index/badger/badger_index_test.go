@@ -1,7 +1,6 @@
 package badger
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -9,7 +8,7 @@ import (
 )
 
 func tempDir(tb testing.TB) string {
-	dir, err := ioutil.TempDir("", tb.Name())
+	dir, err := os.MkdirTemp("", tb.Name())
 	if err != nil {
 		tb.Fatalf("failed creating temporary directory for test: %s", err.Error())
 	}

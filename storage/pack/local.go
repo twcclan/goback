@@ -25,7 +25,7 @@ func (las *localArchiveStorage) DeleteAll() error {
 }
 
 func (las *localArchiveStorage) Open(name string) (File, error) {
-	return os.OpenFile(filepath.Join(las.base, name), os.O_RDONLY, 644)
+	return os.OpenFile(filepath.Join(las.base, name), os.O_RDONLY, 0644)
 }
 
 func (las *localArchiveStorage) Create(name string) (File, error) {

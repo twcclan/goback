@@ -61,7 +61,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 
 	for _, archive := range archives {
 		for _, i := range rand.Perm(len(archive.index)) {
-			location, err := idx.LocateObject(&proto.Ref{Sha1: archive.index[i].Sum[:]})
+			location, err := idx.LocateObject(&proto.Ref{Hash: archive.index[i].Sum[:]})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -72,7 +72,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 			}
 
 			if !cmp.Equal(location.Record, archive.index[i]) {
-				t.Errorf(cmp.Diff(location.Record, archive.index[i]))
+				t.Error(cmp.Diff(location.Record, archive.index[i]))
 			}
 		}
 	}
@@ -85,7 +85,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 		}
 
 		for _, record := range archive.index {
-			_, err := idx.LocateObject(&proto.Ref{Sha1: record.Sum[:]})
+			_, err := idx.LocateObject(&proto.Ref{Hash: record.Sum[:]})
 			if err != pack.ErrRecordNotFound {
 				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
 			}
@@ -115,13 +115,13 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 		for _, i := range rand.Perm(len(archive.index)) {
 			record := archive.index[i].Sum[:]
 
-			location1, err := idx.LocateObject(&proto.Ref{Sha1: record})
+			location1, err := idx.LocateObject(&proto.Ref{Hash: record})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
 			}
 
-			location2, err := idx.LocateObject(&proto.Ref{Sha1: record}, archive.name)
+			location2, err := idx.LocateObject(&proto.Ref{Hash: record}, archive.name)
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -150,7 +150,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 			randomArchive := archives[rand.Intn(len(archives))]
 			randomObject := randomArchive.index[rand.Intn(len(randomArchive.index))].Sum[:]
 
-			lookups[i] = &proto.Ref{Sha1: randomObject}
+			lookups[i] = &proto.Ref{Hash: randomObject}
 		}
 
 		b.ResetTimer()

@@ -91,14 +91,14 @@ func makeGCTestData(t *testing.T) ([]*proto.Object, []*proto.Object) {
 
 	// generate some files
 	reachableFiles := makeGCFiles(reachableBlobs)
-	unreachableFiles := append(makeGCFiles(unreachableBlobs))
+	unreachableFiles := makeGCFiles(unreachableBlobs)
 
 	// TODO: generate file splits
 
 	// generate some trees
 	t.Log("generating reachable trees")
 	reachableTrees := makeGCTrees(reachableFiles)
-	unreachableTrees := append(makeGCTrees(unreachableFiles))
+	unreachableTrees := makeGCTrees(unreachableFiles)
 
 	commits := makeGCCommits(reachableTrees)
 
@@ -140,11 +140,11 @@ func makeGCTestData(t *testing.T) ([]*proto.Object, []*proto.Object) {
 //	require.Nil(t, store.doMark())
 //
 //	for _, obj := range reachable {
-//		require.Truef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be reachable", obj.Ref().Sha1, obj.Type())
+//		require.Truef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be reachable", obj.Ref().Hash, obj.Type())
 //	}
 //
 //	for _, obj := range unreachable {
-//		require.Falsef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be unreachable", obj.Ref().Sha1, obj.Type())
+//		require.Falsef(t, store.isObjectReachable(obj.Ref()), "expected object %x of type %s to be unreachable", obj.Ref().Hash, obj.Type())
 //	}
 //
 //	require.Nil(t, store.Close())

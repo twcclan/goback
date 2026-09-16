@@ -117,14 +117,23 @@ func (w *Writer) finalizeArchive(a *archive) error {
 		return nil
 	}
 
-	err = w.index.IndexArchive(a.name, index)
-	if err != nil {
+	if index == nil {
 		return err
 	}
 
 	atomic.AddInt32(&w.archives, -1)
 	w.archiveSemaphore.Release(1)
-	return err
+
+	indexErr := w.index.IndexArchive(a.name, index)
+	if indexErr == nil {
+		a.releaseWriteIndex()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return indexErr
 }
 
 func (w *Writer) newArchive() error {

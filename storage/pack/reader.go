@@ -3,7 +3,9 @@ package pack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
@@ -70,7 +72,7 @@ func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 	}
 
 	for _, name := range archives {
-		archive, err := openArchive(w.storage, name)
+		archive, err := openArchive(w.storage, strings.TrimSuffix(name, ArchiveSuffix))
 		if err != nil {
 			return err
 		}
@@ -82,9 +84,9 @@ func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 				var err error
 
 				if load {
-					obj, err = proto.NewObjectFromCompressedBytes(bytes)
+					obj, err = proto.NewVerifiedObject(bytes, hdr.Compression, hdr.Type, hdr.Ref)
 					if err != nil {
-						return err
+						return fmt.Errorf("object %x in archive %s: %w", hdr.Ref.Hash, archive.name, err)
 					}
 				}
 

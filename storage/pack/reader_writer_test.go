@@ -55,7 +55,7 @@ func TestReaderWriter(t *testing.T) {
 			}
 
 			if object == nil {
-				t.Fatalf("Couldn't find expected object %x", original.Ref().Sha1)
+				t.Fatalf("Couldn't find expected object %x", original.Ref().Hash)
 			}
 
 			if !bytes.Equal(object.Bytes(), original.Bytes()) {

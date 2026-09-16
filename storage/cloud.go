@@ -9,9 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twcclan/goback/backup"
+	badgerIdx "github.com/twcclan/goback/index/badger"
+	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 )
@@ -21,6 +25,8 @@ const (
 	blobObjectKey      = blobObjectPrefix + "%s/%s" // pack/<extension>/<filename>
 	blobChildrenPrefix = "children/%s/"             // children/<name>
 )
+
+var cloudLogger = logrus.WithField("storage", "cloud")
 
 var _ io.ReadSeeker = (*cloudFile)(nil)
 var _ io.WriterTo = (*cloudFile)(nil)
@@ -198,7 +204,7 @@ func (c *cloudStore) Children() ([]string, error) {
 }
 
 func (c *cloudStore) openGCSFile(key string) (pack.File, error) {
-	gcsLogger.WithField("key", key).Debug("Opening file")
+	cloudLogger.WithField("key", key).Debug("Opening file")
 	// if this is a file we are currently uploading
 	// return the active instance instead
 	c.openFilesMtx.Lock()
@@ -369,57 +375,45 @@ func NewCloudStore(bucket *blob.Bucket) *cloudStore {
 	return storage
 }
 
-//func NewCloudObjectStore(bucket, indexDir, cacheDir string) (*pack.PackStorage, error) {
-//	credentials, err := google.FindDefaultCredentials(context.Background(), storage.ScopeReadWrite)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	client, err := storage.NewClient(context.Background(), option.WithCredentials(credentials))
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	storage := &cloudStore{
-//		bucket:    bucket,
-//		gcs:       client,
-//		openFiles: make(map[string]*cloudFile),
-//	}
-//
-//	err = os.MkdirAll(indexDir, 0644)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	idx, err := badgerIdx.NewBadgerIndex(indexDir)
-//
-//	options := []pack.PackOption{
-//		pack.WithArchiveStorage(storage),
-//		pack.WithArchiveIndex(idx),
-//		pack.WithMaxParallel(64),
-//		pack.WithCloseBeforeRead(true),
-//		pack.WithMaxSize(1024 * 1024 * 1024),
-//		pack.WithCompaction(pack.CompactionConfig{
-//			Periodically:      24 * time.Hour,
-//			MinimumCandidates: 1000,
-//			GarbageCollection: false,
-//			OnOpen:            false,
-//		}),
-//	}
-//
-//	if cacheDir != "" {
-//		err = os.MkdirAll(cacheDir, 0644)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		cache, err := badger.New(cacheDir)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		options = append(options, pack.WithMetadataCache(cache))
-//	}
-//
-//	return pack.NewPackStorage(options...)
-//}
+// NewCloudObjectStore returns a pack store over a remote bucket, with a local
+// badger archive index at indexDir and, if cacheDir is not empty, a local
+// metadata cache.
+func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string) (backup.ObjectStore, error) {
+	err := os.MkdirAll(indexDir, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	idx, err := badgerIdx.NewBadgerIndex(indexDir)
+	if err != nil {
+		return nil, err
+	}
+
+	options := []pack.PackOption{
+		pack.WithArchiveStorage(NewCloudStore(bucket)),
+		pack.WithArchiveIndex(idx),
+		pack.WithMaxParallel(64),
+		pack.WithCloseBeforeRead(true),
+		pack.WithMaxSize(1024 * 1024 * 1024),
+		pack.WithCompaction(pack.CompactionConfig{
+			Periodically:      24 * time.Hour,
+			MinimumCandidates: 1000,
+		}),
+	}
+
+	if cacheDir != "" {
+		err = os.MkdirAll(cacheDir, 0755)
+		if err != nil {
+			return nil, err
+		}
+
+		cache, err := badger.New(cacheDir)
+		if err != nil {
+			return nil, err
+		}
+
+		options = append(options, pack.WithMetadataCache(cache))
+	}
+
+	return pack.NewPackStorage(options...)
+}

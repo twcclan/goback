@@ -3,8 +3,8 @@ package object
 import (
 	"context"
 	"encoding/hex"
-	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/proto"
@@ -18,17 +18,13 @@ func (o *object) get() {
 		log.Fatal(err)
 	}
 
-	if obj == nil {
-		log.Fatal("Object not found")
-	}
-
 	log.Printf("Found object %s", obj.Type())
 
 	if obj.Type() == proto.ObjectType_FILE {
 		log.Printf("%d parts", len(obj.GetFile().Parts))
 	}
 
-	err = ioutil.WriteFile(o.out, obj.Bytes(), 0666)
+	err = os.WriteFile(o.out, obj.Bytes(), 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +42,7 @@ func getAction(c *cli.Context) {
 
 	o := &object{
 		store: store,
-		ref:   &proto.Ref{Sha1: hash},
+		ref:   &proto.Ref{Hash: hash},
 		out:   out,
 	}
 

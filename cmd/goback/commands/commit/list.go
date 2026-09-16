@@ -18,7 +18,7 @@ func (c *commit) list() {
 	}
 
 	for _, commit := range commits {
-		log.Printf("%s %x", time.Unix(commit.Timestamp, 0), commit.Tree.Sha1)
+		log.Printf("%s %x", time.Unix(commit.Timestamp, 0), commit.Tree.Hash)
 	}
 }
 

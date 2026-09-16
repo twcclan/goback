@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"encoding/binary"
 	"io"
 	"log"
 	"os"
@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"github.com/willf/bitset"
+	"github.com/bits-and-blooms/bitset"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 	"go.opencensus.io/trace"
@@ -25,6 +25,57 @@ import (
 )
 
 var errAlreadyClosed = errors.New("Writer is already closed")
+
+const (
+	archiveFormatVersion uint16 = 2
+	archiveHashSHA256    uint16 = 1
+	archiveHeaderSize           = 16
+)
+
+var archiveMagic = []byte("GOBACKPACK")
+
+// archiveHeader is the fixed 16-byte prefix of every archive: magic, format
+// version, hash algorithm, two reserved bytes.
+func archiveHeader() []byte {
+	hdr := make([]byte, archiveHeaderSize)
+	copy(hdr, archiveMagic)
+	binary.BigEndian.PutUint16(hdr[10:], archiveFormatVersion)
+	binary.BigEndian.PutUint16(hdr[12:], archiveHashSHA256)
+
+	return hdr
+}
+
+func checkArchiveHeader(hdr []byte) error {
+	if len(hdr) < archiveHeaderSize || !bytes.Equal(hdr[:len(archiveMagic)], archiveMagic) {
+		return errors.New("not a goback archive")
+	}
+
+	if v := binary.BigEndian.Uint16(hdr[10:]); v != archiveFormatVersion {
+		return errors.Errorf("archive format version %d, want %d", v, archiveFormatVersion)
+	}
+
+	if h := binary.BigEndian.Uint16(hdr[12:]); h != archiveHashSHA256 {
+		return errors.Errorf("archive hash algorithm %d, want %d", h, archiveHashSHA256)
+	}
+
+	return nil
+}
+
+// verifyStored checks a stored object against the ref in its header without
+// decoding it.
+func verifyStored(hdr *proto.ObjectHeader, stored []byte) error {
+	if hdr.Type == proto.ObjectType_TOMBSTONE {
+		if !proto.TombstoneRef(hdr.TombstoneFor).Equal(hdr.Ref) {
+			return proto.ErrRefMismatch
+		}
+
+		return nil
+	}
+
+	_, err := proto.VerifyPayload(stored, hdr.Compression, hdr.Type, hdr.Ref)
+
+	return err
+}
 
 type readFile interface {
 	io.ReadSeeker
@@ -101,7 +152,7 @@ func (a *archive) recoverIndex(err error) (IndexFile, error) {
 			Length: length,
 			Type:   uint32(o.Type),
 		}
-		copy(record.Sum[:], o.Ref.Sha1)
+		copy(record.Sum[:], o.Ref.Hash)
 
 		recoveredIndex = append(recoveredIndex, record)
 
@@ -157,6 +208,12 @@ func (a *archive) open() (err error) {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
 
+		_, err = a.writeFile.Write(archiveHeader())
+		if err != nil {
+			return errors.Wrap(err, "Failed writing archive header")
+		}
+
+		a.size = archiveHeaderSize
 		a.writeIndex = make(map[string]*IndexRecord)
 	}
 
@@ -175,20 +232,34 @@ func (a *archive) open() (err error) {
 		// store the size of the archive here for later
 		a.size = uint64(info.Size())
 
+		hdr := make([]byte, archiveHeaderSize)
+		_, err = io.ReadFull(readFile, hdr)
+		if err == nil {
+			err = checkArchiveHeader(hdr)
+		}
+
+		if err != nil {
+			readFile.Close()
+			return errors.Wrapf(err, "archive %s", a.name)
+		}
 	}
 
 	return nil
 }
 
+// indexLocation answers from the write index, which stays alive after the
+// writer is closed until releaseWriteIndex is called.
 func (a *archive) indexLocation(ref *proto.Ref) *IndexRecord {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
-	if a.readOnly {
-		return nil
-	}
+	return a.writeIndex[string(ref.Hash)]
+}
 
-	return a.writeIndex[string(ref.Sha1)]
+func (a *archive) releaseWriteIndex() {
+	a.mtx.Lock()
+	a.writeIndex = nil
+	a.mtx.Unlock()
 }
 
 func (a *archive) archiveName() string {
@@ -245,8 +316,12 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 		return nil, errors.Wrap(err, "Failed parsing object header")
 	}
 
-	if !bytes.Equal(hdr.Ref.Sha1, ref.Sha1) {
+	if !bytes.Equal(hdr.Ref.Hash, ref.Hash) {
 		return nil, errors.New("Object doesn't match Ref, index probably corrupted")
+	}
+
+	if hdr.Type == proto.ObjectType_TOMBSTONE {
+		return nil, errors.Errorf("ref %x is a tombstone and has no object", ref.Hash)
 	}
 
 	if ctx, err := tag.New(ctx,
@@ -259,31 +334,37 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 		)
 	}
 
-	return proto.NewObjectFromCompressedBytes(buf[consumed+int(hdrSize):])
+	obj, err := proto.NewVerifiedObject(buf[consumed+int(hdrSize):], hdr.Compression, hdr.Type, ref)
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading object %x from archive %s", ref.Hash, a.name)
+	}
+
+	return obj, nil
 }
 
 func (a *archive) Put(ctx context.Context, object *proto.Object) error {
 	ctx, span := trace.StartSpan(ctx, "archive.Put")
 	defer span.End()
 
-	bytes := object.CompressedBytes()
-	ref := object.Ref()
+	payload, err := object.Canonical()
+	if err != nil {
+		return err
+	}
+
+	stored, compression := proto.Encode(payload)
 
 	hdr := &proto.ObjectHeader{
-		Compression: proto.Compression_GZIP,
-		Ref:         ref,
+		Compression: compression,
+		Ref:         proto.HashPayload(object.Type(), payload),
 		Type:        object.Type(),
 	}
 
-	return a.putRaw(ctx, hdr, bytes)
+	return a.putRaw(ctx, hdr, stored)
 }
 
 func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref) error {
-	tombstoneSha := sha1.Sum(ref.Sha1)
-	tombstoneRef := &proto.Ref{Sha1: tombstoneSha[:]}
-
 	hdr := &proto.ObjectHeader{
-		Ref:          tombstoneRef,
+		Ref:          proto.TombstoneRef(ref),
 		TombstoneFor: ref,
 		Type:         proto.ObjectType_TOMBSTONE,
 	}
@@ -301,18 +382,16 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 
 	ref := hdr.Ref
 	// make sure not to have duplicates within a single file
-	if _, ok := a.writeIndex[string(ref.Sha1)]; ok {
+	if _, ok := a.writeIndex[string(ref.Hash)]; ok {
 		return nil
 	}
 
-	// add type info where it isn't already present
 	if hdr.Type == proto.ObjectType_INVALID {
-		obj, err := proto.NewObjectFromCompressedBytes(bytes)
-		if err != nil {
-			return err
-		}
+		return errors.New("object header has no type")
+	}
 
-		hdr.Type = obj.Type()
+	if !ref.Valid() {
+		return errors.Errorf("object header ref has %d bytes, want %d", len(ref.GetHash()), proto.HashSize)
 	}
 
 	hdr.Predecessor = a.last
@@ -348,9 +427,9 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 		Type:   uint32(hdr.Type),
 	}
 
-	copy(record.Sum[:], ref.Sha1)
+	copy(record.Sum[:], ref.Hash)
 
-	a.writeIndex[string(ref.Sha1)] = record
+	a.writeIndex[string(ref.Hash)] = record
 
 	a.size += uint64(record.Length)
 	a.last = ref
@@ -390,7 +469,19 @@ func loadType(t proto.ObjectType) loadPredicate {
 
 func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) error {
 	bufReader := bufio.NewReaderSize(reader, 1024*16)
-	offset := uint32(0)
+
+	fileHeader := make([]byte, archiveHeaderSize)
+	_, err := io.ReadFull(bufReader, fileHeader)
+	if err != nil {
+		return errors.Wrap(err, "reading archive header")
+	}
+
+	err = checkArchiveHeader(fileHeader)
+	if err != nil {
+		return err
+	}
+
+	offset := uint32(archiveHeaderSize)
 
 	for {
 		// read size of object header
@@ -468,15 +559,18 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 		var grp errgroup.Group
 
 		grp.Go(func() error {
-			defer pWriter.Close()
-
 			_, wErr := writerTo.WriteTo(pWriter)
+			pWriter.CloseWithError(wErr)
 
 			return wErr
 		})
 
 		grp.Go(func() error {
-			return a.foreachReader(pReader, load, callback)
+			// closing the read side unblocks the writer if the walk stops early
+			rErr := a.foreachReader(pReader, load, callback)
+			pReader.CloseWithError(rErr)
+
+			return rErr
 		})
 
 		wErr := grp.Wait()
@@ -553,10 +647,5 @@ func (a *archive) CloseWriter() (IndexFile, error) {
 	// switch to read-only mode
 	a.readOnly = true
 
-	idx, err := a.storeIndex()
-
-	// release write index
-	a.writeIndex = nil
-
-	return idx, err
+	return a.storeIndex()
 }

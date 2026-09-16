@@ -19,10 +19,10 @@ var _ pack.ArchiveIndex = (*Index)(nil)
 func (c *Index) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocation, error) {
 	loc := pack.IndexLocation{}
 
-	// TODO: need to add a dummy value to the array here, otherwise the query does not work. need to figure out why!
-	rows, err := c.locate.Query(ref.Sha1, pq.StringArray(append(exclude, "dummy")))
+	// a nil slice encodes as SQL NULL, and `= ANY(NULL)` never matches; an empty slice encodes as '{}'
+	rows, err := c.locate.Query(ref.Hash, pq.StringArray(append([]string{}, exclude...)))
 	if err != nil {
-		log.Printf("failed locating object %x: %v", ref.Sha1, err)
+		log.Printf("failed locating object %x: %v", ref.Hash, err)
 		return loc, err
 	}
 
@@ -42,7 +42,7 @@ func (c *Index) LocateObject(ref *proto.Ref, exclude ...string) (pack.IndexLocat
 		&loc.Archive,
 	)
 	if err != nil {
-		log.Printf("failed scanning object %x: %v", ref.Sha1, err)
+		log.Printf("failed scanning object %x: %v", ref.Hash, err)
 		return loc, err
 	}
 

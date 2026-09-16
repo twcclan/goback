@@ -3,6 +3,7 @@ package commit
 import (
 	"context"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,78 +18,169 @@ import (
 	"github.com/urfave/cli"
 )
 
-func (c *commit) restore() {
+type restoredDir struct {
+	path    string
+	modTime time.Time
+}
+
+func (c *commit) restore() error {
 	commits, err := c.index.CommitInfo(context.Background(), c.set, c.when, 1)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	if len(commits) == 1 {
-		commit := commits[0]
-		log.Printf("Restoring commit %x from %v", proto.NewObject(commit).Ref().Sha1, commit.Timestamp)
-		tree := commit.Tree
+	if len(commits) != 1 {
+		return errors.New("Commit not found")
+	}
 
-		if c.from != "" {
-			tree, err = c.reader.GetTree(context.Background(), tree, strings.Split(c.from, "/"))
-			if err != nil {
-				log.Fatal(err)
-			}
+	commit := commits[0]
+	log.Printf("Restoring commit %x from %v", proto.NewObject(commit).Ref().Hash, commit.Timestamp)
+	tree := commit.Tree
+
+	if c.from != "" {
+		tree, err = c.reader.GetTree(context.Background(), tree, strings.Split(c.from, "/"))
+		if err != nil {
+			return err
+		}
+	}
+
+	restored := map[string]bool{}
+	var dirs []restoredDir
+
+	err = c.reader.WalkTree(context.Background(), tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
+		path = filepath.Join(c.base, path)
+		restored[path] = true
+		log.Printf("Restoring %s", path)
+
+		if info.IsDir() {
+			// directory times are set after the subtree is written, or the children would clobber them
+			dirs = append(dirs, restoredDir{path: path, modTime: info.ModTime()})
+
+			return os.MkdirAll(path, info.Mode())
 		}
 
-		walkErr := c.reader.WalkTree(context.Background(), tree, func(path string, info os.FileInfo, ref *proto.Ref) error {
-			path = filepath.Join(c.base, path)
-			log.Printf("Restoring %s", path)
+		if stat, ok := info.Sys().(*proto.FileInfo); ok && stat.Type == proto.NodeType_NODE_SYMLINK {
+			return restoreSymlink(path, stat.LinkTarget)
+		}
 
-			if info.IsDir() {
-				innerErr := os.Mkdir(path, info.Mode())
+		return c.restoreFile(path, info, ref)
+	})
+	if err != nil {
+		return err
+	}
 
-				if innerErr != nil {
-					return innerErr
-				}
-			} else {
-				reader, innerErr := c.reader.ReadFile(context.Background(), ref)
-				if innerErr != nil {
-					return innerErr
-				}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		err = os.Chtimes(dirs[i].path, time.Now(), dirs[i].modTime)
+		if err != nil {
+			return err
+		}
+	}
 
-				file, innerErr := os.Create(path)
-				if innerErr != nil {
-					return innerErr
-				}
-				// leave this here in case we return out early
-				defer file.Close()
+	if c.delete {
+		return removeUnrestored(c.base, restored)
+	}
 
-				_, innerErr = io.Copy(file, reader)
-				if innerErr != nil {
-					return errors.Wrapf(innerErr, "Restoring file: %s", path)
-				}
+	return nil
+}
 
-				// close file here so chtimes works
-				innerErr = file.Close()
-				if innerErr != nil {
-					return innerErr
-				}
-			}
+// restoreSymlink recreates a link as recorded and never follows it.
+func restoreSymlink(path, target string) error {
+	if existing, err := os.Readlink(path); err == nil && existing == target {
+		return nil
+	}
 
-			err = os.Chtimes(path, time.Now(), info.ModTime())
-			if err != nil {
-				return err
-			}
+	err := os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 
-			err = os.Chmod(path, info.Mode())
-			if err != nil {
-				return err
-			}
+	return os.Symlink(target, path)
+}
 
+// restoreFile writes the file next to its destination and renames it into
+// place, so an interrupted restore never leaves a truncated file.
+func (c *commit) restoreFile(path string, info os.FileInfo, ref *proto.Ref) error {
+	reader, err := c.reader.ReadFile(context.Background(), ref)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".goback-*")
+	if err != nil {
+		return err
+	}
+	tmp := file.Name()
+
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		file.Close()
+		os.Remove(tmp)
+		return errors.Wrapf(err, "Restoring file: %s", path)
+	}
+
+	err = file.Close()
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	err = os.Chtimes(tmp, time.Now(), info.ModTime())
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	err = os.Chmod(tmp, info.Mode())
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	err = os.Rename(tmp, path)
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	return nil
+}
+
+// removeUnrestored deletes everything under base that the restore did not
+// write, deepest entries first.
+func removeUnrestored(base string, restored map[string]bool) error {
+	var stale []string
+
+	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if path == base || restored[path] {
 			return nil
-		})
-
-		if walkErr != nil {
-			log.Fatal(walkErr)
 		}
-	} else {
-		log.Fatal("Commit not found")
+
+		stale = append(stale, path)
+
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
+
+	for _, path := range stale {
+		log.Printf("Removing %s", path)
+
+		err = os.RemoveAll(path)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func restoreAction(c *cli.Context) {
@@ -116,14 +208,18 @@ func restoreAction(c *cli.Context) {
 
 	s := &commit{
 		index:  index,
-		base:   dst,
+		base:   filepath.Clean(dst),
 		when:   when,
 		from:   c.String("from"),
+		delete: c.Bool("delete"),
 		reader: backup.NewBackupReader(store),
 		set:    c.GlobalString("set"),
 	}
 
-	s.restore()
+	err = s.restore()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	index.Close()
 
@@ -134,12 +230,16 @@ func restoreAction(c *cli.Context) {
 
 var restoreCmd = cli.Command{
 	Name:        "restore",
-	Description: "Restore all files from a given commit",
+	Description: "Restore all files from a given commit into a directory, keeping files the commit does not contain",
 	Action:      restoreAction,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "from",
 			Value: "",
+		},
+		cli.BoolFlag{
+			Name:  "delete",
+			Usage: "remove files under the target that the commit does not contain",
 		},
 	},
 }

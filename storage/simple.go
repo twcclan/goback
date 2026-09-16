@@ -1,18 +1,18 @@
 package storage
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-
-	"context"
-
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
+
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 func NewSimpleObjectStore(base string) *SimpleChunkStore {
@@ -41,30 +41,48 @@ func (s *SimpleChunkStore) Close() error {
 }
 
 func (s *SimpleChunkStore) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
-	return s.db.Has(ref.Sha1, nil)
+	return s.db.Has(ref.Hash, nil)
 }
 
 func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
-	err := s.db.Put(obj.Ref().Sha1, obj.Bytes(), nil)
+	payload, err := obj.Canonical()
 	if err != nil {
 		return err
 	}
 
-	return err
+	return s.db.Put(proto.HashPayload(obj.Type(), payload).Hash, obj.Bytes(), nil)
 }
 
 func (s *SimpleChunkStore) Delete(ctx context.Context, ref *proto.Ref) error {
-	return s.db.Delete(ref.Sha1, nil)
+	return s.db.Delete(ref.Hash, nil)
 }
 
 func (s *SimpleChunkStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	data, err := s.db.Get(ref.Sha1, nil)
+	data, err := s.db.Get(ref.Hash, nil)
 
+	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return nil, backup.ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	obj, err := proto.NewObjectFromBytes(data)
 	if err != nil {
 		return nil, err
 	}
 
-	return proto.NewObjectFromBytes(data)
+	payload, err := obj.Canonical()
+	if err != nil {
+		return nil, err
+	}
+
+	if !proto.HashPayload(obj.Type(), payload).Equal(ref) {
+		return nil, proto.ErrRefMismatch
+	}
+
+	return obj, nil
 }
 
 func (s *SimpleChunkStore) Walk(ctx context.Context, load bool, chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
@@ -76,7 +94,7 @@ func (s *SimpleChunkStore) Walk(ctx context.Context, load bool, chunkType proto.
 	for _, match := range matches {
 		var obj *proto.Object
 		if load {
-			data, err := ioutil.ReadFile(match)
+			data, err := os.ReadFile(match)
 			if err != nil {
 				return err
 			}

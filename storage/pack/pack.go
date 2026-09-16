@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 
 	return &PackStorage{
 		archives:         make([]*archive, 0),
+		pending:          make(map[string]pendingObject),
 		writable:         make(chan *archive, opts.maxParallel),
 		archiveSemaphore: semaphore.NewWeighted(int64(opts.maxParallel)),
 		storage:          opts.storage,
@@ -81,10 +83,20 @@ type PackStorage struct {
 	mtx      sync.RWMutex
 	archives []*archive
 
+	// pending holds objects written to archives that are not yet in the
+	// archive index, so they stay readable until finalizeArchive indexes them.
+	pendingMtx sync.RWMutex
+	pending    map[string]pendingObject
+
 	compactorMtx     sync.Mutex
 	compactorTicker  *time.Ticker
 	compactorClose   chan struct{}
 	compactorRunning bool
+}
+
+type pendingObject struct {
+	archive *archive
+	record  *IndexRecord
 }
 
 var _ backup.ObjectStore = (*PackStorage)(nil)
@@ -97,7 +109,10 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 		return false, nil
 	}
 
-	_, loc := ps.indexLocation(ctx, ref)
+	_, loc, err := ps.indexLocation(ref)
+	if err != nil {
+		return false, err
+	}
 
 	return loc != nil, nil
 }
@@ -157,7 +172,14 @@ func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
 
 func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	err := ps.withWritableArchive(func(a *archive) error {
-		return a.Put(ctx, object)
+		err := a.Put(ctx, object)
+		if err != nil {
+			return err
+		}
+
+		ps.addPending(a, object.Ref())
+
+		return nil
 	})
 
 	if err != nil {
@@ -174,49 +196,65 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	return nil
 }
 
-func (ps *PackStorage) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
-	return ps.withWritableArchive(func(a *archive) error {
-		return a.putRaw(ctx, hdr, bytes)
-	})
+func (ps *PackStorage) addPending(a *archive, ref *proto.Ref) {
+	rec := a.indexLocation(ref)
+	if rec == nil {
+		return
+	}
+
+	ps.pendingMtx.Lock()
+	ps.pending[string(ref.Hash)] = pendingObject{archive: a, record: rec}
+	ps.pendingMtx.Unlock()
 }
 
-// indexLocation returns the indexRecord for the provided ref or nil if it's
-// not in this store.
-func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*archive, *IndexRecord) {
-	ps.mtx.RLock()
-	defer ps.mtx.RUnlock()
+// releasePending drops the pending entries of an archive once the archive
+// index can answer for them.
+func (ps *PackStorage) releasePending(a *archive, index IndexFile) {
+	ps.pendingMtx.Lock()
+	for i := range index {
+		key := string(index[i].Sum[:])
+		if p, ok := ps.pending[key]; ok && p.archive == a {
+			delete(ps.pending, key)
+		}
+	}
+	ps.pendingMtx.Unlock()
 
+	a.releaseWriteIndex()
+}
+
+// indexLocation returns the archive and record for the provided ref, or a nil
+// record if the ref is not in this store.
+func (ps *PackStorage) indexLocation(ref *proto.Ref) (*archive, *IndexRecord, error) {
 	loc, err := ps.index.LocateObject(ref)
-	if err != nil {
-		return nil, nil
+	if err != nil && !errors.Is(err, ErrRecordNotFound) {
+		return nil, nil, err
 	}
 
-	for _, archive := range ps.archives {
-		if archive.name == loc.Archive {
-			return archive, &loc.Record
+	if err == nil {
+		ps.mtx.RLock()
+		for _, archive := range ps.archives {
+			if archive.name == loc.Archive {
+				ps.mtx.RUnlock()
+				return archive, &loc.Record, nil
+			}
 		}
-
-		//if rec := archive.indexLocation(ref); rec != nil {
-		//return archive, rec
-		//}
+		ps.mtx.RUnlock()
 	}
 
-	// go through currently opened archives
-	for _, archive := range ps.archives {
-		if rec := archive.indexLocation(ref); rec != nil {
-			return archive, rec
-		}
+	ps.pendingMtx.RLock()
+	p, ok := ps.pending[string(ref.Hash)]
+	ps.pendingMtx.RUnlock()
+
+	if ok {
+		return p.archive, p.record, nil
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }
 
 // indexLocationExcept checks if a given ref exists in an archive that is not in
-// the provided map of exclusions
-func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) (*archive, *IndexRecord) {
-	ps.mtx.RLock()
-	defer ps.mtx.RUnlock()
-
+// the provided list of exclusions
+func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) (*archive, *IndexRecord, error) {
 	var exclusions []string
 	for _, archive := range exclude {
 		exclusions = append(exclusions, archive.name)
@@ -224,17 +262,23 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) 
 
 	loc, err := ps.index.LocateObject(ref, exclusions...)
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, ErrRecordNotFound) {
+			return nil, nil, nil
+		}
+
+		return nil, nil, err
 	}
 
-	var hit *archive
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
 	for _, arc := range ps.archives {
 		if arc.name == loc.Archive {
-			return hit, &loc.Record
+			return arc, &loc.Record, nil
 		}
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }
 
 func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
@@ -246,26 +290,30 @@ func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 		return cached, nil
 	}
 
-	archive, rec := ps.indexLocation(ctx, ref)
-	if rec != nil {
-		archive.mtx.RLock()
-		needClose := !archive.readOnly && ps.closeBeforeRead
-		archive.mtx.RUnlock()
-
-		if needClose {
-			span.AddAttributes(trace.BoolAttribute("close-before-read", true))
-			log.Printf("Need to close archive %s before reading object %x", archive.name, ref.Sha1)
-			err := ps.finalizeArchive(archive)
-
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		return ps.putReadCache(ctx)(archive.getRaw(ctx, ref, rec))
+	archive, rec, err := ps.indexLocation(ref)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, nil
+	if rec == nil {
+		return nil, backup.ErrNotFound
+	}
+
+	archive.mtx.RLock()
+	needClose := !archive.readOnly && ps.closeBeforeRead
+	archive.mtx.RUnlock()
+
+	if needClose {
+		span.AddAttributes(trace.BoolAttribute("close-before-read", true))
+		log.Printf("Need to close archive %s before reading object %x", archive.name, ref.Hash)
+		err := ps.finalizeArchive(archive)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return ps.putReadCache(ctx)(archive.getRaw(ctx, ref, rec))
 }
 
 func (ps *PackStorage) Delete(ctx context.Context, ref *proto.Ref) error {
@@ -297,9 +345,9 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 				var err error
 
 				if load {
-					obj, err = proto.NewObjectFromCompressedBytes(bytes)
+					obj, err = proto.NewVerifiedObject(bytes, hdr.Compression, hdr.Type, hdr.Ref)
 					if err != nil {
-						return err
+						return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, archive.name)
 					}
 				}
 
@@ -330,19 +378,31 @@ func (ps *PackStorage) unloadArchive(a *archive) {
 	ps.mtx.Unlock()
 }
 
+// finalizeArchive closes the archive's writer and registers it with the
+// archive index. The writer slot is released as soon as the writer is closed,
+// even if storing or indexing its index fails.
 func (ps *PackStorage) finalizeArchive(a *archive) error {
 	index, err := a.CloseWriter()
 	if err == errAlreadyClosed {
 		return nil
 	}
 
-	err = ps.index.IndexArchive(a.name, index)
-	if err != nil {
+	if index == nil {
 		return err
 	}
 
 	ps.archiveSemaphore.Release(1)
-	return err
+
+	indexErr := ps.index.IndexArchive(a.name, index)
+	if indexErr == nil {
+		ps.releasePending(a, index)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return indexErr
 }
 
 func (ps *PackStorage) newArchive() error {
@@ -470,7 +530,7 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 //				stats.Record(context.Background(), GCCommitMarkLatency.M(float64(time.Since(startCommit))/float64(time.Millisecond)))
 //
 //				if err != nil {
-//					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Sha1, err)
+//					log.Printf("Couldn't run garbage collector mark step on ref %x: %s", ref.Hash, err)
 //					return err
 //				}
 //			}
@@ -483,7 +543,7 @@ func (ps *PackStorage) putWritableArchive(ar *archive) {
 //		for i := range arch.readIndex {
 //			if proto.ObjectType(arch.readIndex[i].Type) == proto.ObjectType_COMMIT {
 //				select {
-//				case refs <- &proto.Ref{Sha1: arch.readIndex[i].Sum[:]}:
+//				case refs <- &proto.Ref{Hash: arch.readIndex[i].Sum[:]}:
 //				case <-ctx.Done():
 //					close(refs)
 //					return ctx.Err()
@@ -642,10 +702,17 @@ func (ps *PackStorage) doCompaction() error {
 	//stats.Record(ctx, TotalLiveObjects.M(totalObjects))
 
 	closeArchive := func(a *archive) error {
-		_, err := a.CloseWriter()
-		if err != nil && err != errAlreadyClosed {
+		index, err := a.CloseWriter()
+		if err != nil {
 			return err
 		}
+
+		err = ps.index.IndexArchive(a.name, index)
+		if err != nil {
+			return err
+		}
+
+		a.releaseWriteIndex()
 
 		ps.mtx.Lock()
 		ps.archives = append(ps.archives, a)
@@ -696,7 +763,7 @@ func (ps *PackStorage) doCompaction() error {
 				// * deletions
 				// * garbage collection
 
-				objRefString := string(hdr.Ref.Sha1)
+				objRefString := string(hdr.Ref.Hash)
 
 				// if we have already written this object during this compaction run we drop it
 				if written[objRefString] {
@@ -706,10 +773,22 @@ func (ps *PackStorage) doCompaction() error {
 				}
 
 				// if we can find a location for this ref in any other archive we just drop it
-				if _, rec := ps.indexLocationExcept(hdr.Ref, candidates...); rec != nil {
+				_, rec, err := ps.indexLocationExcept(hdr.Ref, candidates...)
+				if err != nil {
+					return err
+				}
+
+				if rec != nil {
 					droppedObjects++
 					droppedSize += uint64(length)
 					return nil
+				}
+
+				// a copy between archives is a trust boundary: never carry
+				// a corrupted payload forward under a valid ref
+				err = verifyStored(hdr, bytes)
+				if err != nil {
+					return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, archive.name)
 				}
 
 				ar, err := getArchive()
@@ -723,6 +802,10 @@ func (ps *PackStorage) doCompaction() error {
 			})
 
 			if err != nil {
+				if openArchive != nil {
+					_ = openArchive.Close()
+				}
+
 				return err
 			}
 			obsolete = append(obsolete, archive)
@@ -782,22 +865,15 @@ func (ps *PackStorage) backgroundCompaction() {
 	}
 }
 
-func (ps *PackStorage) periodicCompaction() {
+func (ps *PackStorage) periodicCompaction(ticker *time.Ticker, closed <-chan struct{}) {
 	for {
 		select {
-		case <-ps.compactorTicker.C:
+		case <-ticker.C:
 			ps.backgroundCompaction()
-		case <-ps.compactorClose:
-			break
+		case <-closed:
+			return
 		}
 	}
-}
-
-func (ps *PackStorage) withExclusiveLock(do func()) {
-	ps.mtx.Lock()
-	defer ps.mtx.Unlock()
-
-	do()
 }
 
 func (ps *PackStorage) withReadLock(do func()) {
@@ -840,6 +916,7 @@ func (ps *PackStorage) Close() error {
 		ps.compactorTicker.Stop()
 		close(ps.compactorClose)
 		ps.compactorTicker = nil
+		ps.compactorClose = nil
 	}
 
 	ps.mtx.Lock()
@@ -875,7 +952,7 @@ func (ps *PackStorage) Open() error {
 			break
 		}
 
-		name := match
+		name := strings.TrimSuffix(match, ArchiveSuffix)
 
 		group.Go(func() error {
 			defer sem.Release(1)
@@ -888,7 +965,7 @@ func (ps *PackStorage) Open() error {
 		ps.compactorTicker = time.NewTicker(ps.compaction.Periodically)
 		ps.compactorClose = make(chan struct{})
 
-		go ps.periodicCompaction()
+		go ps.periodicCompaction(ps.compactorTicker, ps.compactorClose)
 	}
 
 	if ps.compaction.OnOpen {

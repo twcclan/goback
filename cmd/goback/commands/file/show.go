@@ -27,7 +27,7 @@ func (f *file) show() error {
 
 	for _, node := range nodes {
 		info := node.Stat
-		log.Printf("dir: %v size: %d timestamp: %v", info.Tree, info.Size, time.Unix(info.Timestamp, 0))
+		log.Printf("dir: %v size: %d timestamp: %v", info.IsDir(), info.Size, info.ModTime())
 	}
 
 	return nil

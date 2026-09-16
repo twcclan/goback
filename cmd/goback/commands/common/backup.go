@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/url"
@@ -16,7 +17,9 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
+	"gocloud.dev/blob"
 	"gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/gcsblob"
 )
 
 type Opener interface {
@@ -25,6 +28,18 @@ type Opener interface {
 
 type Closer interface {
 	Close() error
+}
+
+// Unwrap peels caching and wrapping stores off until the innermost store.
+func Unwrap(store backup.ObjectStore) backup.ObjectStore {
+	for {
+		wrapper, ok := store.(interface{ Unwrap() backup.ObjectStore })
+		if !ok {
+			return store
+		}
+
+		store = wrapper.Unwrap()
+	}
 }
 
 func createFolders(loc string) (string, error) {
@@ -69,6 +84,15 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
+	if c.GlobalBool("reset-index") {
+		log.Printf("Resetting archive index at %s", indexLocation)
+
+		err = idx.Reset()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	file, err := fileblob.OpenBucket(archiveLocation, nil)
 	if err != nil {
 		return nil, err
@@ -87,7 +111,12 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	return storage.NewGCSObjectStore(u.Host, u.Query().Get("index"), u.Query().Get("cache"))
+	bucket, err := blob.OpenBucket(context.Background(), "gs://"+u.Host)
+	if err != nil {
+		return nil, err
+	}
+
+	return storage.NewCloudObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"))
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
