@@ -25,6 +25,8 @@ const (
 	Admin_UndeleteSet_FullMethodName    = "/admin.Admin/UndeleteSet"
 	Admin_GetStorePolicy_FullMethodName = "/admin.Admin/GetStorePolicy"
 	Admin_SetStorePolicy_FullMethodName = "/admin.Admin/SetStorePolicy"
+	Admin_GetRetention_FullMethodName   = "/admin.Admin/GetRetention"
+	Admin_SetRetention_FullMethodName   = "/admin.Admin/SetRetention"
 	Admin_Retire_FullMethodName         = "/admin.Admin/Retire"
 	Admin_CollectGarbage_FullMethodName = "/admin.Admin/CollectGarbage"
 )
@@ -46,6 +48,12 @@ type AdminClient interface {
 	// SetStorePolicy replaces the policy under the next version and may
 	// record the operator's acknowledgement that the store key is saved
 	SetStorePolicy(ctx context.Context, in *SetStorePolicyRequest, opts ...grpc.CallOption) (*StorePolicy, error)
+	// GetRetention reports a set's retention, or the store's defaults
+	// for an empty set
+	GetRetention(ctx context.Context, in *GetRetentionRequest, opts ...grpc.CallOption) (*Retention, error)
+	// SetRetention changes what GetRetention reports; setting a set's
+	// policy resumes retirement paused by a rebuild
+	SetRetention(ctx context.Context, in *SetRetentionRequest, opts ...grpc.CallOption) (*Retention, error)
 	// Retire tombstones every commit whose window has passed
 	Retire(ctx context.Context, in *RetireRequest, opts ...grpc.CallOption) (*RetireResponse, error)
 	CollectGarbage(ctx context.Context, in *CollectGarbageRequest, opts ...grpc.CallOption) (*CollectGarbageResponse, error)
@@ -119,6 +127,26 @@ func (c *adminClient) SetStorePolicy(ctx context.Context, in *SetStorePolicyRequ
 	return out, nil
 }
 
+func (c *adminClient) GetRetention(ctx context.Context, in *GetRetentionRequest, opts ...grpc.CallOption) (*Retention, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Retention)
+	err := c.cc.Invoke(ctx, Admin_GetRetention_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) SetRetention(ctx context.Context, in *SetRetentionRequest, opts ...grpc.CallOption) (*Retention, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Retention)
+	err := c.cc.Invoke(ctx, Admin_SetRetention_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminClient) Retire(ctx context.Context, in *RetireRequest, opts ...grpc.CallOption) (*RetireResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RetireResponse)
@@ -156,6 +184,12 @@ type AdminServer interface {
 	// SetStorePolicy replaces the policy under the next version and may
 	// record the operator's acknowledgement that the store key is saved
 	SetStorePolicy(context.Context, *SetStorePolicyRequest) (*StorePolicy, error)
+	// GetRetention reports a set's retention, or the store's defaults
+	// for an empty set
+	GetRetention(context.Context, *GetRetentionRequest) (*Retention, error)
+	// SetRetention changes what GetRetention reports; setting a set's
+	// policy resumes retirement paused by a rebuild
+	SetRetention(context.Context, *SetRetentionRequest) (*Retention, error)
 	// Retire tombstones every commit whose window has passed
 	Retire(context.Context, *RetireRequest) (*RetireResponse, error)
 	CollectGarbage(context.Context, *CollectGarbageRequest) (*CollectGarbageResponse, error)
@@ -186,6 +220,12 @@ func (UnimplementedAdminServer) GetStorePolicy(context.Context, *GetStorePolicyR
 }
 func (UnimplementedAdminServer) SetStorePolicy(context.Context, *SetStorePolicyRequest) (*StorePolicy, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetStorePolicy not implemented")
+}
+func (UnimplementedAdminServer) GetRetention(context.Context, *GetRetentionRequest) (*Retention, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRetention not implemented")
+}
+func (UnimplementedAdminServer) SetRetention(context.Context, *SetRetentionRequest) (*Retention, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetRetention not implemented")
 }
 func (UnimplementedAdminServer) Retire(context.Context, *RetireRequest) (*RetireResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Retire not implemented")
@@ -322,6 +362,42 @@ func _Admin_SetStorePolicy_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Admin_GetRetention_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRetentionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).GetRetention(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_GetRetention_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).GetRetention(ctx, req.(*GetRetentionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_SetRetention_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRetentionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).SetRetention(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_SetRetention_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).SetRetention(ctx, req.(*SetRetentionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Admin_Retire_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RetireRequest)
 	if err := dec(in); err != nil {
@@ -388,6 +464,14 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetStorePolicy",
 			Handler:    _Admin_SetStorePolicy_Handler,
+		},
+		{
+			MethodName: "GetRetention",
+			Handler:    _Admin_GetRetention_Handler,
+		},
+		{
+			MethodName: "SetRetention",
+			Handler:    _Admin_SetRetention_Handler,
 		},
 		{
 			MethodName: "Retire",

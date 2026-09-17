@@ -10,6 +10,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/deletedref"
@@ -153,6 +154,36 @@ func (x *Index) EvaluateSet(ctx context.Context, setID int64) error {
 
 		return x.evaluateSet(ctx, tx, setID, x.now())
 	})
+}
+
+// GetPolicy reports a set's retention.
+func (x *Index) GetPolicy(ctx context.Context, name string) (index.SetRetention, error) {
+	setID, err := findSet(ctx, x.client, name)
+	if err != nil {
+		return index.SetRetention{}, err
+	}
+
+	cfg, err := x.loadSetConfig(ctx, x.client, setID)
+	if err != nil {
+		return index.SetRetention{}, err
+	}
+
+	s, err := x.client.Set.Get(ctx, setID)
+	if err != nil {
+		return index.SetRetention{}, err
+	}
+
+	ret := index.SetRetention{Effective: cfg.policy, Paused: cfg.paused}
+	if s.RetentionPolicy != nil {
+		p, err := retention.Parse([]byte(*s.RetentionPolicy))
+		if err != nil {
+			return index.SetRetention{}, err
+		}
+
+		ret.Policy = &p
+	}
+
+	return ret, nil
 }
 
 // SetPolicy stores a set's policy, nil to inherit the store's default,

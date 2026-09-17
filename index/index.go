@@ -5,6 +5,7 @@ package index
 import (
 	"time"
 
+	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
 )
 
@@ -26,4 +27,21 @@ type SetInfo struct {
 type StorePolicy struct {
 	Policy            storekey.Policy
 	KeyAcknowledgedAt *time.Time
+}
+
+// SetRetention is a set's retention as an operator sees it: the policy
+// set on it, nil when it inherits the store's, the policy in force, and
+// whether retirement waits for a policy after a rebuild.
+type SetRetention struct {
+	Policy    *retention.Policy
+	Effective retention.Policy
+	Paused    bool
+}
+
+// Windows are the store's hold and trash windows in days: how long a
+// commit retired by policy, or deleted by hand, waits before its
+// tombstone.
+type Windows struct {
+	HoldDays  int
+	TrashDays int
 }

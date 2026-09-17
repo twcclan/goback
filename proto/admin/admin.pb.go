@@ -27,7 +27,7 @@ type BackupSet struct {
 	Id      uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	AgentId string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	// active, closing or deleted
+	// active or deleted
 	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	// the logical size of the newest live commit
 	LogicalSize   int64 `protobuf:"varint,5,opt,name=logical_size,json=logicalSize,proto3" json:"logical_size,omitempty"`
@@ -631,6 +631,307 @@ func (x *SetStorePolicyRequest) GetAcknowledgeKey() bool {
 	return false
 }
 
+// RetentionPolicy is restic-style: a commit stays while one of the
+// counters keeps it or it is younger than keep_within.
+type RetentionPolicy struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	KeepLast    int32                  `protobuf:"varint,1,opt,name=keep_last,json=keepLast,proto3" json:"keep_last,omitempty"`
+	KeepHourly  int32                  `protobuf:"varint,2,opt,name=keep_hourly,json=keepHourly,proto3" json:"keep_hourly,omitempty"`
+	KeepDaily   int32                  `protobuf:"varint,3,opt,name=keep_daily,json=keepDaily,proto3" json:"keep_daily,omitempty"`
+	KeepWeekly  int32                  `protobuf:"varint,4,opt,name=keep_weekly,json=keepWeekly,proto3" json:"keep_weekly,omitempty"`
+	KeepMonthly int32                  `protobuf:"varint,5,opt,name=keep_monthly,json=keepMonthly,proto3" json:"keep_monthly,omitempty"`
+	// seconds
+	KeepWithin    int64 `protobuf:"varint,6,opt,name=keep_within,json=keepWithin,proto3" json:"keep_within,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetentionPolicy) Reset() {
+	*x = RetentionPolicy{}
+	mi := &file_admin_admin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetentionPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetentionPolicy) ProtoMessage() {}
+
+func (x *RetentionPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetentionPolicy.ProtoReflect.Descriptor instead.
+func (*RetentionPolicy) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RetentionPolicy) GetKeepLast() int32 {
+	if x != nil {
+		return x.KeepLast
+	}
+	return 0
+}
+
+func (x *RetentionPolicy) GetKeepHourly() int32 {
+	if x != nil {
+		return x.KeepHourly
+	}
+	return 0
+}
+
+func (x *RetentionPolicy) GetKeepDaily() int32 {
+	if x != nil {
+		return x.KeepDaily
+	}
+	return 0
+}
+
+func (x *RetentionPolicy) GetKeepWeekly() int32 {
+	if x != nil {
+		return x.KeepWeekly
+	}
+	return 0
+}
+
+func (x *RetentionPolicy) GetKeepMonthly() int32 {
+	if x != nil {
+		return x.KeepMonthly
+	}
+	return 0
+}
+
+func (x *RetentionPolicy) GetKeepWithin() int64 {
+	if x != nil {
+		return x.KeepWithin
+	}
+	return 0
+}
+
+type Retention struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// the set, empty for the store's defaults
+	Set string `protobuf:"bytes,1,opt,name=set,proto3" json:"set,omitempty"`
+	// the policy set here; unset when a set inherits the store's or the
+	// store runs the built-in default
+	Policy *RetentionPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	// the policy in force after inheritance
+	Effective *RetentionPolicy `protobuf:"bytes,3,opt,name=effective,proto3" json:"effective,omitempty"`
+	// a rebuilt set keeps everything until a policy is set
+	Paused bool `protobuf:"varint,4,opt,name=paused,proto3" json:"paused,omitempty"`
+	// the store's windows before a retired or deleted commit is
+	// tombstoned
+	HoldDays      int32 `protobuf:"varint,5,opt,name=hold_days,json=holdDays,proto3" json:"hold_days,omitempty"`
+	TrashDays     int32 `protobuf:"varint,6,opt,name=trash_days,json=trashDays,proto3" json:"trash_days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Retention) Reset() {
+	*x = Retention{}
+	mi := &file_admin_admin_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Retention) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Retention) ProtoMessage() {}
+
+func (x *Retention) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Retention.ProtoReflect.Descriptor instead.
+func (*Retention) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Retention) GetSet() string {
+	if x != nil {
+		return x.Set
+	}
+	return ""
+}
+
+func (x *Retention) GetPolicy() *RetentionPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *Retention) GetEffective() *RetentionPolicy {
+	if x != nil {
+		return x.Effective
+	}
+	return nil
+}
+
+func (x *Retention) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *Retention) GetHoldDays() int32 {
+	if x != nil {
+		return x.HoldDays
+	}
+	return 0
+}
+
+func (x *Retention) GetTrashDays() int32 {
+	if x != nil {
+		return x.TrashDays
+	}
+	return 0
+}
+
+type GetRetentionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Set           string                 `protobuf:"bytes,1,opt,name=set,proto3" json:"set,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRetentionRequest) Reset() {
+	*x = GetRetentionRequest{}
+	mi := &file_admin_admin_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRetentionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRetentionRequest) ProtoMessage() {}
+
+func (x *GetRetentionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRetentionRequest.ProtoReflect.Descriptor instead.
+func (*GetRetentionRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetRetentionRequest) GetSet() string {
+	if x != nil {
+		return x.Set
+	}
+	return ""
+}
+
+type SetRetentionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Set   string                 `protobuf:"bytes,1,opt,name=set,proto3" json:"set,omitempty"`
+	// replaces the policy when set
+	Policy *RetentionPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	// drops the policy: the set inherits, the store uses the built-in
+	Inherit bool `protobuf:"varint,3,opt,name=inherit,proto3" json:"inherit,omitempty"`
+	// the store's windows, ignored for a set
+	HoldDays      *int32 `protobuf:"varint,4,opt,name=hold_days,json=holdDays,proto3,oneof" json:"hold_days,omitempty"`
+	TrashDays     *int32 `protobuf:"varint,5,opt,name=trash_days,json=trashDays,proto3,oneof" json:"trash_days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRetentionRequest) Reset() {
+	*x = SetRetentionRequest{}
+	mi := &file_admin_admin_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRetentionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRetentionRequest) ProtoMessage() {}
+
+func (x *SetRetentionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRetentionRequest.ProtoReflect.Descriptor instead.
+func (*SetRetentionRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *SetRetentionRequest) GetSet() string {
+	if x != nil {
+		return x.Set
+	}
+	return ""
+}
+
+func (x *SetRetentionRequest) GetPolicy() *RetentionPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *SetRetentionRequest) GetInherit() bool {
+	if x != nil {
+		return x.Inherit
+	}
+	return false
+}
+
+func (x *SetRetentionRequest) GetHoldDays() int32 {
+	if x != nil && x.HoldDays != nil {
+		return *x.HoldDays
+	}
+	return 0
+}
+
+func (x *SetRetentionRequest) GetTrashDays() int32 {
+	if x != nil && x.TrashDays != nil {
+		return *x.TrashDays
+	}
+	return 0
+}
+
 type RetireRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -639,7 +940,7 @@ type RetireRequest struct {
 
 func (x *RetireRequest) Reset() {
 	*x = RetireRequest{}
-	mi := &file_admin_admin_proto_msgTypes[11]
+	mi := &file_admin_admin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -651,7 +952,7 @@ func (x *RetireRequest) String() string {
 func (*RetireRequest) ProtoMessage() {}
 
 func (x *RetireRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[11]
+	mi := &file_admin_admin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -664,7 +965,7 @@ func (x *RetireRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetireRequest.ProtoReflect.Descriptor instead.
 func (*RetireRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{11}
+	return file_admin_admin_proto_rawDescGZIP(), []int{15}
 }
 
 type RetireResponse struct {
@@ -676,7 +977,7 @@ type RetireResponse struct {
 
 func (x *RetireResponse) Reset() {
 	*x = RetireResponse{}
-	mi := &file_admin_admin_proto_msgTypes[12]
+	mi := &file_admin_admin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -688,7 +989,7 @@ func (x *RetireResponse) String() string {
 func (*RetireResponse) ProtoMessage() {}
 
 func (x *RetireResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[12]
+	mi := &file_admin_admin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -701,7 +1002,7 @@ func (x *RetireResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetireResponse.ProtoReflect.Descriptor instead.
 func (*RetireResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{12}
+	return file_admin_admin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RetireResponse) GetRetired() int64 {
@@ -719,7 +1020,7 @@ type CollectGarbageRequest struct {
 
 func (x *CollectGarbageRequest) Reset() {
 	*x = CollectGarbageRequest{}
-	mi := &file_admin_admin_proto_msgTypes[13]
+	mi := &file_admin_admin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -731,7 +1032,7 @@ func (x *CollectGarbageRequest) String() string {
 func (*CollectGarbageRequest) ProtoMessage() {}
 
 func (x *CollectGarbageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[13]
+	mi := &file_admin_admin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -744,7 +1045,7 @@ func (x *CollectGarbageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectGarbageRequest.ProtoReflect.Descriptor instead.
 func (*CollectGarbageRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{13}
+	return file_admin_admin_proto_rawDescGZIP(), []int{17}
 }
 
 type CollectGarbageResponse struct {
@@ -756,7 +1057,7 @@ type CollectGarbageResponse struct {
 
 func (x *CollectGarbageResponse) Reset() {
 	*x = CollectGarbageResponse{}
-	mi := &file_admin_admin_proto_msgTypes[14]
+	mi := &file_admin_admin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +1069,7 @@ func (x *CollectGarbageResponse) String() string {
 func (*CollectGarbageResponse) ProtoMessage() {}
 
 func (x *CollectGarbageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[14]
+	mi := &file_admin_admin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +1082,7 @@ func (x *CollectGarbageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectGarbageResponse.ProtoReflect.Descriptor instead.
 func (*CollectGarbageResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{14}
+	return file_admin_admin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CollectGarbageResponse) GetReport() string {
@@ -832,20 +1133,53 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x11entropy_threshold\x18\x04 \x01(\x01R\x10entropyThreshold\x12%\n" +
 	"\x0epresence_scope\x18\x05 \x01(\tR\rpresenceScope\x12\x16\n" +
 	"\x06escrow\x18\x06 \x01(\tR\x06escrow\x12'\n" +
-	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKey\"\x0f\n" +
+	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKey\"\xd3\x01\n" +
+	"\x0fRetentionPolicy\x12\x1b\n" +
+	"\tkeep_last\x18\x01 \x01(\x05R\bkeepLast\x12\x1f\n" +
+	"\vkeep_hourly\x18\x02 \x01(\x05R\n" +
+	"keepHourly\x12\x1d\n" +
+	"\n" +
+	"keep_daily\x18\x03 \x01(\x05R\tkeepDaily\x12\x1f\n" +
+	"\vkeep_weekly\x18\x04 \x01(\x05R\n" +
+	"keepWeekly\x12!\n" +
+	"\fkeep_monthly\x18\x05 \x01(\x05R\vkeepMonthly\x12\x1f\n" +
+	"\vkeep_within\x18\x06 \x01(\x03R\n" +
+	"keepWithin\"\xd7\x01\n" +
+	"\tRetention\x12\x10\n" +
+	"\x03set\x18\x01 \x01(\tR\x03set\x12.\n" +
+	"\x06policy\x18\x02 \x01(\v2\x16.admin.RetentionPolicyR\x06policy\x124\n" +
+	"\teffective\x18\x03 \x01(\v2\x16.admin.RetentionPolicyR\teffective\x12\x16\n" +
+	"\x06paused\x18\x04 \x01(\bR\x06paused\x12\x1b\n" +
+	"\thold_days\x18\x05 \x01(\x05R\bholdDays\x12\x1d\n" +
+	"\n" +
+	"trash_days\x18\x06 \x01(\x05R\ttrashDays\"'\n" +
+	"\x13GetRetentionRequest\x12\x10\n" +
+	"\x03set\x18\x01 \x01(\tR\x03set\"\xd4\x01\n" +
+	"\x13SetRetentionRequest\x12\x10\n" +
+	"\x03set\x18\x01 \x01(\tR\x03set\x12.\n" +
+	"\x06policy\x18\x02 \x01(\v2\x16.admin.RetentionPolicyR\x06policy\x12\x18\n" +
+	"\ainherit\x18\x03 \x01(\bR\ainherit\x12 \n" +
+	"\thold_days\x18\x04 \x01(\x05H\x00R\bholdDays\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"trash_days\x18\x05 \x01(\x05H\x01R\ttrashDays\x88\x01\x01B\f\n" +
+	"\n" +
+	"_hold_daysB\r\n" +
+	"\v_trash_days\"\x0f\n" +
 	"\rRetireRequest\"*\n" +
 	"\x0eRetireResponse\x12\x18\n" +
 	"\aretired\x18\x01 \x01(\x03R\aretired\"\x17\n" +
 	"\x15CollectGarbageRequest\"0\n" +
 	"\x16CollectGarbageResponse\x12\x16\n" +
-	"\x06report\x18\x01 \x01(\tR\x06report2\xa4\x04\n" +
+	"\x06report\x18\x01 \x01(\tR\x06report2\xa4\x05\n" +
 	"\x05Admin\x12=\n" +
 	"\bListSets\x12\x16.admin.ListSetsRequest\x1a\x17.admin.ListSetsResponse\"\x00\x12<\n" +
 	"\vTransferSet\x12\x19.admin.TransferSetRequest\x1a\x10.admin.BackupSet\"\x00\x12@\n" +
 	"\tDeleteSet\x12\x17.admin.DeleteSetRequest\x1a\x18.admin.DeleteSetResponse\"\x00\x12F\n" +
 	"\vUndeleteSet\x12\x19.admin.UndeleteSetRequest\x1a\x1a.admin.UndeleteSetResponse\"\x00\x12D\n" +
 	"\x0eGetStorePolicy\x12\x1c.admin.GetStorePolicyRequest\x1a\x12.admin.StorePolicy\"\x00\x12D\n" +
-	"\x0eSetStorePolicy\x12\x1c.admin.SetStorePolicyRequest\x1a\x12.admin.StorePolicy\"\x00\x127\n" +
+	"\x0eSetStorePolicy\x12\x1c.admin.SetStorePolicyRequest\x1a\x12.admin.StorePolicy\"\x00\x12>\n" +
+	"\fGetRetention\x12\x1a.admin.GetRetentionRequest\x1a\x10.admin.Retention\"\x00\x12>\n" +
+	"\fSetRetention\x12\x1a.admin.SetRetentionRequest\x1a\x10.admin.Retention\"\x00\x127\n" +
 	"\x06Retire\x12\x14.admin.RetireRequest\x1a\x15.admin.RetireResponse\"\x00\x12O\n" +
 	"\x0eCollectGarbage\x12\x1c.admin.CollectGarbageRequest\x1a\x1d.admin.CollectGarbageResponse\"\x00B'Z%github.com/twcclan/goback/proto/adminb\x06proto3"
 
@@ -861,7 +1195,7 @@ func file_admin_admin_proto_rawDescGZIP() []byte {
 	return file_admin_admin_proto_rawDescData
 }
 
-var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_admin_admin_proto_goTypes = []any{
 	(*BackupSet)(nil),              // 0: admin.BackupSet
 	(*ListSetsRequest)(nil),        // 1: admin.ListSetsRequest
@@ -874,36 +1208,47 @@ var file_admin_admin_proto_goTypes = []any{
 	(*StorePolicy)(nil),            // 8: admin.StorePolicy
 	(*GetStorePolicyRequest)(nil),  // 9: admin.GetStorePolicyRequest
 	(*SetStorePolicyRequest)(nil),  // 10: admin.SetStorePolicyRequest
-	(*RetireRequest)(nil),          // 11: admin.RetireRequest
-	(*RetireResponse)(nil),         // 12: admin.RetireResponse
-	(*CollectGarbageRequest)(nil),  // 13: admin.CollectGarbageRequest
-	(*CollectGarbageResponse)(nil), // 14: admin.CollectGarbageResponse
-	(*timestamppb.Timestamp)(nil),  // 15: google.protobuf.Timestamp
+	(*RetentionPolicy)(nil),        // 11: admin.RetentionPolicy
+	(*Retention)(nil),              // 12: admin.Retention
+	(*GetRetentionRequest)(nil),    // 13: admin.GetRetentionRequest
+	(*SetRetentionRequest)(nil),    // 14: admin.SetRetentionRequest
+	(*RetireRequest)(nil),          // 15: admin.RetireRequest
+	(*RetireResponse)(nil),         // 16: admin.RetireResponse
+	(*CollectGarbageRequest)(nil),  // 17: admin.CollectGarbageRequest
+	(*CollectGarbageResponse)(nil), // 18: admin.CollectGarbageResponse
+	(*timestamppb.Timestamp)(nil),  // 19: google.protobuf.Timestamp
 }
 var file_admin_admin_proto_depIdxs = []int32{
 	0,  // 0: admin.ListSetsResponse.sets:type_name -> admin.BackupSet
-	15, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
-	1,  // 2: admin.Admin.ListSets:input_type -> admin.ListSetsRequest
-	3,  // 3: admin.Admin.TransferSet:input_type -> admin.TransferSetRequest
-	4,  // 4: admin.Admin.DeleteSet:input_type -> admin.DeleteSetRequest
-	6,  // 5: admin.Admin.UndeleteSet:input_type -> admin.UndeleteSetRequest
-	9,  // 6: admin.Admin.GetStorePolicy:input_type -> admin.GetStorePolicyRequest
-	10, // 7: admin.Admin.SetStorePolicy:input_type -> admin.SetStorePolicyRequest
-	11, // 8: admin.Admin.Retire:input_type -> admin.RetireRequest
-	13, // 9: admin.Admin.CollectGarbage:input_type -> admin.CollectGarbageRequest
-	2,  // 10: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
-	0,  // 11: admin.Admin.TransferSet:output_type -> admin.BackupSet
-	5,  // 12: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
-	7,  // 13: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
-	8,  // 14: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
-	8,  // 15: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
-	12, // 16: admin.Admin.Retire:output_type -> admin.RetireResponse
-	14, // 17: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
-	10, // [10:18] is the sub-list for method output_type
-	2,  // [2:10] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	19, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
+	11, // 2: admin.Retention.policy:type_name -> admin.RetentionPolicy
+	11, // 3: admin.Retention.effective:type_name -> admin.RetentionPolicy
+	11, // 4: admin.SetRetentionRequest.policy:type_name -> admin.RetentionPolicy
+	1,  // 5: admin.Admin.ListSets:input_type -> admin.ListSetsRequest
+	3,  // 6: admin.Admin.TransferSet:input_type -> admin.TransferSetRequest
+	4,  // 7: admin.Admin.DeleteSet:input_type -> admin.DeleteSetRequest
+	6,  // 8: admin.Admin.UndeleteSet:input_type -> admin.UndeleteSetRequest
+	9,  // 9: admin.Admin.GetStorePolicy:input_type -> admin.GetStorePolicyRequest
+	10, // 10: admin.Admin.SetStorePolicy:input_type -> admin.SetStorePolicyRequest
+	13, // 11: admin.Admin.GetRetention:input_type -> admin.GetRetentionRequest
+	14, // 12: admin.Admin.SetRetention:input_type -> admin.SetRetentionRequest
+	15, // 13: admin.Admin.Retire:input_type -> admin.RetireRequest
+	17, // 14: admin.Admin.CollectGarbage:input_type -> admin.CollectGarbageRequest
+	2,  // 15: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
+	0,  // 16: admin.Admin.TransferSet:output_type -> admin.BackupSet
+	5,  // 17: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
+	7,  // 18: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
+	8,  // 19: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
+	8,  // 20: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
+	12, // 21: admin.Admin.GetRetention:output_type -> admin.Retention
+	12, // 22: admin.Admin.SetRetention:output_type -> admin.Retention
+	16, // 23: admin.Admin.Retire:output_type -> admin.RetireResponse
+	18, // 24: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_admin_admin_proto_init() }
@@ -911,13 +1256,14 @@ func file_admin_admin_proto_init() {
 	if File_admin_admin_proto != nil {
 		return
 	}
+	file_admin_admin_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_admin_proto_rawDesc), len(file_admin_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

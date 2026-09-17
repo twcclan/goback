@@ -243,3 +243,35 @@ func TestAdminStorePolicyAndJobs(t *testing.T) {
 	h.server.CollectJob = nil
 	require.Equal(t, http.StatusNotImplemented, h.call(http.MethodPost, "/v1/jobs/gc", nil, nil))
 }
+
+func TestRetentionSurface(t *testing.T) {
+	h := newHarness(t)
+
+	var ret pb.Retention
+	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/retention", nil, &ret))
+	require.Nil(t, ret.Policy, "no default was stored")
+	require.EqualValues(t, 1, ret.Effective.KeepLast)
+	require.EqualValues(t, 14, ret.HoldDays)
+	require.EqualValues(t, 14, ret.TrashDays)
+
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 3, "keep_within": 3600}}, &ret))
+	require.Equal(t, "world", ret.Set)
+	require.EqualValues(t, 3, ret.Policy.KeepLast)
+	require.EqualValues(t, 3600, ret.Policy.KeepWithin)
+	require.EqualValues(t, 3, ret.Effective.KeepLast)
+
+	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets/world/retention", nil, &ret))
+	require.EqualValues(t, 3, ret.Policy.KeepLast)
+
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 2}, "hold_days": 7}, &ret))
+	require.EqualValues(t, 2, ret.Policy.KeepLast)
+	require.EqualValues(t, 7, ret.HoldDays)
+	require.EqualValues(t, 14, ret.TrashDays, "a window not sent stays")
+
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"inherit": true}, &ret))
+	require.Nil(t, ret.Policy)
+	require.EqualValues(t, 2, ret.Effective.KeepLast, "the set inherits the new default")
+
+	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"trash_days": -1}, nil))
+	require.Equal(t, http.StatusNotFound, h.call(http.MethodGet, "/v1/sets/nowhere/retention", nil, nil))
+}

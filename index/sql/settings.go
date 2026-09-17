@@ -101,6 +101,32 @@ func (x *Index) StorePolicy(ctx context.Context) (*storekey.Policy, error) {
 	return &p.Policy, nil
 }
 
+// GetDefaultPolicy returns the retention policy sets inherit until they
+// set their own, and whether the operator stored it or it is the
+// built-in default.
+func (x *Index) GetDefaultPolicy(ctx context.Context) (policy retention.Policy, stored bool, err error) {
+	defaults, err := loadSettings(ctx, x.client)
+	if err != nil {
+		return retention.Policy{}, false, err
+	}
+
+	policy = retention.Default
+	if x.DefaultPolicy != nil {
+		policy = *x.DefaultPolicy
+	}
+
+	if defaults.RetentionPolicy != nil {
+		policy, err = retention.Parse([]byte(*defaults.RetentionPolicy))
+		if err != nil {
+			return retention.Policy{}, false, err
+		}
+
+		stored = true
+	}
+
+	return policy.Clamp(x.Limits), stored, nil
+}
+
 // SetDefaultPolicy stores the retention policy sets inherit until they
 // set their own, nil for the built-in default, and re-evaluates every set.
 func (x *Index) SetDefaultPolicy(ctx context.Context, p *retention.Policy) error {
@@ -124,6 +150,39 @@ func (x *Index) SetDefaultPolicy(ctx context.Context, p *retention.Policy) error
 		return err
 	}
 
+	return x.evaluateAll(ctx)
+}
+
+// Windows returns the store's hold and trash windows.
+func (x *Index) Windows(ctx context.Context) (index.Windows, error) {
+	defaults, err := loadSettings(ctx, x.client)
+	if err != nil {
+		return index.Windows{}, err
+	}
+
+	return index.Windows{HoldDays: defaults.HoldDays, TrashDays: defaults.TrashDays}, nil
+}
+
+// SetWindows stores the hold and trash windows and re-evaluates every
+// set; a negative window is refused.
+func (x *Index) SetWindows(ctx context.Context, w index.Windows) error {
+	if w.HoldDays < 0 || w.TrashDays < 0 {
+		return fmt.Errorf("%w: a window cannot be negative", retention.ErrInvalidPolicy)
+	}
+
+	if _, err := loadSettings(ctx, x.client); err != nil {
+		return err
+	}
+
+	err := x.client.Settings.UpdateOneID(settingsID).SetHoldDays(w.HoldDays).SetTrashDays(w.TrashDays).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	return x.evaluateAll(ctx)
+}
+
+func (x *Index) evaluateAll(ctx context.Context) error {
 	ids, err := x.client.Set.Query().IDs(ctx)
 	if err != nil {
 		return err

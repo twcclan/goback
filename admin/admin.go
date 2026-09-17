@@ -13,6 +13,7 @@ import (
 	"github.com/twcclan/goback/admin/mapping/gen"
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql"
@@ -36,6 +37,12 @@ type Index interface {
 	UndeleteSet(ctx context.Context, name string) error
 	GetStorePolicy(ctx context.Context) (index.StorePolicy, error)
 	SetStorePolicy(ctx context.Context, policy storekey.Policy, acknowledge bool, now time.Time) (index.StorePolicy, error)
+	GetPolicy(ctx context.Context, set string) (index.SetRetention, error)
+	SetPolicy(ctx context.Context, set string, p *retention.Policy) error
+	GetDefaultPolicy(ctx context.Context) (retention.Policy, bool, error)
+	SetDefaultPolicy(ctx context.Context, p *retention.Policy) error
+	Windows(ctx context.Context) (index.Windows, error)
+	SetWindows(ctx context.Context, w index.Windows) error
 }
 
 // Server implements the Admin service over a store index.
@@ -163,6 +170,112 @@ func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyR
 	return m.Policy(p), nil
 }
 
+func (s *Server) GetRetention(ctx context.Context, request *pb.GetRetentionRequest) (*pb.Retention, error) {
+	return s.retention(ctx, request.Set)
+}
+
+func (s *Server) SetRetention(ctx context.Context, request *pb.SetRetentionRequest) (*pb.Retention, error) {
+	var policy *retention.Policy
+	if request.Policy != nil {
+		p := fromPolicy(request.Policy)
+		policy = &p
+	}
+
+	switch {
+	case request.Set != "" && (policy != nil || request.Inherit):
+		if err := s.Index.SetPolicy(ctx, request.Set, policy); err != nil {
+			return nil, Status(err)
+		}
+	case request.Set == "" && (policy != nil || request.Inherit):
+		if err := s.Index.SetDefaultPolicy(ctx, policy); err != nil {
+			return nil, Status(err)
+		}
+	}
+
+	if request.Set == "" && (request.HoldDays != nil || request.TrashDays != nil) {
+		w, err := s.Index.Windows(ctx)
+		if err != nil {
+			return nil, Status(err)
+		}
+
+		if request.HoldDays != nil {
+			w.HoldDays = int(*request.HoldDays)
+		}
+
+		if request.TrashDays != nil {
+			w.TrashDays = int(*request.TrashDays)
+		}
+
+		if err := s.Index.SetWindows(ctx, w); err != nil {
+			return nil, Status(err)
+		}
+	}
+
+	return s.retention(ctx, request.Set)
+}
+
+func (s *Server) retention(ctx context.Context, set string) (*pb.Retention, error) {
+	w, err := s.Index.Windows(ctx)
+	if err != nil {
+		return nil, Status(err)
+	}
+
+	resp := &pb.Retention{Set: set, HoldDays: int32(w.HoldDays), TrashDays: int32(w.TrashDays)}
+
+	if set == "" {
+		policy, stored, err := s.Index.GetDefaultPolicy(ctx)
+		if err != nil {
+			return nil, Status(err)
+		}
+
+		resp.Effective = toPolicy(policy)
+		if stored {
+			resp.Policy = resp.Effective
+		}
+
+		return resp, nil
+	}
+
+	ret, err := s.Index.GetPolicy(ctx, set)
+	if err != nil {
+		return nil, Status(err)
+	}
+
+	resp.Effective = toPolicy(ret.Effective)
+	resp.Paused = ret.Paused
+	if ret.Policy != nil {
+		resp.Policy = toPolicy(*ret.Policy)
+	}
+
+	return resp, nil
+}
+
+func toPolicy(p retention.Policy) *pb.RetentionPolicy {
+	out := &pb.RetentionPolicy{
+		KeepLast:    int32(p.KeepLast),
+		KeepHourly:  int32(p.KeepHourly),
+		KeepDaily:   int32(p.KeepDaily),
+		KeepWeekly:  int32(p.KeepWeekly),
+		KeepMonthly: int32(p.KeepMonthly),
+	}
+	if p.KeepWithin > 0 {
+		out.KeepWithin = int64(p.KeepWithin / time.Second)
+	}
+
+	return out
+}
+
+func fromPolicy(p *pb.RetentionPolicy) retention.Policy {
+	return retention.Policy{
+		KeepLast:    int(p.KeepLast),
+		KeepHourly:  int(p.KeepHourly),
+		KeepDaily:   int(p.KeepDaily),
+		KeepWeekly:  int(p.KeepWeekly),
+		KeepMonthly: int(p.KeepMonthly),
+		KeepWithin:  time.Duration(p.KeepWithin) * time.Second,
+	}
+}
+
 func (s *Server) Retire(ctx context.Context, _ *pb.RetireRequest) (*pb.RetireResponse, error) {
 	if s.RetireJob == nil {
 		return nil, status.Error(codes.Unimplemented, "this index keeps no retention state")
@@ -199,6 +312,8 @@ func Status(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, auth.ErrForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, retention.ErrInvalidPolicy):
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if _, ok := status.FromError(err); ok {

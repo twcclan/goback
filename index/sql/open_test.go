@@ -286,6 +286,7 @@ func TestPostgres(t *testing.T) {
 		"CommitInfoSkipsCheckpoints":       TestCommitInfoSkipsCheckpoints,
 		"IndexesASplitRoot":                TestIndexesASplitRoot,
 		"UnknownSetIsEmpty":                TestUnknownSetIsEmpty,
+		"OperatorRetentionSurface":         TestOperatorRetentionSurface,
 		"StoredDefaultPolicy":              TestStoredDefaultPolicyOutranksTheBuiltIn,
 		"ArchiveIndex":                     TestArchiveIndex,
 		"ArchiveIndexExclusion":            TestArchiveIndexExclusion,

@@ -21,6 +21,13 @@ service Admin {
     // record the operator's acknowledgement that the store key is saved
     rpc SetStorePolicy(SetStorePolicyRequest) returns (StorePolicy) {}
 
+    // GetRetention reports a set's retention, or the store's defaults
+    // for an empty set
+    rpc GetRetention(GetRetentionRequest) returns (Retention) {}
+    // SetRetention changes what GetRetention reports; setting a set's
+    // policy resumes retirement paused by a rebuild
+    rpc SetRetention(SetRetentionRequest) returns (Retention) {}
+
     // Retire tombstones every commit whose window has passed
     rpc Retire(RetireRequest) returns (RetireResponse) {}
     rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse) {}
@@ -84,6 +91,49 @@ message SetStorePolicyRequest {
     string escrow = 6;
     // the operator confirms the store key is saved
     bool acknowledge_key = 7;
+}
+
+// RetentionPolicy is restic-style: a commit stays while one of the
+// counters keeps it or it is younger than keep_within.
+message RetentionPolicy {
+    int32 keep_last = 1;
+    int32 keep_hourly = 2;
+    int32 keep_daily = 3;
+    int32 keep_weekly = 4;
+    int32 keep_monthly = 5;
+    // seconds
+    int64 keep_within = 6;
+}
+
+message Retention {
+    // the set, empty for the store's defaults
+    string set = 1;
+    // the policy set here; unset when a set inherits the store's or the
+    // store runs the built-in default
+    RetentionPolicy policy = 2;
+    // the policy in force after inheritance
+    RetentionPolicy effective = 3;
+    // a rebuilt set keeps everything until a policy is set
+    bool paused = 4;
+    // the store's windows before a retired or deleted commit is
+    // tombstoned
+    int32 hold_days = 5;
+    int32 trash_days = 6;
+}
+
+message GetRetentionRequest {
+    string set = 1;
+}
+
+message SetRetentionRequest {
+    string set = 1;
+    // replaces the policy when set
+    RetentionPolicy policy = 2;
+    // drops the policy: the set inherits, the store uses the built-in
+    bool inherit = 3;
+    // the store's windows, ignored for a set
+    optional int32 hold_days = 4;
+    optional int32 trash_days = 5;
 }
 
 message RetireRequest {}

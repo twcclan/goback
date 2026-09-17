@@ -16,6 +16,16 @@ http:
     - selector: admin.Admin.SetStorePolicy
       put: /v1/policy
       body: "*"
+    - selector: admin.Admin.GetRetention
+      get: /v1/retention
+      additional_bindings:
+        - get: /v1/sets/{set}/retention
+    - selector: admin.Admin.SetRetention
+      put: /v1/retention
+      body: "*"
+      additional_bindings:
+        - put: /v1/sets/{set}/retention
+          body: "*"
     - selector: admin.Admin.Retire
       post: /v1/jobs/retire
     - selector: admin.Admin.CollectGarbage
