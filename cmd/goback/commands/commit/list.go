@@ -40,9 +40,7 @@ func listAction(c *cli.Context) {
 
 	index.Close()
 
-	if cl, ok := store.(common.Closer); ok {
-		log.Println(cl.Close())
-	}
+	common.CloseStore(store)
 }
 
 var listCmd = cli.Command{

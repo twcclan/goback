@@ -93,7 +93,8 @@ func newHarness(t *testing.T) *harness {
 	tree := proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte("a.txt"), Type: proto.NodeType_NODE_FILE, Size: 3}, Ref: file.Ref()}}})
 	require.NoError(t, store.Put(ctx, tree))
 	require.NoError(t, x.Put(actx, proto.NewObject(&proto.Commit{Timestamp: now.Unix(), Tree: tree.Ref(), BackupSet: "world", AgentId: "node-1"})))
-	x.WaitPresence()
+	_, err := x.BuildPendingPresence(ctx)
+	require.NoError(t, err)
 
 	h := &harness{t: t, now: now}
 	h.server = &admin.Server{

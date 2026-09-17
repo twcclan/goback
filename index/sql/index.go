@@ -53,7 +53,6 @@ type Index struct {
 	// serialises transactions as a whole instead.
 	locking bool
 
-	presence  *PresenceBuilder
 	external  *externalDB
 	noMigrate bool
 
@@ -137,7 +136,6 @@ func (x *Index) Open() error {
 
 	x.db = db
 	x.client = client
-	x.presence = &PresenceBuilder{index: x, running: map[int64]bool{}, next: map[int64]presenceJob{}}
 
 	return nil
 }
@@ -172,10 +170,6 @@ func openSQLite(dsn string) (*sql.DB, string, error) {
 }
 
 func (x *Index) Close() error {
-	if x.presence != nil {
-		x.presence.Wait()
-	}
-
 	if x.client == nil {
 		return nil
 	}
@@ -188,14 +182,6 @@ func (x *Index) Close() error {
 	}
 
 	return client.Close()
-}
-
-// WaitPresence blocks until the presence filters of every indexed commit
-// are stored.
-func (x *Index) WaitPresence() {
-	if x.presence != nil {
-		x.presence.Wait()
-	}
 }
 
 // Client is the ent client, for tests that inspect rows.

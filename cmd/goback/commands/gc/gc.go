@@ -72,9 +72,7 @@ func gcAction(c *cli.Context) {
 
 	Log(report)
 
-	if cl, ok := store.(common.Closer); ok {
-		log.Println(cl.Close())
-	}
+	common.CloseStore(store)
 }
 
 // Log prints one line per phase of a collection report.

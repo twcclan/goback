@@ -15,6 +15,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/gc"
 	"github.com/twcclan/goback/cmd/goback/commands/key"
+	"github.com/twcclan/goback/cmd/goback/commands/maintain"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
 	"github.com/twcclan/goback/cmd/goback/commands/pin"
 	"github.com/twcclan/goback/cmd/goback/commands/scrub"
@@ -66,6 +67,7 @@ func main() {
 		fix.Command,
 		gc.Command,
 		key.Command,
+		maintain.Command,
 		object.Command,
 		pin.Command,
 		scrub.Command,

@@ -604,7 +604,7 @@ func TestCommitInfoReproducesTheRef(t *testing.T) {
 		Consistent:    true,
 	})
 	require.NoError(t, f.x.Put(f.ctx, obj))
-	f.x.presence.Wait()
+	f.presence()
 
 	commits, err := f.x.CommitInfo(f.ctx, "world", f.clock, 1)
 	require.NoError(t, err)

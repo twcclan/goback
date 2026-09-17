@@ -293,12 +293,12 @@ func (ps *PackStorage) Flush() error {
 		return err
 	}
 
-	return ps.afterFlush()
+	return nil
 }
 
-// sweep finalizes archives idle for longer than the idle timeout and ends
-// sessions whose lease ran out.
-func (ps *PackStorage) sweep(now time.Time) {
+// Sweep finalizes archives idle past the idle timeout and ends sessions
+// whose lease ran out, as of now. Nothing runs it but the caller.
+func (ps *PackStorage) Sweep(now time.Time) {
 	if ps.idleFinalize > 0 {
 		for _, ws := range ps.writeSessions() {
 			ws.mtx.Lock()
@@ -335,45 +335,4 @@ func (ps *PackStorage) expireSessions(now time.Time) {
 			log.Printf("Failed ending session %s: %v", s.ID, err)
 		}
 	}
-}
-
-func (ps *PackStorage) startSweeper() {
-	interval := ps.idleFinalize
-	if ps.sessionLease > 0 && (interval == 0 || ps.sessionLease < interval) {
-		interval = ps.sessionLease
-	}
-
-	if interval <= 0 {
-		return
-	}
-
-	interval /= 2
-	if interval < time.Second {
-		interval = time.Second
-	}
-
-	ps.sweeperTicker = time.NewTicker(interval)
-	ps.sweeperClose = make(chan struct{})
-
-	go func(ticker *time.Ticker, closed <-chan struct{}) {
-		for {
-			select {
-			case now := <-ticker.C:
-				ps.sweep(now)
-			case <-closed:
-				return
-			}
-		}
-	}(ps.sweeperTicker, ps.sweeperClose)
-}
-
-func (ps *PackStorage) stopSweeper() {
-	if ps.sweeperTicker == nil {
-		return
-	}
-
-	ps.sweeperTicker.Stop()
-	close(ps.sweeperClose)
-	ps.sweeperTicker = nil
-	ps.sweeperClose = nil
 }

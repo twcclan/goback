@@ -38,9 +38,7 @@ func scrubAction(c *cli.Context) {
 
 	log.Printf("Scrubbed %d objects (%s) in %d archives, %d corrupt", report.Objects, humanize.Bytes(report.Bytes), report.Archives, len(report.Corrupt))
 
-	if cl, ok := store.(common.Closer); ok {
-		log.Println(cl.Close())
-	}
+	common.CloseStore(store)
 
 	if len(report.Corrupt) > 0 {
 		os.Exit(1)

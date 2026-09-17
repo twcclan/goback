@@ -18,6 +18,7 @@ import (
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
+	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/telemetry"
 
@@ -88,6 +89,21 @@ var Command = cli.Command{
 			Name:  "gc-interval",
 			Usage: "how often the store is garbage collected; 0 disables the job",
 			Value: 7 * 24 * time.Hour,
+		},
+		cli.DurationFlag{
+			Name:  "compact-interval",
+			Usage: "how often small archives are compacted; 0 disables the job",
+			Value: time.Hour,
+		},
+		cli.DurationFlag{
+			Name:  "sweep-interval",
+			Usage: "how often idle archives are finalized and expired sessions ended",
+			Value: 30 * time.Second,
+		},
+		cli.DurationFlag{
+			Name:  "presence-interval",
+			Usage: "how often presence filters are built for new commits; 0 disables the job",
+			Value: 30 * time.Second,
 		},
 	},
 }
@@ -168,15 +184,24 @@ func serverAction(ctx *cli.Context) {
 
 	proto.RegisterStoreServer(srv, remote)
 
+	base := common.Unwrap(s)
 	retirer, _ := idx.(backup.Retirer)
-	if retirer != nil && ctx.Duration("retire-interval") > 0 {
-		go retireLoop(retirer, ctx.Duration("retire-interval"))
+	collector, _ := base.(pack.Collector)
+	runner := &maintenance.Runner{
+		Retirer:   retirer,
+		Collector: collector,
+		OnCollect: gc.Log,
+		Schedule: maintenance.Schedule{
+			Sweep:    ctx.Duration("sweep-interval"),
+			Compact:  ctx.Duration("compact-interval"),
+			Collect:  ctx.Duration("gc-interval"),
+			Retire:   ctx.Duration("retire-interval"),
+			Presence: ctx.Duration("presence-interval"),
+		},
 	}
-
-	collector, _ := common.Unwrap(s).(pack.Collector)
-	if collector != nil && ctx.Duration("gc-interval") > 0 {
-		go gcLoop(collector, ctx.Duration("gc-interval"))
-	}
+	runner.Store, _ = base.(maintenance.Store)
+	runner.Presence, _ = idx.(maintenance.Presence)
+	go runner.Run(context.Background())
 
 	if addr := ctx.String("admin-address"); addr != "" {
 		serveAdmin(addr, ctx.String("admin-token"), tlsConfig, idx, retirer, collector)
@@ -287,34 +312,4 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, idx backup.Index, ret
 	go func() {
 		log.Fatal(admin.NewHTTPServer(admin.Handler(token, server)).Serve(listener))
 	}()
-}
-
-// gcLoop garbage collects the store on a fixed interval; docs/13 moves it
-// onto the job queue.
-func gcLoop(collector pack.Collector, interval time.Duration) {
-	for range time.Tick(interval) {
-		report, err := collector.Collect(context.Background(), pack.CollectOptions{})
-		if err != nil {
-			log.Printf("Garbage collection failed: %v", err)
-			continue
-		}
-
-		gc.Log(report)
-	}
-}
-
-// retireLoop runs the retirement job on a fixed interval; docs/13 moves it
-// onto the job queue.
-func retireLoop(retirer backup.Retirer, interval time.Duration) {
-	for range time.Tick(interval) {
-		n, err := retirer.Retire(context.Background(), time.Now())
-		if err != nil {
-			log.Printf("Retirement failed after %d commits: %v", n, err)
-			continue
-		}
-
-		if n > 0 {
-			log.Printf("Retired %d commits", n)
-		}
-	}
 }

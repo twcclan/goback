@@ -173,8 +173,9 @@ func TestOpenHandlesLeftoversOfSessions(t *testing.T) {
 	requireVisible(t, reopened, context.Background(), objects[0], false)
 	require.NoError(t, reopened.Close())
 
-	// with a lease, a session nobody renews is ended on open
+	// with a lease, a session nobody renews is ended by a sweep
 	expiring := newTestStore(t, base, WithArchiveIndex(index), WithSessionLease(time.Nanosecond))
+	expiring.Sweep(time.Now())
 
 	_, err = expiring.LookupSession(context.Background(), session.ID)
 	require.ErrorIs(t, err, backup.ErrNoSession)
@@ -197,10 +198,10 @@ func TestIdleArchivesAreFinalized(t *testing.T) {
 	ws := store.lookupWriteSession(session.ID)
 	require.NotNil(t, ws.archive)
 
-	store.sweep(time.Now().Add(30 * time.Minute))
+	store.Sweep(time.Now().Add(30 * time.Minute))
 	require.NotNil(t, ws.archive, "not idle yet")
 
-	store.sweep(time.Now().Add(2 * time.Hour))
+	store.Sweep(time.Now().Add(2 * time.Hour))
 	require.Nil(t, ws.archive, "finalized after the idle timeout")
 
 	loc, err := store.index.LocateObject(obj.Ref(), Scope{Session: session.ID})
@@ -433,7 +434,7 @@ func TestCommitRefusesASessionThatLostAnArchive(t *testing.T) {
 	require.NoError(t, store.Put(ctx, makeTestData(t, 1)[0]))
 
 	index.failNext = true
-	store.sweep(time.Now().Add(2 * time.Hour))
+	store.Sweep(time.Now().Add(2 * time.Hour))
 
 	ws := store.lookupWriteSession(session.ID)
 	require.Nil(t, ws.archive, "the sweep finalized the archive")

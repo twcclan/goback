@@ -268,7 +268,7 @@ func TestBeginCommitGates(t *testing.T) {
 	require.ErrorIs(t, f.x.Put(ctx, commit), auth.ErrForbidden)
 	commit.GetCommit().SetId = setID
 	require.NoError(t, f.x.Put(ctx, commit))
-	f.x.presence.Wait()
+	f.presence()
 
 	// ownership is checked before any bytes move
 	other := auth.WithPrincipal(context.Background(), &auth.Principal{AgentID: "node-2"})

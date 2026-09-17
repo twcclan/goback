@@ -87,11 +87,10 @@ message LatestCommitResponse {
 }
 
 // BeginCommitRequest asks, before a backup run moves bytes, whether the
-// caller may commit to the set; declared_logical_size is what the agent
-// expects the commit to hold, 0 when unknown.
+// caller may commit to the set.
 message BeginCommitRequest {
     string backup_set = 1;
-    int64 declared_logical_size = 2;
+    reserved 2;
 }
 
 message BeginCommitResponse {

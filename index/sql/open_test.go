@@ -229,18 +229,6 @@ func TestPostgres(t *testing.T) {
 		require.Equal(t, 1, winners)
 	})
 
-	t.Run("RowLevelSecurityOverlay", func(t *testing.T) {
-		databases++
-		name := fmt.Sprintf("goback_%d", databases)
-		admin := New(dsn, nil)
-		require.NoError(t, admin.Open())
-		_, err := admin.db.ExecContext(ctx, "CREATE DATABASE "+name)
-		require.NoError(t, err)
-		require.NoError(t, admin.Close())
-
-		testRowLevelSecurityOverlay(t, fmt.Sprintf("postgres://postgres:goback@%s:%s/%s?sslmode=disable", host, port.Port(), name))
-	})
-
 	t.Run("ConcurrentOpen", func(t *testing.T) {
 		databases++
 		name := fmt.Sprintf("goback_%d", databases)

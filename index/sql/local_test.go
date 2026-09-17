@@ -50,7 +50,8 @@ func (l *localIndex) commit(set, name string, timestamp, receivedAt int64, conte
 
 	commit := proto.NewObject(&proto.Commit{Timestamp: timestamp, Tree: tree.Ref(), BackupSet: set, ReceivedAtNs: receivedAt})
 	require.NoError(l.t, l.x.Put(l.ctx, commit))
-	l.x.presence.Wait()
+	_, err := l.x.BuildPendingPresence(l.ctx)
+	require.NoError(l.t, err)
 
 	return commit.Ref()
 }

@@ -35,6 +35,21 @@ type Closer interface {
 	Close() error
 }
 
+// CloseStore compacts a store that can and closes it.
+func CloseStore(store backup.ObjectStore) {
+	if c, ok := store.(interface{ Compact() error }); ok {
+		if err := c.Compact(); err != nil {
+			log.Printf("Compaction failed: %v", err)
+		}
+	}
+
+	if cl, ok := store.(Closer); ok {
+		if err := cl.Close(); err != nil {
+			log.Printf("Closing the store failed: %v", err)
+		}
+	}
+}
+
 // StoreKey loads the key file named by the global --store-key flag, or
 // returns nil when the store is written in the clear.
 func StoreKey(c *cli.Context) *storekey.Key {
@@ -130,10 +145,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
 		pack.WithSessionLease(10*time.Minute),
-		pack.WithCompaction(pack.CompactionConfig{
-			OnClose:           true,
-			MinimumCandidates: 100,
-		}),
+		pack.WithCompaction(pack.CompactionConfig{MinimumCandidates: 100}),
 	)...)
 }
 

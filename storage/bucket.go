@@ -367,10 +367,7 @@ func NewBucketObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra 
 		pack.WithMaxSize(1024 * 1024 * 1024),
 		pack.WithIdleFinalize(5 * time.Minute),
 		pack.WithSessionLease(30 * time.Minute),
-		pack.WithCompaction(pack.CompactionConfig{
-			Periodically:      24 * time.Hour,
-			MinimumCandidates: 1000,
-		}),
+		pack.WithCompaction(pack.CompactionConfig{MinimumCandidates: 1000}),
 	}
 
 	if cacheDir != "" {

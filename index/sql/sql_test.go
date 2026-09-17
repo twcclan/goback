@@ -189,6 +189,13 @@ func (f *fixture) index() *Index {
 	return x
 }
 
+// presence builds the filters the goroutine used to build after a Put.
+func (f *fixture) presence() {
+	f.t.Helper()
+	_, err := f.x.BuildPendingPresence(f.ctx)
+	require.NoError(f.t, err)
+}
+
 func (f *fixture) advance(d time.Duration) {
 	f.clock = f.clock.Add(d)
 }
@@ -231,7 +238,7 @@ func (f *fixture) commit(set string, root *proto.Object, partial bool) *proto.Re
 	})
 
 	require.NoError(f.t, f.x.Put(f.ctx, obj))
-	f.x.presence.Wait()
+	f.presence()
 
 	return obj.Ref()
 }

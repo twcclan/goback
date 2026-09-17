@@ -274,10 +274,6 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 
 	log.Printf("Indexed commit(%s) in %v", commit.GetBackupSet(), time.Since(start))
 
-	if x.presence != nil {
-		x.presence.Schedule(indexed, commit.GetBackupSet(), ref, commit.Tree)
-	}
-
 	return nil
 }
 

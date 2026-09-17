@@ -654,14 +654,12 @@ func (x *LatestCommitResponse) GetRef() *Ref {
 }
 
 // BeginCommitRequest asks, before a backup run moves bytes, whether the
-// caller may commit to the set; declared_logical_size is what the agent
-// expects the commit to hold, 0 when unknown.
+// caller may commit to the set.
 type BeginCommitRequest struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	BackupSet           string                 `protobuf:"bytes,1,opt,name=backup_set,json=backupSet,proto3" json:"backup_set,omitempty"`
-	DeclaredLogicalSize int64                  `protobuf:"varint,2,opt,name=declared_logical_size,json=declaredLogicalSize,proto3" json:"declared_logical_size,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BackupSet     string                 `protobuf:"bytes,1,opt,name=backup_set,json=backupSet,proto3" json:"backup_set,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BeginCommitRequest) Reset() {
@@ -699,13 +697,6 @@ func (x *BeginCommitRequest) GetBackupSet() string {
 		return x.BackupSet
 	}
 	return ""
-}
-
-func (x *BeginCommitRequest) GetDeclaredLogicalSize() int64 {
-	if x != nil {
-		return x.DeclaredLogicalSize
-	}
-	return 0
 }
 
 type BeginCommitResponse struct {
@@ -1871,11 +1862,10 @@ const file_api_proto_rawDesc = "" +
 	"backup_set\x18\x01 \x01(\tR\tbackupSet\"4\n" +
 	"\x14LatestCommitResponse\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
-	".proto.RefR\x03ref\"g\n" +
+	".proto.RefR\x03ref\"9\n" +
 	"\x12BeginCommitRequest\x12\x1d\n" +
 	"\n" +
-	"backup_set\x18\x01 \x01(\tR\tbackupSet\x122\n" +
-	"\x15declared_logical_size\x18\x02 \x01(\x03R\x13declaredLogicalSize\"\x8a\x01\n" +
+	"backup_set\x18\x01 \x01(\tR\tbackupSetJ\x04\b\x02\x10\x03\"\x8a\x01\n" +
 	"\x13BeginCommitResponse\x12\x15\n" +
 	"\x06set_id\x18\x01 \x01(\x04R\x05setId\x12\x18\n" +
 	"\aallowed\x18\x02 \x01(\bR\aallowed\x12\x16\n" +

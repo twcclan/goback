@@ -98,13 +98,8 @@ type PackStorage struct {
 	sessionsMtx sync.Mutex
 	sessions    map[string]*writeSession
 
-	compactorMtx    sync.Mutex
-	compactorTicker *time.Ticker
-	compactorClose  chan struct{}
-
-	sweeperTicker *time.Ticker
-	sweeperClose  chan struct{}
-	atRest        *AtRestKey
+	compactorMtx sync.Mutex
+	atRest       *AtRestKey
 }
 
 type pendingObject struct {
@@ -278,7 +273,7 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 	}
 
 	if ws.session == nil {
-		return ps.afterFlush()
+		return nil
 	}
 
 	err = ps.index.CommitSession(ws.id)
@@ -295,14 +290,6 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 		a.mtx.Unlock()
 	}
 	ps.mtx.RUnlock()
-
-	return ps.afterFlush()
-}
-
-func (ps *PackStorage) afterFlush() error {
-	if ps.compaction.AfterFlush {
-		go ps.backgroundCompaction()
-	}
 
 	return nil
 }
@@ -794,28 +781,6 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 	return writer(ws.archive)
 }
 
-func (ps *PackStorage) backgroundCompaction() {
-	log.Println("Running compaction")
-	err := ps.doCompaction()
-
-	if err != nil {
-		log.Println("Failed running compaction", err)
-	} else {
-		log.Print("Compaction successful")
-	}
-}
-
-func (ps *PackStorage) periodicCompaction(ticker *time.Ticker, closed <-chan struct{}) {
-	for {
-		select {
-		case <-ticker.C:
-			ps.backgroundCompaction()
-		case <-closed:
-			return
-		}
-	}
-}
-
 func (ps *PackStorage) withReadLock(do func()) {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
@@ -824,20 +789,6 @@ func (ps *PackStorage) withReadLock(do func()) {
 }
 
 func (ps *PackStorage) Close() error {
-	if ps.compaction.OnClose {
-		// this wil block, but only log potential errors
-		ps.backgroundCompaction()
-	}
-
-	if ps.compactorTicker != nil {
-		ps.compactorTicker.Stop()
-		close(ps.compactorClose)
-		ps.compactorTicker = nil
-		ps.compactorClose = nil
-	}
-
-	ps.stopSweeper()
-
 	err := ps.Flush()
 	if err != nil {
 		return err
@@ -890,23 +841,6 @@ func (ps *PackStorage) Open() error {
 	err = group.Wait()
 	if err != nil {
 		return err
-	}
-
-	if ps.sessionLease > 0 {
-		ps.expireSessions(time.Now())
-	}
-
-	ps.startSweeper()
-
-	if ps.compaction.Periodically > time.Duration(0) {
-		ps.compactorTicker = time.NewTicker(ps.compaction.Periodically)
-		ps.compactorClose = make(chan struct{})
-
-		go ps.periodicCompaction(ps.compactorTicker, ps.compactorClose)
-	}
-
-	if ps.compaction.OnOpen {
-		go ps.backgroundCompaction()
 	}
 
 	return nil

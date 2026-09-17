@@ -80,9 +80,7 @@ func runNew(c *cli.Context) error {
 	defer func() {
 		index.Close()
 
-		if cl, ok := store.(common.Closer); ok {
-			log.Println(cl.Close())
-		}
+		common.CloseStore(store)
 	}()
 
 	objects := backup.ObjectStore(index)

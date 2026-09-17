@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -83,94 +82,74 @@ func loadPresence(ctx context.Context, c *ent.Client, scope backup.PresenceScope
 	return filters, nil
 }
 
-// PresenceBuilder builds commit filters in the background, one build per
-// set at a time with the newest commit winning, and stores them; the same
-// walk records the commit's logical size.
-type PresenceBuilder struct {
-	index *Index
-
-	mtx     sync.Mutex
-	running map[int64]bool
-	next    map[int64]presenceJob
-	wg      sync.WaitGroup
-}
-
-type presenceJob struct {
-	setID  int64
-	set    string
-	commit *proto.Ref
-	tree   *proto.Ref
-}
-
-// Schedule builds the filter of a set's newest commit in the background.
-func (b *PresenceBuilder) Schedule(setID int64, name string, commit, tree *proto.Ref) {
-	job := presenceJob{setID: setID, set: name, commit: commit, tree: tree}
-
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
-
-	if b.running[setID] {
-		b.next[setID] = job
-		return
+// BuildPresence builds and stores the presence filter of an indexed
+// commit and records its logical size.
+func (x *Index) BuildPresence(ctx context.Context, commit *proto.Ref) error {
+	row, err := x.client.CommitRow.Query().Where(commitrow.Ref(commit.Hash)).WithSet().Only(ctx)
+	if err != nil {
+		return err
 	}
 
-	b.running[setID] = true
-	b.wg.Add(1)
-
-	go b.run(job)
+	return x.buildPresence(ctx, row.SetID, row.Edges.Set.Name, commit, &proto.Ref{Hash: row.Tree})
 }
 
-// Wait blocks until every scheduled build has finished.
-func (b *PresenceBuilder) Wait() {
-	b.wg.Wait()
-}
-
-func (b *PresenceBuilder) run(job presenceJob) {
-	defer b.wg.Done()
-
-	for {
-		b.build(job)
-
-		b.mtx.Lock()
-		next, ok := b.next[job.setID]
-		delete(b.next, job.setID)
-		if !ok {
-			delete(b.running, job.setID)
-		}
-		b.mtx.Unlock()
-
-		if !ok {
-			return
-		}
-
-		job = next
+// BuildPendingPresence builds the filter of every set whose newest live
+// commit has none and reports how many it built. Nothing runs it but the
+// caller.
+func (x *Index) BuildPendingPresence(ctx context.Context) (int, error) {
+	sets, err := x.client.Set.Query().All(ctx)
+	if err != nil {
+		return 0, err
 	}
+
+	built := 0
+	for _, s := range sets {
+		newest, err := x.client.CommitRow.Query().Where(commitrow.SetID(s.ID), liveCommit()).Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
+		if ent.IsNotFound(err) {
+			continue
+		}
+
+		if err != nil {
+			return built, err
+		}
+
+		if len(newest.Presence) > 0 {
+			continue
+		}
+
+		err = x.buildPresence(ctx, s.ID, s.Name, &proto.Ref{Hash: newest.Ref}, &proto.Ref{Hash: newest.Tree})
+		if err != nil {
+			return built, err
+		}
+
+		built++
+	}
+
+	return built, nil
 }
 
-func (b *PresenceBuilder) build(job presenceJob) {
-	ctx := context.Background()
+func (x *Index) buildPresence(ctx context.Context, setID int64, name string, commit, tree *proto.Ref) error {
 	start := time.Now()
 
-	filter, size, err := backup.CollectPresence(ctx, b.index.ObjectStore, job.tree)
+	filter, size, err := backup.CollectPresence(ctx, x.ObjectStore, tree)
 	if err != nil {
-		log.Printf("Cannot build presence filter for commit %x of set %s: %v", job.commit.Hash, job.set, err)
-		return
+		return fmt.Errorf("building the filter of commit %x: %w", commit.Hash, err)
 	}
 
-	err = b.index.client.CommitRow.Update().Where(commitrow.Ref(job.commit.Hash)).SetLogicalSize(size).Exec(ctx)
+	err = x.client.CommitRow.Update().Where(commitrow.Ref(commit.Hash)).SetLogicalSize(size).Exec(ctx)
 	if err != nil {
-		log.Printf("Cannot record the size of commit %x of set %s: %v", job.commit.Hash, job.set, err)
-		return
+		return fmt.Errorf("recording the size of commit %x: %w", commit.Hash, err)
 	}
 
-	filter.Commit = job.commit
-	filter.Set = job.set
+	filter.Commit = commit
+	filter.Set = name
 
-	err = storePresence(ctx, b.index, job.setID, job.commit, filter.Proto())
+	err = storePresence(ctx, x, setID, commit, filter.Proto())
 	if err != nil {
-		log.Printf("Cannot store presence filter for commit %x of set %s: %v", job.commit.Hash, job.set, err)
-		return
+		return fmt.Errorf("storing the filter of commit %x: %w", commit.Hash, err)
 	}
 
-	log.Printf("Built presence filter for set %s: %d refs, %d bytes in %v", job.set, filter.Entries(), filter.Size(), time.Since(start).Round(time.Millisecond))
+	log.Printf("Built presence filter for set %s: %d refs, %d bytes in %v", name, filter.Entries(), filter.Size(), time.Since(start).Round(time.Millisecond))
+
+	return nil
 }

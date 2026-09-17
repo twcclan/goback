@@ -47,25 +47,10 @@ func WithSessionLease(d time.Duration) PackOption {
 
 type PackOption func(p *packOptions)
 
+// CompactionConfig tunes Compact; when it runs is the caller's business.
 type CompactionConfig struct {
-	// AfterFlush controls whether background compaction is triggered
-	// after a Flush happens on the store
-	AfterFlush bool
-
-	// OnClose controls whether a compaction is done when closing the
-	// PackStore
-	OnClose bool
-
-	// OnOpen controls whether a compaction is done after opening the
-	// PackStore
-	OnOpen bool
-
-	// If Periodically is set to a non zero value the store will spawn
-	// a goroutine that will periodically run a compaction
-	Periodically time.Duration
-
-	// MinimumCandidates specifies the minimum number of eligible archives
-	// that need to exist before a compaction happens
+	// MinimumCandidates is how many eligible archives a placement group
+	// needs before Compact rewrites it.
 	MinimumCandidates int
 }
 
