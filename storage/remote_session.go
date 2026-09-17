@@ -58,7 +58,7 @@ func (r *RemoteClient) EndSession(ctx context.Context) error {
 func (r *RemoteServer) BeginSession(ctx context.Context, request *proto.BeginSessionRequest) (*proto.BeginSessionResponse, error) {
 	session, err := r.store.BeginSession(ctx, request.BackupSet, request.Restore)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.BeginSessionResponse{SessionId: session.ID, LeaseSeconds: int64(r.store.Lease / time.Second)}, nil
@@ -67,7 +67,7 @@ func (r *RemoteServer) BeginSession(ctx context.Context, request *proto.BeginSes
 func (r *RemoteServer) EndSession(ctx context.Context, request *proto.EndSessionRequest) (*proto.EndSessionResponse, error) {
 	err := r.store.EndSession(ctx, request.SessionId)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.EndSessionResponse{}, nil
@@ -83,7 +83,7 @@ func (r *RemoteServer) withSession(ctx context.Context) (context.Context, error)
 
 	session, err := r.store.Session(ctx, ids[0])
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return backup.WithSession(ctx, session), nil

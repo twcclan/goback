@@ -22,21 +22,19 @@ import (
 )
 
 const (
-	blobObjectPrefix   = "pack/"
-	blobObjectKey      = blobObjectPrefix + "%s/%s" // pack/<extension>/<filename>
-	blobChildrenPrefix = "children/%s/"             // children/<name>
+	blobObjectPrefix = "pack/"
+	blobObjectKey    = blobObjectPrefix + "%s/%s" // pack/<extension>/<filename>
 )
 
-var cloudLogger = logrus.WithField("storage", "cloud")
+var bucketLogger = logrus.WithField("storage", "cloud")
 
-var _ io.ReadSeeker = (*cloudFile)(nil)
-var _ io.WriterTo = (*cloudFile)(nil)
-var _ io.ReaderAt = (*cloudFile)(nil)
-var _ os.FileInfo = (*cloudFileInfo)(nil)
-var _ pack.ArchiveStorage = (*cloudStore)(nil)
-var _ pack.Parent = (*cloudStore)(nil)
+var _ io.ReadSeeker = (*bucketFile)(nil)
+var _ io.WriterTo = (*bucketFile)(nil)
+var _ io.ReaderAt = (*bucketFile)(nil)
+var _ os.FileInfo = (*bucketFileInfo)(nil)
+var _ pack.ArchiveStorage = (*BucketStore)(nil)
 
-func (s *cloudFile) Read(buf []byte) (int, error) {
+func (s *bucketFile) Read(buf []byte) (int, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -50,7 +48,7 @@ func (s *cloudFile) Read(buf []byte) (int, error) {
 	return n, err
 }
 
-func (s *cloudFile) ReadAt(buf []byte, offset int64) (int, error) {
+func (s *bucketFile) ReadAt(buf []byte, offset int64) (int, error) {
 	if !s.readOnly {
 		return 0, errors.New("Read only supported for readonly files")
 	}
@@ -75,7 +73,7 @@ func (s *cloudFile) ReadAt(buf []byte, offset int64) (int, error) {
 	return io.ReadFull(reader, buf[:length])
 }
 
-func (s *cloudFile) WriteTo(w io.Writer) (int64, error) {
+func (s *bucketFile) WriteTo(w io.Writer) (int64, error) {
 	if !s.readOnly {
 		return -1, errors.New("WriteTo only supported for readonly files")
 	}
@@ -91,7 +89,7 @@ func (s *cloudFile) WriteTo(w io.Writer) (int64, error) {
 	return io.Copy(w, reader)
 }
 
-func (s *cloudFile) Seek(offset int64, whence int) (int64, error) {
+func (s *bucketFile) Seek(offset int64, whence int) (int64, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -113,7 +111,7 @@ func (s *cloudFile) Seek(offset int64, whence int) (int64, error) {
 	return s.offset, nil
 }
 
-type cloudFile struct {
+type bucketFile struct {
 	bucket  *blob.Bucket
 	key     string
 	onClose func()
@@ -126,7 +124,7 @@ type cloudFile struct {
 	mtx      sync.Mutex
 }
 
-func (s *cloudFile) Close() error {
+func (s *bucketFile) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -146,7 +144,7 @@ func (s *cloudFile) Close() error {
 	return nil
 }
 
-func (s *cloudFile) Write(buf []byte) (int, error) {
+func (s *bucketFile) Write(buf []byte) (int, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -157,54 +155,21 @@ func (s *cloudFile) Write(buf []byte) (int, error) {
 	return s.writer.Write(buf)
 }
 
-func (s *cloudFile) Stat() (os.FileInfo, error) {
-	return &cloudFileInfo{attrs: s.attrs, key: s.key}, nil
+func (s *bucketFile) Stat() (os.FileInfo, error) {
+	return &bucketFileInfo{attrs: s.attrs, key: s.key}, nil
 }
 
-var _ pack.File = (*cloudFile)(nil)
+var _ pack.File = (*bucketFile)(nil)
 
-type cloudStore struct {
+type BucketStore struct {
 	bucket *blob.Bucket
 
 	openFilesMtx sync.Mutex
-	openFiles    map[string]*cloudFile
+	openFiles    map[string]*bucketFile
 }
 
-func (c *cloudStore) Child(name string) (pack.ArchiveStorage, error) {
-	prefix := fmt.Sprintf(blobChildrenPrefix, name)
-
-	return &cloudStore{
-		bucket:    blob.PrefixedBucket(c.bucket, prefix),
-		openFiles: make(map[string]*cloudFile),
-	}, nil
-}
-
-func (c *cloudStore) Children() ([]string, error) {
-	iterator := c.bucket.List(&blob.ListOptions{
-		Prefix:    path.Clean(fmt.Sprintf(blobChildrenPrefix, "")),
-		Delimiter: "/",
-	})
-
-	var names []string
-
-	for {
-		item, err := iterator.Next(context.Background())
-		if err != nil {
-			if err == io.EOF {
-				return names, nil
-			}
-
-			return nil, err
-		}
-
-		if item.IsDir {
-			names = append(names, path.Base(item.Key))
-		}
-	}
-}
-
-func (c *cloudStore) openGCSFile(key string) (pack.File, error) {
-	cloudLogger.WithField("key", key).Debug("Opening file")
+func (c *BucketStore) openFile(key string) (pack.File, error) {
+	bucketLogger.WithField("key", key).Debug("Opening file")
 	// if this is a file we are currently uploading
 	// return the active instance instead
 	c.openFilesMtx.Lock()
@@ -224,7 +189,7 @@ func (c *cloudStore) openGCSFile(key string) (pack.File, error) {
 		return nil, err
 	}
 
-	return &cloudFile{
+	return &bucketFile{
 		key:      key,
 		attrs:    attrs,
 		bucket:   c.bucket,
@@ -232,13 +197,13 @@ func (c *cloudStore) openGCSFile(key string) (pack.File, error) {
 	}, nil
 }
 
-func (c *cloudStore) newGCSFile(key string) (pack.File, error) {
+func (c *BucketStore) newGCSFile(key string) (pack.File, error) {
 	writer, err := c.bucket.NewWriter(context.Background(), key, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	file := &cloudFile{
+	file := &bucketFile{
 		writer: writer,
 		bucket: c.bucket,
 		key:    key,
@@ -256,23 +221,23 @@ func (c *cloudStore) newGCSFile(key string) (pack.File, error) {
 	return file, nil
 }
 
-func (c *cloudStore) key(name string) string {
+func (c *BucketStore) key(name string) string {
 	return fmt.Sprintf(blobObjectKey, path.Ext(name), name)
 }
 
-func (c *cloudStore) Open(name string) (pack.File, error) {
-	return c.openGCSFile(c.key(name))
+func (c *BucketStore) Open(name string) (pack.File, error) {
+	return c.openFile(c.key(name))
 }
 
-func (c *cloudStore) Create(name string) (pack.File, error) {
+func (c *BucketStore) Create(name string) (pack.File, error) {
 	return c.newGCSFile(c.key(name))
 }
 
-func (c *cloudStore) Delete(name string) error {
+func (c *BucketStore) Delete(name string) error {
 	return c.bucket.Delete(context.Background(), c.key(name))
 }
 
-func (c *cloudStore) DeleteAll() error {
+func (c *BucketStore) DeleteAll() error {
 	iter := c.bucket.List(&blob.ListOptions{
 		Prefix: blobObjectPrefix,
 	})
@@ -298,7 +263,7 @@ func (c *cloudStore) DeleteAll() error {
 	}
 }
 
-func (c *cloudStore) List(extension string) ([]string, error) {
+func (c *BucketStore) List(extension string) ([]string, error) {
 	prefix := blobObjectPrefix
 	if extension != "" {
 		if len(extension) < 2 || extension[0] != '.' {
@@ -342,48 +307,48 @@ func (c *cloudStore) List(extension string) ([]string, error) {
 	return names, nil
 }
 
-type cloudFileInfo struct {
+type bucketFileInfo struct {
 	key   string
 	attrs *blob.Attributes
 }
 
-func (s *cloudFileInfo) Sys() interface{} {
+func (s *bucketFileInfo) Sys() interface{} {
 	return s.attrs
 }
 
-func (s *cloudFileInfo) Size() int64 {
+func (s *bucketFileInfo) Size() int64 {
 	return s.attrs.Size
 }
 
-func (s *cloudFileInfo) Name() string {
+func (s *bucketFileInfo) Name() string {
 	return path.Base(s.key)
 }
 
-func (s *cloudFileInfo) Mode() os.FileMode {
+func (s *bucketFileInfo) Mode() os.FileMode {
 	return 0
 }
 
-func (s *cloudFileInfo) ModTime() time.Time {
+func (s *bucketFileInfo) ModTime() time.Time {
 	return s.attrs.ModTime
 }
 
-func (s *cloudFileInfo) IsDir() bool {
+func (s *bucketFileInfo) IsDir() bool {
 	return false
 }
 
-func NewCloudStore(bucket *blob.Bucket) *cloudStore {
-	storage := &cloudStore{
+func NewBucketStore(bucket *blob.Bucket) *BucketStore {
+	storage := &BucketStore{
 		bucket:    bucket,
-		openFiles: make(map[string]*cloudFile),
+		openFiles: make(map[string]*bucketFile),
 	}
 
 	return storage
 }
 
-// NewCloudObjectStore returns a pack store over a remote bucket, with a local
+// NewBucketObjectStore returns a pack store over a remote bucket, with a local
 // badger archive index at indexDir and, if cacheDir is not empty, a local
 // metadata cache; extra pack options follow.
-func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra ...pack.PackOption) (backup.ObjectStore, error) {
+func NewBucketObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra ...pack.PackOption) (backup.ObjectStore, error) {
 	err := os.MkdirAll(indexDir, 0755)
 	if err != nil {
 		return nil, err
@@ -395,7 +360,7 @@ func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra .
 	}
 
 	options := []pack.PackOption{
-		pack.WithArchiveStorage(NewCloudStore(bucket)),
+		pack.WithArchiveStorage(NewBucketStore(bucket)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),

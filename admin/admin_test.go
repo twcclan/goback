@@ -103,7 +103,7 @@ func newHarness(t *testing.T) *harness {
 		Now:        func() time.Time { return h.now },
 	}
 
-	h.http = httptest.NewUnstartedServer(admin.Handler(h.server, token))
+	h.http = httptest.NewUnstartedServer(admin.Handler(token, h.server))
 	h.http.Config = admin.NewHTTPServer(h.http.Config.Handler)
 	h.http.Start()
 	t.Cleanup(h.http.Close)

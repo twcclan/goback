@@ -43,7 +43,7 @@ func addAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	pin := proto.NewObject(&proto.Pin{Target: common.ParseRef(c.Args().First()), Metadata: common.Metadata(c)})
 
@@ -58,7 +58,7 @@ func addAction(c *cli.Context) {
 
 func listAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	pins, err := common.GetRetention(index).Pins(common.Context(c))
 	if err != nil {
@@ -78,7 +78,7 @@ func removeAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	err := common.GetRetention(index).Unpin(common.Context(c), common.ParseRef(c.Args().First()))
 	if err != nil {

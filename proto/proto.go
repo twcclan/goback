@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto pin.proto presence.proto ref.proto tree.proto transactional.proto
+//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto pin.proto presence.proto ref.proto tree.proto
 
 import (
 	"bytes"

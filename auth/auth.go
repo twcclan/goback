@@ -64,8 +64,57 @@ func (p *Principal) AuthorizeCommit(c *proto.Commit) error {
 
 const (
 	secretHeader = "authorization"
-	agentHeader  = "goback-agent"
+	// AgentHeader carries the agent id the caller declares.
+	AgentHeader = "goback-agent"
 )
+
+// Bearer returns the bearer token of the incoming call, if any.
+func Bearer(ctx context.Context) (string, bool) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	presented := md.Get(secretHeader)
+	if len(presented) == 0 {
+		return "", false
+	}
+
+	return strings.TrimPrefix(presented[0], "Bearer "), true
+}
+
+// Agent returns the agent id the incoming call declares, if any.
+func Agent(ctx context.Context) (string, bool) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	agents := md.Get(AgentHeader)
+	if len(agents) == 0 || agents[0] == "" {
+		return "", false
+	}
+
+	return agents[0], true
+}
+
+// Authenticator decides who an incoming call is from and returns the
+// context to handle it with, or a status error refusing it.
+type Authenticator func(ctx context.Context) (context.Context, error)
+
+// SharedSecret authenticates callers presenting secret as bearer token
+// and attaches the agent they declare as the principal.
+func SharedSecret(secret string) Authenticator {
+	return func(ctx context.Context) (context.Context, error) {
+		presented, ok := Bearer(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing secret")
+		}
+
+		if !equalSecrets(presented, secret) {
+			return nil, status.Error(codes.Unauthenticated, "wrong secret")
+		}
+
+		agent, ok := Agent(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing agent id")
+		}
+
+		return WithPrincipal(ctx, &Principal{AgentID: agent}), nil
+	}
+}
 
 // Credentials sends the shared secret and the agent id with every call and
 // refuses to do so over a plaintext connection.
@@ -75,30 +124,10 @@ type Credentials struct {
 }
 
 func (c Credentials) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
-	return map[string]string{secretHeader: "Bearer " + c.Secret, agentHeader: c.AgentID}, nil
+	return map[string]string{secretHeader: "Bearer " + c.Secret, AgentHeader: c.AgentID}, nil
 }
 
 func (Credentials) RequireTransportSecurity() bool { return true }
-
-func authenticate(ctx context.Context, secret string) (context.Context, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-
-	presented := md.Get(secretHeader)
-	if len(presented) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing secret")
-	}
-
-	if !equalSecrets(strings.TrimPrefix(presented[0], "Bearer "), secret) {
-		return nil, status.Error(codes.Unauthenticated, "wrong secret")
-	}
-
-	agents := md.Get(agentHeader)
-	if len(agents) == 0 || agents[0] == "" {
-		return nil, status.Error(codes.Unauthenticated, "missing agent id")
-	}
-
-	return WithPrincipal(ctx, &Principal{AgentID: agents[0]}), nil
-}
 
 func equalSecrets(a, b string) bool {
 	x, y := sha256.Sum256([]byte(a)), sha256.Sum256([]byte(b))
@@ -108,8 +137,18 @@ func equalSecrets(a, b string) bool {
 // UnaryInterceptor rejects calls that do not present secret and attaches
 // the declared agent as the principal of the ones that do.
 func UnaryInterceptor(secret string) grpc.UnaryServerInterceptor {
+	return Unary(SharedSecret(secret))
+}
+
+// StreamInterceptor is UnaryInterceptor for streaming calls.
+func StreamInterceptor(secret string) grpc.StreamServerInterceptor {
+	return Stream(SharedSecret(secret))
+}
+
+// Unary runs authenticate before every unary call.
+func Unary(authenticate Authenticator) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		ctx, err := authenticate(ctx, secret)
+		ctx, err := authenticate(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -118,10 +157,10 @@ func UnaryInterceptor(secret string) grpc.UnaryServerInterceptor {
 	}
 }
 
-// StreamInterceptor is UnaryInterceptor for streaming calls.
-func StreamInterceptor(secret string) grpc.StreamServerInterceptor {
+// Stream runs authenticate before every streaming call.
+func Stream(authenticate Authenticator) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx, err := authenticate(ss.Context(), secret)
+		ctx, err := authenticate(ss.Context())
 		if err != nil {
 			return err
 		}

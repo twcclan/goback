@@ -28,7 +28,7 @@ func (c *commit) list() {
 
 func listAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	s := &commit{
 		ctx:   common.Context(c),

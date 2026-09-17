@@ -56,7 +56,6 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		return nil, errors.New("No archive index provided")
 	}
 
-
 	return &PackStorage{
 		archives:         make([]*archive, 0),
 		retired:          make(map[string]bool),
@@ -116,6 +115,10 @@ type pendingObject struct {
 var _ backup.ObjectStore = (*PackStorage)(nil)
 var _ backup.Counter = (*PackStorage)(nil)
 var _ backup.SessionStore = (*PackStorage)(nil)
+var _ backup.Leased = (*PackStorage)(nil)
+
+// SessionLease implements backup.Leased: zero when sessions never expire.
+func (ps *PackStorage) SessionLease() time.Duration { return ps.sessionLease }
 
 // Has reports whether the store holds a copy of the object that the last
 // completed garbage collection found reachable. A copy it found unreachable
@@ -928,11 +931,6 @@ type ArchiveStorage interface {
 	DeleteAll() error
 }
 
-type Parent interface {
-	Child(name string) (ArchiveStorage, error)
-	Children() ([]string, error)
-}
-
 type IndexLocation struct {
 	Archive string
 	Record  IndexRecord
@@ -955,4 +953,3 @@ type ArchiveIndex interface {
 	Close() error
 	CountObjects() (uint64, uint64, error)
 }
-

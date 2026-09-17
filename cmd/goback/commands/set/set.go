@@ -35,7 +35,7 @@ func deleteAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	err := common.GetRetention(index).DeleteSet(common.Context(c), c.Args().First(), c.Bool("erase"))
 	if err != nil {
@@ -52,7 +52,7 @@ func undeleteAction(c *cli.Context) {
 	}
 
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	err := common.GetRetention(index).UndeleteSet(common.Context(c), c.Args().First())
 	if err != nil {

@@ -16,7 +16,7 @@ func TestCloudStore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	packtest.TestArchiveStorage(t, NewCloudStore(bucket))
+	packtest.TestArchiveStorage(t, NewBucketStore(bucket))
 
 	t.Log(dir)
 }

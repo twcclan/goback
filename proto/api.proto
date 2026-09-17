@@ -8,7 +8,6 @@ import "object.proto";
 import "ref.proto";
 import "tree.proto";
 import "commit.proto";
-import "transactional.proto";
 import "presence.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -234,6 +233,4 @@ service Store {
     rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
     rpc Unpin(UnpinRequest) returns (UnpinResponse) {}
     rpc ListPins(ListPinsRequest) returns (ListPinsResponse) {}
-
-    //rpc BeginTransaction(stream TransactionRequest) returns (stream TransactionResponse) {}
 }

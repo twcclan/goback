@@ -434,6 +434,9 @@ type RemoteServer struct {
 	store *Store
 }
 
+// Store is the store the server serves.
+func (r *RemoteServer) Store() *Store { return r.store }
+
 func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginCommitRequest) (*proto.BeginCommitResponse, error) {
 	grant, err := r.store.BeginCommit(ctx, request.BackupSet)
 	if errors.Is(err, backup.ErrCommitDenied) {
@@ -441,7 +444,7 @@ func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginComm
 	}
 
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.BeginCommitResponse{SetId: grant.SetID, Allowed: true, Policy: policyProto(grant.Policy)}, nil
@@ -455,7 +458,7 @@ func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequ
 
 	files, err := r.store.Index.FileInfo(ctx, request.BackupSet, request.Path, request.NotAfter.AsTime(), int(request.Count))
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.FileInfoResponse{Files: files}, nil
@@ -469,7 +472,7 @@ func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfo
 
 	commits, err := r.store.Index.CommitInfo(ctx, request.BackupSet, request.NotAfter.AsTime(), int(request.Count))
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.CommitInfoResponse{Commits: commits}, nil
@@ -478,7 +481,7 @@ func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfo
 func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
 	receipt, err := r.store.Put(ctx, Upload{Object: request.GetObject(), Ref: request.Ref, Assumed: request.AssumedRefs})
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.PutResponse{Ref: receipt.Ref, Object: receipt.Object, Missing: receipt.Missing}, nil
@@ -492,14 +495,14 @@ func (r *RemoteServer) LatestCommit(ctx context.Context, request *proto.LatestCo
 	}
 
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.LatestCommitResponse{Ref: ref}, nil
 }
 
 func (r *RemoteServer) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTreeServer) error {
-	return toStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, func(ref *proto.Ref, obj *proto.Object) error {
+	return ToStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, func(ref *proto.Ref, obj *proto.Object) error {
 		return stream.Send(&proto.GetTreeResponse{Ref: ref, Object: obj})
 	}))
 }
@@ -507,7 +510,7 @@ func (r *RemoteServer) GetTree(request *proto.GetTreeRequest, stream proto.Store
 func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
 	obj, err := r.store.Get(ctx, request.Ref)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.GetResponse{Object: obj}, nil
@@ -516,14 +519,14 @@ func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*pro
 // ReadFile streams the stored objects of a file's parts in order, running
 // the fetch loop server-side so the client authorises once per file.
 func (r *RemoteServer) ReadFile(request *proto.ReadFileRequest, stream proto.Store_ReadFileServer) error {
-	return toStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(index int, obj *proto.Object) error {
+	return ToStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(index int, obj *proto.Object) error {
 		return stream.Send(&proto.ReadFileResponse{Index: uint32(index), Object: obj})
 	}))
 }
 
-// toStatus maps the store's sentinel errors to gRPC codes; an error that
+// ToStatus maps the store's sentinel errors to gRPC codes; an error that
 // already is a status passes through.
-func toStatus(err error) error {
+func ToStatus(err error) error {
 	switch {
 	case err == nil:
 		return nil
@@ -549,57 +552,57 @@ func toStatus(err error) error {
 func (r *RemoteServer) DeleteCommit(ctx context.Context, request *proto.DeleteCommitRequest) (*proto.DeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
-	return &proto.DeleteCommitResponse{}, toStatus(ret.DeleteCommit(ctx, request.GetRef()))
+	return &proto.DeleteCommitResponse{}, ToStatus(ret.DeleteCommit(ctx, request.GetRef()))
 }
 
 func (r *RemoteServer) UndeleteCommit(ctx context.Context, request *proto.UndeleteCommitRequest) (*proto.UndeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
-	return &proto.UndeleteCommitResponse{}, toStatus(ret.UndeleteCommit(ctx, request.GetRef()))
+	return &proto.UndeleteCommitResponse{}, ToStatus(ret.UndeleteCommit(ctx, request.GetRef()))
 }
 
 func (r *RemoteServer) DeleteSet(ctx context.Context, request *proto.DeleteSetRequest) (*proto.DeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
-	return &proto.DeleteSetResponse{}, toStatus(ret.DeleteSet(ctx, request.GetBackupSet(), request.GetErase()))
+	return &proto.DeleteSetResponse{}, ToStatus(ret.DeleteSet(ctx, request.GetBackupSet(), request.GetErase()))
 }
 
 func (r *RemoteServer) UndeleteSet(ctx context.Context, request *proto.UndeleteSetRequest) (*proto.UndeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
-	return &proto.UndeleteSetResponse{}, toStatus(ret.UndeleteSet(ctx, request.GetBackupSet()))
+	return &proto.UndeleteSetResponse{}, ToStatus(ret.UndeleteSet(ctx, request.GetBackupSet()))
 }
 
 func (r *RemoteServer) Unpin(ctx context.Context, request *proto.UnpinRequest) (*proto.UnpinResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
-	return &proto.UnpinResponse{}, toStatus(ret.Unpin(ctx, request.GetPin()))
+	return &proto.UnpinResponse{}, ToStatus(ret.Unpin(ctx, request.GetPin()))
 }
 
 func (r *RemoteServer) ListPins(ctx context.Context, _ *proto.ListPinsRequest) (*proto.ListPinsResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	pins, err := ret.Pins(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, ToStatus(err)
 	}
 
 	return &proto.ListPinsResponse{Pins: pins}, nil
@@ -613,7 +616,7 @@ const presencePiece = 1 << 20
 func (r *RemoteServer) GetPresence(request *proto.GetPresenceRequest, stream proto.Store_GetPresenceServer) error {
 	filters, err := r.store.Presence(stream.Context(), request.BackupSet)
 	if err != nil {
-		return toStatus(err)
+		return ToStatus(err)
 	}
 
 	for i, filter := range filters {

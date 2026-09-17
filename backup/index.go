@@ -37,6 +37,13 @@ type RefScope interface {
 	References(ctx context.Context, ref *proto.Ref) (bool, error)
 }
 
+// SetScope narrows RefScope to named sets, for a server that grants a
+// caller some of the store's sets.
+type SetScope interface {
+	// Reachable reports whether one of the named sets references ref.
+	Reachable(ctx context.Context, sets []string, ref *proto.Ref) (bool, error)
+}
+
 // CommitGrant is the answer to an allowed BeginCommit.
 type CommitGrant struct {
 	// SetID is the set's server-assigned id, which the commit body must carry.

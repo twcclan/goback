@@ -1823,7 +1823,7 @@ var File_api_proto protoreflect.FileDescriptor
 const file_api_proto_rawDesc = "" +
 	"\n" +
 	"\tapi.proto\x12\x05proto\x1a\fobject.proto\x1a\tref.proto\x1a\n" +
-	"tree.proto\x1a\fcommit.proto\x1a\x13transactional.proto\x1a\x0epresence.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x80\x01\n" +
+	"tree.proto\x1a\fcommit.proto\x1a\x0epresence.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x80\x01\n" +
 	"\n" +
 	"PutRequest\x12%\n" +
 	"\x06object\x18\x01 \x01(\v2\r.proto.ObjectR\x06object\x12\x1c\n" +
@@ -2102,7 +2102,6 @@ func file_api_proto_init() {
 	file_ref_proto_init()
 	file_tree_proto_init()
 	file_commit_proto_init()
-	file_transactional_proto_init()
 	file_presence_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{

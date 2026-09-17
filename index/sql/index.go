@@ -53,8 +53,9 @@ type Index struct {
 	// serialises transactions as a whole instead.
 	locking bool
 
-	presence *PresenceBuilder
-	external *externalDB
+	presence  *PresenceBuilder
+	external  *externalDB
+	noMigrate bool
 
 	// Limits clamp every retention policy.
 	Limits retention.Limits
@@ -124,10 +125,12 @@ func (x *Index) Open() error {
 		return fmt.Errorf("connecting to the index: %w", err)
 	}
 
-	err = migrations.Apply(context.Background(), db, migrationDialect(dialect))
-	if err != nil {
-		db.Close()
-		return fmt.Errorf("migrating the index schema: %w", err)
+	if !x.noMigrate {
+		err = migrations.Apply(context.Background(), db, migrationDialect(dialect))
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("migrating the index schema: %w", err)
+		}
 	}
 
 	client := ent.NewClient(ent.Driver(entsql.OpenDB(dialect, db)))

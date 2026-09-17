@@ -45,17 +45,6 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 	// run standard tests
 	runTests(t, store)
 
-	if parent, ok := store.(pack.Parent); ok {
-		t.Run("nested", func(t *testing.T) {
-			nested, err := parent.Child("test1")
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			runTests(t, nested)
-		})
-
-	}
 }
 
 func testCreateFiles(t *testing.T, store pack.ArchiveStorage, files []file) {

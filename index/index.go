@@ -11,7 +11,6 @@ import (
 // Set states.
 const (
 	SetActive  = "active"
-	SetClosing = "closing"
 	SetDeleted = "deleted"
 )
 

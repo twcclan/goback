@@ -125,7 +125,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	}
 
 	return pack.NewPackStorage(append(options,
-		pack.WithArchiveStorage(storage.NewCloudStore(file)),
+		pack.WithArchiveStorage(storage.NewBucketStore(file)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
@@ -164,7 +164,7 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return storage.NewCloudObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
+	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -329,9 +329,6 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 }
 
 // GetIndex opens the index for a command run without a server.
-func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
-	return OpenIndex(c, store)
-}
 
 func ptr[T any](v T) *T {
 	return &v

@@ -582,7 +582,7 @@ func (x *Index) writeTombstone(ctx context.Context, ref []byte, now time.Time, e
 }
 
 // markTombstoned records a durable tombstone on the commit's row and drops
-// the commit ref from what the caller may read.
+// the commit ref from what the store's sets reach.
 func (x *Index) markTombstoned(ctx context.Context, ref []byte, now time.Time) error {
 	return x.tx(ctx, func(tx *ent.Tx) error {
 		_, tombstoned, err := x.lockCommit(ctx, tx, ref)

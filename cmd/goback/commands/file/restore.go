@@ -69,7 +69,7 @@ func restoreAction(c *cli.Context) {
 	when := time.Now().Add(-d)
 
 	store := common.GetObjectStore(c)
-	idx := common.GetIndex(c, store)
+	idx := common.OpenIndex(c, store)
 
 	key := common.StoreKey(c)
 

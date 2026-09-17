@@ -47,7 +47,7 @@ func showAction(c *cli.Context) error {
 	when := time.Now().Add(-d)
 
 	store := common.GetObjectStore(c)
-	idx := common.GetIndex(c, store)
+	idx := common.OpenIndex(c, store)
 
 	f := &file{
 		ctx:   common.Context(c),

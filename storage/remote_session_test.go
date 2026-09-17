@@ -84,7 +84,7 @@ func testPackStore(t *testing.T) *pack.PackStorage {
 	require.NoError(t, err)
 
 	store, err := pack.NewPackStorage(
-		pack.WithArchiveStorage(NewCloudStore(bucket)),
+		pack.WithArchiveStorage(NewBucketStore(bucket)),
 		pack.WithArchiveIndex(pack.NewInMemoryIndex()),
 		pack.WithMaxParallel(4),
 		pack.WithCloseBeforeRead(true),

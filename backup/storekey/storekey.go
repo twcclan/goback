@@ -488,8 +488,8 @@ const (
 	escrowSalt   = 16
 )
 
-// Escrow wraps the key under a passphrase with a memory-hard KDF, for a
-// customer to store where the service cannot open it.
+// Escrow wraps the key under a passphrase with a memory-hard KDF, so the
+// key's owner can keep it where the server cannot open it.
 func (k *Key) Escrow(passphrase string) ([]byte, error) {
 	salt := make([]byte, escrowSalt)
 	_, err := rand.Read(salt)

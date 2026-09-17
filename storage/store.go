@@ -22,8 +22,8 @@ type Store struct {
 	Index    backup.Index
 	Sessions backup.SessionStore
 
-	// Lease is what BeginSession promises the client; the store enforces
-	// its own.
+	// Lease is what BeginSession promises the client: the session
+	// store's own when it has one.
 	Lease time.Duration
 
 	// PresenceScope says whose commits feed the filters Presence serves
@@ -34,12 +34,18 @@ type Store struct {
 // NewStore returns a Store over index. sessions is nil for a store without
 // sessions.
 func NewStore(index backup.Index, sessions backup.SessionStore) *Store {
-	return &Store{
+	s := &Store{
 		Index:         index,
 		Sessions:      sessions,
 		Lease:         30 * time.Minute,
 		PresenceScope: backup.PresenceStore,
 	}
+
+	if leased, ok := sessions.(backup.Leased); ok && leased.SessionLease() > 0 {
+		s.Lease = leased.SessionLease()
+	}
+
+	return s
 }
 
 // BeginCommit asks the index whether the caller may commit to set. An index

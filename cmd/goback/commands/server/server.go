@@ -285,7 +285,7 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, idx backup.Index, ret
 	log.Println("Admin surface listening on", listener.Addr().String())
 
 	go func() {
-		log.Fatal(admin.NewHTTPServer(admin.Handler(server, token)).Serve(listener))
+		log.Fatal(admin.NewHTTPServer(admin.Handler(token, server)).Serve(listener))
 	}()
 }
 

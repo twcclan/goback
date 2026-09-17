@@ -22,7 +22,7 @@ type Policy struct {
 	KeepWithin  time.Duration
 }
 
-// Limits caps a policy per plan; a zero field is unlimited.
+// Limits caps every policy of the store; a zero field is unlimited.
 type Limits struct {
 	MaxLast    int
 	MaxHourly  int

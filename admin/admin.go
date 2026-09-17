@@ -14,9 +14,11 @@ import (
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql"
 	pb "github.com/twcclan/goback/proto/admin"
 
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -26,11 +28,21 @@ import (
 // m maps what the index reports to the admin protos.
 var m = gen.MapperImpl{}
 
+// Index is what the admin surface needs from a store's index.
+type Index interface {
+	ListSets(ctx context.Context) ([]index.SetInfo, error)
+	TransferSet(ctx context.Context, name, agentID string) error
+	DeleteSet(ctx context.Context, name string, erase bool) error
+	UndeleteSet(ctx context.Context, name string) error
+	GetStorePolicy(ctx context.Context) (index.StorePolicy, error)
+	SetStorePolicy(ctx context.Context, policy storekey.Policy, acknowledge bool, now time.Time) (index.StorePolicy, error)
+}
+
 // Server implements the Admin service over a store index.
 type Server struct {
 	pb.UnimplementedAdminServer
 
-	Index *sql.Index
+	Index Index
 	// RetireJob and CollectJob run the retention and garbage collection
 	// jobs; nil means the job is not available.
 	RetireJob  func(ctx context.Context) (int, error)
@@ -40,6 +52,15 @@ type Server struct {
 }
 
 var _ pb.AdminServer = (*Server)(nil)
+var _ Index = (*sql.Index)(nil)
+
+// Register implements Service.
+func (s *Server) Register(srv *grpc.Server) { pb.RegisterAdminServer(srv, s) }
+
+// RegisterGateway implements Service.
+func (s *Server) RegisterGateway(ctx context.Context, mux *runtime.ServeMux) error {
+	return pb.RegisterAdminHandlerServer(ctx, mux, s)
+}
 
 func (s *Server) now() time.Time {
 	if s.Now != nil {
@@ -52,7 +73,7 @@ func (s *Server) now() time.Time {
 func (s *Server) ListSets(ctx context.Context, request *pb.ListSetsRequest) (*pb.ListSetsResponse, error) {
 	sets, err := s.Index.ListSets(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	resp := &pb.ListSetsResponse{}
@@ -66,7 +87,7 @@ func (s *Server) ListSets(ctx context.Context, request *pb.ListSetsRequest) (*pb
 func (s *Server) TransferSet(ctx context.Context, request *pb.TransferSetRequest) (*pb.BackupSet, error) {
 	err := s.Index.TransferSet(ctx, request.Name, request.AgentId)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return s.set(ctx, request.Name)
@@ -75,7 +96,7 @@ func (s *Server) TransferSet(ctx context.Context, request *pb.TransferSetRequest
 func (s *Server) set(ctx context.Context, name string) (*pb.BackupSet, error) {
 	sets, err := s.Index.ListSets(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	for _, set := range sets {
@@ -90,7 +111,7 @@ func (s *Server) set(ctx context.Context, name string) (*pb.BackupSet, error) {
 func (s *Server) DeleteSet(ctx context.Context, request *pb.DeleteSetRequest) (*pb.DeleteSetResponse, error) {
 	err := s.Index.DeleteSet(ctx, request.Name, request.Erase)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return &pb.DeleteSetResponse{}, nil
@@ -99,7 +120,7 @@ func (s *Server) DeleteSet(ctx context.Context, request *pb.DeleteSetRequest) (*
 func (s *Server) UndeleteSet(ctx context.Context, request *pb.UndeleteSetRequest) (*pb.UndeleteSetResponse, error) {
 	err := s.Index.UndeleteSet(ctx, request.Name)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return &pb.UndeleteSetResponse{}, nil
@@ -108,7 +129,7 @@ func (s *Server) UndeleteSet(ctx context.Context, request *pb.UndeleteSetRequest
 func (s *Server) GetStorePolicy(ctx context.Context, _ *pb.GetStorePolicyRequest) (*pb.StorePolicy, error) {
 	p, err := s.Index.GetStorePolicy(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return m.Policy(p), nil
@@ -136,7 +157,7 @@ func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyR
 
 	p, err := s.Index.SetStorePolicy(ctx, policy, request.AcknowledgeKey, s.now())
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return m.Policy(p), nil
@@ -149,7 +170,7 @@ func (s *Server) Retire(ctx context.Context, _ *pb.RetireRequest) (*pb.RetireRes
 
 	n, err := s.RetireJob(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return &pb.RetireResponse{Retired: int64(n)}, nil
@@ -162,14 +183,15 @@ func (s *Server) CollectGarbage(ctx context.Context, _ *pb.CollectGarbageRequest
 
 	report, err := s.CollectJob(ctx)
 	if err != nil {
-		return nil, toStatus(err)
+		return nil, Status(err)
 	}
 
 	return &pb.CollectGarbageResponse{Report: report}, nil
 }
 
-// toStatus maps the index's sentinel errors to gRPC codes.
-func toStatus(err error) error {
+// Status maps the index's sentinel errors to gRPC codes; an error that
+// already is a status passes through.
+func Status(err error) error {
 	switch {
 	case errors.Is(err, backup.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
@@ -188,8 +210,8 @@ func toStatus(err error) error {
 
 const header = "authorization"
 
-// authorized reports whether the metadata carries the admin token.
-func authorized(md metadata.MD, token string) bool {
+// Authorized reports whether the metadata carries the admin token.
+func Authorized(md metadata.MD, token string) bool {
 	for _, v := range md.Get(header) {
 		presented := strings.TrimPrefix(v, "Bearer ")
 		if subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1 {
@@ -204,7 +226,7 @@ func authorized(md metadata.MD, token string) bool {
 func UnaryInterceptor(token string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		if !authorized(md, token) {
+		if !Authorized(md, token) {
 			return nil, status.Error(codes.Unauthenticated, "admin token required")
 		}
 

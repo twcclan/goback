@@ -28,10 +28,8 @@ type compactionGroup struct {
 	droppedBytes   uint64
 }
 
-// doCompaction rewrites the small committed archives of every placement
-// group into full-sized archives of that group.
-// Compact rewrites the archives compaction picks and returns when it is
-// done.
+// Compact rewrites the small committed archives of every placement group
+// into full-sized archives of that group and returns when it is done.
 func (ps *PackStorage) Compact() error {
 	return ps.doCompaction()
 }

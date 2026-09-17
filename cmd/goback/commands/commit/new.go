@@ -75,7 +75,7 @@ func runNew(c *cli.Context) error {
 	}
 
 	store := common.GetObjectStore(c)
-	index := common.GetIndex(c, store)
+	index := common.OpenIndex(c, store)
 
 	defer func() {
 		index.Close()

@@ -51,3 +51,9 @@ type SessionStore interface {
 	BeginSession(ctx context.Context, s *Session) (context.Context, error)
 	EndSession(ctx context.Context) error
 }
+
+// Leased is a session store that ends sessions after a lease without a
+// write.
+type Leased interface {
+	SessionLease() time.Duration
+}

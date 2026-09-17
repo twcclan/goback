@@ -291,7 +291,7 @@ func TestDeletedSetProceedsWhilePaused(t *testing.T) {
 }
 
 // TestTombstonePrunesTheRefsOnlyItReaches retires a commit and expects the
-// caller to lose read access to its tree and file, but not to the subtree
+// store to lose read access to its tree and file, but not to the subtree
 // it shares with the commit that stays.
 func TestTombstonePrunesTheRefsOnlyItReaches(t *testing.T) {
 	f := newFixture(t)
