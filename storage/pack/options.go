@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -18,6 +19,7 @@ type packOptions struct {
 	idleFinalize    time.Duration
 	sessionLease    time.Duration
 	atRest          *AtRestKey
+	logger          *slog.Logger
 }
 
 // WithAtRestKey seals every payload written from now on under the key
@@ -26,6 +28,13 @@ type packOptions struct {
 func WithAtRestKey(key *storekey.Key) PackOption {
 	return func(p *packOptions) {
 		p.atRest = NewAtRestKey(key)
+	}
+}
+
+// WithLogger is where the store reports; the default is slog.Default.
+func WithLogger(logger *slog.Logger) PackOption {
+	return func(p *packOptions) {
+		p.logger = logger
 	}
 }
 

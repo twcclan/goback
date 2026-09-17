@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -709,7 +708,7 @@ func (x *Index) closeEmptySets(ctx context.Context) error {
 			return err
 		}
 
-		log.Printf("Set %d deleted", id)
+		x.logger().Info("deleted empty set", "set", id)
 	}
 
 	return nil

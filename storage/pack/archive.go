@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"sort"
@@ -104,6 +104,7 @@ type archive struct {
 	storage    ArchiveStorage
 	name       string
 	atRest     *AtRestKey
+	logger     *slog.Logger
 
 	// owner is the session writing this archive, nil once finalized or
 	// when opened from storage
@@ -114,7 +115,7 @@ type archive struct {
 
 // newArchive opens a writable archive named by a fresh uuid under dir,
 // sealing its payloads under atRest when that is set.
-func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey) (*archive, error) {
+func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -125,24 +126,26 @@ func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey) (*archive
 		name:     path.Join(dir, id.String()),
 		readOnly: false,
 		atRest:   atRest,
+		logger:   logger,
 	}
 
 	return a, a.open()
 }
 
-func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey) (*archive, error) {
+func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
 	a := &archive{
 		storage:  storage,
 		name:     name,
 		readOnly: true,
 		atRest:   atRest,
+		logger:   logger,
 	}
 
 	return a, a.open()
 }
 
 func (a *archive) recoverIndex(err error) (IndexFile, error) {
-	log.Printf("Attempting index recovery. couldn't open index: %v", err)
+	a.logger.Warn("recovering the index from the archive", "archive", a.name, "err", err)
 
 	recoveredIndex := make(IndexFile, 0)
 
@@ -163,7 +166,7 @@ func (a *archive) recoverIndex(err error) (IndexFile, error) {
 		return nil, errors.Wrap(err, "Couldn't read archive to recover index")
 	}
 
-	log.Printf("Recovered %d index records", len(recoveredIndex))
+	a.logger.Info("recovered index", "archive", a.name, "records", len(recoveredIndex))
 
 	return recoveredIndex, a.storeReadIndex(recoveredIndex)
 }

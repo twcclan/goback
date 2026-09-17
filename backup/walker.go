@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path"
@@ -58,6 +58,9 @@ type Walker struct {
 
 	// Key seals names and blobs; nil backs up in the clear.
 	Key *storekey.Key
+
+	// Logger is where the walk reports; nil means slog.Default.
+	Logger *slog.Logger
 
 	// Sessions, when set, wraps the run in a session, so nothing it uploads
 	// is visible to others before its commit.
@@ -140,8 +143,12 @@ var errUnreadable = errors.New("file could not be read")
 // diffs its chunks against.
 const PreviousVersions = 3
 
-func (w *Walker) logf(format string, args ...interface{}) {
-	log.Printf(format, args...)
+func (w *Walker) logger() *slog.Logger {
+	if w.Logger != nil {
+		return w.Logger
+	}
+
+	return slog.Default()
 }
 
 // Run walks the root, writes the commit and returns its ref.
@@ -193,7 +200,7 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 
 		defer func() {
 			if err := w.Sessions.EndSession(ctx); err != nil {
-				w.logf("Cannot end session: %v", err)
+				w.logger().Warn("ending the session failed", "err", err)
 			}
 		}()
 	}
@@ -254,7 +261,7 @@ func (w *Walker) adoptPolicy(policy *storekey.Policy) error {
 	}
 
 	if w.Key.Policy.Version != policy.Version {
-		w.logf("Store policy v%d from the server replaces v%d from the key file", policy.Version, w.Key.Policy.Version)
+		w.logger().Info("store policy from the server replaces the key file's", "server", policy.Version, "keyfile", w.Key.Policy.Version)
 	}
 
 	w.Key.Policy = *policy
@@ -283,13 +290,13 @@ func (w *Walker) loadPresence(ctx context.Context) {
 
 	filters, err := source.Presence(ctx, w.Set)
 	if err != nil {
-		w.logf("Cannot fetch presence filters, uploading every new chunk: %v", err)
+		w.logger().Warn("fetching presence filters failed, uploading every new chunk", "err", err)
 		return
 	}
 
 	w.filters = filters
 	if len(filters) > 0 {
-		w.logf("Presence: %d filters over %d refs (%d bytes)", len(filters), filters.Entries(), filters.Size())
+		w.logger().Info("presence filters loaded", "filters", len(filters), "refs", filters.Entries(), "bytes", filters.Size())
 	}
 }
 
@@ -309,7 +316,7 @@ func unwrapStore(store ObjectStore) ObjectStore {
 func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 	ref, err := w.Index.LatestCommit(ctx, w.Set)
 	if errors.Is(err, ErrNotFound) {
-		w.logf("No previous commit for set %q, reading everything", w.Set)
+		w.logger().Info("no previous commit, reading everything", "set", w.Set)
 		return nil, nil
 	}
 
@@ -339,7 +346,7 @@ func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 		w.baseScan = commit.Timestamp * int64(time.Second)
 	}
 
-	w.logf("Diffing against commit %x from %s", ref.Hash, time.Unix(commit.Timestamp, 0))
+	w.logger().Info("diffing against the previous commit", "ref", fmt.Sprintf("%x", ref.Hash), "from", time.Unix(commit.Timestamp, 0))
 
 	return tree.Nodes, nil
 }
@@ -387,13 +394,13 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if base != nil && IsPermissionError(err) {
-			w.logf("Cannot list %s (%v), keeping the previous version", dir, err)
+			w.logger().Warn("listing failed, keeping the previous version", "dir", dir, "err", err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
 			return base, false, nil
 		}
 
 		if IsPermissionError(err) && !root {
-			w.logf("Cannot list %s (%v), skipping", dir, err)
+			w.logger().Warn("listing failed, skipping", "dir", dir, "err", err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
 			return nil, true, nil
 		}
@@ -436,7 +443,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 
 		info, err := entryInfo(entry, childPath)
 		if err != nil {
-			w.logf("Cannot stat %s (%v), skipping", childPath, err)
+			w.logger().Warn("stat failed, skipping", "path", childPath, "err", err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
 			markChanged()
 			continue
@@ -457,7 +464,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 		case info.Mode()&os.ModeSymlink != 0:
 			target, err := os.Readlink(childPath)
 			if err != nil {
-				w.logf("Cannot read symlink %s (%v), skipping", childPath, err)
+				w.logger().Warn("reading symlink failed, skipping", "path", childPath, "err", err)
 				atomic.AddInt64(&w.result.Skipped, 1)
 				markChanged()
 				continue
@@ -506,7 +513,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 			})
 
 		default:
-			w.logf("Skipping irregular file %s (%s)", childPath, info.Mode().Type())
+			w.logger().Info("skipping irregular file", "path", childPath, "mode", info.Mode().Type())
 			atomic.AddInt64(&w.result.Skipped, 1)
 			if baseNode != nil {
 				markChanged()
@@ -554,7 +561,7 @@ func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, token []byte
 	if baseNode != nil && baseNode.Stat.IsDir() {
 		tree, err := w.trees.load(ctx, baseNode.Ref, token)
 		if err != nil {
-			w.logf("Base tree %x for %s unavailable (%v), reading the directory in full", baseNode.Ref.Hash, dir, err)
+			w.logger().Warn("base tree unavailable, reading the directory in full", "tree", fmt.Sprintf("%x", baseNode.Ref.Hash), "dir", dir, "err", err)
 		} else {
 			baseChildren = tree.Nodes
 		}
@@ -607,7 +614,7 @@ func (w *Walker) reusable(path string, info os.FileInfo, stat *proto.FileInfo, b
 	if w.ForceHashPercent > 0 && w.rand.Intn(100) < w.ForceHashPercent {
 		ref, err := HashFile(path, w.Key)
 		if err != nil || !ref.Equal(baseNode.Ref) {
-			w.logf("Sampled re-hash of %s differs from the recorded version, reading it", path)
+			w.logger().Info("sampled re-hash differs from the recorded version, reading the file", "path", path)
 			return false
 		}
 	}
@@ -629,7 +636,7 @@ func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileI
 
 		var changed *fileChangedError
 		if errors.As(err, &changed) {
-			w.logf("%s changed while its parts were confirmed, reading it again", path)
+			w.logger().Info("file changed while its parts were confirmed, reading it again", "path", path)
 
 			for _, ref := range changed.refs {
 				forced[string(ref.Hash)] = struct{}{}
@@ -655,7 +662,7 @@ func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileI
 
 		info = after
 		if attempt >= w.ReadRetries {
-			w.logf("%s kept changing while it was read, recording the last read", path)
+			w.logger().Warn("file kept changing while it was read, recording the last read", "path", path)
 			atomic.AddInt64(&w.result.Torn, 1)
 			break
 		}
@@ -665,11 +672,11 @@ func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileI
 		atomic.AddInt64(&w.result.Unreadable, 1)
 
 		if baseNode != nil && baseNode.Stat.GetType() == proto.NodeType_NODE_FILE {
-			w.logf("Cannot read %s, keeping the previous version", path)
+			w.logger().Warn("reading failed, keeping the previous version", "path", path)
 			return baseNode, nil
 		}
 
-		w.logf("Cannot read %s and no previous version exists, skipping", path)
+		w.logger().Warn("reading failed and no previous version exists, skipping", "path", path)
 		return nil, nil
 	}
 
@@ -681,7 +688,7 @@ func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileI
 
 	if w.Cache != nil {
 		if cErr := w.Cache.Store(path, info, ref); cErr != nil {
-			w.logf("Cannot update stat cache for %s: %v", path, cErr)
+			w.logger().Warn("updating the stat cache failed", "path", path, "err", cErr)
 		}
 	}
 
@@ -823,7 +830,7 @@ func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []
 		return err
 	}
 
-	w.logf("Wrote checkpoint commit %x", ref.Hash)
+	w.logger().Info("wrote checkpoint commit", "ref", fmt.Sprintf("%x", ref.Hash))
 	w.result.Checkpoints++
 	w.last = w.now()
 

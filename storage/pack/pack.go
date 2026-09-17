@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +48,10 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		opt(opts)
 	}
 
+	if opts.logger == nil {
+		opts.logger = slog.Default()
+	}
+
 	if opts.storage == nil {
 		return nil, errors.New("No archive storage provided")
 	}
@@ -70,6 +74,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		idleFinalize:     opts.idleFinalize,
 		sessionLease:     opts.sessionLease,
 		atRest:           opts.atRest,
+		logger:           opts.logger,
 	}, nil
 }
 
@@ -100,6 +105,7 @@ type PackStorage struct {
 
 	compactorMtx sync.Mutex
 	atRest       *AtRestKey
+	logger       *slog.Logger
 }
 
 type pendingObject struct {
@@ -424,7 +430,7 @@ func (ps *PackStorage) get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 
 	if needClose {
 		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("close-before-read", true))
-		log.Printf("Need to close archive %s before reading object %x", archive.name, ref.Hash)
+		ps.logger.Info("closing archive before reading an object", "archive", archive.name, "ref", fmt.Sprintf("%x", ref.Hash))
 		err := ps.finalizeArchive(archive)
 
 		if err != nil {
@@ -512,7 +518,7 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 			continue
 		}
 
-		log.Printf("Reading archive: %s", archive.name)
+		ps.logger.Debug("reading archive", "archive", archive.name)
 		err := archive.foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			if t == proto.ObjectType_INVALID || hdr.Type == t {
 				var obj *proto.Object
@@ -630,7 +636,7 @@ func (ps *PackStorage) dropArchive(a *archive) {
 	ps.unloadArchive(a)
 
 	if err := a.Close(); err != nil {
-		log.Printf("Failed closing archive %s: %v", a.name, err)
+		ps.logger.Warn("closing archive failed", "archive", a.name, "err", err)
 	}
 
 	ps.deleteArchiveFiles(a.name)
@@ -652,17 +658,17 @@ func (ps *PackStorage) hasIndexFile(name string) bool {
 func (ps *PackStorage) deleteArchiveFiles(name string) {
 	err := ps.storage.Delete(name + IndexExt)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("Failed deleting index %s: %v", name, err)
+		ps.logger.Warn("deleting index failed", "archive", name, "err", err)
 	}
 
 	err = ps.storage.Delete(name + ArchiveSuffix)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("Failed deleting archive %s: %v", name, err)
+		ps.logger.Warn("deleting archive failed", "archive", name, "err", err)
 	}
 
 	err = ps.storage.Delete(name + GCExt)
 	if err != nil && !notExist(err) {
-		log.Printf("Failed deleting gc result %s: %v", name, err)
+		ps.logger.Warn("deleting gc result failed", "archive", name, "err", err)
 	}
 }
 
@@ -676,7 +682,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 	}
 
 	if !known && ParsePlacement(name).Kind == PlacementSession && !ps.hasIndexFile(name) {
-		log.Printf("deleting archive %s of an unfinished session", name)
+		ps.logger.Info("deleting archive of an unfinished session", "archive", name)
 		ps.deleteArchiveFiles(name)
 
 		return nil, nil
@@ -690,14 +696,14 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		return nil, errArchiveRetired
 	}
 
-	a, err := openArchive(ps.storage, name, ps.atRest)
+	a, err := openArchive(ps.storage, name, ps.atRest, ps.logger)
 	if err != nil {
 		return nil, err
 	}
 
 	a.gc, err = readGCFile(ps.storage, name)
 	if err != nil {
-		log.Printf("ignoring unreadable gc result of %s: %v", name, err)
+		ps.logger.Warn("ignoring unreadable gc result", "archive", name, "err", err)
 	}
 
 	if !known {
@@ -706,7 +712,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 			return nil, err
 		}
 
-		log.Printf("indexing archive %s", name)
+		ps.logger.Info("indexing archive", "archive", name)
 		info = ArchiveInfo{Name: name}
 		err = ps.index.IndexArchive(info, idx)
 		if err != nil {
@@ -745,7 +751,7 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 		ws.archive.mtx.RUnlock()
 
 		if full {
-			log.Printf("Closing archive because it's full: %s", ws.archive.name)
+			ps.logger.Debug("finalizing full archive", "archive", ws.archive.name)
 			err := ps.finalizeLocked(ws)
 			if err != nil {
 				return err
@@ -759,7 +765,7 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 			return err
 		}
 
-		a, err := newArchive(ps.storage, ws.placement.Dir(), ps.atRest)
+		a, err := newArchive(ps.storage, ws.placement.Dir(), ps.atRest, ps.logger)
 		if err != nil {
 			ps.archiveSemaphore.Release(1)
 			return err

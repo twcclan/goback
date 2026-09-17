@@ -2,7 +2,6 @@ package pack
 
 import (
 	"context"
-	"log"
 	"sort"
 	"time"
 
@@ -72,7 +71,7 @@ func (ps *PackStorage) doCompaction() error {
 		group := groups[key]
 
 		if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.maxSize {
-			log.Printf("Compacting %d archives with %s total size under %q", len(group.candidates), humanize.Bytes(group.total), key)
+			ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total), "dir", key)
 
 			err := ps.compactGroup(context.Background(), group)
 			if err != nil {
@@ -128,7 +127,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		}
 
 		if open[dir] == nil {
-			a, err := newArchive(ps.storage, dir, ps.atRest)
+			a, err := newArchive(ps.storage, dir, ps.atRest, ps.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -200,7 +199,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		obsolete = append(obsolete, candidate)
 	}
 
-	log.Printf("Dropped %d objects during compaction, saved %s", group.droppedObjects, humanize.Bytes(group.droppedBytes))
+	ps.logger.Info("compaction dropped objects", "objects", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes))
 
 	for dir, a := range open {
 		err := closeArchive(a, ParsePlacement(a.name))
@@ -218,19 +217,19 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	for _, archive := range obsolete {
 		idx, err := archive.getIndex()
 		if err != nil {
-			log.Printf("Failed getting archive index for deletion: %s", err)
+			ps.logger.Warn("reading the index of an obsolete archive failed", "archive", archive.name, "err", err)
 			continue
 		}
 
 		ps.retireArchive(archive)
 
 		if e := archive.Close(); e != nil {
-			log.Printf("Failed closing obsolete archive after compaction: %v", e)
+			ps.logger.Warn("closing obsolete archive failed", "archive", archive.name, "err", e)
 		}
 
 		err = ps.index.DeleteArchive(archive.name, idx)
 		if err != nil {
-			log.Printf("Failed removing local index %s after compaction: %s", archive.name, err)
+			ps.logger.Warn("removing local index failed", "archive", archive.name, "err", err)
 		}
 
 		ps.deleteArchiveFiles(archive.name)

@@ -3,7 +3,6 @@ package backup
 import (
 	"context"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -147,7 +146,6 @@ func (br *BackupReader) getTree(ctx context.Context, ref *proto.Ref, parent []by
 	}
 
 	name := parts[0]
-	log.Printf("Searching for %s %v", name, parts)
 	for _, node := range tree.Nodes {
 		if node.Stat.IsDir() && string(node.Stat.Name) == name {
 			return br.getTree(ctx, node.Ref, NameToken(br.key, parent, node.Stat.Name), parts[1:])

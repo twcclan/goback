@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -242,7 +241,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		return nil, errors.Wrap(err, "storing gc state")
 	}
 
-	log.Printf("GC generation %d marked %d of %d objects in %d archives, %d objects (%s) dead", run.gen, report.Marked, report.Objects, report.Archives, report.DeadObjects, humanize.Bytes(report.DeadBytes))
+	ps.logger.Info("gc marked", "generation", run.gen, "marked", report.Marked, "objects", report.Objects, "archives", report.Archives, "dead", report.DeadObjects, "deadBytes", humanize.Bytes(report.DeadBytes))
 
 	report.SweepSkipped = run.sweepBlocker()
 	if report.SweepSkipped == "" {
@@ -258,7 +257,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 			return nil, errors.Wrap(err, "storing gc state")
 		}
 	} else {
-		log.Printf("GC generation %d did not sweep: %s", run.gen, report.SweepSkipped)
+		ps.logger.Info("gc did not sweep", "generation", run.gen, "reason", report.SweepSkipped)
 	}
 
 	report.Duration = time.Since(started)
@@ -521,7 +520,7 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 				for _, key := range chunk {
 					obj, err := r.ps.Get(gctx, &proto.Ref{Hash: key[:]})
 					if errors.Is(err, backup.ErrNotFound) {
-						log.Printf("GC: reachable object %x is missing", key)
+						r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
 						continue
 					}
 					if err != nil {
@@ -801,7 +800,7 @@ func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
 	for _, key := range keys {
 		group := groups[key]
 
-		log.Printf("GC sweeping %d archives under %q", len(group.candidates), key)
+		r.ps.logger.Info("gc sweeping archives", "count", len(group.candidates), "dir", key)
 
 		if err := r.ps.compactGroup(ctx, group); err != nil {
 			return err

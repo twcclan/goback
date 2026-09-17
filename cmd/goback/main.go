@@ -3,6 +3,7 @@ package main
 import (
 	_ "expvar"
 	"log"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -55,6 +56,7 @@ func main() {
 	go webserver()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 
 	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 

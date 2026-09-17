@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"time"
 
@@ -120,7 +119,7 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 			return 0, fmt.Errorf("%w: commit names no set", backup.ErrDanglingRef)
 		}
 
-		log.Printf("Ignoring commit %x, it names no set", ref.GetHash())
+		x.logger().Warn("ignoring commit that names no set", "ref", fmt.Sprintf("%x", ref.GetHash()))
 		return 0, nil
 	}
 
@@ -157,7 +156,7 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.GetHash())
 		}
 
-		log.Printf("Root tree %x could not be retrieved", commit.Tree.GetHash())
+		x.logger().Warn("root tree could not be retrieved", "tree", fmt.Sprintf("%x", commit.Tree.GetHash()))
 		return nil
 	}
 
@@ -226,7 +225,7 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 				return fmt.Errorf("%w: %x received %s, newest %s", backup.ErrOutOfOrder, ref.Hash, at, newest.ReceivedAt)
 			}
 
-			log.Printf("Ignoring commit %x, received %s before the set's newest %s", ref.Hash, at, newest.ReceivedAt)
+			x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", at, "newest", newest.ReceivedAt)
 			return nil
 		}
 
@@ -240,7 +239,7 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 				return fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
 			}
 
-			log.Printf("Ignoring commit %x, failed traversing tree: %s", ref.Hash, err)
+			x.logger().Warn("ignoring commit, traversing its tree failed", "ref", fmt.Sprintf("%x", ref.Hash), "err", err)
 			return nil
 		}
 
@@ -272,7 +271,7 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		return err
 	}
 
-	log.Printf("Indexed commit(%s) in %v", commit.GetBackupSet(), time.Since(start))
+	x.logger().Info("indexed commit", "set", commit.GetBackupSet(), "took", time.Since(start))
 
 	return nil
 }
@@ -560,7 +559,7 @@ func (x *Index) indexPin(ctx context.Context, p *proto.Pin, ref *proto.Ref, stri
 				return fmt.Errorf("%w: commit %x", backup.ErrTombstoned, target)
 			}
 
-			log.Printf("Pin %x targets tombstoned commit %x", ref.GetHash(), target)
+			x.logger().Warn("pin targets a tombstoned commit", "pin", fmt.Sprintf("%x", ref.GetHash()), "commit", fmt.Sprintf("%x", target))
 		}
 
 		if setID != 0 && strict {
@@ -672,7 +671,7 @@ func (x *Index) ReIndex(ctx context.Context) error {
 			return err
 		}
 	} else {
-		log.Printf("Store %T cannot walk headers; tombstones are not honoured by this rebuild", x.ObjectStore)
+		x.logger().Warn("store cannot walk headers, the rebuild does not honour tombstones", "store", fmt.Sprintf("%T", x.ObjectStore))
 	}
 
 	for setID, refs := range touched {

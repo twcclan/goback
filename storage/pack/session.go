@@ -2,7 +2,6 @@ package pack
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
@@ -266,7 +265,7 @@ func (ps *PackStorage) touchSession(ws *writeSession) {
 
 	err := ps.index.TouchSession(ws.id, now)
 	if err != nil {
-		log.Printf("Failed renewing session %s: %v", ws.id, err)
+		ps.logger.Warn("renewing session failed", "session", ws.id, "err", err)
 	}
 }
 
@@ -305,7 +304,7 @@ func (ps *PackStorage) Sweep(now time.Time) {
 			idle := ws.archive != nil && now.Sub(ws.lastWrite) >= ps.idleFinalize
 			if idle {
 				if err := ps.finalizeLocked(ws); err != nil {
-					log.Printf("Failed finalizing idle archive: %v", err)
+					ps.logger.Warn("finalizing idle archive failed", "err", err)
 				}
 			}
 			ws.mtx.Unlock()
@@ -320,7 +319,7 @@ func (ps *PackStorage) Sweep(now time.Time) {
 func (ps *PackStorage) expireSessions(now time.Time) {
 	sessions, err := ps.index.ListSessions()
 	if err != nil {
-		log.Printf("Failed listing sessions: %v", err)
+		ps.logger.Warn("listing sessions failed", "err", err)
 		return
 	}
 
@@ -329,10 +328,10 @@ func (ps *PackStorage) expireSessions(now time.Time) {
 			continue
 		}
 
-		log.Printf("Ending session %s of %s: lease expired", s.ID, s.AgentID)
+		ps.logger.Info("ending session, lease expired", "session", s.ID, "agent", s.AgentID)
 		err := ps.endSession(s.ID)
 		if err != nil {
-			log.Printf("Failed ending session %s: %v", s.ID, err)
+			ps.logger.Warn("ending session failed", "session", s.ID, "err", err)
 		}
 	}
 }

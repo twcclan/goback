@@ -3,7 +3,6 @@ package sql
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -149,7 +148,7 @@ func (x *Index) buildPresence(ctx context.Context, setID int64, name string, com
 		return fmt.Errorf("storing the filter of commit %x: %w", commit.Hash, err)
 	}
 
-	log.Printf("Built presence filter for set %s: %d refs, %d bytes in %v", name, filter.Entries(), filter.Size(), time.Since(start).Round(time.Millisecond))
+	x.logger().Info("built presence filter", "set", name, "refs", filter.Entries(), "bytes", filter.Size(), "took", time.Since(start).Round(time.Millisecond))
 
 	return nil
 }

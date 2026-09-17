@@ -2,7 +2,7 @@ package pack
 
 import (
 	"context"
-	"log"
+	"fmt"
 
 	"github.com/twcclan/goback/proto"
 
@@ -39,7 +39,7 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 			return report, err
 		}
 
-		log.Printf("Scrubbing archive %s", a.name)
+		ps.logger.Info("scrubbing archive", "archive", a.name)
 		report.Archives++
 
 		err := a.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
@@ -48,7 +48,7 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 
 			err := verifyStored(hdr, bytes)
 			if err != nil {
-				log.Printf("Corrupt object %x in archive %s at offset %d: %v", hdr.Ref.GetHash(), a.name, offset, err)
+				ps.logger.Warn("corrupt object", "ref", fmt.Sprintf("%x", hdr.Ref.GetHash()), "archive", a.name, "offset", offset, "err", err)
 				report.Corrupt = append(report.Corrupt, ScrubFailure{Archive: a.name, Ref: hdr.Ref, Err: err})
 			}
 

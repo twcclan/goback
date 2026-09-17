@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,16 @@ type Index struct {
 	DefaultPolicy *retention.Policy
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Logger is where the index reports; nil means slog.Default.
+	Logger *slog.Logger
+}
+
+func (x *Index) logger() *slog.Logger {
+	if x.Logger != nil {
+		return x.Logger
+	}
+
+	return slog.Default()
 }
 
 // New returns an index over store at location: a directory holds an
