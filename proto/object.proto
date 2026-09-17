@@ -25,7 +25,7 @@ enum ObjectType {
 
 enum Compression {
   NONE = 0;
-  GZIP = 1;
+  reserved 1;
   ZSTD = 2;
 }
 

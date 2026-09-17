@@ -15,7 +15,6 @@ import (
 
 // mapper:generate
 type Mapper interface {
-	// field:Id from:"ID"
 	// field:AgentId from:"AgentID"
 	Set(in index.SetInfo) *pb.BackupSet
 
@@ -25,7 +24,6 @@ type Mapper interface {
 	// field:EntropyEstimator from:"Policy.EntropyEstimator"
 	// field:EntropyThreshold from:"Policy.EntropyThreshold"
 	// field:PresenceScope from:"Policy.PresenceScope"
-	// field:Escrow from:"Policy.Escrow"
 	// field:KeyAcknowledgedAt using:"Stamp"
 	Policy(in index.StorePolicy) *pb.StorePolicy
 }

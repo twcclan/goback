@@ -155,7 +155,6 @@ func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyR
 		EntropyEstimator: request.EntropyEstimator,
 		EntropyThreshold: request.EntropyThreshold,
 		PresenceScope:    request.PresenceScope,
-		Escrow:           request.Escrow,
 	}
 
 	switch policy.Mode {

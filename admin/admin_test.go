@@ -211,7 +211,7 @@ func TestAdminStorePolicyAndJobs(t *testing.T) {
 	require.Equal(t, "hybrid", policy.Mode)
 	require.Nil(t, policy.KeyAcknowledgedAt)
 
-	body := map[string]interface{}{"mode": "store-keyed-all", "size_threshold": 4096, "entropy_estimator": "histogram-v1", "entropy_threshold": 7, "presence_scope": "store", "escrow": "on", "acknowledge_key": true}
+	body := map[string]interface{}{"mode": "store-keyed-all", "size_threshold": 4096, "entropy_estimator": "histogram-v1", "entropy_threshold": 7, "presence_scope": "store", "acknowledge_key": true}
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/policy", body, &policy))
 	require.EqualValues(t, 1, policy.Version)
 	require.Equal(t, "store-keyed-all", policy.Mode)

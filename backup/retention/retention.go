@@ -22,16 +22,6 @@ type Policy struct {
 	KeepWithin  time.Duration
 }
 
-// Limits caps every policy of the store; a zero field is unlimited.
-type Limits struct {
-	MaxLast    int
-	MaxHourly  int
-	MaxDaily   int
-	MaxWeekly  int
-	MaxMonthly int
-	MaxWithin  time.Duration
-}
-
 // Default is the policy a store applies until it sets its own.
 var Default = Policy{KeepLast: 1, KeepDaily: 14, KeepWeekly: 8, KeepMonthly: 12}
 
@@ -59,32 +49,6 @@ func (p Policy) Validate() error {
 	}
 
 	return nil
-}
-
-// Clamp returns the policy with every counter capped by the limits.
-func (p Policy) Clamp(l Limits) Policy {
-	cap := func(v, max int) int {
-		if max > 0 && v > max {
-			return max
-		}
-		return v
-	}
-
-	p.KeepLast = cap(p.KeepLast, l.MaxLast)
-	p.KeepHourly = cap(p.KeepHourly, l.MaxHourly)
-	p.KeepDaily = cap(p.KeepDaily, l.MaxDaily)
-	p.KeepWeekly = cap(p.KeepWeekly, l.MaxWeekly)
-	p.KeepMonthly = cap(p.KeepMonthly, l.MaxMonthly)
-
-	if l.MaxWithin > 0 && p.KeepWithin > l.MaxWithin {
-		p.KeepWithin = l.MaxWithin
-	}
-
-	if p.KeepLast < 1 {
-		p.KeepLast = 1
-	}
-
-	return p
 }
 
 type policyJSON struct {

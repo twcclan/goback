@@ -323,8 +323,6 @@ func decode(stored []byte, compression Compression) ([]byte, error) {
 	switch compression {
 	case Compression_NONE:
 		return stored, nil
-	case Compression_GZIP:
-		return decompressedBytes(stored)
 	case Compression_ZSTD:
 		return decodeZstd(stored)
 	default:

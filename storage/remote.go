@@ -323,7 +323,7 @@ func policyFromProto(p *proto.StorePolicy) *storekey.Policy {
 	return &storekey.Policy{
 		Version: p.Version, Mode: storekey.Mode(p.Mode), SizeThreshold: p.SizeThreshold,
 		EntropyEstimator: p.EntropyEstimator, EntropyThreshold: p.EntropyThreshold,
-		PresenceScope: p.PresenceScope, Escrow: p.Escrow,
+		PresenceScope: p.PresenceScope,
 	}
 }
 
@@ -335,7 +335,7 @@ func policyProto(p *storekey.Policy) *proto.StorePolicy {
 	return &proto.StorePolicy{
 		Version: p.Version, Mode: string(p.Mode), SizeThreshold: p.SizeThreshold,
 		EntropyEstimator: p.EntropyEstimator, EntropyThreshold: p.EntropyThreshold,
-		PresenceScope: p.PresenceScope, Escrow: p.Escrow,
+		PresenceScope: p.PresenceScope,
 	}
 }
 

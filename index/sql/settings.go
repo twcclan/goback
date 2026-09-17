@@ -124,7 +124,7 @@ func (x *Index) GetDefaultPolicy(ctx context.Context) (policy retention.Policy, 
 		stored = true
 	}
 
-	return policy.Clamp(x.Limits), stored, nil
+	return policy, stored, nil
 }
 
 // SetDefaultPolicy stores the retention policy sets inherit until they

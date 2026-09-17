@@ -22,7 +22,6 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/telemetry"
 
-	"cloud.google.com/go/profiler"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -39,10 +38,6 @@ var Command = cli.Command{
 		cli.StringFlag{
 			Name:  "address",
 			Value: ":6060",
-		},
-		cli.StringFlag{
-			Name:  "profiler-project",
-			Usage: "GCP project to send Cloud Profiler data to",
 		},
 		cli.StringFlag{
 			Name:  "otlp-traces-endpoint",
@@ -76,11 +71,6 @@ var Command = cli.Command{
 			Name:  "admin-token",
 			Usage: "bearer token the operator surface requires",
 		},
-		cli.StringFlag{
-			Name:  "presence-scope",
-			Usage: "whose commits feed the presence filters agents receive: off, set or store",
-			Value: "store",
-		},
 		cli.DurationFlag{
 			Name:  "retire-interval",
 			Usage: "how often retired commits past their window are tombstoned; 0 disables the job",
@@ -109,17 +99,6 @@ var Command = cli.Command{
 	},
 }
 
-func enableProfiler(projectID string) {
-	err := profiler.Start(profiler.Config{
-		ProjectID:      projectID,
-		MutexProfiling: true,
-		Service:        "goback",
-	})
-	if err != nil {
-		log.Fatalf("failed setting up cloud profiler: %s", err)
-	}
-}
-
 func enableTracing(endpoint string) {
 	_, err := telemetry.Traces(context.Background(), endpoint, 1e-2)
 	if err != nil {
@@ -146,10 +125,6 @@ func serverAction(ctx *cli.Context) {
 		log.Fatal(err)
 	}
 
-	if projectID := ctx.String("profiler-project"); projectID != "" {
-		enableProfiler(projectID)
-	}
-
 	if endpoint := ctx.String("otlp-traces-endpoint"); endpoint != "" {
 		enableTracing(endpoint)
 	}
@@ -161,12 +136,7 @@ func serverAction(ctx *cli.Context) {
 
 	store := storage.NewStore(idx, sessions)
 
-	store.PresenceScope, err = backup.ParsePresenceScope(ctx.String("presence-scope"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if _, ok := idx.(backup.PresenceIndex); !ok && store.PresenceScope != backup.PresenceOff {
+	if _, ok := idx.(backup.PresenceIndex); !ok {
 		log.Printf("Index %T stores no presence filters; agents upload every new chunk", idx)
 	}
 

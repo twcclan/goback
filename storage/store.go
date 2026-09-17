@@ -8,6 +8,7 @@ import (
 
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 )
 
@@ -25,20 +26,15 @@ type Store struct {
 	// Lease is what BeginSession promises the client: the session
 	// store's own when it has one.
 	Lease time.Duration
-
-	// PresenceScope says whose commits feed the filters Presence serves
-	// when the index has no policy.
-	PresenceScope backup.PresenceScope
 }
 
 // NewStore returns a Store over index. sessions is nil for a store without
 // sessions.
 func NewStore(index backup.Index, sessions backup.SessionStore) *Store {
 	s := &Store{
-		Index:         index,
-		Sessions:      sessions,
-		Lease:         30 * time.Minute,
-		PresenceScope: backup.PresenceStore,
+		Index:    index,
+		Sessions: sessions,
+		Lease:    30 * time.Minute,
 	}
 
 	if leased, ok := sessions.(backup.Leased); ok && leased.SessionLease() > 0 {
@@ -345,21 +341,20 @@ func (s *Store) Retention() (backup.Retention, error) {
 	return ret, nil
 }
 
-// presenceScope is the caller's store policy's scope, or the store's
-// default for a store without a policy.
+// presenceScope is the store policy's scope; a store without a policy
+// has the default policy's.
 func (s *Store) presenceScope(ctx context.Context) (backup.PresenceScope, error) {
-	source, ok := s.Index.(backup.PolicySource)
-	if !ok {
-		return s.PresenceScope, nil
-	}
+	policy := storekey.DefaultPolicy()
 
-	policy, err := source.StorePolicy(ctx)
-	if err != nil {
-		return backup.PresenceOff, err
-	}
+	if source, ok := s.Index.(backup.PolicySource); ok {
+		stored, err := source.StorePolicy(ctx)
+		if err != nil {
+			return backup.PresenceOff, err
+		}
 
-	if policy == nil {
-		return s.PresenceScope, nil
+		if stored != nil {
+			policy = *stored
+		}
 	}
 
 	return backup.ParsePresenceScope(policy.PresenceScope)

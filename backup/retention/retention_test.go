@@ -141,14 +141,10 @@ func TestEvaluateInputOrderIsPreserved(t *testing.T) {
 	require.False(t, got[2].Keep)
 }
 
-func TestPolicyValidateAndClamp(t *testing.T) {
+func TestPolicyValidate(t *testing.T) {
 	require.ErrorIs(t, Policy{}.Validate(), ErrInvalidPolicy, "keep-all by zeros is rejected")
 	require.ErrorIs(t, Policy{KeepLast: 1, KeepDaily: -1}.Validate(), ErrInvalidPolicy)
 	require.NoError(t, Policy{KeepLast: 1}.Validate())
-
-	clamped := Policy{KeepLast: 50, KeepDaily: 400, KeepWithin: 90 * 24 * time.Hour}.Clamp(Limits{MaxLast: 10, MaxDaily: 30, MaxWithin: 30 * 24 * time.Hour})
-	require.Equal(t, Policy{KeepLast: 10, KeepDaily: 30, KeepWithin: 30 * 24 * time.Hour}, clamped)
-	require.Equal(t, 1, Policy{}.Clamp(Limits{}).KeepLast)
 }
 
 func TestPolicyJSON(t *testing.T) {

@@ -3,9 +3,6 @@ package proto
 //go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto object.proto pin.proto presence.proto ref.proto tree.proto
 
 import (
-	"bytes"
-	"compress/gzip"
-	"io"
 	"os"
 	"time"
 
@@ -21,43 +18,6 @@ func Bytes(m pb.Message) []byte {
 	}
 
 	return data
-}
-
-// Compress gzips a payload.
-func Compress(payload []byte) []byte {
-	buf := new(bytes.Buffer)
-	writer := gzip.NewWriter(buf)
-
-	_, err := writer.Write(payload)
-	if err != nil {
-		panic(err)
-	}
-
-	err = writer.Close()
-	if err != nil {
-		panic(err)
-	}
-
-	return buf.Bytes()
-}
-
-// CompressedBytes marshals and gzips a message.
-func CompressedBytes(m pb.Message) []byte {
-	return Compress(Bytes(m))
-}
-
-func decompressedBytes(compressed []byte) ([]byte, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		return nil, err
-	}
-
-	b, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-
-	return b, reader.Close()
 }
 
 // EncodeVarint appends x as a protobuf varint.

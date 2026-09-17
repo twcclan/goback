@@ -569,19 +569,6 @@ func TestRemoteGetPresenceStreamsFiltersInPieces(t *testing.T) {
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-func TestRemoteGetPresenceOffServesNothing(t *testing.T) {
-	index := newMemIndex()
-	index.filters = []*proto.PresenceFilter{presence.New(10).Proto()}
-
-	store := NewStore(index, nil)
-	store.PresenceScope = backup.PresenceOff
-	dial := serve(t, store)
-
-	filters, err := dial("node-1").Presence(context.Background(), "world")
-	require.NoError(t, err)
-	require.Empty(t, filters)
-}
-
 func testHash(seed string) []byte {
 	sum := sha256.Sum256([]byte(seed))
 	return sum[:]
@@ -596,8 +583,7 @@ func (m *memIndex) StorePolicy(context.Context) (*storekey.Policy, error) {
 }
 
 // TestRemoteGetPresenceFollowsTheStorePolicy serves filters at the scope of
-// the store policy, falling back to the server flag only for a store
-// without one.
+// the store policy, the default policy's for a store without one.
 func TestRemoteGetPresenceFollowsTheStorePolicy(t *testing.T) {
 	index, dial := startServer(t)
 	ctx := context.Background()
@@ -620,5 +606,5 @@ func TestRemoteGetPresenceFollowsTheStorePolicy(t *testing.T) {
 	index.policy = nil
 	_, err = dial("node-1").Presence(ctx, "world")
 	require.NoError(t, err)
-	require.Equal(t, backup.PresenceStore, index.presenceScope, "no policy: the server flag")
+	require.Equal(t, backup.PresenceStore, index.presenceScope, "no policy: the default policy")
 }

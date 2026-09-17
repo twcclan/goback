@@ -26,6 +26,8 @@ CREATE INDEX `files_open` ON `files` (`set_id`, `dir`) WHERE valid_until IS NULL
 CREATE TABLE `objects` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `ref` blob NOT NULL, `start` integer NOT NULL, `length` integer NOT NULL, `type` integer NOT NULL, `archive_id` text NOT NULL, CONSTRAINT `objects_archives_objects` FOREIGN KEY (`archive_id`) REFERENCES `archives` (`id`) ON DELETE CASCADE, CONSTRAINT `objects_ref_width` CHECK (length(ref) = 32));
 -- Create index "object_ref_archive_id" to table: "objects"
 CREATE UNIQUE INDEX `object_ref_archive_id` ON `objects` (`ref`, `archive_id`);
+-- Create index "object_archive_id" to table: "objects"
+CREATE INDEX `object_archive_id` ON `objects` (`archive_id`);
 -- Create "pins" table
 CREATE TABLE `pins` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `ref` blob NOT NULL, `target` blob NOT NULL, `received_at` datetime NOT NULL, `deleted_at` datetime NULL, CONSTRAINT `pins_ref_width` CHECK (length(ref) = 32), CONSTRAINT `pins_target_width` CHECK (length(target) = 32));
 -- Create index "pin_ref" to table: "pins"

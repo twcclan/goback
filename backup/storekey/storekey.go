@@ -72,7 +72,6 @@ type Policy struct {
 	EntropyEstimator string  `json:"entropy_estimator"`
 	EntropyThreshold float64 `json:"entropy_threshold"`
 	PresenceScope    string  `json:"presence_scope"`
-	Escrow           string  `json:"escrow"`
 }
 
 // DefaultPolicy is the hybrid policy with the launch parameters.
@@ -83,8 +82,7 @@ func DefaultPolicy() Policy {
 		SizeThreshold:    DefaultThreshold,
 		EntropyEstimator: EntropyHistogramV1,
 		EntropyThreshold: DefaultEntropyBits,
-		PresenceScope:    "off",
-		Escrow:           "off",
+		PresenceScope:    "store",
 	}
 }
 

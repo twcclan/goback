@@ -58,8 +58,6 @@ type Index struct {
 	external  *externalDB
 	noMigrate bool
 
-	// Limits clamp every retention policy.
-	Limits retention.Limits
 	// DefaultPolicy is the retention policy sets inherit when the store
 	// has none set; nil means retention.Default.
 	DefaultPolicy *retention.Policy

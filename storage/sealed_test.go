@@ -7,8 +7,10 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob/fileblob"
 )
 
 // testSealedStore checks that a store keeps a sealed blob byte for byte
@@ -49,12 +51,29 @@ func testSealedStore(t *testing.T, store backup.ObjectStore, read func(context.C
 	require.ErrorIs(t, err, storekey.ErrWrongKey)
 }
 
-func TestSimpleStoreSealed(t *testing.T) {
-	store := NewSimpleObjectStore(t.TempDir())
+func TestPackStoreSealed(t *testing.T) {
+	bucket, err := fileblob.OpenBucket(t.TempDir(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = bucket.Close() })
+
+	store, err := pack.NewPackStorage(
+		pack.WithArchiveStorage(NewBucketStore(bucket)),
+		pack.WithArchiveIndex(pack.NewInMemoryIndex()),
+	)
+	require.NoError(t, err)
 	require.NoError(t, store.Open())
 	t.Cleanup(func() { _ = store.Close() })
 
-	testSealedStore(t, store, store.Get)
+	// a bucket-backed archive is readable once it is flushed
+	read := func(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+		if err := store.Flush(); err != nil {
+			return nil, err
+		}
+
+		return store.Get(ctx, ref)
+	}
+
+	testSealedStore(t, store, read)
 }
 
 func TestRemoteSealed(t *testing.T) {

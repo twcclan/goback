@@ -24,7 +24,6 @@ const (
 
 type BackupSet struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
-	Id      uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	AgentId string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// active, closing or deleted
@@ -63,13 +62,6 @@ func (x *BackupSet) ProtoReflect() protoreflect.Message {
 // Deprecated: Use BackupSet.ProtoReflect.Descriptor instead.
 func (*BackupSet) Descriptor() ([]byte, []int) {
 	return file_admin_admin_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *BackupSet) GetId() uint64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
 }
 
 func (x *BackupSet) GetName() string {
@@ -409,7 +401,6 @@ type StorePolicy struct {
 	EntropyEstimator string  `protobuf:"bytes,4,opt,name=entropy_estimator,json=entropyEstimator,proto3" json:"entropy_estimator,omitempty"`
 	EntropyThreshold float64 `protobuf:"fixed64,5,opt,name=entropy_threshold,json=entropyThreshold,proto3" json:"entropy_threshold,omitempty"`
 	PresenceScope    string  `protobuf:"bytes,6,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
-	Escrow           string  `protobuf:"bytes,7,opt,name=escrow,proto3" json:"escrow,omitempty"`
 	// when the operator confirmed the store key is saved
 	KeyAcknowledgedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=key_acknowledged_at,json=keyAcknowledgedAt,proto3" json:"key_acknowledged_at,omitempty"`
 	unknownFields     protoimpl.UnknownFields
@@ -488,13 +479,6 @@ func (x *StorePolicy) GetPresenceScope() string {
 	return ""
 }
 
-func (x *StorePolicy) GetEscrow() string {
-	if x != nil {
-		return x.Escrow
-	}
-	return ""
-}
-
 func (x *StorePolicy) GetKeyAcknowledgedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.KeyAcknowledgedAt
@@ -545,7 +529,6 @@ type SetStorePolicyRequest struct {
 	EntropyEstimator string                 `protobuf:"bytes,3,opt,name=entropy_estimator,json=entropyEstimator,proto3" json:"entropy_estimator,omitempty"`
 	EntropyThreshold float64                `protobuf:"fixed64,4,opt,name=entropy_threshold,json=entropyThreshold,proto3" json:"entropy_threshold,omitempty"`
 	PresenceScope    string                 `protobuf:"bytes,5,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
-	Escrow           string                 `protobuf:"bytes,6,opt,name=escrow,proto3" json:"escrow,omitempty"`
 	// the operator confirms the store key is saved
 	AcknowledgeKey bool `protobuf:"varint,7,opt,name=acknowledge_key,json=acknowledgeKey,proto3" json:"acknowledge_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -613,13 +596,6 @@ func (x *SetStorePolicyRequest) GetEntropyThreshold() float64 {
 func (x *SetStorePolicyRequest) GetPresenceScope() string {
 	if x != nil {
 		return x.PresenceScope
-	}
-	return ""
-}
-
-func (x *SetStorePolicyRequest) GetEscrow() string {
-	if x != nil {
-		return x.Escrow
 	}
 	return ""
 }
@@ -1096,13 +1072,12 @@ var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x83\x01\n" +
-	"\tBackupSet\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x12\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"y\n" +
+	"\tBackupSet\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x19\n" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
-	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSize\"\x11\n" +
+	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSizeJ\x04\b\x01\x10\x02\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
 	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"C\n" +
@@ -1115,25 +1090,23 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x11DeleteSetResponse\"(\n" +
 	"\x12UndeleteSetRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x15\n" +
-	"\x13UndeleteSetResponse\"\xc7\x02\n" +
+	"\x13UndeleteSetResponse\"\xb5\x02\n" +
 	"\vStorePolicy\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12%\n" +
 	"\x0esize_threshold\x18\x03 \x01(\x03R\rsizeThreshold\x12+\n" +
 	"\x11entropy_estimator\x18\x04 \x01(\tR\x10entropyEstimator\x12+\n" +
 	"\x11entropy_threshold\x18\x05 \x01(\x01R\x10entropyThreshold\x12%\n" +
-	"\x0epresence_scope\x18\x06 \x01(\tR\rpresenceScope\x12\x16\n" +
-	"\x06escrow\x18\a \x01(\tR\x06escrow\x12J\n" +
-	"\x13key_acknowledged_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x11keyAcknowledgedAt\"\x17\n" +
-	"\x15GetStorePolicyRequest\"\x94\x02\n" +
+	"\x0epresence_scope\x18\x06 \x01(\tR\rpresenceScope\x12J\n" +
+	"\x13key_acknowledged_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x11keyAcknowledgedAtJ\x04\b\a\x10\b\"\x17\n" +
+	"\x15GetStorePolicyRequest\"\x82\x02\n" +
 	"\x15SetStorePolicyRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12%\n" +
 	"\x0esize_threshold\x18\x02 \x01(\x03R\rsizeThreshold\x12+\n" +
 	"\x11entropy_estimator\x18\x03 \x01(\tR\x10entropyEstimator\x12+\n" +
 	"\x11entropy_threshold\x18\x04 \x01(\x01R\x10entropyThreshold\x12%\n" +
-	"\x0epresence_scope\x18\x05 \x01(\tR\rpresenceScope\x12\x16\n" +
-	"\x06escrow\x18\x06 \x01(\tR\x06escrow\x12'\n" +
-	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKey\"\xd3\x01\n" +
+	"\x0epresence_scope\x18\x05 \x01(\tR\rpresenceScope\x12'\n" +
+	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKeyJ\x04\b\x06\x10\a\"\xd3\x01\n" +
 	"\x0fRetentionPolicy\x12\x1b\n" +
 	"\tkeep_last\x18\x01 \x01(\x05R\bkeepLast\x12\x1f\n" +
 	"\vkeep_hourly\x18\x02 \x01(\x05R\n" +

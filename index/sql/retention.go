@@ -71,8 +71,6 @@ func (x *Index) loadSetConfig(ctx context.Context, c *ent.Client, setID int64) (
 		cfg.policy = p
 	}
 
-	cfg.policy = cfg.policy.Clamp(x.Limits)
-
 	return cfg, nil
 }
 
@@ -218,12 +216,16 @@ func (x *Index) encodePolicy(p *retention.Policy) (*string, error) {
 		return nil, nil
 	}
 
-	clamped := p.Clamp(x.Limits)
-	if err := clamped.Validate(); err != nil {
+	policy := *p
+	if policy.KeepLast < 1 {
+		policy.KeepLast = 1
+	}
+
+	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
 
-	raw, err := json.Marshal(clamped)
+	raw, err := json.Marshal(policy)
 	if err != nil {
 		return nil, err
 	}

@@ -1,11 +1,8 @@
 package main
 
 import (
-	_ "expvar"
 	"log"
 	"log/slog"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"runtime"
 
@@ -20,26 +17,12 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/scrub"
 	"github.com/twcclan/goback/cmd/goback/commands/server"
 	"github.com/twcclan/goback/cmd/goback/commands/set"
-	"github.com/twcclan/goback/telemetry"
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/urfave/cli"
 )
 
-func webserver() {
-	http.ListenAndServe(":8080", nil)
-}
-
 func main() {
-	metrics, err := telemetry.Metrics()
-	if err != nil {
-		log.Fatalf("failed setting up metrics: %s", err)
-	}
-
-	http.Handle("/metrics", metrics)
-
-	go webserver()
-
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 

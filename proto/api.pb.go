@@ -763,7 +763,7 @@ func (x *BeginCommitResponse) GetPolicy() *StorePolicy {
 }
 
 // StorePolicy is a store's write policy: the encryption mode of new
-// writes, the hybrid mode's thresholds, the presence scope and escrow.
+// writes, the hybrid mode's thresholds and the presence scope.
 type StorePolicy struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Version          uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
@@ -772,7 +772,6 @@ type StorePolicy struct {
 	EntropyEstimator string                 `protobuf:"bytes,4,opt,name=entropy_estimator,json=entropyEstimator,proto3" json:"entropy_estimator,omitempty"`
 	EntropyThreshold float64                `protobuf:"fixed64,5,opt,name=entropy_threshold,json=entropyThreshold,proto3" json:"entropy_threshold,omitempty"`
 	PresenceScope    string                 `protobuf:"bytes,6,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
-	Escrow           string                 `protobuf:"bytes,7,opt,name=escrow,proto3" json:"escrow,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -845,13 +844,6 @@ func (x *StorePolicy) GetEntropyThreshold() float64 {
 func (x *StorePolicy) GetPresenceScope() string {
 	if x != nil {
 		return x.PresenceScope
-	}
-	return ""
-}
-
-func (x *StorePolicy) GetEscrow() string {
-	if x != nil {
-		return x.Escrow
 	}
 	return ""
 }
@@ -1860,15 +1852,14 @@ const file_api_proto_rawDesc = "" +
 	"\x13BeginCommitResponse\x12\x18\n" +
 	"\aallowed\x18\x02 \x01(\bR\aallowed\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12*\n" +
-	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policyJ\x04\b\x01\x10\x02\"\xfb\x01\n" +
+	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policyJ\x04\b\x01\x10\x02\"\xe9\x01\n" +
 	"\vStorePolicy\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12%\n" +
 	"\x0esize_threshold\x18\x03 \x01(\x03R\rsizeThreshold\x12+\n" +
 	"\x11entropy_estimator\x18\x04 \x01(\tR\x10entropyEstimator\x12+\n" +
 	"\x11entropy_threshold\x18\x05 \x01(\x01R\x10entropyThreshold\x12%\n" +
-	"\x0epresence_scope\x18\x06 \x01(\tR\rpresenceScope\x12\x16\n" +
-	"\x06escrow\x18\a \x01(\tR\x06escrow\"Z\n" +
+	"\x0epresence_scope\x18\x06 \x01(\tR\rpresenceScopeJ\x04\b\a\x10\b\"Z\n" +
 	"\x13BeginSessionRequest\x12\x1d\n" +
 	"\n" +
 	"backup_set\x18\x01 \x01(\tR\tbackupSet\x12$\n" +

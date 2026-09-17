@@ -34,7 +34,7 @@ service Admin {
 }
 
 message BackupSet {
-    uint64 id = 1;
+    reserved 1;
     string name = 2;
     string agent_id = 3;
     // active, closing or deleted
@@ -75,7 +75,7 @@ message StorePolicy {
     string entropy_estimator = 4;
     double entropy_threshold = 5;
     string presence_scope = 6;
-    string escrow = 7;
+    reserved 7;
     // when the operator confirmed the store key is saved
     google.protobuf.Timestamp key_acknowledged_at = 8;
 }
@@ -88,7 +88,7 @@ message SetStorePolicyRequest {
     string entropy_estimator = 3;
     double entropy_threshold = 4;
     string presence_scope = 5;
-    string escrow = 6;
+    reserved 6;
     // the operator confirms the store key is saved
     bool acknowledge_key = 7;
 }

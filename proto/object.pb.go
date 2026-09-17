@@ -87,7 +87,6 @@ type Compression int32
 
 const (
 	Compression_NONE Compression = 0
-	Compression_GZIP Compression = 1
 	Compression_ZSTD Compression = 2
 )
 
@@ -95,12 +94,10 @@ const (
 var (
 	Compression_name = map[int32]string{
 		0: "NONE",
-		1: "GZIP",
 		2: "ZSTD",
 	}
 	Compression_value = map[string]int32{
 		"NONE": 0,
-		"GZIP": 1,
 		"ZSTD": 2,
 	}
 )
@@ -625,11 +622,10 @@ const file_object_proto_rawDesc = "" +
 	"\x04FILE\x10\x03\x12\b\n" +
 	"\x04BLOB\x10\x04\x12\r\n" +
 	"\tTOMBSTONE\x10\x05\x12\a\n" +
-	"\x03PIN\x10\x06*+\n" +
+	"\x03PIN\x10\x06*'\n" +
 	"\vCompression\x12\b\n" +
 	"\x04NONE\x10\x00\x12\b\n" +
-	"\x04GZIP\x10\x01\x12\b\n" +
-	"\x04ZSTD\x10\x02*<\n" +
+	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01*<\n" +
 	"\n" +
 	"Encryption\x12\r\n" +
 	"\tPLAINTEXT\x10\x00\x12\x0f\n" +

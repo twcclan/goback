@@ -2,7 +2,6 @@ module github.com/twcclan/goback
 
 require (
 	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1
-	cloud.google.com/go/profiler v0.6.0
 	entgo.io/ent v0.14.6
 	github.com/bits-and-blooms/bitset v1.25.0
 	github.com/bmatcuk/doublestar v1.3.4
@@ -17,7 +16,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.12.1
-	github.com/syndtr/goleveldb v1.0.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/urfave/cli v1.22.17
 	github.com/vektra/mockery/v2 v2.53.7
@@ -87,7 +85,6 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/pprof v0.0.0-20260906184651-6331bc6350fe // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
@@ -126,8 +123,6 @@ require (
 	github.com/olekukonko/errors v1.1.0 // indirect
 	github.com/olekukonko/ll v0.1.4-0.20260115111900-9e59c2286df0 // indirect
 	github.com/olekukonko/tablewriter v1.1.3 // indirect
-	github.com/onsi/ginkgo v1.16.4 // indirect
-	github.com/onsi/gomega v1.27.10 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect

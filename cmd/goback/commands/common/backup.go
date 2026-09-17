@@ -18,7 +18,6 @@ import (
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
-	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/storage/wrapped"
 
@@ -96,12 +95,6 @@ func createFolders(loc string) (string, error) {
 
 func makeLocation(u *url.URL) (string, error) {
 	return createFolders(u.Host + u.Path)
-}
-
-func initSimple(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	loc, err := makeLocation(u)
-
-	return storage.NewSimpleObjectStore(loc), err
 }
 
 func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -200,17 +193,6 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewClient(addr, auth.Credentials{Secret: key, AgentID: AgentID(c)}, tlsConfig)
 }
 
-func initBadger(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	loc, err := makeLocation(u)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Opening badger store at %s", loc)
-
-	return badger.New(loc)
-}
-
 // initSQL opens the index at the --index location: a directory (with or
 // without a sqlite:// or file:// scheme) holds an SQLite database and
 // postgres:// names a database server.
@@ -247,10 +229,8 @@ func indexDialect(scheme string) string {
 
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":       initPack,
-	"file":   initSimple,
 	"gcs":    initGCS,
 	"goback": initRemote,
-	"badger": initBadger,
 }
 
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){

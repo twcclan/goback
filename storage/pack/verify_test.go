@@ -127,6 +127,42 @@ func TestCompactionRefusesCorruptSource(t *testing.T) {
 	}
 }
 
+func TestScrubDetectsBrokenChain(t *testing.T) {
+	base := t.TempDir()
+	store := newTestStore(t, base)
+	ctx := context.Background()
+
+	objects := makeTestData(t, 3)
+	require.NoError(t, store.Put(ctx, objects[0]))
+
+	// the second object gets written claiming an object that is not in the
+	// archive as its predecessor
+	store.mtx.RLock()
+	writing := store.archives[0]
+	store.mtx.RUnlock()
+	writing.mtx.Lock()
+	writing.last = objects[2].Ref()
+	writing.mtx.Unlock()
+
+	require.NoError(t, store.Put(ctx, objects[1]))
+	require.NoError(t, store.Close())
+
+	store = newTestStore(t, base)
+	defer store.Close()
+
+	report, err := store.Scrub(ctx)
+	require.NoError(t, err)
+	require.Len(t, report.Corrupt, 1)
+	require.True(t, report.Corrupt[0].Ref.Equal(objects[1].Ref()))
+	require.ErrorIs(t, report.Corrupt[0].Err, ErrBrokenChain)
+
+	for _, obj := range objects[:2] {
+		got, err := store.Get(ctx, obj.Ref())
+		require.NoError(t, err, "a broken chain is a finding, not a read failure")
+		require.Equal(t, obj.GetBlob().Data, got.GetBlob().Data)
+	}
+}
+
 func TestTombstoneRef(t *testing.T) {
 	base := t.TempDir()
 	store := newTestStore(t, base)

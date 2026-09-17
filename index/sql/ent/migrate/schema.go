@@ -195,6 +195,11 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{ObjectsColumns[1], ObjectsColumns[5]},
 			},
+			{
+				Name:    "object_archive_id",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectsColumns[5]},
+			},
 		},
 	}
 	// PinsColumns holds the columns for the "pins" table.

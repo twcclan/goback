@@ -17,7 +17,6 @@ func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 		EntropyEstimator:  in.Policy.EntropyEstimator,
 		EntropyThreshold:  in.Policy.EntropyThreshold,
 		PresenceScope:     in.Policy.PresenceScope,
-		Escrow:            in.Policy.Escrow,
 		KeyAcknowledgedAt: mapping.Stamp(in.KeyAcknowledgedAt),
 	}
 }
@@ -25,7 +24,6 @@ func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 
 	return &admin.BackupSet{
-		Id:          uint64(in.ID),
 		Name:        in.Name,
 		AgentId:     in.AgentID,
 		State:       in.State,
