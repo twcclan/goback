@@ -68,7 +68,12 @@ func ensureSet(ctx context.Context, c *ent.Client, name, agentID string, wantID 
 
 // lockSet takes the set's row lock for the transaction.
 func (x *Index) lockSet(ctx context.Context, tx *ent.Tx, setID int64) (*ent.Set, error) {
-	return forUpdate(x, tx.Set.Query().Where(set.ID(setID))).Only(ctx)
+	s, err := forUpdate(x, tx.Set.Query().Where(set.ID(setID))).Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: set %d", backup.ErrNotFound, setID)
+	}
+
+	return s, err
 }
 
 // BeginCommit implements backup.CommitGate: the set is created or its

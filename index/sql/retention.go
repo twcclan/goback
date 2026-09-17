@@ -36,6 +36,10 @@ type setConfig struct {
 
 func (x *Index) loadSetConfig(ctx context.Context, c *ent.Client, setID int64) (*setConfig, error) {
 	s, err := c.Set.Query().Where(set.ID(setID)).Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: set %d", backup.ErrNotFound, setID)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -414,9 +418,21 @@ func (x *Index) UndeleteSet(ctx context.Context, name string) error {
 	})
 }
 
+// inVisibleSets keeps the pins whose commit belongs to a set the query
+// can see.
+func inVisibleSets() predicate.Pin {
+	return func(s *entsql.Selector) {
+		commits := entsql.Select(commitrow.FieldRef).From(entsql.Table(commitrow.Table))
+		sets := entsql.Select(set.FieldID).From(entsql.Table(set.Table))
+		commits.Where(entsql.In(commits.C(commitrow.FieldSetID), sets))
+
+		s.Where(entsql.In(s.C(pin.FieldTarget), commits))
+	}
+}
+
 // Unpin implements backup.Retention.
 func (x *Index) Unpin(ctx context.Context, ref *proto.Ref) error {
-	row, err := x.client.Pin.Query().Where(pin.Ref(ref.GetHash())).Only(ctx)
+	row, err := x.client.Pin.Query().Where(pin.Ref(ref.GetHash()), inVisibleSets()).Only(ctx)
 	if ent.IsNotFound(err) {
 		return fmt.Errorf("%w: pin %x", backup.ErrNotFound, ref.GetHash())
 	}
@@ -461,7 +477,7 @@ func (x *Index) Unpin(ctx context.Context, ref *proto.Ref) error {
 
 // Pins implements backup.Retention.
 func (x *Index) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
-	rows, err := x.client.Pin.Query().Where(pin.DeletedAtIsNil()).Order(ent.Asc(pin.FieldReceivedAt)).All(ctx)
+	rows, err := x.client.Pin.Query().Where(pin.DeletedAtIsNil(), inVisibleSets()).Order(ent.Asc(pin.FieldReceivedAt)).All(ctx)
 	if err != nil {
 		return nil, err
 	}

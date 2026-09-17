@@ -657,3 +657,26 @@ func TestConcurrentPinsOfOneSet(t *testing.T) {
 		}
 	}
 }
+
+func TestPinsFollowTheirSet(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	p, err := f.pin(a)
+	require.NoError(t, err)
+
+	pins, err := f.x.Pins(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+
+	// a pin whose commit's set the query cannot see is not there; the
+	// row goes behind the foreign keys' back, as a policy would hide it
+	_, err = f.x.db.ExecContext(f.ctx, "PRAGMA foreign_keys = OFF")
+	require.NoError(t, err)
+	require.NoError(t, f.x.client.Set.DeleteOneID(f.commitRow(a).SetID).Exec(f.ctx))
+
+	pins, err = f.x.Pins(f.ctx)
+	require.NoError(t, err)
+	require.Empty(t, pins)
+	require.ErrorIs(t, f.x.Unpin(f.ctx, p), backup.ErrNotFound)
+}
