@@ -141,7 +141,7 @@ func (w *Writer) newArchive() error {
 		return ErrWriterClosed
 	}
 
-	a, err := newArchive(w.storage, "")
+	a, err := newArchive(w.storage, "", nil)
 	if err != nil {
 		return err
 	}

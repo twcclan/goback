@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/url"
@@ -118,7 +119,12 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return pack.NewPackStorage(
+	options, err := atRest(c)
+	if err != nil {
+		return nil, err
+	}
+
+	return pack.NewPackStorage(append(options,
 		pack.WithArchiveStorage(storage.NewCloudStore(file)),
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
@@ -128,7 +134,23 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 			OnClose:           true,
 			MinimumCandidates: 100,
 		}),
-	)
+	)...)
+}
+
+// atRest is the pack option for the global --at-rest-key flag, none
+// without it.
+func atRest(c *cli.Context) ([]pack.PackOption, error) {
+	path := c.GlobalString("at-rest-key")
+	if path == "" {
+		return nil, nil
+	}
+
+	key, err := storekey.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("loading the at-rest key: %w", err)
+	}
+
+	return []pack.PackOption{pack.WithAtRestKey(key)}, nil
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -137,7 +159,12 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return storage.NewCloudObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"))
+	options, err := atRest(c)
+	if err != nil {
+		return nil, err
+	}
+
+	return storage.NewCloudObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
 }
 
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {

@@ -57,6 +57,9 @@ message ObjectHeader {
   // set on a tombstone written for an erasure: garbage collection rewrites
   // the archives holding the target's objects as soon as its rules allow
   bool erase = 11;
+  // identifies the server key under which the stored bytes were sealed at
+  // rest; empty when they are stored as the agent sent them
+  bytes at_rest_key_id = 12;
 }
 
 // Sealed carries a blob that the client encrypted: its ref is derived from

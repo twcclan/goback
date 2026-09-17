@@ -45,7 +45,7 @@ func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 		return nil, err
 	}
 
-	archive, err := openArchive(r.storage, location.Archive)
+	archive, err := openArchive(r.storage, location.Archive, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 	}
 
 	for _, name := range archives {
-		archive, err := openArchive(w.storage, strings.TrimSuffix(name, ArchiveSuffix))
+		archive, err := openArchive(w.storage, strings.TrimSuffix(name, ArchiveSuffix), nil)
 		if err != nil {
 			return err
 		}

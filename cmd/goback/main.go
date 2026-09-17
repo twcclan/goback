@@ -100,6 +100,10 @@ func main() {
 			Name:  "store-key",
 			Usage: "store key file; names and contents are encrypted with it before upload",
 		},
+		cli.StringFlag{
+			Name:  "at-rest-key",
+			Usage: "key file a pack:// or gcs:// store seals its archives with; empty stores objects as received",
+		},
 		cli.BoolFlag{
 			Name:  "reset-index",
 			Usage: "drop the local archive index and rebuild it from the archives",

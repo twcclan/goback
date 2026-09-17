@@ -103,6 +103,7 @@ type archive struct {
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
+	atRest     *AtRestKey
 
 	// owner is the session writing this archive, nil once finalized or
 	// when opened from storage
@@ -111,8 +112,9 @@ type archive struct {
 	state   ArchiveState
 }
 
-// newArchive opens a writable archive named by a fresh uuid under dir.
-func newArchive(storage ArchiveStorage, dir string) (*archive, error) {
+// newArchive opens a writable archive named by a fresh uuid under dir,
+// sealing its payloads under atRest when that is set.
+func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey) (*archive, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -122,16 +124,18 @@ func newArchive(storage ArchiveStorage, dir string) (*archive, error) {
 		storage:  storage,
 		name:     path.Join(dir, id.String()),
 		readOnly: false,
+		atRest:   atRest,
 	}
 
 	return a, a.open()
 }
 
-func openArchive(storage ArchiveStorage, name string) (*archive, error) {
+func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey) (*archive, error) {
 	a := &archive{
 		storage:  storage,
 		name:     name,
 		readOnly: true,
+		atRest:   atRest,
 	}
 
 	return a, a.open()
@@ -365,7 +369,12 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 	archiveReadLatency.Record(ctx, readLatency, attrs)
 	archiveReadSize.Record(ctx, int64(loc.Length), attrs)
 
-	obj, err := proto.ObjectFromStored(hdr, buf[consumed+int(hdrSize):])
+	stored, err := openAtRest(a.atRest, hdr, buf[consumed+int(hdrSize):])
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading object %x from archive %s", ref.Hash, a.name)
+	}
+
+	obj, err := proto.ObjectFromStored(hdr, stored)
 	if err != nil {
 		return nil, errors.Wrapf(err, "reading object %x from archive %s", ref.Hash, a.name)
 	}
@@ -415,6 +424,17 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	}
 
 	hdr.Predecessor = a.last
+	hdr.AtRestKeyId = nil
+
+	if a.atRest != nil && len(bytes) > 0 {
+		sealed, err := a.atRest.seal(hdr, bytes)
+		if err != nil {
+			return err
+		}
+
+		bytes, hdr.AtRestKeyId = sealed, a.atRest.ID()
+	}
+
 	hdr.Size = uint64(len(bytes))
 
 	// keep the timestamp if it's already present. this is important,
@@ -532,6 +552,11 @@ func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback f
 
 			if err != nil && err != io.EOF {
 				return errors.Wrap(err, "Failed reading object data")
+			}
+
+			objectBytes, err = openAtRest(a.atRest, hdr, objectBytes)
+			if err != nil {
+				return err
 			}
 		} else {
 			// skip the object data

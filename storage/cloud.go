@@ -382,8 +382,8 @@ func NewCloudStore(bucket *blob.Bucket) *cloudStore {
 
 // NewCloudObjectStore returns a pack store over a remote bucket, with a local
 // badger archive index at indexDir and, if cacheDir is not empty, a local
-// metadata cache.
-func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string) (backup.ObjectStore, error) {
+// metadata cache; extra pack options follow.
+func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra ...pack.PackOption) (backup.ObjectStore, error) {
 	err := os.MkdirAll(indexDir, 0755)
 	if err != nil {
 		return nil, err
@@ -422,5 +422,5 @@ func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string) (backup
 		options = append(options, pack.WithMetadataCache(cache))
 	}
 
-	return pack.NewPackStorage(options...)
+	return pack.NewPackStorage(append(options, extra...)...)
 }

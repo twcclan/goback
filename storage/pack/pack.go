@@ -69,6 +69,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		index:            opts.index,
 		idleFinalize:     opts.idleFinalize,
 		sessionLease:     opts.sessionLease,
+		atRest:           opts.atRest,
 	}, nil
 }
 
@@ -103,6 +104,7 @@ type PackStorage struct {
 
 	sweeperTicker *time.Ticker
 	sweeperClose  chan struct{}
+	atRest        *AtRestKey
 }
 
 type pendingObject struct {
@@ -716,7 +718,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		return nil, errArchiveRetired
 	}
 
-	a, err := openArchive(ps.storage, name)
+	a, err := openArchive(ps.storage, name, ps.atRest)
 	if err != nil {
 		return nil, err
 	}
@@ -785,7 +787,7 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 			return err
 		}
 
-		a, err := newArchive(ps.storage, ws.placement.Dir())
+		a, err := newArchive(ps.storage, ws.placement.Dir(), ps.atRest)
 		if err != nil {
 			ps.archiveSemaphore.Release(1)
 			return err

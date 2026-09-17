@@ -202,7 +202,10 @@ type ObjectHeader struct {
 	StoredHash []byte `protobuf:"bytes,10,opt,name=stored_hash,json=storedHash,proto3" json:"stored_hash,omitempty"`
 	// set on a tombstone written for an erasure: garbage collection rewrites
 	// the archives holding the target's objects as soon as its rules allow
-	Erase         bool `protobuf:"varint,11,opt,name=erase,proto3" json:"erase,omitempty"`
+	Erase bool `protobuf:"varint,11,opt,name=erase,proto3" json:"erase,omitempty"`
+	// identifies the server key under which the stored bytes were sealed at
+	// rest; empty when they are stored as the agent sent them
+	AtRestKeyId   []byte `protobuf:"bytes,12,opt,name=at_rest_key_id,json=atRestKeyId,proto3" json:"at_rest_key_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -312,6 +315,13 @@ func (x *ObjectHeader) GetErase() bool {
 		return x.Erase
 	}
 	return false
+}
+
+func (x *ObjectHeader) GetAtRestKeyId() []byte {
+	if x != nil {
+		return x.AtRestKeyId
+	}
+	return nil
 }
 
 // Sealed carries a blob that the client encrypted: its ref is derived from
@@ -564,7 +574,7 @@ const file_object_proto_rawDesc = "" +
 	"\fobject.proto\x12\x05proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\n" +
 	"tree.proto\x1a\fcommit.proto\x1a\n" +
 	"blob.proto\x1a\n" +
-	"file.proto\x1a\tpin.proto\x1a\tref.proto\"\xb7\x03\n" +
+	"file.proto\x1a\tpin.proto\x1a\tref.proto\"\xdc\x03\n" +
 	"\fObjectHeader\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12,\n" +
@@ -583,7 +593,8 @@ const file_object_proto_rawDesc = "" +
 	"\vstored_hash\x18\n" +
 	" \x01(\fR\n" +
 	"storedHash\x12\x14\n" +
-	"\x05erase\x18\v \x01(\bR\x05erase\"\xe1\x01\n" +
+	"\x05erase\x18\v \x01(\bR\x05erase\x12#\n" +
+	"\x0eat_rest_key_id\x18\f \x01(\fR\vatRestKeyId\"\xe1\x01\n" +
 	"\x06Sealed\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12%\n" +

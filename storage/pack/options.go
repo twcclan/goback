@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/storekey"
 )
 
 type packOptions struct {
@@ -16,6 +17,16 @@ type packOptions struct {
 	cache           backup.ObjectStore
 	idleFinalize    time.Duration
 	sessionLease    time.Duration
+	atRest          *AtRestKey
+}
+
+// WithAtRestKey seals every payload written from now on under the key
+// and opens the ones sealed under it; records written without a key stay
+// readable. A key file made by goback key new serves.
+func WithAtRestKey(key *storekey.Key) PackOption {
+	return func(p *packOptions) {
+		p.atRest = NewAtRestKey(key)
+	}
 }
 
 // WithIdleFinalize finalizes a session's open archive after it has not

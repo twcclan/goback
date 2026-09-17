@@ -124,7 +124,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		}
 
 		if open[dir] == nil {
-			a, err := newArchive(ps.storage, dir)
+			a, err := newArchive(ps.storage, dir, ps.atRest)
 			if err != nil {
 				return nil, err
 			}
