@@ -93,8 +93,13 @@ func main() {
 			Usage: "identifier recorded in commits and presented to a goback:// store server; defaults to the hostname",
 		},
 		cli.StringFlag{
-			Name:  "secret",
-			Usage: "the secret shared with a goback:// store server",
+			Name:   "api-key",
+			Usage:  "the key a goback:// store server accepts: its shared secret",
+			EnvVar: "GOBACK_API_KEY",
+		},
+		cli.StringFlag{
+			Name:  "api-key-file",
+			Usage: "file holding the api key, for when a flag or the environment would show it",
 		},
 		cli.StringFlag{
 			Name:  "ca-cert",
