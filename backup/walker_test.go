@@ -91,7 +91,7 @@ func (m *memIndex) BeginCommit(_ context.Context, set string) (*CommitGrant, err
 
 	m.gated = append(m.gated, set)
 
-	return &CommitGrant{SetID: 42, Policy: m.policy}, nil
+	return &CommitGrant{Policy: m.policy}, nil
 }
 
 func (m *memIndex) Put(ctx context.Context, obj *proto.Object) error {
@@ -316,14 +316,14 @@ func (f *walkerFixture) tree(ref *proto.Ref) map[string]*proto.TreeNode {
 	return nodes
 }
 
-func TestWalkerAsksTheGateAndCarriesTheSetID(t *testing.T) {
+func TestWalkerAsksTheGate(t *testing.T) {
 	f := newWalkerFixture(t)
 	f.write("a.txt", []byte("one"))
 
 	f.run()
 
 	require.Equal(t, []string{"test"}, f.index.gated, "BeginCommit is asked once per run")
-	require.Equal(t, []uint64{42}, f.index.putSetIDs, "the commit carries the set id the gate returned")
+	require.Equal(t, []uint64{0}, f.index.putSetIDs, "the set id is the index's to stamp")
 }
 
 func TestWalkerAdoptsTheStorePolicyFromTheGrant(t *testing.T) {

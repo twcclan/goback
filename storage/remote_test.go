@@ -43,10 +43,8 @@ type memIndex struct {
 	owners     map[string]string
 	latest     map[string]*proto.Ref
 
-	// deny refuses BeginCommit with this reason; setID and policy are what
-	// it grants otherwise
+	// deny refuses BeginCommit with this reason; policy is what it grants
 	deny   string
-	setID  uint64
 	policy *storekey.Policy
 
 	filters       []*proto.PresenceFilter
@@ -102,7 +100,7 @@ func (g gated) BeginCommit(context.Context, string) (*backup.CommitGrant, error)
 		return nil, fmt.Errorf("%w: %s", backup.ErrCommitDenied, g.deny)
 	}
 
-	return &backup.CommitGrant{SetID: g.setID, Policy: g.policy}, nil
+	return &backup.CommitGrant{Policy: g.policy}, nil
 }
 
 // References implements backup.RefScope; a test unmarks an object to
@@ -360,7 +358,6 @@ func TestRemoteBeginCommit(t *testing.T) {
 	// an index without a gate allows every commit and assigns the set later
 	grant, err := client.BeginCommit(ctx, "world")
 	require.NoError(t, err)
-	require.Zero(t, grant.SetID)
 	require.Nil(t, grant.Policy)
 
 	gatedDial := startServerWith(t, gated{index}, nil)
@@ -371,10 +368,8 @@ func TestRemoteBeginCommit(t *testing.T) {
 	require.ErrorContains(t, err, "closing")
 
 	index.deny = ""
-	index.setID = 9
 	grant, err = gatedDial("node-1").BeginCommit(ctx, "world")
 	require.NoError(t, err)
-	require.EqualValues(t, 9, grant.SetID)
 	require.Nil(t, grant.Policy, "no policy row yet")
 
 	policy := storekey.DefaultPolicy()

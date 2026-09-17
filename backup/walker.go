@@ -92,7 +92,6 @@ type Walker struct {
 	gate      *syncutil.Gate
 	trees     *treeSource
 	scanStart int64
-	setID     uint64
 	// policyVersion is what the commit records, kept apart from Key
 	// because a policy without encryption drops the key for the run
 	policyVersion uint32
@@ -173,8 +172,6 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("beginning commit: %w", err)
 		}
-
-		w.setID = grant.SetID
 
 		err = w.adoptPolicy(grant.Policy)
 		if err != nil {
@@ -361,7 +358,6 @@ func (w *Walker) putCommit(ctx context.Context, tree *proto.Ref, partial bool) (
 		BackupSet:   w.Set,
 		Parent:      w.base,
 		AgentId:     w.AgentID,
-		SetId:       w.setID,
 		Metadata:    w.Metadata,
 		ScanStartNs: w.scanStart,
 		Partial:     partial,

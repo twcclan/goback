@@ -241,13 +241,14 @@ func TestBeginCommitGates(t *testing.T) {
 
 	grant, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
-	require.NotZero(t, grant.SetID)
 	require.Nil(t, grant.Policy, "a policy never set is version 0 and stays out of the grant")
-	setID := grant.SetID
 
-	again, err := f.x.BeginCommit(ctx, "world")
+	_, err = f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
-	require.Equal(t, setID, again.SetID, "the set is created once")
+	sets, err := f.x.ListSets(ctx)
+	require.NoError(t, err)
+	require.Len(t, sets, 1, "the set is created once")
+	setID := uint64(sets[0].ID)
 
 	// the store's policy travels with the grant once the operator set one
 	wanted := storekey.DefaultPolicy()

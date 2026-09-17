@@ -55,8 +55,6 @@ type SetScope interface {
 
 // CommitGrant is the answer to an allowed BeginCommit.
 type CommitGrant struct {
-	// SetID is the set's server-assigned id, which the commit body must carry.
-	SetID uint64
 	// Policy is the store's write policy for this run; nil when the server
 	// holds none, which leaves the agent's key file in charge.
 	Policy *storekey.Policy

@@ -94,8 +94,7 @@ message BeginCommitRequest {
 }
 
 message BeginCommitResponse {
-    // the set's server-assigned id, which the commit body must carry
-    uint64 set_id = 1;
+    reserved 1;
     bool allowed = 2;
     // why the commit was refused, empty when allowed
     string reason = 3;

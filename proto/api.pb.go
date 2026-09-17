@@ -700,10 +700,8 @@ func (x *BeginCommitRequest) GetBackupSet() string {
 }
 
 type BeginCommitResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// the set's server-assigned id, which the commit body must carry
-	SetId   uint64 `protobuf:"varint,1,opt,name=set_id,json=setId,proto3" json:"set_id,omitempty"`
-	Allowed bool   `protobuf:"varint,2,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Allowed bool                   `protobuf:"varint,2,opt,name=allowed,proto3" json:"allowed,omitempty"`
 	// why the commit was refused, empty when allowed
 	Reason string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	// the store's write policy for this run; absent when the operator never
@@ -741,13 +739,6 @@ func (x *BeginCommitResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use BeginCommitResponse.ProtoReflect.Descriptor instead.
 func (*BeginCommitResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *BeginCommitResponse) GetSetId() uint64 {
-	if x != nil {
-		return x.SetId
-	}
-	return 0
 }
 
 func (x *BeginCommitResponse) GetAllowed() bool {
@@ -1865,12 +1856,11 @@ const file_api_proto_rawDesc = "" +
 	".proto.RefR\x03ref\"9\n" +
 	"\x12BeginCommitRequest\x12\x1d\n" +
 	"\n" +
-	"backup_set\x18\x01 \x01(\tR\tbackupSetJ\x04\b\x02\x10\x03\"\x8a\x01\n" +
-	"\x13BeginCommitResponse\x12\x15\n" +
-	"\x06set_id\x18\x01 \x01(\x04R\x05setId\x12\x18\n" +
+	"backup_set\x18\x01 \x01(\tR\tbackupSetJ\x04\b\x02\x10\x03\"y\n" +
+	"\x13BeginCommitResponse\x12\x18\n" +
 	"\aallowed\x18\x02 \x01(\bR\aallowed\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12*\n" +
-	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policy\"\xfb\x01\n" +
+	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policyJ\x04\b\x01\x10\x02\"\xfb\x01\n" +
 	"\vStorePolicy\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12%\n" +

@@ -72,7 +72,7 @@ func TestStoreIsALibrary(t *testing.T) {
 
 	grant, err := storeOf(first).BeginCommit(first, "world")
 	require.NoError(t, err)
-	require.Zero(t, grant.SetID, "an index without a gate assigns the set later")
+	require.Nil(t, grant.Policy, "an index without a gate grants without a policy")
 
 	_, err = storeOf(first).Retention()
 	require.ErrorIs(t, err, backup.ErrNotImplemented)

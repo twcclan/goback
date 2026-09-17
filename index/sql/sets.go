@@ -94,7 +94,7 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 		return nil, fmt.Errorf("%w: set %q", backup.ErrSetClosed, name)
 	}
 
-	grant := &backup.CommitGrant{SetID: uint64(setID)}
+	grant := &backup.CommitGrant{}
 
 	grant.Policy, err = x.StorePolicy(ctx)
 	if err != nil {
