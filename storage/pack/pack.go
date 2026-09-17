@@ -56,6 +56,10 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		return nil, errors.New("No archive index provided")
 	}
 
+	if opts.public != nil {
+		opts.storage = &routedStorage{root: opts.storage, public: opts.public}
+	}
+
 	return &PackStorage{
 		archives:         make([]*archive, 0),
 		retired:          make(map[string]bool),
@@ -983,4 +987,6 @@ type PublicRefIndex interface {
 	HasPublicRef(ref []byte) (bool, error)
 	// ForgetRefs drops the refs once the public copy is gone.
 	ForgetRefs(refs [][]byte) error
+	// WalkPublicRefs calls fn with every recorded ref until it errs.
+	WalkPublicRefs(fn func(ref []byte) error) error
 }

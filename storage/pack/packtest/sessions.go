@@ -1,6 +1,7 @@
 package packtest
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -38,6 +39,16 @@ func TestArchiveIndexPublicRefs(t *testing.T, idx pack.ArchiveIndex) {
 	has, err = idx.HasPublicRef(b[:])
 	require.NoError(t, err)
 	require.True(t, has, "other refs stay")
+
+	var walked [][]byte
+	require.NoError(t, idx.WalkPublicRefs(func(ref []byte) error {
+		walked = append(walked, ref)
+		return nil
+	}))
+	require.Equal(t, [][]byte{b[:]}, walked)
+
+	stop := errors.New("enough")
+	require.ErrorIs(t, idx.WalkPublicRefs(func([]byte) error { return stop }), stop)
 }
 
 // TestArchiveIndexSessions checks session visibility, commit and abort.

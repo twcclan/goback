@@ -74,6 +74,24 @@ func (i *InMemoryIndex) ForgetRefs(refs [][]byte) error {
 	return nil
 }
 
+// WalkPublicRefs implements PublicRefIndex.
+func (i *InMemoryIndex) WalkPublicRefs(fn func(ref []byte) error) error {
+	i.mtx.RLock()
+	refs := make([][]byte, 0, len(i.publicRefs))
+	for sum := range i.publicRefs {
+		refs = append(refs, append([]byte(nil), sum[:]...))
+	}
+	i.mtx.RUnlock()
+
+	for _, ref := range refs {
+		if err := fn(ref); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (i *InMemoryIndex) LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error) {
 	var sum [proto.HashSize]byte
 	copy(sum[:], ref.Hash)

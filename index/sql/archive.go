@@ -248,6 +248,32 @@ func (x *Index) ForgetRefs(refs [][]byte) error {
 	return err
 }
 
+// WalkPublicRefs implements pack.PublicRefIndex.
+func (x *Index) WalkPublicRefs(fn func(ref []byte) error) error {
+	ctx := context.Background()
+
+	const page = 1000
+	last := 0
+	for {
+		rows, err := x.client.PublicRef.Query().Where(publicref.IDGT(last)).Order(ent.Asc(publicref.FieldID)).Limit(page).All(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, row := range rows {
+			if err := fn(row.Ref); err != nil {
+				return err
+			}
+
+			last = row.ID
+		}
+
+		if len(rows) < page {
+			return nil
+		}
+	}
+}
+
 // CountObjects implements pack.ArchiveIndex: the object rows and the
 // distinct refs among them.
 func (x *Index) CountObjects() (uint64, uint64, error) {

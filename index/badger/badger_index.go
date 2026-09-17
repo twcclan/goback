@@ -534,6 +534,23 @@ func (b *BadgerIndex) ForgetRefs(refs [][]byte) error {
 	return batch.Flush()
 }
 
+// WalkPublicRefs implements pack.PublicRefIndex.
+func (b *BadgerIndex) WalkPublicRefs(fn func(ref []byte) error) error {
+	return b.db.View(func(txn *badger.Txn) error {
+		prefix := b.key(prefixPublicRef, nil)
+		it := txn.NewIterator(badger.IteratorOptions{Prefix: prefix})
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			if err := fn(it.Item().KeyCopy(nil)[len(prefix):]); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 func (b *BadgerIndex) BeginSession(s *backup.Session) error {
 	data, err := json.Marshal(s)
 	if err != nil {
