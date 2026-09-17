@@ -194,7 +194,7 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return storage.NewRemoteClient(addr, auth.Credentials{Secret: c.GlobalString("secret"), AgentID: AgentID(c)}, tlsConfig)
+	return storage.NewClient(addr, auth.Credentials{Secret: c.GlobalString("secret"), AgentID: AgentID(c)}, tlsConfig)
 }
 
 func initBadger(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {

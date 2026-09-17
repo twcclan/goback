@@ -25,10 +25,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// NewRemoteClient connects to a store server over TLS, presenting creds
+// NewClient connects to a store server over TLS, presenting creds
 // on every call. A nil tlsConfig trusts the system roots; see ClientTLS
 // for a pinned certificate authority.
-func NewRemoteClient(addr string, creds auth.Credentials, tlsConfig *tls.Config) (*RemoteClient, error) {
+func NewClient(addr string, creds auth.Credentials, tlsConfig *tls.Config) (*Client, error) {
 	con, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithPerRPCCredentials(creds),
@@ -37,7 +37,7 @@ func NewRemoteClient(addr string, creds auth.Credentials, tlsConfig *tls.Config)
 		return nil, err
 	}
 
-	return &RemoteClient{
+	return &Client{
 		store: proto.NewStoreClient(con),
 	}, nil
 }
@@ -63,24 +63,25 @@ func ClientTLS(caFile string) (*tls.Config, error) {
 }
 
 var (
-	_ backup.Index      = (*RemoteClient)(nil)
-	_ backup.Retention  = (*RemoteClient)(nil)
-	_ backup.PartReader = (*RemoteClient)(nil)
-	_ backup.CommitGate = (*RemoteClient)(nil)
+	_ backup.Index      = (*Client)(nil)
+	_ backup.Retention  = (*Client)(nil)
+	_ backup.PartReader = (*Client)(nil)
+	_ backup.CommitGate = (*Client)(nil)
 )
 
-// RemoteClient is a backup.Index over a store server's gRPC API.
-type RemoteClient struct {
+// Client is a backup.Index over a store server's gRPC API.
+type Client struct {
 	store proto.StoreClient
 }
 
-// Open is a no-op; the connection is dialed by NewRemoteClient.
-func (r *RemoteClient) Open() error  { return nil }
+// Open is a no-op; the connection is dialed by NewClient.
+func (r *Client) Open() error { return nil }
+
 // Close is a no-op; close the connection instead.
-func (r *RemoteClient) Close() error { return nil }
+func (r *Client) Close() error { return nil }
 
 // FileInfo implements backup.Index.
-func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
+func (r *Client) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
 	ctx = r.outgoing(ctx)
 
 	na := timestamppb.New(notAfter)
@@ -100,7 +101,7 @@ func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, no
 }
 
 // CommitInfo implements backup.Index.
-func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+func (r *Client) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
 	ctx = r.outgoing(ctx)
 
 	na := timestamppb.New(notAfter)
@@ -119,14 +120,14 @@ func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time
 }
 
 // ReIndex implements backup.Index.
-func (r *RemoteClient) ReIndex(ctx context.Context) error {
+func (r *Client) ReIndex(ctx context.Context) error {
 	ctx = r.outgoing(ctx)
 
 	return errors.New("not supported")
 }
 
 // LatestCommit implements backup.Index.
-func (r *RemoteClient) LatestCommit(ctx context.Context, set string) (*proto.Ref, error) {
+func (r *Client) LatestCommit(ctx context.Context, set string) (*proto.Ref, error) {
 	ctx = r.outgoing(ctx)
 
 	response, err := r.store.LatestCommit(ctx, &proto.LatestCommitRequest{BackupSet: set})
@@ -142,7 +143,7 @@ func (r *RemoteClient) LatestCommit(ctx context.Context, set string) (*proto.Ref
 }
 
 // GetTree implements backup.TreeFetcher over the streaming RPC.
-func (r *RemoteClient) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
+func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
 	ctx = r.outgoing(ctx)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -173,18 +174,18 @@ func (r *RemoteClient) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uin
 }
 
 // Put implements backup.ObjectStore.
-func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
+func (r *Client) Put(ctx context.Context, object *proto.Object) error {
 	_, err := r.put(ctx, object, nil)
 
 	return err
 }
 
 // PutFile implements backup.Confirmer.
-func (r *RemoteClient) PutFile(ctx context.Context, object *proto.Object, assumed []*proto.Ref) ([]*proto.Ref, error) {
+func (r *Client) PutFile(ctx context.Context, object *proto.Object, assumed []*proto.Ref) ([]*proto.Ref, error) {
 	return r.put(ctx, object, assumed)
 }
 
-func (r *RemoteClient) put(ctx context.Context, object *proto.Object, assumed []*proto.Ref) ([]*proto.Ref, error) {
+func (r *Client) put(ctx context.Context, object *proto.Object, assumed []*proto.Ref) ([]*proto.Ref, error) {
 	ctx = r.outgoing(ctx)
 
 	err := object.Validate()
@@ -228,7 +229,7 @@ func (r *RemoteClient) put(ctx context.Context, object *proto.Object, assumed []
 
 // Presence implements backup.PresenceSource; a server without the RPC
 // yields no filters.
-func (r *RemoteClient) Presence(ctx context.Context, set string) (presence.Set, error) {
+func (r *Client) Presence(ctx context.Context, set string) (presence.Set, error) {
 	ctx = r.outgoing(ctx)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -281,7 +282,7 @@ func (r *RemoteClient) Presence(ctx context.Context, set string) (presence.Set, 
 }
 
 // Get implements backup.ObjectStore.
-func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	ctx = r.outgoing(ctx)
 
 	resp, err := r.store.Get(ctx, &proto.GetRequest{Ref: ref})
@@ -301,16 +302,16 @@ func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 }
 
 // Delete is not offered by the server; retention deletes commits and sets.
-func (r *RemoteClient) Delete(context.Context, *proto.Ref) error { return backup.ErrNotImplemented }
+func (r *Client) Delete(context.Context, *proto.Ref) error { return backup.ErrNotImplemented }
 
 // Walk is not offered by the server; an agent reads through Get and ReadParts.
-func (r *RemoteClient) Walk(context.Context, bool, proto.ObjectType, backup.ObjectReceiver) error {
+func (r *Client) Walk(context.Context, bool, proto.ObjectType, backup.ObjectReceiver) error {
 	return backup.ErrNotImplemented
 }
 
 // BeginCommit implements backup.CommitGate; a refusal is ErrCommitDenied
 // with the server's reason.
-func (r *RemoteClient) BeginCommit(ctx context.Context, set string) (*backup.CommitGrant, error) {
+func (r *Client) BeginCommit(ctx context.Context, set string) (*backup.CommitGrant, error) {
 	resp, err := r.store.BeginCommit(r.outgoing(ctx), &proto.BeginCommitRequest{BackupSet: set})
 	if err != nil {
 		return nil, err
@@ -348,7 +349,7 @@ func policyProto(p *storekey.Policy) *proto.StorePolicy {
 }
 
 // ReadParts implements backup.PartReader through the ReadFile stream.
-func (r *RemoteClient) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
+func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
 	ctx, cancel := context.WithCancel(r.outgoing(ctx))
 	defer cancel()
 
@@ -384,37 +385,37 @@ func (r *RemoteClient) ReadParts(ctx context.Context, file *proto.Ref, skip []in
 }
 
 // DeleteCommit implements backup.Retention.
-func (r *RemoteClient) DeleteCommit(ctx context.Context, ref *proto.Ref) error {
+func (r *Client) DeleteCommit(ctx context.Context, ref *proto.Ref) error {
 	_, err := r.store.DeleteCommit(r.outgoing(ctx), &proto.DeleteCommitRequest{Ref: ref})
 	return err
 }
 
 // UndeleteCommit implements backup.Retention.
-func (r *RemoteClient) UndeleteCommit(ctx context.Context, ref *proto.Ref) error {
+func (r *Client) UndeleteCommit(ctx context.Context, ref *proto.Ref) error {
 	_, err := r.store.UndeleteCommit(r.outgoing(ctx), &proto.UndeleteCommitRequest{Ref: ref})
 	return err
 }
 
 // DeleteSet implements backup.Retention.
-func (r *RemoteClient) DeleteSet(ctx context.Context, set string, erase bool) error {
+func (r *Client) DeleteSet(ctx context.Context, set string, erase bool) error {
 	_, err := r.store.DeleteSet(r.outgoing(ctx), &proto.DeleteSetRequest{BackupSet: set, Erase: erase})
 	return err
 }
 
 // UndeleteSet implements backup.Retention.
-func (r *RemoteClient) UndeleteSet(ctx context.Context, set string) error {
+func (r *Client) UndeleteSet(ctx context.Context, set string) error {
 	_, err := r.store.UndeleteSet(r.outgoing(ctx), &proto.UndeleteSetRequest{BackupSet: set})
 	return err
 }
 
 // Unpin implements backup.Retention.
-func (r *RemoteClient) Unpin(ctx context.Context, pin *proto.Ref) error {
+func (r *Client) Unpin(ctx context.Context, pin *proto.Ref) error {
 	_, err := r.store.Unpin(r.outgoing(ctx), &proto.UnpinRequest{Pin: pin})
 	return err
 }
 
 // Pins implements backup.Retention.
-func (r *RemoteClient) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
+func (r *Client) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
 	resp, err := r.store.ListPins(r.outgoing(ctx), &proto.ListPinsRequest{})
 	if err != nil {
 		return nil, err
@@ -424,29 +425,29 @@ func (r *RemoteClient) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
 }
 
 // Has is not offered by the server; presence filters answer it.
-func (r *RemoteClient) Has(context.Context, *proto.Ref) (bool, error) {
+func (r *Client) Has(context.Context, *proto.Ref) (bool, error) {
 	return false, backup.ErrNotImplemented
 }
 
-// NewRemoteServer serves store over gRPC.
-func NewRemoteServer(store *Store) *RemoteServer {
-	return &RemoteServer{store: store}
+// NewServer serves store over gRPC.
+func NewServer(store *Store) *Server {
+	return &Server{store: store}
 }
 
-var _ proto.StoreServer = (*RemoteServer)(nil)
+var _ proto.StoreServer = (*Server)(nil)
 
-// RemoteServer is the gRPC adapter of a Store: every RPC is one Store
+// Server is the gRPC adapter of a Store: every RPC is one Store
 // operation and a translation of its errors to status codes.
-type RemoteServer struct {
+type Server struct {
 	proto.UnsafeStoreServer
 	store *Store
 }
 
 // Store is the store the server serves.
-func (r *RemoteServer) Store() *Store { return r.store }
+func (r *Server) Store() *Store { return r.store }
 
 // BeginCommit implements proto.StoreServer.
-func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginCommitRequest) (*proto.BeginCommitResponse, error) {
+func (r *Server) BeginCommit(ctx context.Context, request *proto.BeginCommitRequest) (*proto.BeginCommitResponse, error) {
 	grant, err := r.store.BeginCommit(ctx, request.BackupSet)
 	if errors.Is(err, backup.ErrCommitDenied) {
 		return &proto.BeginCommitResponse{Allowed: false, Reason: err.Error()}, nil
@@ -460,7 +461,7 @@ func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginComm
 }
 
 // FileInfo implements proto.StoreServer.
-func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
+func (r *Server) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
 	err := request.NotAfter.CheckValid()
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -475,7 +476,7 @@ func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequ
 }
 
 // CommitInfo implements proto.StoreServer.
-func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfoRequest) (*proto.CommitInfoResponse, error) {
+func (r *Server) CommitInfo(ctx context.Context, request *proto.CommitInfoRequest) (*proto.CommitInfoResponse, error) {
 	err := request.NotAfter.CheckValid()
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -490,7 +491,7 @@ func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfo
 }
 
 // Put implements proto.StoreServer.
-func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
+func (r *Server) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
 	receipt, err := r.store.Put(ctx, Upload{Object: request.GetObject(), Ref: request.Ref, Assumed: request.AssumedRefs})
 	if err != nil {
 		return nil, ToStatus(err)
@@ -500,7 +501,7 @@ func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*pro
 }
 
 // LatestCommit answers with an empty ref when the set has no commit.
-func (r *RemoteServer) LatestCommit(ctx context.Context, request *proto.LatestCommitRequest) (*proto.LatestCommitResponse, error) {
+func (r *Server) LatestCommit(ctx context.Context, request *proto.LatestCommitRequest) (*proto.LatestCommitResponse, error) {
 	ref, err := r.store.Index.LatestCommit(ctx, request.BackupSet)
 	if errors.Is(err, backup.ErrNotFound) {
 		return &proto.LatestCommitResponse{}, nil
@@ -514,14 +515,14 @@ func (r *RemoteServer) LatestCommit(ctx context.Context, request *proto.LatestCo
 }
 
 // GetTree implements proto.StoreServer.
-func (r *RemoteServer) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTreeServer) error {
+func (r *Server) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTreeServer) error {
 	return ToStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, func(ref *proto.Ref, obj *proto.Object) error {
 		return stream.Send(&proto.GetTreeResponse{Ref: ref, Object: obj})
 	}))
 }
 
 // Get implements proto.StoreServer.
-func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
+func (r *Server) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
 	obj, err := r.store.Get(ctx, request.Ref)
 	if err != nil {
 		return nil, ToStatus(err)
@@ -532,7 +533,7 @@ func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*pro
 
 // ReadFile streams the stored objects of a file's parts in order, running
 // the fetch loop server-side so the client authorises once per file.
-func (r *RemoteServer) ReadFile(request *proto.ReadFileRequest, stream proto.Store_ReadFileServer) error {
+func (r *Server) ReadFile(request *proto.ReadFileRequest, stream proto.Store_ReadFileServer) error {
 	return ToStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(index int, obj *proto.Object) error {
 		return stream.Send(&proto.ReadFileResponse{Index: uint32(index), Object: obj})
 	}))
@@ -564,7 +565,7 @@ func ToStatus(err error) error {
 }
 
 // DeleteCommit implements proto.StoreServer.
-func (r *RemoteServer) DeleteCommit(ctx context.Context, request *proto.DeleteCommitRequest) (*proto.DeleteCommitResponse, error) {
+func (r *Server) DeleteCommit(ctx context.Context, request *proto.DeleteCommitRequest) (*proto.DeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -574,7 +575,7 @@ func (r *RemoteServer) DeleteCommit(ctx context.Context, request *proto.DeleteCo
 }
 
 // UndeleteCommit implements proto.StoreServer.
-func (r *RemoteServer) UndeleteCommit(ctx context.Context, request *proto.UndeleteCommitRequest) (*proto.UndeleteCommitResponse, error) {
+func (r *Server) UndeleteCommit(ctx context.Context, request *proto.UndeleteCommitRequest) (*proto.UndeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -584,7 +585,7 @@ func (r *RemoteServer) UndeleteCommit(ctx context.Context, request *proto.Undele
 }
 
 // DeleteSet implements proto.StoreServer.
-func (r *RemoteServer) DeleteSet(ctx context.Context, request *proto.DeleteSetRequest) (*proto.DeleteSetResponse, error) {
+func (r *Server) DeleteSet(ctx context.Context, request *proto.DeleteSetRequest) (*proto.DeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -594,7 +595,7 @@ func (r *RemoteServer) DeleteSet(ctx context.Context, request *proto.DeleteSetRe
 }
 
 // UndeleteSet implements proto.StoreServer.
-func (r *RemoteServer) UndeleteSet(ctx context.Context, request *proto.UndeleteSetRequest) (*proto.UndeleteSetResponse, error) {
+func (r *Server) UndeleteSet(ctx context.Context, request *proto.UndeleteSetRequest) (*proto.UndeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -604,7 +605,7 @@ func (r *RemoteServer) UndeleteSet(ctx context.Context, request *proto.UndeleteS
 }
 
 // Unpin implements proto.StoreServer.
-func (r *RemoteServer) Unpin(ctx context.Context, request *proto.UnpinRequest) (*proto.UnpinResponse, error) {
+func (r *Server) Unpin(ctx context.Context, request *proto.UnpinRequest) (*proto.UnpinResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -614,7 +615,7 @@ func (r *RemoteServer) Unpin(ctx context.Context, request *proto.UnpinRequest) (
 }
 
 // ListPins implements proto.StoreServer.
-func (r *RemoteServer) ListPins(ctx context.Context, _ *proto.ListPinsRequest) (*proto.ListPinsResponse, error) {
+func (r *Server) ListPins(ctx context.Context, _ *proto.ListPinsRequest) (*proto.ListPinsResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
 		return nil, ToStatus(err)
@@ -633,7 +634,7 @@ const presencePiece = 1 << 20
 
 // GetPresence streams the head filters of the caller's scope, each split
 // into pieces that share an index.
-func (r *RemoteServer) GetPresence(request *proto.GetPresenceRequest, stream proto.Store_GetPresenceServer) error {
+func (r *Server) GetPresence(request *proto.GetPresenceRequest, stream proto.Store_GetPresenceServer) error {
 	filters, err := r.store.Presence(stream.Context(), request.BackupSet)
 	if err != nil {
 		return ToStatus(err)

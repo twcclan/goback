@@ -174,7 +174,7 @@ func (m *memIndex) LatestCommit(ctx context.Context, set string) (*proto.Ref, er
 }
 
 // dialer connects as an agent presenting the test secret.
-type dialer func(agent string) *RemoteClient
+type dialer func(agent string) *Client
 
 func startServer(t *testing.T) (*memIndex, dialer) {
 	t.Helper()
@@ -196,15 +196,15 @@ func serve(t *testing.T, store *Store) dialer {
 
 	dial := serveAs(t, store)
 
-	return func(agent string) *RemoteClient { return dial(testSecret, agent) }
+	return func(agent string) *Client { return dial(testSecret, agent) }
 }
 
-func serveAs(t *testing.T, store *Store) func(secret, agent string) *RemoteClient {
+func serveAs(t *testing.T, store *Store) func(secret, agent string) *Client {
 	t.Helper()
 
 	listener := bufconn.Listen(1 << 20)
 
-	remote := NewRemoteServer(store)
+	remote := NewServer(store)
 	serverTLS, clientTLS := testTLS(t)
 	srv := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(serverTLS)),
@@ -216,7 +216,7 @@ func serveAs(t *testing.T, store *Store) func(secret, agent string) *RemoteClien
 	go func() { _ = srv.Serve(listener) }()
 	t.Cleanup(srv.Stop)
 
-	return func(secret, agent string) *RemoteClient {
+	return func(secret, agent string) *Client {
 		con, err := grpc.NewClient("passthrough:///bufnet",
 			grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)),
 			grpc.WithPerRPCCredentials(auth.Credentials{Secret: secret, AgentID: agent}),
@@ -225,7 +225,7 @@ func serveAs(t *testing.T, store *Store) func(secret, agent string) *RemoteClien
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = con.Close() })
 
-		return &RemoteClient{store: proto.NewStoreClient(con)}
+		return &Client{store: proto.NewStoreClient(con)}
 	}
 }
 
@@ -387,14 +387,14 @@ func TestRemoteBeginCommit(t *testing.T) {
 	require.Equal(t, &policy, grant.Policy, "the store policy travels with the grant")
 }
 
-func TestRemoteClientDialsTLS(t *testing.T) {
+func TestClientDialsTLS(t *testing.T) {
 	index := newMemIndex()
 	serverTLS, _ := testTLS(t)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	remote := NewRemoteServer(NewStore(index, nil))
+	remote := NewServer(NewStore(index, nil))
 	srv := grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(serverTLS)),
 		grpc.ChainUnaryInterceptor(auth.UnaryInterceptor(testSecret), remote.UnaryInterceptor()),
@@ -412,7 +412,7 @@ func TestRemoteClientDialsTLS(t *testing.T) {
 	require.NoError(t, err)
 
 	creds := auth.Credentials{Secret: testSecret, AgentID: "node-1"}
-	client, err := NewRemoteClient(listener.Addr().String(), creds, tlsConfig)
+	client, err := NewClient(listener.Addr().String(), creds, tlsConfig)
 	require.NoError(t, err)
 
 	tree := proto.NewObject(&proto.Tree{})
@@ -421,7 +421,7 @@ func TestRemoteClientDialsTLS(t *testing.T) {
 
 	// without the pinned authority the self-signed certificate is refused,
 	// and the secret never leaves the client
-	untrusted, err := NewRemoteClient(listener.Addr().String(), creds, &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12})
+	untrusted, err := NewClient(listener.Addr().String(), creds, &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12})
 	require.NoError(t, err)
 	require.Error(t, untrusted.Put(context.Background(), tree))
 }
@@ -434,7 +434,7 @@ func TestRemoteCommitMustMatchPrincipal(t *testing.T) {
 	tree := proto.NewObject(&proto.Tree{})
 	require.NoError(t, client.Put(ctx, tree))
 
-	put := func(c *RemoteClient, commit *proto.Commit) error {
+	put := func(c *Client, commit *proto.Commit) error {
 		commit.Tree = tree.Ref()
 		commit.Timestamp = time.Now().Unix()
 		return c.Put(ctx, proto.NewObject(commit))

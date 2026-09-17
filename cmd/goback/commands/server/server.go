@@ -174,7 +174,7 @@ func serverAction(ctx *cli.Context) {
 		log.Printf("Index %T cannot scope reads; every ref is served", idx)
 	}
 
-	remote := storage.NewRemoteServer(store)
+	remote := storage.NewServer(store)
 
 	srv := grpc.NewServer(
 		grpc.Creds(creds),
