@@ -22,74 +22,10 @@ var _ ArchiveIndex = (*InMemoryIndex)(nil)
 // InMemoryIndex is an ArchiveIndex kept entirely in memory, for tests and
 // short-lived tools.
 type InMemoryIndex struct {
-	mtx        sync.RWMutex
-	index      map[string]map[[proto.HashSize]byte]IndexRecord
-	archives   map[string]ArchiveInfo
-	sessions   map[string]*backup.Session
-	publicRefs map[[proto.HashSize]byte]struct{}
-}
-
-// RecordPublicRefs implements PublicRefIndex.
-func (i *InMemoryIndex) RecordPublicRefs(refs [][]byte) error {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	if i.publicRefs == nil {
-		i.publicRefs = make(map[[proto.HashSize]byte]struct{})
-	}
-
-	for _, ref := range refs {
-		var sum [proto.HashSize]byte
-		copy(sum[:], ref)
-		i.publicRefs[sum] = struct{}{}
-	}
-
-	return nil
-}
-
-// HasPublicRef implements PublicRefIndex.
-func (i *InMemoryIndex) HasPublicRef(ref []byte) (bool, error) {
-	var sum [proto.HashSize]byte
-	copy(sum[:], ref)
-
-	i.mtx.RLock()
-	defer i.mtx.RUnlock()
-
-	_, ok := i.publicRefs[sum]
-
-	return ok, nil
-}
-
-// ForgetRefs implements PublicRefIndex.
-func (i *InMemoryIndex) ForgetRefs(refs [][]byte) error {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	for _, ref := range refs {
-		var sum [proto.HashSize]byte
-		copy(sum[:], ref)
-		delete(i.publicRefs, sum)
-	}
-
-	return nil
-}
-
-// WalkPublicRefs implements PublicRefIndex.
-func (i *InMemoryIndex) WalkPublicRefs(fn func(ref []byte) error) error {
-	i.mtx.RLock()
-	refs := make([][]byte, 0, len(i.publicRefs))
-	for sum := range i.publicRefs {
-		refs = append(refs, append([]byte(nil), sum[:]...))
-	}
-	i.mtx.RUnlock()
-
-	for _, ref := range refs {
-		if err := fn(ref); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	mtx      sync.RWMutex
+	index    map[string]map[[proto.HashSize]byte]IndexRecord
+	archives map[string]ArchiveInfo
+	sessions map[string]*backup.Session
 }
 
 func (i *InMemoryIndex) LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error) {
@@ -263,7 +199,6 @@ func (i *InMemoryIndex) Close() error {
 	i.index = make(map[string]map[[proto.HashSize]byte]IndexRecord)
 	i.archives = make(map[string]ArchiveInfo)
 	i.sessions = make(map[string]*backup.Session)
-	i.publicRefs = nil
 	i.mtx.Unlock()
 
 	return nil

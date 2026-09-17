@@ -30,6 +30,12 @@ type compactionGroup struct {
 
 // doCompaction rewrites the small committed archives of every placement
 // group into full-sized archives of that group.
+// Compact rewrites the archives compaction picks and returns when it is
+// done.
+func (ps *PackStorage) Compact() error {
+	return ps.doCompaction()
+}
+
 func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
@@ -143,10 +149,6 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 	var obsolete []*archive
 
-	// public objects the store uploaded, and public objects the rewrite
-	// drops for good
-	var uploaded, forgotten [][]byte
-
 	for _, candidate := range group.candidates {
 		err := candidate.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			key := string(hdr.Ref.Hash)
@@ -154,10 +156,6 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 			if group.keep != nil && !group.keep(candidate, hdr) {
 				group.droppedObjects++
 				group.droppedBytes += uint64(length)
-
-				if group.placement.Kind == PlacementPublic {
-					forgotten = append(forgotten, hdr.Ref.Hash)
-				}
 
 				return nil
 			}
@@ -175,11 +173,6 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 				loc = nil
 			}
 
-			target := destination(group.placement, hdr)
-			if target.Kind == PlacementPublic {
-				uploaded = append(uploaded, hdr.Ref.Hash)
-			}
-
 			if loc != nil {
 				return nil
 			}
@@ -191,7 +184,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 				return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, candidate.name)
 			}
 
-			ar, err := getArchive(target)
+			ar, err := getArchive(group.placement)
 			if err != nil {
 				return err
 			}
@@ -220,20 +213,6 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 	if err := ps.carryErasureClock(obsolete, outputs); err != nil {
 		return err
-	}
-
-	// the store's own copies are about to go, so its uploads must be on
-	// record before a presence check can only find the public copy
-	if len(uploaded) > 0 {
-		if err := ps.index.RecordPublicRefs(uploaded); err != nil {
-			return errors.Wrap(err, "recording the store's public uploads")
-		}
-	}
-
-	if len(forgotten) > 0 {
-		if err := ps.index.ForgetRefs(forgotten); err != nil {
-			return errors.Wrap(err, "forgetting collected public objects")
-		}
 	}
 
 	// the outputs are indexed, so readers that still land on an obsolete

@@ -6,10 +6,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
 )
-
-const placementPublic = "public"
 
 // PlacementKind says which prefix an archive lives under.
 type PlacementKind int
@@ -19,8 +16,6 @@ const (
 	PlacementRoot PlacementKind = iota
 	// PlacementSession is an archive a session wrote and has not committed: <session>/<id>.
 	PlacementSession
-	// PlacementPublic holds convergent blobs: public/<id>.
-	PlacementPublic
 )
 
 // Placement is the decoded prefix of an archive name.
@@ -34,10 +29,6 @@ func ParsePlacement(name string) Placement {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2 {
 		return Placement{Kind: PlacementRoot}
-	}
-
-	if parts[0] == placementPublic {
-		return Placement{Kind: PlacementPublic}
 	}
 
 	return Placement{Kind: PlacementSession, Session: parts[0]}
@@ -55,11 +46,8 @@ func (p Placement) Group() Placement {
 
 // Dir is the prefix under which archives of this placement are written.
 func (p Placement) Dir() string {
-	switch p.Kind {
-	case PlacementSession:
+	if p.Kind == PlacementSession {
 		return p.Session
-	case PlacementPublic:
-		return placementPublic
 	}
 
 	return ""
@@ -68,16 +56,6 @@ func (p Placement) Dir() string {
 // sessionPlacement is where a session's archives are written.
 func sessionPlacement(s *backup.Session) Placement {
 	return Placement{Kind: PlacementSession, Session: s.ID}
-}
-
-// destination picks the group an object is rewritten into: a convergent
-// blob goes to the public prefix, everything else stays in its group.
-func destination(group Placement, hdr *proto.ObjectHeader) Placement {
-	if hdr.GetType() == proto.ObjectType_BLOB && hdr.GetEncryption() == proto.Encryption_CONVERGENT {
-		return Placement{Kind: PlacementPublic}
-	}
-
-	return group
 }
 
 // ArchiveState is the visibility of an archive: committed archives are

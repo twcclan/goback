@@ -9,7 +9,6 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/archive"
 	"github.com/twcclan/goback/index/sql/ent/object"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
-	"github.com/twcclan/goback/index/sql/ent/publicref"
 	"github.com/twcclan/goback/index/sql/ent/session"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
@@ -212,66 +211,6 @@ func (x *Index) CommitSession(id string) error {
 
 		return tx.Archive.Update().Where(archive.SessionID(id)).SetState(int(pack.ArchiveCommitted)).ClearSessionID().Exec(ctx)
 	})
-}
-
-// RecordPublicRefs implements pack.PublicRefIndex.
-func (x *Index) RecordPublicRefs(refs [][]byte) error {
-	if len(refs) == 0 {
-		return nil
-	}
-
-	ctx := context.Background()
-
-	return x.tx(ctx, func(tx *ent.Tx) error {
-		builders := make([]*ent.PublicRefCreate, len(refs))
-		for i, ref := range refs {
-			builders[i] = tx.PublicRef.Create().SetRef(ref)
-		}
-
-		return tx.PublicRef.CreateBulk(builders...).OnConflict().DoNothing().Exec(ctx)
-	})
-}
-
-// HasPublicRef implements pack.PublicRefIndex.
-func (x *Index) HasPublicRef(ref []byte) (bool, error) {
-	return x.client.PublicRef.Query().Where(publicref.Ref(ref)).Exist(context.Background())
-}
-
-// ForgetRefs implements pack.PublicRefIndex.
-func (x *Index) ForgetRefs(refs [][]byte) error {
-	if len(refs) == 0 {
-		return nil
-	}
-
-	_, err := x.client.PublicRef.Delete().Where(publicref.RefIn(refs...)).Exec(context.Background())
-
-	return err
-}
-
-// WalkPublicRefs implements pack.PublicRefIndex.
-func (x *Index) WalkPublicRefs(fn func(ref []byte) error) error {
-	ctx := context.Background()
-
-	const page = 1000
-	last := 0
-	for {
-		rows, err := x.client.PublicRef.Query().Where(publicref.IDGT(last)).Order(ent.Asc(publicref.FieldID)).Limit(page).All(ctx)
-		if err != nil {
-			return err
-		}
-
-		for _, row := range rows {
-			if err := fn(row.Ref); err != nil {
-				return err
-			}
-
-			last = row.ID
-		}
-
-		if len(rows) < page {
-			return nil
-		}
-	}
 }
 
 // CountObjects implements pack.ArchiveIndex: the object rows and the

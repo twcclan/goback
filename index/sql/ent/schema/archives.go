@@ -89,26 +89,3 @@ func (Session) Edges() []ent.Edge {
 		edge.To("archives", Archive.Type).Annotations(cascade()),
 	}
 }
-
-// PublicRef is the reference set of the public prefix (docs/12): a public
-// object the store uploaded itself, the only kind a presence check may
-// answer for it.
-type PublicRef struct {
-	ent.Schema
-}
-
-func (PublicRef) Fields() []ent.Field {
-	return []ent.Field{
-		field.Bytes("ref"),
-	}
-}
-
-func (PublicRef) Indexes() []ent.Index {
-	return []ent.Index{
-		index.Fields("ref").Unique(),
-	}
-}
-
-func (PublicRef) Annotations() []schema.Annotation {
-	return []schema.Annotation{refWidth("public_refs", "ref")}
-}

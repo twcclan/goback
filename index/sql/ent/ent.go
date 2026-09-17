@@ -18,7 +18,6 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/object"
 	"github.com/twcclan/goback/index/sql/ent/pin"
-	"github.com/twcclan/goback/index/sql/ent/publicref"
 	"github.com/twcclan/goback/index/sql/ent/session"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
@@ -90,7 +89,6 @@ func checkColumn(t, c string) error {
 			file.Table:       file.ValidColumn,
 			object.Table:     object.ValidColumn,
 			pin.Table:        pin.ValidColumn,
-			publicref.Table:  publicref.ValidColumn,
 			session.Table:    session.ValidColumn,
 			set.Table:        set.ValidColumn,
 			setref.Table:     setref.ValidColumn,

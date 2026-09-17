@@ -18,7 +18,6 @@ type packOptions struct {
 	idleFinalize    time.Duration
 	sessionLease    time.Duration
 	atRest          *AtRestKey
-	public          ArchiveStorage
 }
 
 // WithAtRestKey seals every payload written from now on under the key

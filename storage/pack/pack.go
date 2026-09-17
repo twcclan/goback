@@ -56,9 +56,6 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		return nil, errors.New("No archive index provided")
 	}
 
-	if opts.public != nil {
-		opts.storage = &routedStorage{root: opts.storage, public: opts.public}
-	}
 
 	return &PackStorage{
 		archives:         make([]*archive, 0),
@@ -126,32 +123,13 @@ var _ backup.SessionStore = (*PackStorage)(nil)
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	scope := ScopeOf(ctx)
 
-	var exclude []string
-	for {
-		a, _, err := ps.committedCopy(scope, ref, true, exclude...)
-		if err != nil {
-			return false, err
-		}
+	a, _, err := ps.committedCopy(scope, ref, true)
+	if err != nil {
+		return false, err
+	}
 
-		if a == nil {
-			break
-		}
-
-		if ParsePlacement(a.name).Kind != PlacementPublic {
-			return true, nil
-		}
-
-		// a public copy answers presence only once the store uploaded it
-		uploaded, err := ps.index.HasPublicRef(ref.Hash)
-		if err != nil {
-			return false, err
-		}
-
-		if uploaded {
-			return true, nil
-		}
-
-		exclude = append(exclude, a.name)
+	if a != nil {
+		return true, nil
 	}
 
 	ws := ps.lookupWriteSession(scope.Session)
@@ -968,7 +946,6 @@ var (
 // archive's visibility, and keeps the live sessions.
 type ArchiveIndex interface {
 	SessionIndex
-	PublicRefIndex
 
 	LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error)
 	LookupArchive(archive string) (ArchiveInfo, bool, error)
@@ -979,14 +956,3 @@ type ArchiveIndex interface {
 	CountObjects() (uint64, uint64, error)
 }
 
-// PublicRefIndex is the reference set of the public prefix: the public
-// objects the store uploaded itself, the only ones presence may answer
-// for it when the prefix is shared.
-type PublicRefIndex interface {
-	RecordPublicRefs(refs [][]byte) error
-	HasPublicRef(ref []byte) (bool, error)
-	// ForgetRefs drops the refs once the public copy is gone.
-	ForgetRefs(refs [][]byte) error
-	// WalkPublicRefs calls fn with every recorded ref until it errs.
-	WalkPublicRefs(fn func(ref []byte) error) error
-}

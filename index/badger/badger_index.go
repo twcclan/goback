@@ -489,68 +489,6 @@ func (b *BadgerIndex) sessionKey(id string) []byte {
 	return b.key(prefixSession, []byte(id))
 }
 
-func (b *BadgerIndex) publicRefKey(ref []byte) []byte {
-	return b.key(prefixPublicRef, ref)
-}
-
-// RecordPublicRefs implements pack.PublicRefIndex.
-func (b *BadgerIndex) RecordPublicRefs(refs [][]byte) error {
-	batch := b.db.NewWriteBatch()
-	defer batch.Cancel()
-
-	for _, ref := range refs {
-		if err := batch.Set(b.publicRefKey(ref), nil); err != nil {
-			return err
-		}
-	}
-
-	return batch.Flush()
-}
-
-// HasPublicRef implements pack.PublicRefIndex.
-func (b *BadgerIndex) HasPublicRef(ref []byte) (bool, error) {
-	err := b.db.View(func(txn *badger.Txn) error {
-		_, err := txn.Get(b.publicRefKey(ref))
-		return err
-	})
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		return false, nil
-	}
-
-	return err == nil, err
-}
-
-// ForgetRefs implements pack.PublicRefIndex.
-func (b *BadgerIndex) ForgetRefs(refs [][]byte) error {
-	batch := b.db.NewWriteBatch()
-	defer batch.Cancel()
-
-	for _, ref := range refs {
-		if err := batch.Delete(b.publicRefKey(ref)); err != nil {
-			return err
-		}
-	}
-
-	return batch.Flush()
-}
-
-// WalkPublicRefs implements pack.PublicRefIndex.
-func (b *BadgerIndex) WalkPublicRefs(fn func(ref []byte) error) error {
-	return b.db.View(func(txn *badger.Txn) error {
-		prefix := b.key(prefixPublicRef, nil)
-		it := txn.NewIterator(badger.IteratorOptions{Prefix: prefix})
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			if err := fn(it.Item().KeyCopy(nil)[len(prefix):]); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
 func (b *BadgerIndex) BeginSession(s *backup.Session) error {
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -721,11 +659,10 @@ func (b *BadgerIndex) Clear() error {
 }
 
 const (
-	prefixRecord    = "record|"
-	prefixArchive   = "archive|"
-	prefixSession   = "session|"
-	prefixPublicRef = "publicref|"
-	keyVersion      = "meta|version"
+	prefixRecord  = "record|"
+	prefixArchive = "archive|"
+	prefixSession = "session|"
+	keyVersion    = "meta|version"
 )
 
 func (b *BadgerIndex) recordKey(key []byte, archiveId uint64) []byte {

@@ -81,18 +81,6 @@ func (f PinFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PinMutation", m)
 }
 
-// The PublicRefFunc type is an adapter to allow the use of ordinary
-// function as PublicRef mutator.
-type PublicRefFunc func(context.Context, *ent.PublicRefMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f PublicRefFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.PublicRefMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PublicRefMutation", m)
-}
-
 // The SessionFunc type is an adapter to allow the use of ordinary
 // function as Session mutator.
 type SessionFunc func(context.Context, *ent.SessionMutation) (ent.Value, error)

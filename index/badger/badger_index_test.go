@@ -93,10 +93,6 @@ func BenchmarkIndex(b *testing.B) {
 	})
 }
 
-func TestBadgerIndexPublicRefs(t *testing.T) {
-	packtest.TestArchiveIndexPublicRefs(t, setupBadger(t))
-}
-
 func TestBadgerIndexSessions(t *testing.T) {
 	packtest.TestArchiveIndexSessions(t, setupBadger(t))
 }

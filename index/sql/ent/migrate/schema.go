@@ -226,24 +226,6 @@ var (
 			},
 		},
 	}
-	// PublicRefsColumns holds the columns for the "public_refs" table.
-	PublicRefsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "ref", Type: field.TypeBytes},
-	}
-	// PublicRefsTable holds the schema information for the "public_refs" table.
-	PublicRefsTable = &schema.Table{
-		Name:       "public_refs",
-		Columns:    PublicRefsColumns,
-		PrimaryKey: []*schema.Column{PublicRefsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "publicref_ref",
-				Unique:  true,
-				Columns: []*schema.Column{PublicRefsColumns[1]},
-			},
-		},
-	}
 	// SessionsColumns holds the columns for the "sessions" table.
 	SessionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -377,7 +359,6 @@ var (
 		FilesTable,
 		ObjectsTable,
 		PinsTable,
-		PublicRefsTable,
 		SessionsTable,
 		SetsTable,
 		SetRefsTable,
@@ -414,10 +395,6 @@ func init() {
 	PinsTable.Annotation.Checks = map[string]string{
 		"pins_ref_width":    "length(ref) = 32",
 		"pins_target_width": "length(target) = 32",
-	}
-	PublicRefsTable.Annotation = &entsql.Annotation{}
-	PublicRefsTable.Annotation.Checks = map[string]string{
-		"public_refs_ref_width": "length(ref) = 32",
 	}
 	SetRefsTable.ForeignKeys[0].RefTable = SetsTable
 	SetRefsTable.Annotation = &entsql.Annotation{}

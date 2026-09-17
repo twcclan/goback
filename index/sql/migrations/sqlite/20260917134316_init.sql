@@ -32,10 +32,6 @@ CREATE TABLE `pins` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `ref` blob
 CREATE UNIQUE INDEX `pin_ref` ON `pins` (`ref`);
 -- Create index "pins_target" to table: "pins"
 CREATE INDEX `pins_target` ON `pins` (`target`) WHERE deleted_at IS NULL;
--- Create "public_refs" table
-CREATE TABLE `public_refs` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `ref` blob NOT NULL, CONSTRAINT `public_refs_ref_width` CHECK (length(ref) = 32));
--- Create index "publicref_ref" to table: "public_refs"
-CREATE UNIQUE INDEX `publicref_ref` ON `public_refs` (`ref`);
 -- Create "sessions" table
 CREATE TABLE `sessions` (`id` text NOT NULL, `agent_id` text NOT NULL, `backup_set` text NOT NULL, `started_at` datetime NOT NULL, `last_seen` datetime NOT NULL, `restore_ref` blob NULL, PRIMARY KEY (`id`));
 -- Create "sets" table

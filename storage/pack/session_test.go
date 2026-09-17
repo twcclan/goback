@@ -241,10 +241,9 @@ func TestLeaseRenewalOnWrites(t *testing.T) {
 
 func TestPlacementParsing(t *testing.T) {
 	cases := map[string]Placement{
-		"abc":        {Kind: PlacementRoot},
-		"public/abc": {Kind: PlacementPublic},
-		"sess/abc":   {Kind: PlacementSession, Session: "sess"},
-		"a/b/c":      {Kind: PlacementRoot},
+		"abc":      {Kind: PlacementRoot},
+		"sess/abc": {Kind: PlacementSession, Session: "sess"},
+		"a/b/c":    {Kind: PlacementRoot},
 	}
 
 	for name, want := range cases {
@@ -253,7 +252,6 @@ func TestPlacementParsing(t *testing.T) {
 
 	require.Equal(t, "", ParsePlacement("sess/abc").Group().Dir())
 	require.Equal(t, "sess", ParsePlacement("sess/abc").Dir())
-	require.Equal(t, "public", ParsePlacement("public/abc").Group().Dir())
 	require.Equal(t, "", ParsePlacement("abc").Group().Dir())
 }
 
@@ -344,7 +342,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	before := timestamps(t, store)
 	require.NoError(t, store.doCompaction())
 
-	merged := []PlacementKind{PlacementRoot, PlacementPublic, PlacementRoot, PlacementRoot, PlacementRoot}
+	merged := []PlacementKind{PlacementRoot, PlacementRoot, PlacementRoot, PlacementRoot, PlacementRoot}
 	require.Equal(t, merged, placements(t, store, all...))
 
 	// one copy survives of an object two sessions wrote
@@ -468,47 +466,4 @@ func convergentBlob(t *testing.T, content string) *proto.Object {
 	sealed, _ := key.SealBlob(proto.Encryption_CONVERGENT, []byte(content))
 
 	return proto.NewObject(sealed)
-}
-
-// TestPublicCopiesAnswerPresenceOnlyWhenRecorded moves a convergent blob
-// into the public prefix and expects presence to follow the recorded
-// reference set, which compaction fills, rather than the copy itself.
-func TestPublicCopiesAnswerPresenceOnlyWhenRecorded(t *testing.T) {
-	store := newTestStore(t, t.TempDir(), WithMaxParallel(4), WithCompaction(CompactionConfig{MinimumCandidates: 0}))
-
-	blob := convergentBlob(t, "the same chunk everywhere")
-	private := makeTestData(t, 1)[0]
-
-	ctx, _ := beginSession(t, store, "agent-1")
-	require.NoError(t, store.Put(ctx, blob))
-	require.NoError(t, store.Put(ctx, private))
-	require.NoError(t, store.Put(ctx, commitObject()))
-
-	root := context.Background()
-	requireVisible(t, store, root, blob, true)
-	requireVisible(t, store, root, private, true)
-
-	require.NoError(t, store.doCompaction())
-	require.Equal(t, []PlacementKind{PlacementPublic, PlacementRoot}, placements(t, store, blob, private))
-
-	has, err := store.Has(root, blob.Ref())
-	require.NoError(t, err)
-	require.True(t, has, "compaction records what it moved to the public prefix")
-
-	require.NoError(t, store.index.ForgetRefs([][]byte{blob.Ref().Hash}))
-
-	has, err = store.Has(root, blob.Ref())
-	require.NoError(t, err)
-	require.False(t, has, "an unrecorded public copy does not confirm presence")
-
-	_, err = store.Get(root, blob.Ref())
-	require.NoError(t, err, "the public copy itself is readable")
-
-	require.NoError(t, store.index.RecordPublicRefs([][]byte{blob.Ref().Hash}))
-
-	has, err = store.Has(root, blob.Ref())
-	require.NoError(t, err)
-	require.True(t, has)
-
-	require.NoError(t, store.Close())
 }

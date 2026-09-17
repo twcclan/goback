@@ -1,7 +1,6 @@
 package packtest
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -12,44 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
-
-// TestArchiveIndexPublicRefs exercises the public prefix's reference set.
-func TestArchiveIndexPublicRefs(t *testing.T, idx pack.ArchiveIndex) {
-	a, b := RandomArchive(2).index[0].Sum, RandomArchive(2).index[1].Sum
-
-	has, err := idx.HasPublicRef(a[:])
-	require.NoError(t, err)
-	require.False(t, has)
-
-	require.NoError(t, idx.RecordPublicRefs([][]byte{a[:], b[:]}))
-	require.NoError(t, idx.RecordPublicRefs([][]byte{a[:]}), "recording twice is fine")
-
-	for _, ref := range [][]byte{a[:], b[:]} {
-		has, err := idx.HasPublicRef(ref)
-		require.NoError(t, err)
-		require.True(t, has)
-	}
-
-	require.NoError(t, idx.ForgetRefs([][]byte{a[:]}))
-
-	has, err = idx.HasPublicRef(a[:])
-	require.NoError(t, err)
-	require.False(t, has)
-
-	has, err = idx.HasPublicRef(b[:])
-	require.NoError(t, err)
-	require.True(t, has, "other refs stay")
-
-	var walked [][]byte
-	require.NoError(t, idx.WalkPublicRefs(func(ref []byte) error {
-		walked = append(walked, ref)
-		return nil
-	}))
-	require.Equal(t, [][]byte{b[:]}, walked)
-
-	stop := errors.New("enough")
-	require.ErrorIs(t, idx.WalkPublicRefs(func([]byte) error { return stop }), stop)
-}
 
 // TestArchiveIndexSessions checks session visibility, commit and abort.
 func TestArchiveIndexSessions(t *testing.T, idx pack.ArchiveIndex) {

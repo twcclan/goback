@@ -289,7 +289,6 @@ func TestPostgres(t *testing.T) {
 		"StoredDefaultPolicy":              TestStoredDefaultPolicyOutranksTheBuiltIn,
 		"ArchiveIndex":                     TestArchiveIndex,
 		"ArchiveIndexExclusion":            TestArchiveIndexExclusion,
-		"ArchiveIndexPublicRefs":           TestArchiveIndexPublicRefs,
 		"ArchiveIndexSessions":             TestArchiveIndexSessions,
 		"ArchiveIndexCounts":               TestArchiveIndexCountsAndRestoreSessions,
 	} {
