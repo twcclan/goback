@@ -205,9 +205,34 @@ func TestSaveLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, key.Bytes(), loaded.Bytes())
 	require.Equal(t, key.ID(), loaded.ID())
-	require.Equal(t, "s1", loaded.StoreID)
+	require.Equal(t, "s1", loaded.Name)
 	require.Equal(t, DefaultPolicy(), loaded.Policy)
 	require.Len(t, key.ID(), IDSize)
+}
+
+func TestDeriveIsDeterministicPerName(t *testing.T) {
+	master := testKey(t)
+
+	a, err := master.Derive("customer-a")
+	require.NoError(t, err)
+	again, err := master.Derive("customer-a")
+	require.NoError(t, err)
+	b, err := master.Derive("customer-b")
+	require.NoError(t, err)
+
+	require.Equal(t, a.Bytes(), again.Bytes())
+	require.Equal(t, "customer-a", a.Name)
+	require.NotEqual(t, a.Bytes(), b.Bytes())
+	require.NotEqual(t, master.Bytes(), a.Bytes())
+
+	other, err := Generate("s2")
+	require.NoError(t, err)
+	fromOther, err := other.Derive("customer-a")
+	require.NoError(t, err)
+	require.NotEqual(t, a.Bytes(), fromOther.Bytes(), "the name alone does not determine the key")
+
+	_, err = master.Derive("")
+	require.Error(t, err)
 }
 
 func TestEscrowRecover(t *testing.T) {

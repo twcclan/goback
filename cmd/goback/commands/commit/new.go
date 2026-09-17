@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -113,7 +112,7 @@ func runNew(c *cli.Context) error {
 		Sessions:           sessions,
 		Set:                c.GlobalString("set"),
 		AgentID:            common.AgentID(c),
-		Metadata:           metadata(c.StringSlice("meta")),
+		Metadata:           common.Metadata(c),
 		Key:                common.StoreKey(c),
 		Root:               root,
 		Include:            includeFilter(c.StringSlice("include"), c.StringSlice("exclude")),
@@ -231,10 +230,7 @@ var newCmd = cli.Command{
 			Name:  "state-dir",
 			Usage: "per-machine directory for the stat cache and tree cache; optional",
 		},
-		cli.StringSliceFlag{
-			Name:  "meta",
-			Usage: "key=value label recorded on the commit; repeatable",
-		},
+		common.MetaFlag,
 		cli.StringFlag{
 			Name:  "pre-hook",
 			Usage: "shell command run before the walk, for example one that pauses the application's writes; see contrib/hooks",
@@ -257,19 +253,4 @@ var newCmd = cli.Command{
 			Usage: "cancel the walk after this long, still running the post hook; 0 disables",
 		},
 	},
-}
-
-// metadata parses repeated key=value flags; a bare key gets an empty value.
-func metadata(pairs []string) map[string]string {
-	if len(pairs) == 0 {
-		return nil
-	}
-
-	out := make(map[string]string, len(pairs))
-	for _, pair := range pairs {
-		key, value, _ := strings.Cut(pair, "=")
-		out[key] = value
-	}
-
-	return out
 }

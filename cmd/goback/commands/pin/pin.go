@@ -21,6 +21,7 @@ var Command = cli.Command{
 			Description: "Pin a ref",
 			ArgsUsage:   "<ref>",
 			Action:      addAction,
+			Flags:       []cli.Flag{common.MetaFlag},
 		},
 		{
 			Name:        "list",
@@ -44,7 +45,7 @@ func addAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
 
-	pin := proto.NewObject(&proto.Pin{Target: common.ParseRef(c.Args().First())})
+	pin := proto.NewObject(&proto.Pin{Target: common.ParseRef(c.Args().First()), Metadata: common.Metadata(c)})
 
 	err := index.Put(common.Context(c), pin)
 	if err != nil {

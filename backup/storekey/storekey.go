@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 
@@ -19,6 +20,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
@@ -76,35 +78,36 @@ func DefaultPolicy() Policy {
 	}
 }
 
-// Key is a store master key with the policy the agent writes under.
+// Key is a store master key, named after its store, with the policy the
+// agent writes under.
 type Key struct {
-	StoreID string
-	Policy  Policy
+	Name   string
+	Policy Policy
 
 	id  []byte
 	key []byte
 }
 
 type keyFile struct {
-	Store  string `json:"store"`
+	Name   string `json:"name"`
 	KeyID  string `json:"key_id"`
 	Key    string `json:"key"`
 	Policy Policy `json:"policy"`
 }
 
-// Generate makes a fresh key for a store.
-func Generate(storeID string) (*Key, error) {
+// Generate makes a fresh key named after its store.
+func Generate(name string) (*Key, error) {
 	raw := make([]byte, KeySize)
 	_, err := rand.Read(raw)
 	if err != nil {
 		return nil, err
 	}
 
-	return FromBytes(storeID, raw, DefaultPolicy())
+	return FromBytes(name, raw, DefaultPolicy())
 }
 
 // FromBytes wraps raw key material.
-func FromBytes(storeID string, raw []byte, policy Policy) (*Key, error) {
+func FromBytes(name string, raw []byte, policy Policy) (*Key, error) {
 	if len(raw) != KeySize {
 		return nil, fmt.Errorf("store key has %d bytes, want %d", len(raw), KeySize)
 	}
@@ -113,11 +116,30 @@ func FromBytes(storeID string, raw []byte, policy Policy) (*Key, error) {
 	mac.Write([]byte("goback store key id"))
 
 	return &Key{
-		StoreID: storeID,
-		Policy:  policy,
-		id:      mac.Sum(nil)[:IDSize],
-		key:     append([]byte(nil), raw...),
+		Name:   name,
+		Policy: policy,
+		id:     mac.Sum(nil)[:IDSize],
+		key:    append([]byte(nil), raw...),
 	}, nil
+}
+
+const deriveInfo = "goback store key derive v1"
+
+// Derive returns the key of the named store under this key as a master:
+// the same master and name always give the same key, and no derived key
+// reveals the master or another store's key.
+func (k *Key) Derive(name string) (*Key, error) {
+	if name == "" {
+		return nil, errors.New("a derived key needs a name")
+	}
+
+	raw := make([]byte, KeySize)
+	_, err := io.ReadFull(hkdf.New(sha256.New, k.key, []byte(deriveInfo), []byte(name)), raw)
+	if err != nil {
+		return nil, err
+	}
+
+	return FromBytes(name, raw, DefaultPolicy())
 }
 
 // Load reads a key file written by Save.
@@ -138,7 +160,7 @@ func Load(path string) (*Key, error) {
 		return nil, fmt.Errorf("parsing store key %s: %w", path, err)
 	}
 
-	k, err := FromBytes(f.Store, raw, f.Policy)
+	k, err := FromBytes(f.Name, raw, f.Policy)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +175,7 @@ func Load(path string) (*Key, error) {
 // Save writes the key file, readable by its owner only.
 func (k *Key) Save(path string) error {
 	data, err := json.MarshalIndent(keyFile{
-		Store:  k.StoreID,
+		Name:   k.Name,
 		KeyID:  k.IDString(),
 		Key:    base64.StdEncoding.EncodeToString(k.key),
 		Policy: k.Policy,
@@ -486,11 +508,11 @@ func (k *Key) Escrow(passphrase string) ([]byte, error) {
 	out := append([]byte(escrowMagic), salt...)
 	out = append(out, nonce...)
 
-	return newAEAD(wrapping).Seal(out, nonce, k.key, []byte(escrowMagic+k.StoreID)), nil
+	return newAEAD(wrapping).Seal(out, nonce, k.key, []byte(escrowMagic+k.Name)), nil
 }
 
 // Recover unwraps an escrowed key with its passphrase.
-func Recover(storeID string, escrowed []byte, passphrase string, policy Policy) (*Key, error) {
+func Recover(name string, escrowed []byte, passphrase string, policy Policy) (*Key, error) {
 	header := len(escrowMagic) + escrowSalt + nonceSize
 	if len(escrowed) < header+KeySize+tagSize || string(escrowed[:len(escrowMagic)]) != escrowMagic {
 		return nil, errors.New("not an escrowed store key")
@@ -500,12 +522,12 @@ func Recover(storeID string, escrowed []byte, passphrase string, policy Policy) 
 	nonce := escrowed[len(escrowMagic)+escrowSalt : header]
 	wrapping := argon2.IDKey([]byte(passphrase), salt, escrowTime, escrowMemory, 1, KeySize)
 
-	raw, err := newAEAD(wrapping).Open(nil, nonce, escrowed[header:], []byte(escrowMagic+storeID))
+	raw, err := newAEAD(wrapping).Open(nil, nonce, escrowed[header:], []byte(escrowMagic+name))
 	if err != nil {
-		return nil, errors.New("wrong passphrase or store id")
+		return nil, errors.New("wrong passphrase or name")
 	}
 
-	return FromBytes(storeID, raw, policy)
+	return FromBytes(name, raw, policy)
 }
 
 type aeadKey struct {

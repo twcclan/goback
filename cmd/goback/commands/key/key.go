@@ -19,10 +19,18 @@ var Command = cli.Command{
 		{
 			Name:        "new",
 			Description: "Generate a store key file",
+			ArgsUsage:   "<name>",
 			Action:      newAction,
+			Flags:       []cli.Flag{outFlag},
+		},
+		{
+			Name:        "derive",
+			Description: "Derive the named store's key from a master key file; the same master and name always give the same key",
+			ArgsUsage:   "<name>",
+			Action:      deriveAction,
 			Flags: []cli.Flag{
-				cli.StringFlag{Name: "store", Usage: "id of the store the key belongs to"},
-				cli.StringFlag{Name: "out", Usage: "key file to write", Value: "store.key"},
+				cli.StringFlag{Name: "master", Usage: "key file to derive from", Value: "master.key"},
+				outFlag,
 			},
 		},
 		{
@@ -37,16 +45,18 @@ var Command = cli.Command{
 		{
 			Name:        "recover",
 			Description: "Rebuild a key file from an escrowed key and its passphrase",
+			ArgsUsage:   "<name>",
 			Action:      recoverAction,
 			Flags: []cli.Flag{
-				cli.StringFlag{Name: "store", Usage: "id of the store the key belongs to"},
 				cli.StringFlag{Name: "escrow", Usage: "base64 escrowed key, as printed by escrow"},
-				cli.StringFlag{Name: "out", Usage: "key file to write", Value: "store.key"},
+				outFlag,
 				passphraseFlag,
 			},
 		},
 	},
 }
+
+var outFlag = cli.StringFlag{Name: "out", Usage: "key file to write", Value: "store.key"}
 
 var passphraseFlag = cli.StringFlag{
 	Name:   "passphrase",
@@ -63,28 +73,62 @@ func passphrase(c *cli.Context) (string, error) {
 	return p, nil
 }
 
-func newAction(c *cli.Context) error {
-	if c.String("store") == "" {
-		return errors.New("--store is required")
+// storeName is the store name the command was given.
+func storeName(c *cli.Context) (string, error) {
+	if c.NArg() != 1 || c.Args().First() == "" {
+		return "", fmt.Errorf("usage: key %s <name>", c.Command.Name)
 	}
 
+	return c.Args().First(), nil
+}
+
+// write saves the key under --out, refusing to replace a file.
+func write(c *cli.Context, key *storekey.Key, verb string) error {
 	if _, err := os.Stat(c.String("out")); err == nil {
 		return fmt.Errorf("%s exists, refusing to overwrite a store key", c.String("out"))
 	}
 
-	key, err := storekey.Generate(c.String("store"))
+	err := key.Save(c.String("out"))
 	if err != nil {
 		return err
 	}
 
-	err = key.Save(c.String("out"))
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("wrote key %s for store %s to %s\n", key.IDString(), key.StoreID, c.String("out"))
+	fmt.Printf("%s key %s for store %s to %s\n", verb, key.IDString(), key.Name, c.String("out"))
 
 	return nil
+}
+
+func newAction(c *cli.Context) error {
+	name, err := storeName(c)
+	if err != nil {
+		return err
+	}
+
+	key, err := storekey.Generate(name)
+	if err != nil {
+		return err
+	}
+
+	return write(c, key, "wrote")
+}
+
+func deriveAction(c *cli.Context) error {
+	name, err := storeName(c)
+	if err != nil {
+		return err
+	}
+
+	master, err := storekey.Load(c.String("master"))
+	if err != nil {
+		return err
+	}
+
+	key, err := master.Derive(name)
+	if err != nil {
+		return err
+	}
+
+	return write(c, key, "derived")
 }
 
 func escrowAction(c *cli.Context) error {
@@ -109,8 +153,9 @@ func escrowAction(c *cli.Context) error {
 }
 
 func recoverAction(c *cli.Context) error {
-	if c.String("store") == "" {
-		return errors.New("--store is required")
+	name, err := storeName(c)
+	if err != nil {
+		return err
 	}
 
 	pass, err := passphrase(c)
@@ -123,21 +168,10 @@ func recoverAction(c *cli.Context) error {
 		return fmt.Errorf("decoding escrowed key: %w", err)
 	}
 
-	key, err := storekey.Recover(c.String("store"), escrowed, pass, storekey.DefaultPolicy())
+	key, err := storekey.Recover(name, escrowed, pass, storekey.DefaultPolicy())
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(c.String("out")); err == nil {
-		return fmt.Errorf("%s exists, refusing to overwrite a store key", c.String("out"))
-	}
-
-	err = key.Save(c.String("out"))
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("recovered key %s for store %s into %s\n", key.IDString(), key.StoreID, c.String("out"))
-
-	return nil
+	return write(c, key, "recovered")
 }
