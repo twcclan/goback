@@ -107,11 +107,6 @@ func (w *Writer) putWritableArchive(ar *archive) {
 }
 
 func (w *Writer) finalizeArchive(a *archive) error {
-	err := a.CloseReader()
-	if err != nil {
-		return err
-	}
-
 	index, err := a.CloseWriter()
 	if err == errAlreadyClosed {
 		return nil
@@ -121,10 +116,15 @@ func (w *Writer) finalizeArchive(a *archive) error {
 		return err
 	}
 
+	err = a.CloseReader()
+	if err != nil {
+		return err
+	}
+
 	atomic.AddInt32(&w.archives, -1)
 	w.archiveSemaphore.Release(1)
 
-	indexErr := w.index.IndexArchive(a.name, index)
+	indexErr := w.index.IndexArchive(ArchiveInfo{Name: a.name}, index)
 	if indexErr == nil {
 		a.releaseWriteIndex()
 	}
@@ -141,7 +141,7 @@ func (w *Writer) newArchive() error {
 		return ErrWriterClosed
 	}
 
-	a, err := newArchive(w.storage)
+	a, err := newArchive(w.storage, "")
 	if err != nil {
 		return err
 	}

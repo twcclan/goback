@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto ref.proto tree.proto transactional.proto
+//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto pin.proto presence.proto ref.proto tree.proto transactional.proto
 
 import (
 	"bytes"
@@ -81,7 +81,7 @@ func DecodeVarint(buf []byte) (x uint64, n int) {
 }
 
 func (o *Object) Type() ObjectType {
-	switch o.GetObject().(type) {
+	switch t := o.GetObject().(type) {
 	case *Object_Commit:
 		return ObjectType_COMMIT
 	case *Object_Tree:
@@ -90,6 +90,10 @@ func (o *Object) Type() ObjectType {
 		return ObjectType_BLOB
 	case *Object_File:
 		return ObjectType_FILE
+	case *Object_Sealed:
+		return t.Sealed.GetType()
+	case *Object_Pin:
+		return ObjectType_PIN
 	default:
 		return ObjectType_INVALID
 	}
@@ -113,6 +117,10 @@ func NewObject(in interface{}) *Object {
 		out = &Object_Blob{t}
 	case *File:
 		out = &Object_File{t}
+	case *Sealed:
+		out = &Object_Sealed{t}
+	case *Pin:
+		out = &Object_Pin{t}
 	default:
 		panic("Unsupported object type")
 	}
@@ -153,7 +161,7 @@ func NewIndexFromBytes(bytes []byte) (*Index, error) {
 // and GetOSFileInfo arrange.
 func GetFileInfo(info os.FileInfo) *FileInfo {
 	fi := &FileInfo{
-		Name:    info.Name(),
+		Name:    []byte(info.Name()),
 		Mode:    uint32(info.Mode()),
 		MtimeNs: info.ModTime().UnixNano(),
 		Size:    info.Size(),
@@ -174,7 +182,7 @@ func GetFileInfo(info os.FileInfo) *FileInfo {
 func WithDetails(info os.FileInfo, user, group, linkTarget string) os.FileInfo {
 	return &detailedFileInfo{
 		FileInfo: info,
-		details:  &FileInfo{User: user, Group: group, LinkTarget: linkTarget},
+		details:  &FileInfo{User: []byte(user), Group: []byte(group), LinkTarget: []byte(linkTarget)},
 	}
 }
 
@@ -218,7 +226,7 @@ func (bi *backupFileInfo) IsDir() bool {
 }
 
 func (bi *backupFileInfo) Name() string {
-	return bi.FileInfo.Name
+	return string(bi.FileInfo.Name)
 }
 
 func (bi *backupFileInfo) ModTime() time.Time {

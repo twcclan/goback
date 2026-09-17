@@ -1,0 +1,379 @@
+package pack
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/proto"
+
+	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
+)
+
+// writeSession is the in-process side of a session: its open archive and
+// the objects written but not yet answered for by the index. The root
+// session (no backup.Session) writes root archives that are committed on
+// finalize.
+type writeSession struct {
+	id        string
+	session   *backup.Session
+	placement Placement
+
+	mtx       sync.Mutex
+	archive   *archive
+	lastWrite time.Time
+	lastTouch time.Time
+	// failure is the first error that lost an archive of this session
+	failure error
+
+	pendingMtx sync.RWMutex
+	pending    map[string]pendingObject
+}
+
+// fail records the first error that lost one of the session's archives;
+// the caller holds the session lock.
+func (ws *writeSession) fail(err error) {
+	if err != nil && ws.failure == nil {
+		ws.failure = err
+	}
+}
+
+// failed returns the error that lost an archive of the session, if any.
+func (ws *writeSession) failed() error {
+	ws.mtx.Lock()
+	defer ws.mtx.Unlock()
+
+	return ws.failure
+}
+
+func newWriteSession(s *backup.Session) *writeSession {
+	ws := &writeSession{pending: make(map[string]pendingObject)}
+	if s != nil {
+		ws.id = s.ID
+		ws.session = s
+		ws.placement = sessionPlacement(s)
+	}
+
+	return ws
+}
+
+func (ws *writeSession) state() ArchiveState {
+	if ws.session == nil {
+		return ArchiveCommitted
+	}
+
+	return ArchivePending
+}
+
+func (ws *writeSession) archiveInfo(name string) ArchiveInfo {
+	return ArchiveInfo{Name: name, Session: ws.id, State: ws.state()}
+}
+
+func (ws *writeSession) addPending(a *archive, ref *proto.Ref) {
+	rec := a.indexLocation(ref)
+	if rec == nil {
+		return
+	}
+
+	ws.pendingMtx.Lock()
+	ws.pending[string(ref.Hash)] = pendingObject{archive: a, record: rec}
+	ws.pendingMtx.Unlock()
+}
+
+// BeginSession registers the session, assigning an id when it has none,
+// and returns a context under which writes belong to it.
+func (ps *PackStorage) BeginSession(ctx context.Context, s *backup.Session) (context.Context, error) {
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
+
+	now := time.Now()
+	s.Started = now
+	s.LastSeen = now
+
+	err := ps.index.BeginSession(s)
+	if err != nil {
+		return nil, err
+	}
+
+	ps.sessionsMtx.Lock()
+	ps.sessions[s.ID] = newWriteSession(s)
+	ps.sessionsMtx.Unlock()
+
+	return backup.WithSession(ctx, s), nil
+}
+
+// EndSession drops what the context's session has not committed.
+func (ps *PackStorage) EndSession(ctx context.Context) error {
+	s, ok := backup.SessionFromContext(ctx)
+	if !ok {
+		return nil
+	}
+
+	return ps.endSession(s.ID)
+}
+
+// LookupSession returns a live session by id.
+func (ps *PackStorage) LookupSession(_ context.Context, id string) (*backup.Session, error) {
+	return ps.index.GetSession(id)
+}
+
+func (ps *PackStorage) endSession(id string) error {
+	ps.sessionsMtx.Lock()
+	ws := ps.sessions[id]
+	delete(ps.sessions, id)
+	ps.sessionsMtx.Unlock()
+
+	if ws != nil {
+		ws.mtx.Lock()
+		ps.discardArchive(ws)
+		ws.mtx.Unlock()
+	}
+
+	dropped, err := ps.index.EndSession(id)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range dropped {
+		ps.mtx.RLock()
+		var loaded *archive
+		for _, a := range ps.archives {
+			if a.name == name {
+				loaded = a
+			}
+		}
+		ps.mtx.RUnlock()
+
+		if loaded != nil {
+			ps.dropArchive(loaded)
+		} else {
+			ps.deleteArchiveFiles(name)
+		}
+	}
+
+	return nil
+}
+
+// writeSessionFor returns the session of the context, or the root session.
+// A session this process does not know is recreated only while the index
+// still holds it; one that ended gets backup.ErrNoSession.
+func (ps *PackStorage) writeSessionFor(ctx context.Context) (*writeSession, error) {
+	s, _ := backup.SessionFromContext(ctx)
+
+	id := ""
+	if s != nil {
+		id = s.ID
+	}
+
+	ps.sessionsMtx.Lock()
+	defer ps.sessionsMtx.Unlock()
+
+	ws, ok := ps.sessions[id]
+	if !ok {
+		if s != nil {
+			if _, err := ps.index.GetSession(id); err != nil {
+				return nil, err
+			}
+		}
+
+		ws = newWriteSession(s)
+		ps.sessions[id] = ws
+	}
+
+	return ws, nil
+}
+
+func (ps *PackStorage) lookupWriteSession(id string) *writeSession {
+	ps.sessionsMtx.Lock()
+	defer ps.sessionsMtx.Unlock()
+
+	return ps.sessions[id]
+}
+
+func (ps *PackStorage) writeSessions() []*writeSession {
+	ps.sessionsMtx.Lock()
+	defer ps.sessionsMtx.Unlock()
+
+	sessions := make([]*writeSession, 0, len(ps.sessions))
+	for _, ws := range ps.sessions {
+		sessions = append(sessions, ws)
+	}
+
+	return sessions
+}
+
+// touchSessionOf renews the context's session, so a session that only
+// reads, like a restore, keeps its lease.
+func (ps *PackStorage) touchSessionOf(ctx context.Context) {
+	s, ok := backup.SessionFromContext(ctx)
+	if !ok {
+		return
+	}
+
+	ps.sessionsMtx.Lock()
+	ws := ps.sessions[s.ID]
+	ps.sessionsMtx.Unlock()
+
+	if ws != nil {
+		ps.touchSession(ws)
+	}
+}
+
+// RestoreLeases implements backup.RestoreLeaser over the sessions whose
+// lease has not run out.
+func (ps *PackStorage) RestoreLeases(_ context.Context) ([]*proto.Ref, error) {
+	sessions, err := ps.index.ListSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+
+	var refs []*proto.Ref
+	for _, s := range sessions {
+		if s.Restore == nil || (ps.sessionLease > 0 && now.Sub(s.LastSeen) >= ps.sessionLease) {
+			continue
+		}
+
+		refs = append(refs, s.Restore)
+	}
+
+	return refs, nil
+}
+
+// touchSession renews the session's lease, at most every quarter lease.
+func (ps *PackStorage) touchSession(ws *writeSession) {
+	if ws.session == nil || ps.sessionLease <= 0 {
+		return
+	}
+
+	now := time.Now()
+
+	ws.mtx.Lock()
+	due := now.Sub(ws.lastTouch) >= ps.sessionLease/4
+	if due {
+		ws.lastTouch = now
+	}
+	ws.mtx.Unlock()
+
+	if !due {
+		return
+	}
+
+	err := ps.index.TouchSession(ws.id, now)
+	if err != nil {
+		log.Printf("Failed renewing session %s: %v", ws.id, err)
+	}
+}
+
+func (ps *PackStorage) flushSession(ws *writeSession) error {
+	ws.mtx.Lock()
+	defer ws.mtx.Unlock()
+
+	return ps.finalizeLocked(ws)
+}
+
+// Flush finalizes the open archives of every session.
+func (ps *PackStorage) Flush() error {
+	var grp errgroup.Group
+
+	for _, ws := range ps.writeSessions() {
+		ws := ws
+		grp.Go(func() error {
+			return ps.flushSession(ws)
+		})
+	}
+
+	err := grp.Wait()
+	if err != nil {
+		return err
+	}
+
+	return ps.afterFlush()
+}
+
+// sweep finalizes archives idle for longer than the idle timeout and ends
+// sessions whose lease ran out.
+func (ps *PackStorage) sweep(now time.Time) {
+	if ps.idleFinalize > 0 {
+		for _, ws := range ps.writeSessions() {
+			ws.mtx.Lock()
+			idle := ws.archive != nil && now.Sub(ws.lastWrite) >= ps.idleFinalize
+			if idle {
+				if err := ps.finalizeLocked(ws); err != nil {
+					log.Printf("Failed finalizing idle archive: %v", err)
+				}
+			}
+			ws.mtx.Unlock()
+		}
+	}
+
+	if ps.sessionLease > 0 {
+		ps.expireSessions(now)
+	}
+}
+
+func (ps *PackStorage) expireSessions(now time.Time) {
+	sessions, err := ps.index.ListSessions()
+	if err != nil {
+		log.Printf("Failed listing sessions: %v", err)
+		return
+	}
+
+	for _, s := range sessions {
+		if now.Sub(s.LastSeen) < ps.sessionLease {
+			continue
+		}
+
+		log.Printf("Ending session %s of %s: lease expired", s.ID, s.AgentID)
+		err := ps.endSession(s.ID)
+		if err != nil {
+			log.Printf("Failed ending session %s: %v", s.ID, err)
+		}
+	}
+}
+
+func (ps *PackStorage) startSweeper() {
+	interval := ps.idleFinalize
+	if ps.sessionLease > 0 && (interval == 0 || ps.sessionLease < interval) {
+		interval = ps.sessionLease
+	}
+
+	if interval <= 0 {
+		return
+	}
+
+	interval /= 2
+	if interval < time.Second {
+		interval = time.Second
+	}
+
+	ps.sweeperTicker = time.NewTicker(interval)
+	ps.sweeperClose = make(chan struct{})
+
+	go func(ticker *time.Ticker, closed <-chan struct{}) {
+		for {
+			select {
+			case now := <-ticker.C:
+				ps.sweep(now)
+			case <-closed:
+				return
+			}
+		}
+	}(ps.sweeperTicker, ps.sweeperClose)
+}
+
+func (ps *PackStorage) stopSweeper() {
+	if ps.sweeperTicker == nil {
+		return
+	}
+
+	ps.sweeperTicker.Stop()
+	close(ps.sweeperClose)
+	ps.sweeperTicker = nil
+	ps.sweeperClose = nil
+}

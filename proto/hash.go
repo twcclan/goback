@@ -6,11 +6,14 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protowire"
 	pb "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // HashSize is the width in bytes of every Ref.
@@ -42,6 +45,8 @@ func typeTag(t ObjectType) (string, bool) {
 		return "blob", true
 	case ObjectType_TOMBSTONE:
 		return "tombstone", true
+	case ObjectType_PIN:
+		return "pin", true
 	default:
 		return "", false
 	}
@@ -80,15 +85,147 @@ func (r *Ref) Valid() bool {
 	return len(r.GetHash()) == HashSize
 }
 
-// Ref computes the object's ref. It panics on an object that cannot be
-// canonically encoded; use Canonical to get the error instead.
+// Ref computes the object's ref, or returns the carried ref of a sealed
+// object. It panics on an object that cannot be canonically encoded; use
+// Canonical to get the error instead.
 func (o *Object) Ref() *Ref {
+	if sealed := o.GetSealed(); sealed != nil {
+		return sealed.Ref
+	}
+
 	payload, err := o.Canonical()
 	if err != nil {
 		panic(err)
 	}
 
 	return HashPayload(o.Type(), payload)
+}
+
+// StoredHash is the hash every object header carries over its stored bytes.
+func StoredHash(stored []byte) []byte {
+	sum := sha256.Sum256(stored)
+	return sum[:]
+}
+
+// VerifyStored checks stored bytes against their header: the stored hash
+// when present, and the ref for objects the server can rehash. Sealed
+// objects can only be checked by their stored hash.
+func VerifyStored(hdr *ObjectHeader, stored []byte) error {
+	if len(hdr.StoredHash) > 0 && !hmac.Equal(StoredHash(stored), hdr.StoredHash) {
+		return ErrRefMismatch
+	}
+
+	if hdr.Type == ObjectType_TOMBSTONE {
+		if !TombstoneRef(hdr.TombstoneFor).Equal(hdr.Ref) {
+			return ErrRefMismatch
+		}
+
+		return nil
+	}
+
+	if hdr.Encryption != Encryption_PLAINTEXT {
+		if len(hdr.StoredHash) == 0 {
+			return invalid("sealed object %x without a stored hash", hdr.Ref.GetHash())
+		}
+
+		return nil
+	}
+
+	_, err := VerifyPayload(stored, hdr.Compression, hdr.Type, hdr.Ref)
+
+	return err
+}
+
+// ObjectFromStored decodes stored bytes after VerifyStored. A sealed object
+// comes back as is, for the holder of the key to open.
+func ObjectFromStored(hdr *ObjectHeader, stored []byte) (*Object, error) {
+	err := VerifyStored(hdr, stored)
+	if err != nil {
+		return nil, err
+	}
+
+	if hdr.Encryption != Encryption_PLAINTEXT {
+		return &Object{Object: &Object_Sealed{Sealed: &Sealed{
+			Ref:         hdr.Ref,
+			Type:        hdr.Type,
+			Data:        stored,
+			Compression: hdr.Compression,
+			Encryption:  hdr.Encryption,
+			KeyId:       hdr.KeyId,
+		}}, KeyId: hdr.KeyId}, nil
+	}
+
+	obj, err := NewVerifiedObject(stored, hdr.Compression, hdr.Type, hdr.Ref)
+	if err != nil {
+		return nil, err
+	}
+
+	obj.KeyId = hdr.KeyId
+
+	return obj, nil
+}
+
+// HeaderFor builds the archive header of an object and returns the bytes to
+// store: sealed data as is, anything else compressed.
+func HeaderFor(o *Object) (*ObjectHeader, []byte, error) {
+	payload, err := o.Canonical()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if sealed := o.GetSealed(); sealed != nil {
+		return &ObjectHeader{
+			Ref:         sealed.Ref,
+			Type:        sealed.Type,
+			Compression: sealed.Compression,
+			Encryption:  sealed.Encryption,
+			KeyId:       sealed.KeyId,
+			StoredHash:  StoredHash(sealed.Data),
+		}, sealed.Data, nil
+	}
+
+	stored, compression := Encode(payload)
+
+	hdr := &ObjectHeader{
+		Ref:         HashPayload(o.Type(), payload),
+		Type:        o.Type(),
+		Compression: compression,
+		KeyId:       o.KeyId,
+		StoredHash:  StoredHash(stored),
+	}
+
+	// a commit or pin entered the system when the server received it, and
+	// a rebuild must reproduce that
+	if ns := o.ReceivedAtNs(); ns != 0 {
+		hdr.Timestamp = timestamppb.New(time.Unix(0, ns))
+	}
+
+	return hdr, stored, nil
+}
+
+// ReceivedAtNs is the server receipt time of a commit or pin, 0 for every
+// other object and for one the server has not stamped yet.
+func (o *Object) ReceivedAtNs() int64 {
+	switch t := o.GetObject().(type) {
+	case *Object_Commit:
+		return t.Commit.GetReceivedAtNs()
+	case *Object_Pin:
+		return t.Pin.GetReceivedAtNs()
+	}
+
+	return 0
+}
+
+// Stamp records the server receipt time on a commit or pin, and the set id
+// on a commit. It does nothing for other objects.
+func (o *Object) Stamp(setID uint64, receivedAt time.Time) {
+	switch t := o.GetObject().(type) {
+	case *Object_Commit:
+		t.Commit.SetId = setID
+		t.Commit.ReceivedAtNs = receivedAt.UnixNano()
+	case *Object_Pin:
+		t.Pin.ReceivedAtNs = receivedAt.UnixNano()
+	}
 }
 
 // Validate reports whether the object can be canonically encoded.
@@ -111,12 +248,25 @@ func (o *Object) Canonical() ([]byte, error) {
 			return nil, err
 		}
 		return t.Blob.GetData(), nil
+	case *Object_Sealed:
+		if err := noUnknown(t.Sealed); err != nil {
+			return nil, err
+		}
+		if !t.Sealed.GetRef().Valid() {
+			return nil, invalid("sealed object without a valid ref")
+		}
+		if t.Sealed.Encryption == Encryption_PLAINTEXT {
+			return nil, invalid("sealed object without an encryption mode")
+		}
+		return t.Sealed.GetData(), nil
 	case *Object_Commit:
 		return canonicalCommit(t.Commit)
 	case *Object_Tree:
 		return canonicalTree(t.Tree)
 	case *Object_File:
 		return canonicalFile(t.File)
+	case *Object_Pin:
+		return canonicalPin(t.Pin)
 	default:
 		return nil, invalid("empty object")
 	}
@@ -136,6 +286,9 @@ func NewObjectFromPayload(payload []byte, t ObjectType) (*Object, error) {
 	case ObjectType_FILE:
 		f := new(File)
 		return NewObject(f), pb.Unmarshal(payload, f)
+	case ObjectType_PIN:
+		p := new(Pin)
+		return NewObject(p), pb.Unmarshal(payload, p)
 	default:
 		return nil, invalid("cannot decode object type %s", t)
 	}
@@ -217,9 +370,49 @@ func appendString(b []byte, num protowire.Number, v string) ([]byte, error) {
 	return protowire.AppendString(b, v), nil
 }
 
+func appendBytes(b []byte, num protowire.Number, v []byte) []byte {
+	if len(v) == 0 {
+		return b
+	}
+
+	b = protowire.AppendTag(b, num, protowire.BytesType)
+	return protowire.AppendBytes(b, v)
+}
+
 func appendMessage(b []byte, num protowire.Number, body []byte) []byte {
 	b = protowire.AppendTag(b, num, protowire.BytesType)
 	return protowire.AppendBytes(b, body)
+}
+
+// appendMap encodes a metadata map as its entries sorted by key, each a
+// message of key (1) and value (2), so equal maps hash equally.
+func appendMap(b []byte, num protowire.Number, m map[string]string) ([]byte, error) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		if k == "" {
+			return nil, invalid("field %d: metadata entry with an empty key", num)
+		}
+
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		body, err := appendString(nil, 1, k)
+		if err != nil {
+			return nil, err
+		}
+
+		body, err = appendString(body, 2, m[k])
+		if err != nil {
+			return nil, err
+		}
+
+		b = appendMessage(b, num, body)
+	}
+
+	return b, nil
 }
 
 func appendRef(b []byte, num protowire.Number, ref *Ref) ([]byte, error) {
@@ -272,8 +465,31 @@ func canonicalCommit(c *Commit) ([]byte, error) {
 
 	b = appendVarint(b, 6, uint64(c.ScanStartNs))
 	b = appendBool(b, 7, c.Partial)
+	b = appendVarint(b, 9, uint64(c.PolicyVersion))
+	b = appendVarint(b, 10, c.SetId)
+	b = appendVarint(b, 11, uint64(c.ReceivedAtNs))
+	b = appendBool(b, 12, c.Consistent)
 
-	return b, nil
+	return appendMap(b, 13, c.Metadata)
+}
+
+func canonicalPin(p *Pin) ([]byte, error) {
+	if err := noUnknown(p); err != nil {
+		return nil, err
+	}
+
+	if p.Target == nil {
+		return nil, invalid("pin without a target")
+	}
+
+	b, err := appendRef(nil, 1, p.Target)
+	if err != nil {
+		return nil, fmt.Errorf("pin target: %w", err)
+	}
+
+	b = appendVarint(b, 3, uint64(p.ReceivedAtNs))
+
+	return appendMap(b, 4, p.Metadata)
 }
 
 func canonicalFileInfo(info *FileInfo) ([]byte, error) {
@@ -285,27 +501,14 @@ func canonicalFileInfo(info *FileInfo) ([]byte, error) {
 		return nil, err
 	}
 
-	if info.Name == "" {
+	if len(info.Name) == 0 {
 		return nil, invalid("file info without a name")
 	}
 
-	b, err := appendString(nil, 1, info.Name)
-	if err != nil {
-		return nil, err
-	}
-
+	b := appendBytes(nil, 1, info.Name)
 	b = appendVarint(b, 2, uint64(info.Mode))
-
-	b, err = appendString(b, 3, info.User)
-	if err != nil {
-		return nil, err
-	}
-
-	b, err = appendString(b, 4, info.Group)
-	if err != nil {
-		return nil, err
-	}
-
+	b = appendBytes(b, 3, info.User)
+	b = appendBytes(b, 4, info.Group)
 	b = appendVarint(b, 6, uint64(info.Size))
 	b = appendVarint(b, 8, uint64(info.MtimeNs))
 
@@ -315,11 +518,11 @@ func canonicalFileInfo(info *FileInfo) ([]byte, error) {
 
 	b = appendVarint(b, 9, uint64(info.Type))
 
-	if info.LinkTarget != "" && info.Type != NodeType_NODE_SYMLINK {
+	if len(info.LinkTarget) > 0 && info.Type != NodeType_NODE_SYMLINK {
 		return nil, invalid("link target on a %s node", info.Type)
 	}
 
-	return appendString(b, 10, info.LinkTarget)
+	return appendBytes(b, 10, info.LinkTarget), nil
 }
 
 func canonicalTree(t *Tree) ([]byte, error) {
@@ -332,7 +535,7 @@ func canonicalTree(t *Tree) ([]byte, error) {
 	}
 
 	var b []byte
-	var last string
+	var last []byte
 
 	for i, node := range t.Nodes {
 		if node == nil {
@@ -344,7 +547,7 @@ func canonicalTree(t *Tree) ([]byte, error) {
 		}
 
 		name := node.GetStat().GetName()
-		if i > 0 && name <= last {
+		if i > 0 && bytes.Compare(name, last) <= 0 {
 			return nil, invalid("tree nodes not sorted or not unique at %q", name)
 		}
 		last = name
@@ -357,7 +560,7 @@ func canonicalTree(t *Tree) ([]byte, error) {
 		body = appendMessage(nil, 1, body)
 
 		if node.Stat.Type == NodeType_NODE_SYMLINK {
-			if node.Stat.LinkTarget == "" {
+			if len(node.Stat.LinkTarget) == 0 {
 				return nil, invalid("tree node %q: symlink without a target", name)
 			}
 
@@ -453,11 +656,8 @@ func canonicalFile(f *File) ([]byte, error) {
 	}
 
 	b = appendVarint(b, 3, uint64(f.Chunker))
-
-	if len(f.Inline) > 0 {
-		b = protowire.AppendTag(b, 4, protowire.BytesType)
-		b = protowire.AppendBytes(b, f.Inline)
-	}
+	b = appendBytes(b, 4, f.Inline)
+	b = appendBytes(b, 5, f.Keys)
 
 	return b, nil
 }

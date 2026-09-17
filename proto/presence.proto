@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/twcclan/goback/proto";
+
+import "ref.proto";
+
+// PresenceFilter is a Bloom filter over the blob refs one commit reaches,
+// built when the commit is indexed and handed to agents of its scope.
+message PresenceFilter {
+    // format version, currently 1
+    uint32 version = 1;
+    // refs added to the filter
+    uint64 entries = 2;
+    // size of the bit array in bits
+    uint64 bits = 3;
+    // bit positions probed per ref
+    uint32 hashes = 4;
+    // the bit array, bits / 8 bytes; streamed in pieces over GetPresence
+    bytes data = 5;
+    Ref commit = 6;
+    string backup_set = 7;
+}

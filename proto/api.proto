@@ -9,6 +9,7 @@ import "ref.proto";
 import "tree.proto";
 import "commit.proto";
 import "transactional.proto";
+import "presence.proto";
 import "google/protobuf/timestamp.proto";
 
 //Put(*proto.Object) error
@@ -16,14 +17,22 @@ message PutRequest {
     Object object = 1;
     // the ref the client computed for object; the server rejects a mismatch
     Ref ref = 2;
+    // for a file object: part refs the client did not upload because it
+    // assumes the store holds them; the server confirms them before storing
+    repeated Ref assumed_refs = 3;
 }
 
 message PutResponse {
-
+    // the ref the object was stored under
+    Ref ref = 1;
+    // the object as stored, returned for commits and pins, whose set id and
+    // receipt time the server assigns
+    Object object = 2;
+    // assumed refs the store does not hold; when set the object was not
+    // stored and the client must upload them and put the object again
+    repeated Ref missing = 3;
 }
 
-
-//Get(*proto.Ref) (*proto.Object, error)
 message GetRequest {
     Ref ref = 1;
 }
@@ -32,33 +41,19 @@ message GetResponse {
     Object object = 1;
 }
 
-//Delete(*proto.Ref) error
-message DeleteRequest {
+// ReadFileRequest names a file object the store references; the
+// server streams the stored objects of its parts, in order, except the
+// indexes in skip_parts.
+message ReadFileRequest {
     Ref ref = 1;
+    repeated uint32 skip_parts = 2;
 }
 
-message DeleteResponse {
-
-}
-
-//Walk(bool, proto.ObjectType, ObjectReceiver) error
-message WalkRequest {
-    bool load = 1;
-    ObjectType objectType = 2;
-}
-
-message WalkResponse {
-    ObjectHeader header = 1;
+// ReadFileResponse carries one part's stored object, sealed as it was
+// uploaded; index counts the parts of the whole file, splits flattened.
+message ReadFileResponse {
+    uint32 index = 1;
     Object object = 2;
-}
-
-//Has(context.Context, *proto.Ref) (bool, error)
-message HasRequest {
-    Ref ref = 1;
-}
-
-message HasResponse {
-    bool has = 1;
 }
 
 message FileInfoRequest {
@@ -92,6 +87,116 @@ message LatestCommitResponse {
     Ref ref = 1;
 }
 
+// BeginCommitRequest asks, before a backup run moves bytes, whether the
+// caller may commit to the set; declared_logical_size is what the agent
+// expects the commit to hold, 0 when unknown.
+message BeginCommitRequest {
+    string backup_set = 1;
+    int64 declared_logical_size = 2;
+}
+
+message BeginCommitResponse {
+    // the set's server-assigned id, which the commit body must carry
+    uint64 set_id = 1;
+    bool allowed = 2;
+    // why the commit was refused, empty when allowed
+    string reason = 3;
+    // the store's write policy for this run; absent when the operator never
+    // set one, which leaves the agent's key file in charge
+    StorePolicy policy = 4;
+}
+
+// StorePolicy is a store's write policy: the encryption mode of new
+// writes, the hybrid mode's thresholds, the presence scope and escrow.
+message StorePolicy {
+    uint32 version = 1;
+    string mode = 2;
+    int64 size_threshold = 3;
+    string entropy_estimator = 4;
+    double entropy_threshold = 5;
+    string presence_scope = 6;
+    string escrow = 7;
+}
+
+message BeginSessionRequest {
+    string backup_set = 1;
+    // the object a restore session reads; retirement and garbage collection
+    // keep it and everything it names while the session lives
+    Ref restore = 2;
+}
+
+message BeginSessionResponse {
+    // sent as the goback-session metadata header on every call of the session
+    string session_id = 1;
+    // how long the session survives without a call before the server drops
+    // what it did not commit
+    int64 lease_seconds = 2;
+}
+
+// EndSessionRequest drops whatever the session has not committed
+message EndSessionRequest {
+    string session_id = 1;
+}
+
+message EndSessionResponse {}
+
+message GetPresenceRequest {
+    // the set whose filter is wanted when the scope is the set
+    string backup_set = 1;
+}
+
+// GetPresenceResponse carries one filter of the caller's scope in pieces:
+// messages with the same index concatenate their data.
+message GetPresenceResponse {
+    uint32 index = 1;
+    PresenceFilter filter = 2;
+}
+
+message DeleteCommitRequest {
+    Ref ref = 1;
+}
+
+message DeleteCommitResponse {}
+
+message UndeleteCommitRequest {
+    Ref ref = 1;
+}
+
+message UndeleteCommitResponse {}
+
+message DeleteSetRequest {
+    string backup_set = 1;
+    // erase uses a zero window: the commits are tombstoned by the next
+    // retirement run
+    bool erase = 2;
+}
+
+message DeleteSetResponse {}
+
+message UndeleteSetRequest {
+    string backup_set = 1;
+}
+
+message UndeleteSetResponse {}
+
+message UnpinRequest {
+    Ref pin = 1;
+}
+
+message UnpinResponse {}
+
+message ListPinsRequest {}
+
+message PinInfo {
+    Ref ref = 1;
+    Ref target = 2;
+    int64 received_at_ns = 3;
+}
+
+message ListPinsResponse {
+    repeated PinInfo pins = 1;
+}
+
 message GetTreeRequest {
     Ref ref = 1;
     // how many directory levels below ref to include; 0 means only ref
@@ -105,15 +210,30 @@ message GetTreeResponse {
 
 service Store {
     rpc Put (PutRequest) returns (PutResponse) {}
+    // Get serves a commit, tree or file object the store references; blobs
+    // are read through ReadFile
     rpc Get (GetRequest) returns (GetResponse) {}
-    rpc Delete (DeleteRequest) returns (DeleteResponse) {}
-    rpc Walk(WalkRequest) returns (stream WalkResponse) {}
-    rpc Has(HasRequest) returns (HasResponse) {}
+    rpc ReadFile (ReadFileRequest) returns (stream ReadFileResponse) {}
     rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
     rpc CommitInfo(CommitInfoRequest) returns (CommitInfoResponse) {}
     rpc LatestCommit(LatestCommitRequest) returns (LatestCommitResponse) {}
     // GetTree streams a subtree's tree objects breadth-first from the server
     rpc GetTree(GetTreeRequest) returns (stream GetTreeResponse) {}
+    // BeginSession opens a backup session; its writes are visible to other
+    // callers only once it stores a commit
+    // BeginCommit checks the set's state and ownership before a run
+    rpc BeginCommit(BeginCommitRequest) returns (BeginCommitResponse) {}
+    rpc BeginSession(BeginSessionRequest) returns (BeginSessionResponse) {}
+    rpc EndSession(EndSessionRequest) returns (EndSessionResponse) {}
+    // GetPresence streams the presence filters of the caller's scope
+    rpc GetPresence(GetPresenceRequest) returns (stream GetPresenceResponse) {}
+
+    rpc DeleteCommit(DeleteCommitRequest) returns (DeleteCommitResponse) {}
+    rpc UndeleteCommit(UndeleteCommitRequest) returns (UndeleteCommitResponse) {}
+    rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}
+    rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
+    rpc Unpin(UnpinRequest) returns (UnpinResponse) {}
+    rpc ListPins(ListPinsRequest) returns (ListPinsResponse) {}
 
     //rpc BeginTransaction(stream TransactionRequest) returns (stream TransactionResponse) {}
 }

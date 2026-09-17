@@ -1,7 +1,6 @@
 package fix
 
 import (
-	"context"
 	"log"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
@@ -19,7 +18,7 @@ func fixAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
 
-	err := index.ReIndex(context.Background())
+	err := index.ReIndex(common.Context(c))
 	if err != nil {
 		log.Fatal(err)
 	}

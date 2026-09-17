@@ -3,8 +3,13 @@ package badger
 import (
 	"os"
 	"testing"
+	"time"
 
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/storage/pack/packtest"
+
+	"github.com/stretchr/testify/require"
 )
 
 func tempDir(tb testing.TB) string {
@@ -86,4 +91,39 @@ func BenchmarkIndex(b *testing.B) {
 	b.Run("insert", func(b *testing.B) {
 		packtest.BenchmarkIndex(b, idx)
 	})
+}
+
+func TestBadgerIndexPublicRefs(t *testing.T) {
+	packtest.TestArchiveIndexPublicRefs(t, setupBadger(t))
+}
+
+func TestBadgerIndexSessions(t *testing.T) {
+	packtest.TestArchiveIndexSessions(t, setupBadger(t))
+}
+
+func TestBadgerIndexSessionsSurviveReopen(t *testing.T) {
+	dir := tempDir(t)
+
+	idx, err := NewBadgerIndex(dir)
+	require.NoError(t, err)
+
+	session := &backup.Session{ID: "s", AgentID: "a", Set: "world", Started: time.Now(), LastSeen: time.Now()}
+	require.NoError(t, idx.BeginSession(session))
+
+	archive := packtest.RandomArchive(10)
+	require.NoError(t, idx.IndexArchive(pack.ArchiveInfo{Name: "s/" + archive.Name(), Session: "s", State: pack.ArchivePending}, archive.Index()))
+	require.NoError(t, idx.Close())
+
+	idx, err = NewBadgerIndex(dir)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	info, known, err := idx.LookupArchive("s/" + archive.Name())
+	require.NoError(t, err)
+	require.True(t, known)
+	require.Equal(t, pack.ArchivePending, info.State)
+	require.Equal(t, "s", info.Session)
+
+	_, err = idx.GetSession("s")
+	require.NoError(t, err)
 }

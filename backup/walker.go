@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/twcclan/goback/backup/blobcache"
+	"github.com/twcclan/goback/backup/presence"
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 
 	"go4.org/syncutil"
@@ -45,25 +49,65 @@ type Walker struct {
 	AgentID string
 	Root    string
 
+	// Metadata is recorded on the commit; the store keeps it and never
+	// interprets it.
+	Metadata map[string]string
+
 	// Include decides per slash-separated relative path; nil includes all.
 	Include func(rel string) bool
+
+	// Key seals names and blobs; nil backs up in the clear.
+	Key *storekey.Key
+
+	// Sessions, when set, wraps the run in a session, so nothing it uploads
+	// is visible to others before its commit.
+	Sessions SessionStore
 
 	Workers            int
 	ForceHashPercent   int
 	CheckpointInterval time.Duration
 	ReadRetries        int
-	Cache              StatCache
-	PrefetchDepth      uint32
+	// Quiesced records that a pre hook paused the application before the
+	// walk; a clean run then commits as consistent.
+	Quiesced      bool
+	Cache         StatCache
+	PrefetchDepth uint32
 
+	// WindowBytes bounds the chunk bytes kept for files whose skipped parts
+	// the store has not confirmed yet; 0 means DefaultWindowBytes.
+	WindowBytes int
+
+	// BlobCache, when set, receives every uploaded blob.
+	BlobCache *blobcache.Cache
+
+	filters   presence.Set
+	confirmer Confirmer
+	window    *chunkWindow
 	gate      *syncutil.Gate
 	trees     *treeSource
 	scanStart int64
-	base      *proto.Ref
-	baseScan  int64
-	started   time.Time
-	last      time.Time
-	rand      *rand.Rand
-	result    WalkResult
+	setID     uint64
+	// policyVersion is what the commit records, kept apart from Key
+	// because a policy without encryption drops the key for the run
+	policyVersion uint32
+	base          *proto.Ref
+	baseScan      int64
+	started       time.Time
+	last          time.Time
+	rand          *rand.Rand
+	result        WalkResult
+	sent          *sentSet
+	// clock stands in for time.Now in tests; the Windows monotonic clock
+	// ticks too coarsely for a short run to see any time pass
+	clock func() time.Time
+}
+
+func (w *Walker) now() time.Time {
+	if w.clock != nil {
+		return w.clock()
+	}
+
+	return time.Now()
 }
 
 // WalkResult summarises one run.
@@ -78,6 +122,10 @@ type WalkResult struct {
 	Unreadable  int64
 	Skipped     int64
 	Checkpoints int64
+	// Assumed counts parts skipped because a filter or the previous version
+	// held them; Repaired counts those the store then turned out to lack.
+	Assumed  int64
+	Repaired int64
 }
 
 // Dirty reports whether any file was recorded from an inconsistent or failed
@@ -87,6 +135,10 @@ func (r *WalkResult) Dirty() bool {
 }
 
 var errUnreadable = errors.New("file could not be read")
+
+// PreviousVersions is how many live versions of a changed file the walker
+// diffs its chunks against.
+const PreviousVersions = 3
 
 func (w *Walker) logf(format string, args ...interface{}) {
 	log.Printf(format, args...)
@@ -100,20 +152,63 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 
 	w.gate = syncutil.NewGate(w.Workers)
 	w.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-	w.started = time.Now()
+	w.started = w.now()
 	w.last = w.started
 	w.scanStart = w.started.UnixNano()
 	w.result = WalkResult{}
+	w.sent = newSentSet()
+
+	if gate, ok := w.Index.(CommitGate); ok {
+		grant, err := gate.BeginCommit(ctx, w.Set)
+		if err != nil {
+			return nil, fmt.Errorf("beginning commit: %w", err)
+		}
+
+		w.setID = grant.SetID
+
+		err = w.adoptPolicy(grant.Policy)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	w.policyVersion = 0
+	if w.Key != nil {
+		w.policyVersion = w.Key.Policy.Version
+
+		if w.Key.Policy.Mode == storekey.ModeNone {
+			key := w.Key
+			w.Key = nil
+			defer func() { w.Key = key }()
+		}
+	}
+
+	if w.Sessions != nil {
+		sctx, err := w.Sessions.BeginSession(ctx, &Session{AgentID: w.AgentID, Set: w.Set})
+		if err != nil {
+			return nil, fmt.Errorf("beginning session: %w", err)
+		}
+
+		ctx = sctx
+
+		defer func() {
+			if err := w.Sessions.EndSession(ctx); err != nil {
+				w.logf("Cannot end session: %v", err)
+			}
+		}()
+	}
+
+	w.loadPresence(ctx)
 
 	fetcher, _ := w.Objects.(TreeFetcher)
-	w.trees = &treeSource{getter: w.Objects, fetcher: fetcher, depth: w.PrefetchDepth, objects: map[string]*proto.Object{}}
+	w.trees = &treeSource{getter: w.Objects, fetcher: fetcher, key: w.Key, depth: w.PrefetchDepth, objects: map[string]*proto.Object{}}
 
 	baseNodes, err := w.loadBase(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	nodes, changed, err := w.walkDir(ctx, w.Root, "", baseNodes, true)
+	nodes, changed, err := w.walkDir(ctx, w.Root, "", nil, baseNodes, true)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +217,7 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	if !changed && w.base != nil {
 		root = w.result.Commit.Tree
 	} else {
-		root, err = PutTree(ctx, w.Objects, nodes)
+		root, err = PutTree(ctx, w.Objects, nodes, w.Key, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storing root tree: %w", err)
 		}
@@ -140,6 +235,74 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	result := w.result
 
 	return &result, nil
+}
+
+// adoptPolicy writes this run under the store's policy instead of the key
+// file's; a policy the operator never set (version 0) leaves the key file
+// in charge.
+func (w *Walker) adoptPolicy(policy *storekey.Policy) error {
+	if policy == nil || policy.Version == 0 {
+		return nil
+	}
+
+	if w.Key == nil {
+		if policy.Mode == storekey.ModeNone {
+			return nil
+		}
+
+		return fmt.Errorf("store policy v%d writes %s but no store key is configured", policy.Version, policy.Mode)
+	}
+
+	if w.Key.Policy.Version != policy.Version {
+		w.logf("Store policy v%d from the server replaces v%d from the key file", policy.Version, w.Key.Policy.Version)
+	}
+
+	w.Key.Policy = *policy
+
+	return nil
+}
+
+// loadPresence fetches the filters of the run's scope when the store can
+// also confirm what they say.
+func (w *Walker) loadPresence(ctx context.Context) {
+	inner := unwrapStore(w.Objects)
+
+	w.confirmer, _ = inner.(Confirmer)
+	w.filters = nil
+
+	budget := w.WindowBytes
+	if budget <= 0 {
+		budget = DefaultWindowBytes
+	}
+	w.window = newChunkWindow(budget)
+
+	source, ok := inner.(PresenceSource)
+	if !ok || w.confirmer == nil {
+		return
+	}
+
+	filters, err := source.Presence(ctx, w.Set)
+	if err != nil {
+		w.logf("Cannot fetch presence filters, uploading every new chunk: %v", err)
+		return
+	}
+
+	w.filters = filters
+	if len(filters) > 0 {
+		w.logf("Presence: %d filters over %d refs (%d bytes)", len(filters), filters.Entries(), filters.Size())
+	}
+}
+
+// unwrapStore peels caching wrappers off a store.
+func unwrapStore(store ObjectStore) ObjectStore {
+	for {
+		wrapper, ok := store.(interface{ Unwrap() ObjectStore })
+		if !ok {
+			return store
+		}
+
+		store = wrapper.Unwrap()
+	}
 }
 
 // loadBase resolves the diff base from the server, never from local state.
@@ -164,7 +327,7 @@ func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 		return nil, fmt.Errorf("base %x is not a commit", ref.Hash)
 	}
 
-	tree, err := w.trees.load(ctx, commit.Tree)
+	tree, err := w.trees.load(ctx, commit.Tree, nil)
 	if err != nil {
 		return nil, fmt.Errorf("loading base tree %x: %w", commit.Tree.Hash, err)
 	}
@@ -188,8 +351,19 @@ func (w *Walker) putCommit(ctx context.Context, tree *proto.Ref, partial bool) (
 		BackupSet:   w.Set,
 		Parent:      w.base,
 		AgentId:     w.AgentID,
+		SetId:       w.setID,
+		Metadata:    w.Metadata,
 		ScanStartNs: w.scanStart,
 		Partial:     partial,
+		Consistent:  !partial && w.Quiesced && atomic.LoadInt64(&w.result.Torn) == 0 && atomic.LoadInt64(&w.result.Unreadable) == 0,
+	}
+
+	commit.PolicyVersion = w.policyVersion
+
+	// a checkpoint carries base nodes this run has not verified, so it
+	// keeps the base run's racy window
+	if partial && w.base != nil && w.baseScan < commit.ScanStartNs {
+		commit.ScanStartNs = w.baseScan
 	}
 
 	obj := proto.NewObject(commit)
@@ -207,8 +381,9 @@ func (w *Walker) included(rel string) bool {
 }
 
 // walkDir compares one directory with its base nodes and returns the new
-// node list and whether it differs from the base.
-func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.TreeNode, root bool) ([]*proto.TreeNode, bool, error) {
+// node list and whether it differs from the base. parent is the token of
+// the directory, nil for the root and in a plaintext store.
+func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, base []*proto.TreeNode, root bool) ([]*proto.TreeNode, bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if base != nil && IsPermissionError(err) {
@@ -217,7 +392,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 			return base, false, nil
 		}
 
-		if IsPermissionError(err) {
+		if IsPermissionError(err) && !root {
 			w.logf("Cannot list %s (%v), skipping", dir, err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
 			return nil, true, nil
@@ -228,7 +403,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 
 	baseByName := make(map[string]*proto.TreeNode, len(base))
 	for _, node := range base {
-		baseByName[node.Stat.Name] = node
+		baseByName[string(node.Stat.Name)] = node
 	}
 
 	results := make([]*proto.TreeNode, len(entries))
@@ -259,7 +434,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 			continue
 		}
 
-		info, err := entry.Info()
+		info, err := entryInfo(entry, childPath)
 		if err != nil {
 			w.logf("Cannot stat %s (%v), skipping", childPath, err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
@@ -269,7 +444,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 
 		switch {
 		case info.IsDir():
-			node, childChanged, err := w.walkChildDir(ctx, childPath, childRel, info, baseNode)
+			node, childChanged, err := w.walkChildDir(ctx, childPath, childRel, NameToken(w.Key, parent, []byte(name)), info, baseNode)
 			if err != nil {
 				return nil, false, err
 			}
@@ -314,7 +489,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 			group.Go(func() error {
 				defer w.gate.Done()
 
-				node, err := w.backupFile(fileCtx, childPath, info, baseNode)
+				node, err := w.backupFile(fileCtx, childPath, childRel, info, baseNode)
 				if err != nil {
 					return err
 				}
@@ -348,7 +523,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 
 			group, groupCtx = errgroup.WithContext(ctx)
 
-			err = w.checkpoint(ctx, results[:i+1], base, name)
+			err = w.checkpoint(ctx, results[:i+1], base, []byte(name))
 			if err != nil {
 				return nil, false, err
 			}
@@ -374,10 +549,10 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, base []*proto.Tre
 	return SortNodes(nodes), changed, nil
 }
 
-func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, info os.FileInfo, baseNode *proto.TreeNode) (*proto.TreeNode, bool, error) {
+func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, token []byte, info os.FileInfo, baseNode *proto.TreeNode) (*proto.TreeNode, bool, error) {
 	var baseChildren []*proto.TreeNode
 	if baseNode != nil && baseNode.Stat.IsDir() {
-		tree, err := w.trees.load(ctx, baseNode.Ref)
+		tree, err := w.trees.load(ctx, baseNode.Ref, token)
 		if err != nil {
 			w.logf("Base tree %x for %s unavailable (%v), reading the directory in full", baseNode.Ref.Hash, dir, err)
 		} else {
@@ -385,7 +560,7 @@ func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, info os.File
 		}
 	}
 
-	children, childChanged, err := w.walkDir(ctx, dir, rel, baseChildren, false)
+	children, childChanged, err := w.walkDir(ctx, dir, rel, token, baseChildren, false)
 	if err != nil {
 		return nil, false, err
 	}
@@ -397,7 +572,7 @@ func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, info os.File
 		return node, !nodeEqual(node, baseNode), nil
 	}
 
-	ref, err := PutTree(ctx, w.Objects, children)
+	ref, err := PutTree(ctx, w.Objects, children, w.Key, token)
 	if err != nil {
 		return nil, false, fmt.Errorf("storing tree for %s: %w", dir, err)
 	}
@@ -430,7 +605,7 @@ func (w *Walker) reusable(path string, info os.FileInfo, stat *proto.FileInfo, b
 	}
 
 	if w.ForceHashPercent > 0 && w.rand.Intn(100) < w.ForceHashPercent {
-		ref, err := HashFile(path)
+		ref, err := HashFile(path, w.Key)
 		if err != nil || !ref.Equal(baseNode.Ref) {
 			w.logf("Sampled re-hash of %s differs from the recorded version, reading it", path)
 			return false
@@ -442,14 +617,33 @@ func (w *Walker) reusable(path string, info os.FileInfo, stat *proto.FileInfo, b
 
 // backupFile reads a file into blobs, retrying when the file changes under
 // the read, and falls back to the base node when it cannot be read.
-func (w *Walker) backupFile(ctx context.Context, path string, info os.FileInfo, baseNode *proto.TreeNode) (*proto.TreeNode, error) {
-	known := w.knownParts(ctx, baseNode)
+func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileInfo, baseNode *proto.TreeNode) (*proto.TreeNode, error) {
+	known := w.knownParts(ctx, rel, baseNode)
+	forced := map[string]struct{}{}
 
 	var ref *proto.Ref
 	var err error
 
 	for attempt := 0; ; attempt++ {
-		ref, err = w.readFile(ctx, path, known)
+		ref, err = w.readFile(ctx, path, known, forced)
+
+		var changed *fileChangedError
+		if errors.As(err, &changed) {
+			w.logf("%s changed while its parts were confirmed, reading it again", path)
+
+			for _, ref := range changed.refs {
+				forced[string(ref.Hash)] = struct{}{}
+			}
+
+			if attempt >= w.ReadRetries {
+				// upload everything on the next read; it cannot fail this way
+				known = nil
+				forced = nil
+			}
+
+			continue
+		}
+
 		if err != nil {
 			break
 		}
@@ -494,7 +688,10 @@ func (w *Walker) backupFile(ctx context.Context, path string, info os.FileInfo, 
 	return &proto.TreeNode{Stat: w.stat(info, ""), Ref: ref}, nil
 }
 
-func (w *Walker) readFile(ctx context.Context, path string, known map[string]struct{}) (*proto.Ref, error) {
+// readFile chunks and stores one file. forced refs are uploaded even when
+// known or the filters say the store has them; a nil forced map disables
+// the filters and known altogether.
+func (w *Walker) readFile(ctx context.Context, path string, known map[string]struct{}, forced map[string]struct{}) (*proto.Ref, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if IsPermissionError(err) || IsLockError(err) {
@@ -505,8 +702,23 @@ func (w *Walker) readFile(ctx context.Context, path string, known map[string]str
 	}
 	defer file.Close()
 
-	writer := newFileWriter(ctx, w.Objects)
-	writer.known = known
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	writer := newFileWriter(ctx, w.Objects, w.Key, info.Size())
+	writer.sent = w.sent
+	writer.source = file
+	writer.cache = w.BlobCache
+
+	if forced != nil {
+		writer.known = known
+		writer.forced = forced
+		writer.filters = w.filters
+		writer.confirmer = w.confirmer
+		writer.window = w.window
+	}
 
 	_, err = io.Copy(writer, file)
 	if err != nil {
@@ -519,44 +731,75 @@ func (w *Walker) readFile(ctx context.Context, path string, known map[string]str
 
 	err = writer.Close()
 	if err != nil {
+		var changed *fileChangedError
+		if errors.As(err, &changed) {
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("storing %s: %w", path, err)
 	}
+
+	atomic.AddInt64(&w.result.Assumed, int64(len(writer.assumed)))
+	atomic.AddInt64(&w.result.Repaired, int64(writer.repaired))
 
 	return writer.Ref(), nil
 }
 
-// knownParts returns the blob refs of the base version of a file, so only
-// new parts are uploaded.
-func (w *Walker) knownParts(ctx context.Context, baseNode *proto.TreeNode) map[string]struct{} {
+// knownParts returns the blob refs of a changed file's base version and of
+// the last live versions the index holds at rel, so only new parts are
+// uploaded.
+func (w *Walker) knownParts(ctx context.Context, rel string, baseNode *proto.TreeNode) map[string]struct{} {
 	if baseNode == nil || baseNode.Stat.GetType() != proto.NodeType_NODE_FILE || baseNode.Ref == nil {
 		return nil
 	}
 
-	obj, err := w.Objects.Get(ctx, baseNode.Ref)
-	if err != nil {
-		return nil
+	known := map[string]struct{}{}
+	seen := map[string]struct{}{}
+
+	add := func(ref *proto.Ref) {
+		if ref == nil {
+			return
+		}
+
+		if _, ok := seen[string(ref.Hash)]; ok {
+			return
+		}
+
+		seen[string(ref.Hash)] = struct{}{}
+
+		obj, err := w.Objects.Get(ctx, ref)
+		if err != nil {
+			return
+		}
+
+		for _, part := range obj.GetFile().GetParts() {
+			known[string(part.Ref.GetHash())] = struct{}{}
+		}
 	}
 
-	parts := obj.GetFile().GetParts()
-	if len(parts) == 0 {
-		return nil
+	add(baseNode.Ref)
+
+	versions, err := w.Index.FileInfo(ctx, w.Set, IndexPath(w.Key, rel), time.Now(), PreviousVersions)
+	if err == nil {
+		for _, version := range versions {
+			add(version.Ref)
+		}
 	}
 
-	known := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		known[string(part.Ref.GetHash())] = struct{}{}
+	if len(known) == 0 {
+		return nil
 	}
 
 	return known
 }
 
 func (w *Walker) checkpointDue() bool {
-	return w.CheckpointInterval > 0 && time.Since(w.last) >= w.CheckpointInterval
+	return w.CheckpointInterval > 0 && w.now().Sub(w.last) >= w.CheckpointInterval
 }
 
 // checkpoint writes a partial commit from the finished root entries plus the
 // base's nodes for the rest.
-func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []*proto.TreeNode, lastName string) error {
+func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []*proto.TreeNode, lastName []byte) error {
 	nodes := make([]*proto.TreeNode, 0, len(done)+len(base))
 	for _, node := range done {
 		if node != nil {
@@ -565,12 +808,12 @@ func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []
 	}
 
 	for _, node := range base {
-		if node.Stat.Name > lastName {
+		if bytes.Compare(node.Stat.Name, lastName) > 0 {
 			nodes = append(nodes, node)
 		}
 	}
 
-	root, err := PutTree(ctx, w.Objects, SortNodes(nodes))
+	root, err := PutTree(ctx, w.Objects, SortNodes(nodes), w.Key, nil)
 	if err != nil {
 		return fmt.Errorf("storing checkpoint tree: %w", err)
 	}
@@ -582,7 +825,7 @@ func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []
 
 	w.logf("Wrote checkpoint commit %x", ref.Hash)
 	w.result.Checkpoints++
-	w.last = time.Now()
+	w.last = w.now()
 
 	return nil
 }
@@ -610,23 +853,28 @@ func nodeEqual(node, base *proto.TreeNode) bool {
 	a, b := node.Stat, base.Stat
 
 	return metaEqual(a, b) &&
-		a.GetName() == b.GetName() &&
-		a.GetUser() == b.GetUser() &&
-		a.GetGroup() == b.GetGroup() &&
-		a.GetLinkTarget() == b.GetLinkTarget() &&
+		bytes.Equal(a.GetName(), b.GetName()) &&
+		bytes.Equal(a.GetUser(), b.GetUser()) &&
+		bytes.Equal(a.GetGroup(), b.GetGroup()) &&
+		bytes.Equal(a.GetLinkTarget(), b.GetLinkTarget()) &&
 		node.Ref.Equal(base.Ref)
 }
 
 // HashFile computes the File ref a backup of path would produce without
 // storing anything.
-func HashFile(path string) (*proto.Ref, error) {
+func HashFile(path string, key *storekey.Key) (*proto.Ref, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	writer := newFileWriter(context.Background(), discardStore{})
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	writer := newFileWriter(context.Background(), discardStore{}, key, info.Size())
 
 	_, err = io.Copy(writer, file)
 	if err != nil {
@@ -659,6 +907,7 @@ func (discardStore) Has(context.Context, *proto.Ref) (bool, error) { return true
 type treeSource struct {
 	getter  Getter
 	fetcher TreeFetcher
+	key     *storekey.Key
 	depth   uint32
 	mtx     sync.Mutex
 	objects map[string]*proto.Object
@@ -701,6 +950,6 @@ func (t *treeSource) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, er
 	return t.getter.Get(ctx, ref)
 }
 
-func (t *treeSource) load(ctx context.Context, ref *proto.Ref) (*proto.Tree, error) {
-	return LoadTree(ctx, t, ref)
+func (t *treeSource) load(ctx context.Context, ref *proto.Ref, parent []byte) (*proto.Tree, error) {
+	return OpenTree(ctx, t, ref, t.key, parent)
 }

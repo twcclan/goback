@@ -1,0 +1,419 @@
+package backup
+
+import (
+	"bytes"
+	"context"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/twcclan/goback/backup/blobcache"
+	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/proto"
+
+	"github.com/stretchr/testify/require"
+)
+
+type getCountingStore struct {
+	*memStore
+	gets int64
+}
+
+func (g *getCountingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	atomic.AddInt64(&g.gets, 1)
+	return g.memStore.Get(ctx, ref)
+}
+
+func (g *getCountingStore) reset() int64 {
+	return atomic.SwapInt64(&g.gets, 0)
+}
+
+func randomData(size int, seed int64) []byte {
+	data := make([]byte, size)
+	rand.New(rand.NewSource(seed)).Read(data)
+
+	return data
+}
+
+func putFile(t *testing.T, store ObjectStore, key *storekey.Key, data []byte) *proto.Ref {
+	t.Helper()
+
+	writer := newFileWriter(context.Background(), store, key, int64(len(data)))
+	_, err := writer.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	return writer.Ref()
+}
+
+func fileParts(t *testing.T, store ObjectStore, ref *proto.Ref) int {
+	t.Helper()
+
+	obj, err := store.Get(context.Background(), ref)
+	require.NoError(t, err)
+
+	return len(obj.GetFile().GetParts())
+}
+
+func statFor(data []byte) *proto.FileInfo {
+	return &proto.FileInfo{Size: int64(len(data)), Mode: 0o644, MtimeNs: time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC).UnixNano()}
+}
+
+func requireRestored(t *testing.T, path string, data []byte, stat *proto.FileInfo) {
+	t.Helper()
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(data, got), "content differs")
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, stat.MtimeNs, info.ModTime().UnixNano())
+}
+
+func keyCases(t *testing.T) map[string]*storekey.Key {
+	return map[string]*storekey.Key{"plaintext": nil, "keyed": newKey(t)}
+}
+
+func TestRestoreFileReplacesAReadOnlyDestination(t *testing.T) {
+	store := newMemStore()
+	first, second := randomData(2*maxBlobSize+5, 1), randomData(2*maxBlobSize+9, 2)
+	firstRef, secondRef := putFile(t, store, nil, first), putFile(t, store, nil, second)
+	firstStat, secondStat := statFor(first), statFor(second)
+	firstStat.Mode, secondStat.Mode = 0o444, 0o444
+
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "locked.dat")
+	r := &Restorer{Store: store, Workers: 2}
+
+	_, err := r.RestoreFile(ctx, path, firstStat, firstRef)
+	require.NoError(t, err)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Zero(t, info.Mode()&0o200, "the recorded mode leaves the file read-only")
+
+	outcome, err := r.RestoreFile(ctx, path, secondStat, secondRef)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeWritten, outcome)
+	requireRestored(t, path, second, secondStat)
+
+	info, err = os.Stat(path)
+	require.NoError(t, err)
+	require.Zero(t, info.Mode()&0o200)
+}
+
+func TestRestoreFileRejectsAPartThatDoesNotHashToItsRef(t *testing.T) {
+	store := newMemStore()
+	data := randomData(3*maxBlobSize, 1)
+	ref := putFile(t, store, nil, data)
+
+	file, err := store.Get(context.Background(), ref)
+	require.NoError(t, err)
+	part := file.GetFile().GetParts()[1]
+
+	// a blob of the right length under the wrong ref
+	forged := randomData(int(part.Length), 2)
+	store.objects[string(part.Ref.Hash)] = proto.NewObject(&proto.Blob{Data: forged})
+
+	path := filepath.Join(t.TempDir(), "region.mca")
+	r := &Restorer{Store: store, Workers: 2}
+	_, err = r.RestoreFile(context.Background(), path, statFor(data), ref)
+	require.ErrorContains(t, err, "does not hash to its ref")
+	require.NoFileExists(t, path)
+}
+
+func TestRestoreFileTakesPartsFromDestination(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			store := &getCountingStore{memStore: newMemStore()}
+			data := randomData(6*maxBlobSize+777, 1)
+			ref := putFile(t, store, key, data)
+			parts := fileParts(t, store, ref)
+			require.Greater(t, parts, 3)
+			stat := statFor(data)
+
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "world", "region.mca")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+
+			r := &Restorer{Store: store, Key: key, Workers: 4}
+
+			store.reset()
+			outcome, err := r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.EqualValues(t, parts+1, store.reset(), "the file object and every part are fetched")
+			require.EqualValues(t, len(data), r.Stats().BytesFromStore)
+
+			outcome, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeUnchanged, outcome)
+			require.EqualValues(t, 1, store.reset(), "an identical file costs only the file object")
+
+			damaged := append([]byte(nil), data...)
+			damaged[len(damaged)/2] ^= 0xff
+			require.NoError(t, os.WriteFile(path, damaged, 0o644))
+
+			outcome, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.LessOrEqual(t, store.reset(), int64(3), "only the damaged part is downloaded")
+
+			stats := r.Stats()
+			require.EqualValues(t, 3, stats.Files)
+			require.Greater(t, stats.BytesFromDestination, stats.BytesFromStore)
+		})
+	}
+}
+
+func TestRestoreFileOverwriteModes(t *testing.T) {
+	store := &getCountingStore{memStore: newMemStore()}
+	data := randomData(3*maxBlobSize, 2)
+	ref := putFile(t, store, nil, data)
+	stat := statFor(data)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "level.dat")
+
+	damaged := append([]byte(nil), data...)
+	damaged[10] ^= 0xff
+	require.NoError(t, os.WriteFile(path, damaged, 0o644))
+	require.NoError(t, applyStat(path, stat))
+
+	trusting := &Restorer{Store: store, Overwrite: OverwriteIfChanged}
+	outcome, err := trusting.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeSkipped, outcome, "a stat match is trusted")
+
+	dry := &Restorer{Store: store, DryRun: true}
+	outcome, err = dry.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeWouldWrite, outcome)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(damaged, got), "a dry run writes nothing")
+
+	entries, err := os.ReadDir(filepath.Dir(path))
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "no temp file is left behind")
+
+	verifying := &Restorer{Store: store, Verify: true}
+	outcome, err = verifying.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeWritten, outcome)
+	requireRestored(t, path, data, stat)
+}
+
+func TestRestoreFileInline(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			store := newMemStore()
+			data := []byte("server-port=25565\nmotd=hello\n")
+			ref := putFile(t, store, key, data)
+			stat := statFor(data)
+			path := filepath.Join(t.TempDir(), "server.properties")
+
+			r := &Restorer{Store: store, Key: key}
+			outcome, err := r.RestoreFile(context.Background(), path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+
+			outcome, err = r.RestoreFile(context.Background(), path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeUnchanged, outcome)
+		})
+	}
+}
+
+func TestRestoreFileFromSeeds(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			store := &getCountingStore{memStore: newMemStore()}
+			data := randomData(5*maxBlobSize+99, 3)
+			ref := putFile(t, store, key, data)
+			stat := statFor(data)
+
+			base := t.TempDir()
+			seed := filepath.Join(base, "other-server", "world", "r.0.0.mca")
+			require.NoError(t, os.MkdirAll(filepath.Dir(seed), 0o755))
+			require.NoError(t, os.WriteFile(seed, data, 0o644))
+
+			seeds := NewSeedMap(key)
+			require.NoError(t, seeds.Add(filepath.Join(base, "other-server")))
+			require.Equal(t, fileParts(t, store, ref), seeds.Len(), "the seed is cut like the backup was")
+
+			path := filepath.Join(base, "this-server", "world", "r.0.0.mca")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+
+			r := &Restorer{Store: store, Key: key, Seeds: seeds}
+			store.reset()
+			outcome, err := r.RestoreFile(context.Background(), path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.EqualValues(t, 1, store.reset(), "every part came from the seed")
+			require.EqualValues(t, len(data), r.Stats().BytesFromSeeds)
+		})
+	}
+}
+
+func TestRestoreFileFromBlobCache(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			store := &getCountingStore{memStore: newMemStore()}
+			data := randomData(4*maxBlobSize+5, 4)
+			ref := putFile(t, store, key, data)
+			stat := statFor(data)
+			ctx := context.Background()
+
+			cache, err := blobcache.Open(t.TempDir(), "s1", 0)
+			require.NoError(t, err)
+
+			path := filepath.Join(t.TempDir(), "a")
+			r := &Restorer{Store: store, Key: key, Cache: cache}
+			_, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.EqualValues(t, len(data), r.Stats().BytesFromStore)
+
+			// only the file object remains reachable; every blob must come from the cache
+			fileObj, err := store.Get(ctx, ref)
+			require.NoError(t, err)
+			onlyFile := newMemStore()
+			require.NoError(t, onlyFile.Put(ctx, fileObj))
+
+			require.NoError(t, os.Remove(path))
+			r = &Restorer{Store: onlyFile, Key: key, Cache: cache}
+			outcome, err := r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.EqualValues(t, len(data), r.Stats().BytesFromCache)
+
+			// a corrupt entry is dropped and the part downloaded
+			parts := fileObj.GetFile().GetParts()
+			first := parts[0].Ref
+			corrupt := filepath.Join(cache.Dir(), "zz", "corrupt")
+			require.NoError(t, os.MkdirAll(filepath.Dir(corrupt), 0o755))
+			cached, ok := cache.Get(first)
+			require.True(t, ok)
+			require.NoError(t, cache.Put(first, cached))
+
+			entries, err := filepath.Glob(filepath.Join(cache.Dir(), "*", "*"))
+			require.NoError(t, err)
+			require.Len(t, entries, len(parts))
+
+			require.NoError(t, os.Remove(path))
+			r = &Restorer{Store: store, Key: key, Cache: cache}
+			cache.Drop(first)
+			store.reset()
+			_, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			requireRestored(t, path, data, stat)
+			require.EqualValues(t, 2, store.reset(), "the dropped part and the file object are fetched")
+		})
+	}
+}
+
+func TestLiveMarkersIgnoreUnheldLocks(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "world"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "world", "session.lock"), []byte{0x36, 0x37, 0x38}, 0o644))
+
+	held, err := LiveMarkers(root)
+	require.NoError(t, err)
+	require.Empty(t, held)
+}
+
+// streamingStore serves parts through ReadParts and refuses blob Gets,
+// like the remote client.
+type streamingStore struct {
+	*memStore
+	calls int
+	gets  int
+}
+
+func (s *streamingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	obj, err := s.memStore.Get(ctx, ref)
+	if err == nil && obj.GetBlob() != nil {
+		return nil, ErrNotFound
+	}
+
+	s.gets++
+
+	return obj, err
+}
+
+func (s *streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
+	s.calls++
+
+	obj, err := s.memStore.Get(ctx, file)
+	if err != nil {
+		return err
+	}
+
+	parts, err := FileParts(ctx, s.memStore, obj.GetFile())
+	if err != nil {
+		return err
+	}
+
+	skipped := make(map[int]bool, len(skip))
+	for _, i := range skip {
+		skipped[i] = true
+	}
+
+	for i, part := range parts {
+		if skipped[i] || part.Ref == nil {
+			continue
+		}
+
+		blob, err := s.memStore.Get(ctx, part.Ref)
+		if err != nil {
+			return err
+		}
+
+		if err := fn(i, blob); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func TestRestoreFileStreamsPartsFromPartReader(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			store := &streamingStore{memStore: newMemStore()}
+			data := randomData(6*maxBlobSize+777, 1)
+			ref := putFile(t, store.memStore, key, data)
+			stat := statFor(data)
+
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "region.mca")
+
+			r := &Restorer{Store: store, Key: key, Workers: 4}
+			outcome, err := r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.Equal(t, 1, store.calls, "one stream per file")
+			require.Equal(t, 1, store.gets, "only the file object is fetched")
+			require.EqualValues(t, len(data), r.Stats().BytesFromStore)
+
+			damaged := append([]byte(nil), data...)
+			damaged[len(damaged)/2] ^= 0xff
+			require.NoError(t, os.WriteFile(path, damaged, 0o644))
+
+			outcome, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.Less(t, r.Stats().BytesFromStore, int64(len(data))+int64(maxBlobSize), "only the damaged part is streamed")
+		})
+	}
+}

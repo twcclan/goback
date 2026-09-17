@@ -2,6 +2,7 @@ package pack
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,8 +119,12 @@ func TestCompactionRefusesCorruptSource(t *testing.T) {
 	store = newTestStore(t, base, WithCompaction(CompactionConfig{MinimumCandidates: 0}))
 	defer store.Close()
 
+	// the flipped byte lands in a payload or in a header, depending on the
+	// random object sizes; either way the source is refused
 	err = store.doCompaction()
-	require.ErrorIs(t, err, proto.ErrRefMismatch)
+	if !errors.Is(err, proto.ErrRefMismatch) {
+		require.ErrorContains(t, err, "parsing object header")
+	}
 }
 
 func TestTombstoneRef(t *testing.T) {

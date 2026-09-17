@@ -20,4 +20,23 @@ message Commit {
 
   // a checkpoint written mid-run, superseded by the final commit
   bool partial = 7;
+
+  reserved 8;
+
+  // the store policy version the agent wrote under, 0 for no policy
+  uint32 policy_version = 9;
+
+  // the set's server-assigned id, globally unique; 0 in a local index
+  uint64 set_id = 10;
+
+  // server clock at receipt, nanoseconds since the Unix epoch; ordering,
+  // retention and "latest commit" use this, timestamp is display metadata
+  int64 received_at_ns = 11;
+
+  // the agent's pre hook quiesced the application and no file was torn or
+  // unreadable; never set on a checkpoint
+  bool consistent = 12;
+
+  // labels the agent attached; the store keeps them and never interprets them
+  map<string, string> metadata = 13;
 }

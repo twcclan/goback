@@ -1,0 +1,22 @@
+type: google.api.Service
+config_version: 3
+http:
+  rules:
+    - selector: admin.Admin.ListSets
+      get: /v1/sets
+    - selector: admin.Admin.TransferSet
+      post: /v1/sets/{name}/transfer
+      body: "*"
+    - selector: admin.Admin.DeleteSet
+      delete: /v1/sets/{name}
+    - selector: admin.Admin.UndeleteSet
+      post: /v1/sets/{name}/undelete
+    - selector: admin.Admin.GetStorePolicy
+      get: /v1/policy
+    - selector: admin.Admin.SetStorePolicy
+      put: /v1/policy
+      body: "*"
+    - selector: admin.Admin.Retire
+      post: /v1/jobs/retire
+    - selector: admin.Admin.CollectGarbage
+      post: /v1/jobs/gc

@@ -4,6 +4,7 @@ package backup
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/user"
 	"strconv"
@@ -20,6 +21,20 @@ func IsPermissionError(err error) bool {
 // the file; never on Unix.
 func IsLockError(err error) bool {
 	return false
+}
+
+// lockedElsewhere reports whether another process holds a POSIX record
+// lock on the file, as a Java FileChannel lock is.
+func lockedElsewhere(path string) bool {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	lock := syscall.Flock_t{Type: syscall.F_WRLCK, Whence: int16(io.SeekStart)}
+
+	return syscall.FcntlFlock(file.Fd(), syscall.F_SETLK, &lock) != nil
 }
 
 var (
@@ -66,4 +81,9 @@ func FileIdentity(info os.FileInfo) (ctimeNs int64, inode uint64) {
 	}
 
 	return stat.Ctim.Sec*1e9 + stat.Ctim.Nsec, stat.Ino
+}
+
+// entryInfo is the stat of a directory entry.
+func entryInfo(entry os.DirEntry, _ string) (os.FileInfo, error) {
+	return entry.Info()
 }

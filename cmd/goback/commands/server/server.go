@@ -1,22 +1,32 @@
 package server
 
 import (
+	"context"
+	"crypto/tls"
+	"errors"
 	"log"
 	"net"
+	"os"
+	"strings"
+	"time"
 
+	"github.com/twcclan/goback/admin"
+	"github.com/twcclan/goback/auth"
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/gc"
+	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
+	"github.com/twcclan/goback/telemetry"
 
 	"cloud.google.com/go/profiler"
-	"contrib.go.opencensus.io/exporter/zipkin"
-	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
 	"github.com/urfave/cli"
-	"go.opencensus.io/plugin/ocgrpc"
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/trace"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var Command = cli.Command{
@@ -33,7 +43,51 @@ var Command = cli.Command{
 			Usage: "GCP project to send Cloud Profiler data to",
 		},
 		cli.StringFlag{
-			Name: "zipkin-url",
+			Name:  "otlp-traces-endpoint",
+			Usage: "OTLP/HTTP endpoint that receives one percent of the server's traces, e.g. http://localhost:4318/v1/traces",
+		},
+		cli.StringFlag{
+			Name:  "secret",
+			Usage: "the secret every agent of this server presents",
+		},
+		cli.StringFlag{
+			Name:  "secret-file",
+			Usage: "file holding the secret, for when a flag would show it",
+		},
+		cli.StringFlag{
+			Name:  "tls-cert",
+			Usage: "PEM certificate chain the server presents; with --tls-key, agents connect over TLS",
+		},
+		cli.StringFlag{
+			Name:  "tls-key",
+			Usage: "PEM private key for --tls-cert",
+		},
+		cli.BoolFlag{
+			Name:  "plaintext-behind-proxy",
+			Usage: "serve plaintext because a proxy in front of the server terminates TLS; never expose this listener directly",
+		},
+		cli.StringFlag{
+			Name:  "admin-address",
+			Usage: "listener for the operator surface (gRPC and REST); empty serves none",
+		},
+		cli.StringFlag{
+			Name:  "admin-token",
+			Usage: "bearer token the operator surface requires",
+		},
+		cli.StringFlag{
+			Name:  "presence-scope",
+			Usage: "whose commits feed the presence filters agents receive: off, set or store",
+			Value: "store",
+		},
+		cli.DurationFlag{
+			Name:  "retire-interval",
+			Usage: "how often retired commits past their window are tombstoned; 0 disables the job",
+			Value: time.Hour,
+		},
+		cli.DurationFlag{
+			Name:  "gc-interval",
+			Usage: "how often the store is garbage collected; 0 disables the job",
+			Value: 7 * 24 * time.Hour,
 		},
 	},
 }
@@ -49,50 +103,218 @@ func enableProfiler(projectID string) {
 	}
 }
 
-func enableZipkin(url string) {
-	reporter := zipkinHTTP.NewReporter(url)
-
-	zk := zipkin.NewExporter(reporter, nil)
-
-	trace.RegisterExporter(zk)
+func enableTracing(endpoint string) {
+	_, err := telemetry.Traces(context.Background(), endpoint, 1e-2)
+	if err != nil {
+		log.Fatalf("failed setting up tracing: %s", err)
+	}
 }
 
 func serverAction(ctx *cli.Context) {
-	s := common.GetObjectStore(ctx)
-	idx := common.GetIndex(ctx, s)
-	listener, err := net.Listen("tcp", ctx.String("address"))
+	secret, err := sharedSecret(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = view.Register(pack.DefaultViews...)
+	creds, tlsConfig, err := transportCredentials(ctx)
 	if err != nil {
-		log.Fatalf("failed to register pack storage views: %s", err)
+		log.Fatal(err)
 	}
 
-	err = view.Register(ocgrpc.DefaultServerViews...)
+	s := common.GetObjectStore(ctx)
+	idx := common.OpenIndex(ctx, s)
+
+	listener, err := net.Listen("tcp", ctx.String("address"))
 	if err != nil {
-		log.Fatalf("failed to register grpc server views: %s", err)
+		log.Fatal(err)
 	}
 
 	if projectID := ctx.String("profiler-project"); projectID != "" {
 		enableProfiler(projectID)
 	}
 
-	if url := ctx.String("zipkin-url"); url != "" {
-		enableZipkin(url)
+	if endpoint := ctx.String("otlp-traces-endpoint"); endpoint != "" {
+		enableTracing(endpoint)
 	}
 
-	srv := grpc.NewServer(grpc.StatsHandler(&ocgrpc.ServerHandler{
-		IsPublicEndpoint: true,
-		StartOptions: trace.StartOptions{
-			SpanKind: trace.SpanKindServer,
-			Sampler:  trace.ProbabilitySampler(1e-2),
-		},
-	}))
+	sessions, _ := s.(backup.SessionStore)
+	if sessions == nil {
+		log.Printf("Store %T has no sessions; uploads are visible as they arrive", s)
+	}
 
-	proto.RegisterStoreServer(srv, storage.NewRemoteServer(idx))
+	store := storage.NewStore(idx, sessions)
+
+	store.PresenceScope, err = backup.ParsePresenceScope(ctx.String("presence-scope"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, ok := idx.(backup.PresenceIndex); !ok && store.PresenceScope != backup.PresenceOff {
+		log.Printf("Index %T stores no presence filters; agents upload every new chunk", idx)
+	}
+
+	if _, ok := idx.(backup.RefScope); !ok {
+		log.Printf("Index %T cannot scope reads; every ref is served", idx)
+	}
+
+	remote := storage.NewRemoteServer(store)
+
+	srv := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithPublicEndpoint())),
+		grpc.ChainUnaryInterceptor(auth.UnaryInterceptor(secret), remote.UnaryInterceptor()),
+		grpc.ChainStreamInterceptor(auth.StreamInterceptor(secret), remote.StreamInterceptor()),
+	)
+
+	proto.RegisterStoreServer(srv, remote)
+
+	retirer, _ := idx.(backup.Retirer)
+	if retirer != nil && ctx.Duration("retire-interval") > 0 {
+		go retireLoop(retirer, ctx.Duration("retire-interval"))
+	}
+
+	collector, _ := common.Unwrap(s).(pack.Collector)
+	if collector != nil && ctx.Duration("gc-interval") > 0 {
+		go gcLoop(collector, ctx.Duration("gc-interval"))
+	}
+
+	if addr := ctx.String("admin-address"); addr != "" {
+		serveAdmin(addr, ctx.String("admin-token"), tlsConfig, idx, retirer, collector)
+	}
 
 	log.Println("Listening on", listener.Addr().String())
 	log.Fatal(srv.Serve(listener))
+}
+
+// sharedSecret reads --secret or --secret-file; the server accepts no
+// anonymous calls.
+func sharedSecret(ctx *cli.Context) (string, error) {
+	secret, file := ctx.String("secret"), ctx.String("secret-file")
+
+	switch {
+	case secret != "" && file != "":
+		return "", errors.New("--secret and --secret-file are exclusive")
+	case file != "":
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+
+		secret = strings.TrimSpace(string(data))
+	}
+
+	if secret == "" {
+		return "", errors.New("--secret or --secret-file is required: the server accepts no anonymous calls")
+	}
+
+	return secret, nil
+}
+
+// transportCredentials serves TLS from --tls-cert and --tls-key, or
+// plaintext when the operator declared a TLS-terminating proxy in front;
+// the TLS configuration is nil for plaintext.
+func transportCredentials(ctx *cli.Context) (credentials.TransportCredentials, *tls.Config, error) {
+	cert, key := ctx.String("tls-cert"), ctx.String("tls-key")
+
+	switch {
+	case cert != "" && key != "":
+		if ctx.Bool("plaintext-behind-proxy") {
+			return nil, nil, errors.New("--plaintext-behind-proxy and --tls-cert are exclusive")
+		}
+
+		pair, err := tls.LoadX509KeyPair(cert, key)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		config := &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
+
+		return credentials.NewTLS(config), config, nil
+	case cert != "" || key != "":
+		return nil, nil, errors.New("--tls-cert and --tls-key go together")
+	case ctx.Bool("plaintext-behind-proxy"):
+		log.Println("Serving plaintext; a proxy must terminate TLS in front of this listener")
+		return insecure.NewCredentials(), nil, nil
+	default:
+		return nil, nil, errors.New("--tls-cert and --tls-key are required unless --plaintext-behind-proxy is set")
+	}
+}
+
+// serveAdmin starts the operator surface on addr with the main listener's
+// TLS material.
+func serveAdmin(addr, token string, tlsConfig *tls.Config, idx backup.Index, retirer backup.Retirer, collector pack.Collector) {
+	if token == "" {
+		log.Fatal("--admin-token is required with --admin-address")
+	}
+
+	x, ok := idx.(*sql.Index)
+	if !ok {
+		log.Fatalf("Index %T keeps no sets or policy; the admin surface needs one that does", idx)
+	}
+
+	server := &admin.Server{Index: x}
+
+	if retirer != nil {
+		server.RetireJob = func(ctx context.Context) (int, error) { return retirer.Retire(ctx, time.Now()) }
+	}
+
+	if collector != nil {
+		server.CollectJob = func(ctx context.Context) (string, error) {
+			report, err := collector.Collect(ctx, pack.CollectOptions{})
+			if err != nil {
+				return "", err
+			}
+
+			gc.Log(report)
+
+			return gc.Summary(report), nil
+		}
+	}
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if tlsConfig != nil {
+		config := tlsConfig.Clone()
+		config.NextProtos = []string{"h2", "http/1.1"}
+		listener = tls.NewListener(listener, config)
+	}
+
+	log.Println("Admin surface listening on", listener.Addr().String())
+
+	go func() {
+		log.Fatal(admin.NewHTTPServer(admin.Handler(server, token)).Serve(listener))
+	}()
+}
+
+// gcLoop garbage collects the store on a fixed interval; docs/13 moves it
+// onto the job queue.
+func gcLoop(collector pack.Collector, interval time.Duration) {
+	for range time.Tick(interval) {
+		report, err := collector.Collect(context.Background(), pack.CollectOptions{})
+		if err != nil {
+			log.Printf("Garbage collection failed: %v", err)
+			continue
+		}
+
+		gc.Log(report)
+	}
+}
+
+// retireLoop runs the retirement job on a fixed interval; docs/13 moves it
+// onto the job queue.
+func retireLoop(retirer backup.Retirer, interval time.Duration) {
+	for range time.Tick(interval) {
+		n, err := retirer.Retire(context.Background(), time.Now())
+		if err != nil {
+			log.Printf("Retirement failed after %d commits: %v", n, err)
+			continue
+		}
+
+		if n > 0 {
+			log.Printf("Retired %d commits", n)
+		}
+	}
 }

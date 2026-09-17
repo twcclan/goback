@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
@@ -22,21 +23,47 @@ import (
 // trees, like the real indexes do on Put.
 type memIndex struct {
 	*memStore
-	mtx     sync.Mutex
-	latest  map[string]*proto.Ref
-	commits []*proto.Commit
-	fetches int64
+	mtx       sync.Mutex
+	latest    map[string]*proto.Ref
+	commits   []*proto.Commit
+	fetches   int64
+	gated     []string
+	putSetIDs []uint64
+
+	// versions are the file nodes FileInfo answers, newest first, by
+	// "<set>/<index path>"
+	versions map[string][]*proto.TreeNode
+	// policy is what BeginCommit grants
+	policy *storekey.Policy
+	// afterCommit runs once a commit is recorded
+	afterCommit func(*proto.Commit)
+	putErr      error
+}
+
+// fail makes every later Put return err; nil clears it.
+func (m *memIndex) fail(err error) {
+	m.mtx.Lock()
+	m.putErr = err
+	m.mtx.Unlock()
 }
 
 func newMemIndex(store *memStore) *memIndex {
-	return &memIndex{memStore: store, latest: map[string]*proto.Ref{}}
+	return &memIndex{memStore: store, latest: map[string]*proto.Ref{}, versions: map[string][]*proto.TreeNode{}}
 }
 
 func (m *memIndex) Open() error  { return nil }
 func (m *memIndex) Close() error { return nil }
 
-func (m *memIndex) FileInfo(context.Context, string, string, time.Time, int) ([]*proto.TreeNode, error) {
-	return nil, ErrNotImplemented
+func (m *memIndex) FileInfo(_ context.Context, set, name string, _ time.Time, count int) ([]*proto.TreeNode, error) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	nodes := m.versions[set+"/"+name]
+	if len(nodes) > count {
+		nodes = nodes[:count]
+	}
+
+	return nodes, nil
 }
 
 func (m *memIndex) CommitInfo(context.Context, string, time.Time, int) ([]*proto.Commit, error) {
@@ -57,7 +84,24 @@ func (m *memIndex) LatestCommit(_ context.Context, set string) (*proto.Ref, erro
 	return ref, nil
 }
 
+// BeginCommit implements CommitGate: every set is set 42.
+func (m *memIndex) BeginCommit(_ context.Context, set string) (*CommitGrant, error) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	m.gated = append(m.gated, set)
+
+	return &CommitGrant{SetID: 42, Policy: m.policy}, nil
+}
+
 func (m *memIndex) Put(ctx context.Context, obj *proto.Object) error {
+	m.mtx.Lock()
+	putErr := m.putErr
+	m.mtx.Unlock()
+	if putErr != nil {
+		return putErr
+	}
+
 	if commit := obj.GetCommit(); commit != nil {
 		err := m.reachable(ctx, commit.Tree)
 		if err != nil {
@@ -65,9 +109,25 @@ func (m *memIndex) Put(ctx context.Context, obj *proto.Object) error {
 		}
 
 		m.mtx.Lock()
+		m.putSetIDs = append(m.putSetIDs, commit.SetId)
+		m.mtx.Unlock()
+
+		if commit.ReceivedAtNs == 0 {
+			obj.Stamp(7, time.Now())
+		}
+
+		m.mtx.Lock()
 		m.latest[commit.BackupSet] = obj.Ref()
 		m.commits = append(m.commits, commit)
+		hook := m.afterCommit
 		m.mtx.Unlock()
+
+		err = m.memStore.Put(ctx, obj)
+		if err == nil && hook != nil {
+			hook(commit)
+		}
+
+		return err
 	}
 
 	return m.memStore.Put(ctx, obj)
@@ -179,14 +239,25 @@ func newWalkerFixture(t *testing.T) *walkerFixture {
 		Index:         f.index,
 		Objects:       f.objects,
 		Set:           "test",
+		Metadata:      map[string]string{"env": "test"},
 		AgentID:       "agent",
 		Root:          f.root,
 		Workers:       4,
 		ReadRetries:   3,
 		PrefetchDepth: 2,
+		clock:         tickingClock(),
 	}
 
 	return f
+}
+
+// tickingClock is wall time that advances a millisecond per reading.
+func tickingClock() func() time.Time {
+	var ticks int64
+
+	return func() time.Time {
+		return time.Now().Add(time.Duration(atomic.AddInt64(&ticks, 1)) * time.Millisecond)
+	}
 }
 
 func (f *walkerFixture) write(rel string, content []byte) {
@@ -239,10 +310,99 @@ func (f *walkerFixture) tree(ref *proto.Ref) map[string]*proto.TreeNode {
 
 	nodes := make(map[string]*proto.TreeNode, len(tree.Nodes))
 	for _, node := range tree.Nodes {
-		nodes[node.Stat.Name] = node
+		nodes[string(node.Stat.Name)] = node
 	}
 
 	return nodes
+}
+
+func TestWalkerAsksTheGateAndCarriesTheSetID(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("a.txt", []byte("one"))
+
+	f.run()
+
+	require.Equal(t, []string{"test"}, f.index.gated, "BeginCommit is asked once per run")
+	require.Equal(t, []uint64{42}, f.index.putSetIDs, "the commit carries the set id the gate returned")
+}
+
+func TestWalkerAdoptsTheStorePolicyFromTheGrant(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("a.txt", []byte("one"))
+
+	key, err := storekey.Generate("s1")
+	require.NoError(t, err)
+	f.walker.Key = key
+
+	// a policy the operator never set leaves the key file in charge
+	f.index.policy = &storekey.Policy{Version: 0, Mode: storekey.ModeStoreKeyedAll}
+	result := f.run()
+	require.EqualValues(t, 1, result.Commit.PolicyVersion)
+	require.Equal(t, storekey.ModeHybrid, key.Policy.Mode)
+
+	served := storekey.DefaultPolicy()
+	served.Version = 3
+	served.Mode = storekey.ModeStoreKeyedAll
+	f.index.policy = &served
+
+	f.write("a.txt", []byte("two"))
+	result = f.run()
+	require.EqualValues(t, 3, result.Commit.PolicyVersion, "the commit records the policy it was written under")
+	require.Equal(t, served, key.Policy)
+
+	// an agent without a key cannot honour a policy that encrypts
+	f.walker.Key = nil
+	_, err = f.walker.Run(context.Background())
+	require.ErrorContains(t, err, "no store key")
+
+	f.index.policy.Mode = storekey.ModeNone
+	_, err = f.walker.Run(context.Background())
+	require.NoError(t, err)
+
+	f.walker.Key = key
+	f.write("a.txt", []byte("three"))
+	result = f.run()
+	require.EqualValues(t, 3, result.Commit.PolicyVersion, "a policy without encryption is still the policy written under")
+	require.Same(t, key, f.walker.Key, "the run leaves the caller's key in place")
+}
+
+// remember makes the index answer FileInfo for the root-level files of a
+// commit, newest first.
+func (f *walkerFixture) remember(commit *proto.Commit) {
+	f.t.Helper()
+
+	for name, node := range f.tree(commit.Tree) {
+		if node.Stat.GetType() != proto.NodeType_NODE_FILE {
+			continue
+		}
+
+		key := "test/" + IndexPath(nil, name)
+		f.index.versions[key] = append([]*proto.TreeNode{node}, f.index.versions[key]...)
+	}
+}
+
+func TestWalkerSkipsPartsOfRecentLiveVersions(t *testing.T) {
+	f := newWalkerFixture(t)
+	old := f.random(300 << 10)
+	f.write("a.bin", old)
+	f.remember(f.run().Commit)
+
+	f.write("a.bin", f.random(300<<10))
+	second := f.run()
+	f.remember(second.Commit)
+	require.Greater(t, atomic.LoadInt64(&f.objects.puts), int64(2), "new content uploads blobs")
+
+	// content two versions back: its blobs are known through FileInfo
+	f.write("a.bin", old)
+	third := f.run()
+	require.EqualValues(t, 1, third.Read)
+	require.EqualValues(t, 2, atomic.LoadInt64(&f.objects.puts), "only the file object and the root tree")
+
+	// beyond the last three versions the blobs are uploaded again
+	f.index.versions = map[string][]*proto.TreeNode{}
+	f.write("a.bin", append(old, 1))
+	f.run()
+	require.Greater(t, atomic.LoadInt64(&f.objects.puts), int64(2))
 }
 
 func TestWalkerUnchangedRunUploadsOnlyTheCommit(t *testing.T) {
@@ -254,11 +414,15 @@ func TestWalkerUnchangedRunUploadsOnlyTheCommit(t *testing.T) {
 
 	first := f.run()
 	require.Nil(t, first.Base)
+	require.EqualValues(t, 7, first.Commit.SetId, "the commit carries what the index stamped")
+	require.NotZero(t, first.Commit.ReceivedAtNs)
+	require.True(t, proto.NewObject(first.Commit).Ref().Equal(first.Ref), "the result ref is the stamped commit's")
 	require.EqualValues(t, 4, first.Files)
 	require.EqualValues(t, 4, first.Read)
 	require.EqualValues(t, 0, first.Reused)
 	require.False(t, first.Commit.Partial)
 	require.Equal(t, "agent", first.Commit.AgentId)
+	require.Equal(t, map[string]string{"env": "test"}, first.Commit.Metadata)
 	require.NotZero(t, first.Commit.ScanStartNs)
 
 	root := f.tree(first.Commit.Tree)
@@ -384,7 +548,7 @@ func TestWalkerSymlinkIsRecordedNotFollowed(t *testing.T) {
 	root := f.tree(first.Commit.Tree)
 	link := root["link"]
 	require.Equal(t, proto.NodeType_NODE_SYMLINK, link.Stat.Type)
-	require.Equal(t, "target.txt", link.Stat.LinkTarget)
+	require.Equal(t, "target.txt", string(link.Stat.LinkTarget))
 	require.Nil(t, link.Ref)
 
 	second := f.run()
@@ -459,6 +623,30 @@ func TestWalkerCheckpointsWritePartialCommits(t *testing.T) {
 	}
 }
 
+func TestWalkerMarksQuiescedCleanRunsConsistent(t *testing.T) {
+	f := newWalkerFixture(t)
+	for i := 0; i < 3; i++ {
+		f.write(fmt.Sprintf("dir-%d/file.txt", i), []byte(fmt.Sprint(i)))
+	}
+
+	first := f.run()
+	require.False(t, first.Commit.Consistent, "no pre hook, no claim")
+
+	f.walker.Quiesced = true
+	f.walker.CheckpointInterval = time.Nanosecond
+	f.write("dir-0/file.txt", []byte("changed"))
+
+	second := f.run()
+	require.True(t, second.Commit.Consistent)
+	require.Greater(t, second.Checkpoints, int64(0))
+
+	for _, commit := range f.index.commits {
+		if commit.Partial {
+			require.False(t, commit.Consistent, "a checkpoint is never consistent")
+		}
+	}
+}
+
 func TestWalkerUnreadableFileKeepsPreviousVersion(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are not enforced on windows")
@@ -501,7 +689,164 @@ func TestHashFileMatchesStoredRef(t *testing.T) {
 	result := f.run()
 	root := f.tree(result.Commit.Tree)
 
-	ref, err := HashFile(filepath.Join(f.root, "big.bin"))
+	ref, err := HashFile(filepath.Join(f.root, "big.bin"), nil)
 	require.NoError(t, err)
 	require.True(t, ref.Equal(root["big.bin"].Ref))
+}
+
+// memSessions records the sessions a walker opens and closes.
+type memSessions struct {
+	mtx   sync.Mutex
+	began []*Session
+	ended []*Session
+}
+
+func (m *memSessions) BeginSession(ctx context.Context, s *Session) (context.Context, error) {
+	s.ID = fmt.Sprintf("session-%d", len(m.began)+1)
+
+	m.mtx.Lock()
+	m.began = append(m.began, s)
+	m.mtx.Unlock()
+
+	return WithSession(ctx, s), nil
+}
+
+func (m *memSessions) EndSession(ctx context.Context) error {
+	s, ok := SessionFromContext(ctx)
+	if !ok {
+		return errors.New("no session on the context")
+	}
+
+	m.mtx.Lock()
+	m.ended = append(m.ended, s)
+	m.mtx.Unlock()
+
+	return nil
+}
+
+func TestWalkerRunsInASessionAndUploadsEachChunkOnce(t *testing.T) {
+	content := make([]byte, 300<<10)
+	_, err := rand.Read(content)
+	require.NoError(t, err)
+
+	single := newWalkerFixture(t)
+	single.write("a.bin", content)
+	singlePuts := single.run().Reused
+	singlePuts = atomic.LoadInt64(&single.objects.puts)
+
+	f := newWalkerFixture(t)
+	sessions := &memSessions{}
+	f.walker.Sessions = sessions
+	f.write("a.bin", content)
+	f.write("b.bin", content)
+
+	result := f.run()
+	require.EqualValues(t, 2, result.Files)
+	require.Equal(t, singlePuts+1, atomic.LoadInt64(&f.objects.puts), "the second copy costs one file object, its chunks are not uploaded again")
+
+	require.Len(t, sessions.began, 1)
+	require.Len(t, sessions.ended, 1)
+	require.Same(t, sessions.began[0], sessions.ended[0])
+	require.Equal(t, "agent", sessions.began[0].AgentID)
+	require.Equal(t, "test", sessions.began[0].Set)
+}
+
+// TestWalkerCheckpointKeepsTheBaseRunsRacyWindow interrupts a run right
+// after its first checkpoint, which carries a base node the run has not
+// verified, and expects the next run to still re-read that file.
+func TestWalkerCheckpointKeepsTheBaseRunsRacyWindow(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("a-dir/file.txt", []byte("dir"))
+	f.write("racy.txt", []byte("version-1"))
+
+	// recorded with an mtime inside the first run's window
+	racy := filepath.Join(f.root, "racy.txt")
+	touched := time.Now().Add(100 * time.Millisecond)
+	require.NoError(t, os.Chtimes(racy, touched, touched))
+
+	first := f.run()
+	require.GreaterOrEqual(t, touched.UnixNano(), first.Commit.ScanStartNs)
+	before := f.tree(first.Commit.Tree)
+
+	// rewritten within the same tick, same size, before the second run
+	f.write("racy.txt", []byte("version-2"))
+	require.NoError(t, os.Chtimes(racy, touched, touched))
+	time.Sleep(200 * time.Millisecond)
+
+	// the second run checkpoints after a-dir and then loses the store
+	f.index.afterCommit = func(commit *proto.Commit) {
+		if commit.Partial {
+			f.index.fail(errors.New("store went away"))
+		}
+	}
+	f.walker.CheckpointInterval = time.Nanosecond
+	_, err := f.walker.Run(context.Background())
+	require.ErrorContains(t, err, "store went away")
+	f.index.afterCommit = nil
+	f.index.fail(nil)
+
+	latest, err := f.index.LatestCommit(context.Background(), "test")
+	require.NoError(t, err)
+	obj, err := f.store.Get(context.Background(), latest)
+	require.NoError(t, err)
+	require.True(t, obj.GetCommit().Partial, "the checkpoint is the diff base now")
+	require.Equal(t, first.Commit.ScanStartNs, obj.GetCommit().ScanStartNs, "the checkpoint keeps the base run's scan start")
+
+	f.walker.CheckpointInterval = 0
+	third := f.run()
+	after := f.tree(third.Commit.Tree)
+	require.False(t, after["racy.txt"].Ref.Equal(before["racy.txt"].Ref), "the rewrite is backed up")
+}
+
+// TestWalkerRereadsAFileWrittenThroughAHeldHandle writes a file through a
+// handle that stays open across runs, as a server log is written, and
+// expects the second run to pick the new content up.
+func TestWalkerRereadsAFileWrittenThroughAHeldHandle(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("held.log", []byte("aaaa"))
+
+	handle, err := os.OpenFile(filepath.Join(f.root, "held.log"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	defer handle.Close()
+
+	first := f.run()
+	require.Equal(t, "aaaa", f.content(first.Commit.Tree, "held.log"))
+
+	time.Sleep(50 * time.Millisecond)
+	_, err = handle.WriteAt([]byte("bbbb"), 0)
+	require.NoError(t, err)
+
+	second := f.run()
+	require.EqualValues(t, 1, second.Read)
+	require.Equal(t, "bbbb", f.content(second.Commit.Tree, "held.log"))
+}
+
+func TestWalkerRefusesAnUnlistableRootOnTheFirstRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions are ACLs on Windows")
+	}
+
+	f := newWalkerFixture(t)
+	f.write("a.txt", []byte("one"))
+	require.NoError(t, os.Chmod(f.root, 0))
+	t.Cleanup(func() { _ = os.Chmod(f.root, 0o755) })
+
+	_, err := f.walker.Run(context.Background())
+	require.Error(t, err)
+
+	_, err = f.index.LatestCommit(context.Background(), "test")
+	require.ErrorIs(t, err, ErrNotFound, "no empty commit was written")
+}
+
+// content returns the inline content of a small file in a commit's tree.
+func (f *walkerFixture) content(tree *proto.Ref, name string) string {
+	f.t.Helper()
+
+	node := f.tree(tree)[name]
+	require.NotNil(f.t, node, name)
+
+	obj, err := f.store.Get(context.Background(), node.Ref)
+	require.NoError(f.t, err)
+
+	return string(obj.GetFile().GetInline())
 }

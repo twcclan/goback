@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"sort"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -21,6 +22,16 @@ var errIndexHeaderMismatch = errors.New("received unexpected index file header")
 func (idx IndexFile) Len() int           { return len(idx) }
 func (idx IndexFile) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
 func (idx IndexFile) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
+
+// position returns the index of the record for hash, or -1.
+func (idx IndexFile) position(hash []byte) int {
+	i := sort.Search(len(idx), func(i int) bool { return bytes.Compare(idx[i].Sum[:], hash) >= 0 })
+	if i < len(idx) && bytes.Equal(idx[i].Sum[:], hash) {
+		return i
+	}
+
+	return -1
+}
 
 func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)

@@ -2,7 +2,6 @@ package backup
 
 import (
 	"context"
-	"path"
 	"sync"
 
 	"github.com/twcclan/goback/proto"
@@ -70,7 +69,7 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 			continue
 		}
 
-		err := c.traverseFn(path.Join(t.prefix, info.Name), node)
+		err := c.traverseFn(proto.JoinPath(t.prefix, info.Name), node)
 		if err != nil {
 			// if the TraverseFunc signals that we should skip the tree
 			// we will just continue and won't create a new concurrentTreeNode
@@ -88,7 +87,7 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 		}
 
 		subTreeNode := &concurrentTreeNode{
-			prefix: path.Join(t.prefix, info.Name),
+			prefix: proto.JoinPath(t.prefix, info.Name),
 			object: proto.NewObject(subTree),
 		}
 
@@ -114,7 +113,7 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 			continue
 		}
 
-		err := c.traverseFn(path.Join(t.prefix, info.Name), node)
+		err := c.traverseFn(proto.JoinPath(t.prefix, info.Name), node)
 		if err != nil {
 			return err
 		}

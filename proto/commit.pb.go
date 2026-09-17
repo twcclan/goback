@@ -32,7 +32,19 @@ type Commit struct {
 	// agent wall time in nanoseconds at the start of the walk
 	ScanStartNs int64 `protobuf:"varint,6,opt,name=scan_start_ns,json=scanStartNs,proto3" json:"scan_start_ns,omitempty"`
 	// a checkpoint written mid-run, superseded by the final commit
-	Partial       bool `protobuf:"varint,7,opt,name=partial,proto3" json:"partial,omitempty"`
+	Partial bool `protobuf:"varint,7,opt,name=partial,proto3" json:"partial,omitempty"`
+	// the store policy version the agent wrote under, 0 for no policy
+	PolicyVersion uint32 `protobuf:"varint,9,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	// the set's server-assigned id, globally unique; 0 in a local index
+	SetId uint64 `protobuf:"varint,10,opt,name=set_id,json=setId,proto3" json:"set_id,omitempty"`
+	// server clock at receipt, nanoseconds since the Unix epoch; ordering,
+	// retention and "latest commit" use this, timestamp is display metadata
+	ReceivedAtNs int64 `protobuf:"varint,11,opt,name=received_at_ns,json=receivedAtNs,proto3" json:"received_at_ns,omitempty"`
+	// the agent's pre hook quiesced the application and no file was torn or
+	// unreadable; never set on a checkpoint
+	Consistent bool `protobuf:"varint,12,opt,name=consistent,proto3" json:"consistent,omitempty"`
+	// labels the agent attached; the store keeps them and never interprets them
+	Metadata      map[string]string `protobuf:"bytes,13,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,11 +128,46 @@ func (x *Commit) GetPartial() bool {
 	return false
 }
 
+func (x *Commit) GetPolicyVersion() uint32 {
+	if x != nil {
+		return x.PolicyVersion
+	}
+	return 0
+}
+
+func (x *Commit) GetSetId() uint64 {
+	if x != nil {
+		return x.SetId
+	}
+	return 0
+}
+
+func (x *Commit) GetReceivedAtNs() int64 {
+	if x != nil {
+		return x.ReceivedAtNs
+	}
+	return 0
+}
+
+func (x *Commit) GetConsistent() bool {
+	if x != nil {
+		return x.Consistent
+	}
+	return false
+}
+
+func (x *Commit) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_commit_proto protoreflect.FileDescriptor
 
 const file_commit_proto_rawDesc = "" +
 	"\n" +
-	"\fcommit.proto\x12\x05proto\x1a\tref.proto\"\xe2\x01\n" +
+	"\fcommit.proto\x12\x05proto\x1a\tref.proto\"\xe2\x03\n" +
 	"\x06Commit\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12\x1e\n" +
 	"\x04tree\x18\x02 \x01(\v2\n" +
@@ -131,7 +178,18 @@ const file_commit_proto_rawDesc = "" +
 	".proto.RefR\x06parent\x12\x19\n" +
 	"\bagent_id\x18\x05 \x01(\tR\aagentId\x12\"\n" +
 	"\rscan_start_ns\x18\x06 \x01(\x03R\vscanStartNs\x12\x18\n" +
-	"\apartial\x18\a \x01(\bR\apartialB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\apartial\x18\a \x01(\bR\apartial\x12%\n" +
+	"\x0epolicy_version\x18\t \x01(\rR\rpolicyVersion\x12\x15\n" +
+	"\x06set_id\x18\n" +
+	" \x01(\x04R\x05setId\x12$\n" +
+	"\x0ereceived_at_ns\x18\v \x01(\x03R\freceivedAtNs\x12\x1e\n" +
+	"\n" +
+	"consistent\x18\f \x01(\bR\n" +
+	"consistent\x127\n" +
+	"\bmetadata\x18\r \x03(\v2\x1b.proto.Commit.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\b\x10\tB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
 
 var (
 	file_commit_proto_rawDescOnce sync.Once
@@ -145,19 +203,21 @@ func file_commit_proto_rawDescGZIP() []byte {
 	return file_commit_proto_rawDescData
 }
 
-var file_commit_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_commit_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_commit_proto_goTypes = []any{
 	(*Commit)(nil), // 0: proto.Commit
-	(*Ref)(nil),    // 1: proto.Ref
+	nil,            // 1: proto.Commit.MetadataEntry
+	(*Ref)(nil),    // 2: proto.Ref
 }
 var file_commit_proto_depIdxs = []int32{
-	1, // 0: proto.Commit.tree:type_name -> proto.Ref
-	1, // 1: proto.Commit.parent:type_name -> proto.Ref
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: proto.Commit.tree:type_name -> proto.Ref
+	2, // 1: proto.Commit.parent:type_name -> proto.Ref
+	1, // 2: proto.Commit.metadata:type_name -> proto.Commit.MetadataEntry
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_commit_proto_init() }
@@ -172,7 +232,7 @@ func file_commit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commit_proto_rawDesc), len(file_commit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

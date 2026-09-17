@@ -14,6 +14,24 @@ type packOptions struct {
 	storage         ArchiveStorage
 	index           ArchiveIndex
 	cache           backup.ObjectStore
+	idleFinalize    time.Duration
+	sessionLease    time.Duration
+}
+
+// WithIdleFinalize finalizes a session's open archive after it has not
+// been written to for the given duration.
+func WithIdleFinalize(d time.Duration) PackOption {
+	return func(p *packOptions) {
+		p.idleFinalize = d
+	}
+}
+
+// WithSessionLease ends sessions that have not written for the given
+// duration, dropping what they did not commit.
+func WithSessionLease(d time.Duration) PackOption {
+	return func(p *packOptions) {
+		p.sessionLease = d
+	}
 }
 
 type PackOption func(p *packOptions)
@@ -38,12 +56,6 @@ type CompactionConfig struct {
 	// MinimumCandidates specifies the minimum number of eligible archives
 	// that need to exist before a compaction happens
 	MinimumCandidates int
-
-	// GarbageCollection will enable the garbage collector on this store.
-	// Before running a compaction, it will do a full reachability check
-	// on all objects stored to figure out which can be removed, because
-	// they are not referenced by a commit anymore
-	GarbageCollection bool
 }
 
 func WithCompaction(config CompactionConfig) PackOption {

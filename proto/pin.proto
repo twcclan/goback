@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/twcclan/goback/proto";
+
+import "ref.proto";
+
+// Pin keeps its target alive regardless of retention: a commit is never
+// retired while pinned, a tree or file is kept without its commit.
+// Unpinning is a tombstone whose target is the pin.
+message Pin {
+  Ref target = 1;
+  reserved 2;
+
+  // server clock at receipt, nanoseconds since the Unix epoch; makes every
+  // pin unique
+  int64 received_at_ns = 3;
+
+  // labels the agent attached; the store keeps them and never interprets them
+  map<string, string> metadata = 4;
+}

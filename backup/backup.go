@@ -10,6 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 )
 
@@ -44,18 +45,14 @@ type BackupWriter struct {
 var _ TreeWriter = (*BackupWriter)(nil)
 
 func (br *BackupWriter) Close(ctx context.Context) error {
-	tree := proto.NewObject(&proto.Tree{
-		Nodes: br.sortedNodes(),
-	})
-
-	err := br.store.Put(ctx, tree)
+	tree, err := PutTree(ctx, br.store, br.sortedNodes(), nil, nil)
 	if err != nil {
 		return errors.Wrap(err, "Failed to store backup tree")
 	}
 
 	commit := proto.NewObject(&proto.Commit{
 		Timestamp: time.Now().Unix(),
-		Tree:      tree.Ref(),
+		Tree:      tree,
 		BackupSet: br.backupSet,
 	})
 
@@ -74,12 +71,18 @@ func NewBackupWriter(store ObjectStore, backupSet string) *BackupWriter {
 
 type BackupReader struct {
 	store ObjectStore
+	key   *storekey.Key
 }
 
 func NewBackupReader(store ObjectStore) *BackupReader {
 	return &BackupReader{
 		store: store,
 	}
+}
+
+// WithKey returns a reader that opens names and blobs with the store key.
+func (br *BackupReader) WithKey(key *storekey.Key) *BackupReader {
+	return &BackupReader{store: br.store, key: key}
 }
 
 func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSeeker, error) {
@@ -92,15 +95,17 @@ func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSe
 		return nil, errors.New("Object doesn't describe a file")
 	}
 
-	return newFileReader(ctx, br.store, obj.GetFile()), nil
+	return newFileReader(ctx, br.store, obj.GetFile(), br.key), nil
 }
 
 type WalkFn func(path string, info os.FileInfo, ref *proto.Ref) error
 
-func (br *BackupReader) walk(ctx context.Context, path string, tree *proto.Tree, walkFn WalkFn) error {
+// walk visits an opened tree; parent is the token of the directory the
+// tree describes, which opens the names of its subdirectories.
+func (br *BackupReader) walk(ctx context.Context, path string, parent []byte, tree *proto.Tree, walkFn WalkFn) error {
 	for _, node := range tree.GetNodes() {
 		info := node.Stat
-		absPath := filepath.Join(path, info.Name)
+		absPath := filepath.Join(path, string(info.Name))
 
 		err := walkFn(absPath, proto.GetOSFileInfo(info), node.Ref)
 		if err != nil {
@@ -108,12 +113,14 @@ func (br *BackupReader) walk(ctx context.Context, path string, tree *proto.Tree,
 		}
 
 		if info.IsDir() {
-			subTree, err := LoadTree(ctx, br.store, node.Ref)
+			token := NameToken(br.key, parent, info.Name)
+
+			subTree, err := OpenTree(ctx, br.store, node.Ref, br.key, token)
 			if err != nil {
 				return errors.Wrapf(err, "Failed retrieving sub-tree %x for %s", node.Ref.Hash, absPath)
 			}
 
-			err = br.walk(ctx, absPath, subTree, walkFn)
+			err = br.walk(ctx, absPath, token, subTree, walkFn)
 			if err != nil {
 				return err
 			}
@@ -123,32 +130,40 @@ func (br *BackupReader) walk(ctx context.Context, path string, tree *proto.Tree,
 	return nil
 }
 
-func (br *BackupReader) GetTree(ctx context.Context, ref *proto.Ref, parts []string) (*proto.Ref, error) {
+// GetTree descends from ref along the plaintext path parts and returns the
+// tree ref at the end, with the token of the directory it names.
+func (br *BackupReader) GetTree(ctx context.Context, ref *proto.Ref, parts []string) (*proto.Ref, []byte, error) {
+	return br.getTree(ctx, ref, nil, parts)
+}
+
+func (br *BackupReader) getTree(ctx context.Context, ref *proto.Ref, parent []byte, parts []string) (*proto.Ref, []byte, error) {
 	if len(parts) == 0 {
-		return ref, nil
+		return ref, parent, nil
 	}
 
-	tree, err := LoadTree(ctx, br.store, ref)
+	tree, err := OpenTree(ctx, br.store, ref, br.key, parent)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
+		return nil, nil, errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
 	}
 
 	name := parts[0]
 	log.Printf("Searching for %s %v", name, parts)
 	for _, node := range tree.Nodes {
-		if node.Stat.IsDir() && node.Stat.Name == name {
-			return br.GetTree(ctx, node.Ref, parts[1:])
+		if node.Stat.IsDir() && string(node.Stat.Name) == name {
+			return br.getTree(ctx, node.Ref, NameToken(br.key, parent, node.Stat.Name), parts[1:])
 		}
 	}
 
-	return nil, errors.New("Folder not found")
+	return nil, nil, errors.New("Folder not found")
 }
 
-func (br *BackupReader) WalkTree(ctx context.Context, ref *proto.Ref, walkFn WalkFn) error {
-	tree, err := LoadTree(ctx, br.store, ref)
+// WalkTree walks the tree at ref, whose directory has the given token (nil
+// for the root of a commit).
+func (br *BackupReader) WalkTree(ctx context.Context, ref *proto.Ref, parent []byte, walkFn WalkFn) error {
+	tree, err := OpenTree(ctx, br.store, ref, br.key, parent)
 	if err != nil {
 		return errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
 	}
 
-	return br.walk(ctx, "", tree, walkFn)
+	return br.walk(ctx, "", parent, tree, walkFn)
 }

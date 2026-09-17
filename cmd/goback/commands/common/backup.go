@@ -7,11 +7,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/backup/storekey"
 	badgerIdx "github.com/twcclan/goback/index/badger"
-	"github.com/twcclan/goback/index/postgres"
-	"github.com/twcclan/goback/index/sqlite"
+	"github.com/twcclan/goback/index/sql"
+	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
@@ -28,6 +32,22 @@ type Opener interface {
 
 type Closer interface {
 	Close() error
+}
+
+// StoreKey loads the key file named by the global --store-key flag, or
+// returns nil when the store is written in the clear.
+func StoreKey(c *cli.Context) *storekey.Key {
+	path := c.GlobalString("store-key")
+	if path == "" {
+		return nil
+	}
+
+	key, err := storekey.Load(path)
+	if err != nil {
+		log.Fatalf("Could not load store key: %v", err)
+	}
+
+	return key
 }
 
 // Unwrap peels caching and wrapping stores off until the innermost store.
@@ -103,6 +123,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		pack.WithArchiveIndex(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
+		pack.WithSessionLease(10*time.Minute),
 		pack.WithCompaction(pack.CompactionConfig{
 			OnClose:           true,
 			MinimumCandidates: 100,
@@ -127,7 +148,12 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 
 	addr := net.JoinHostPort(u.Host, port)
 
-	return storage.NewRemoteClient(addr)
+	tlsConfig, err := storage.ClientTLS(c.GlobalString("ca-cert"))
+	if err != nil {
+		return nil, err
+	}
+
+	return storage.NewRemoteClient(addr, auth.Credentials{Secret: c.GlobalString("secret"), AgentID: AgentID(c)}, tlsConfig)
 }
 
 func initBadger(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
@@ -141,19 +167,38 @@ func initBadger(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return badger.New(loc)
 }
 
-func initSqlite(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
-	loc, err := makeLocation(u)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("Opening sqlite index at %s", loc)
+// initSQL opens the index at the --index location: a directory (with or
+// without a sqlite:// or file:// scheme) holds an SQLite database and
+// postgres:// names a database server.
+func initSQL(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
+	location := u.String()
 
-	return sqlite.NewIndex(loc, c.GlobalString("set"), store), nil
+	switch u.Scheme {
+	case "", "file", "sqlite":
+		loc, err := makeLocation(u)
+		if err != nil {
+			return nil, err
+		}
+
+		location = loc
+	}
+
+	log.Printf("Opening %s index at %s", indexDialect(u.Scheme), location)
+
+	// a local index keeps every commit until a policy is set
+	x := sql.New(location, store)
+	x.DefaultPolicy = ptr(retention.KeepAll)
+
+	return x, nil
 }
 
-func initPostgres(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
-	log.Printf("Opening postgres index")
-	return postgres.NewIndex(u.String(), store), nil
+func indexDialect(scheme string) string {
+	switch scheme {
+	case "postgres", "postgresql":
+		return "postgres"
+	default:
+		return "sqlite"
+	}
 }
 
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
@@ -165,9 +210,32 @@ var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore
 }
 
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){
-	"":         initSqlite,
-	"sqlite":   initSqlite,
-	"postgres": initPostgres,
+	"":           initSQL,
+	"file":       initSQL,
+	"sqlite":     initSQL,
+	"postgres":   initSQL,
+	"postgresql": initSQL,
+}
+
+// RestoreSession opens a session naming the object a restore reads, when
+// the store has sessions, so retirement and garbage collection keep it
+// while the restore runs. The returned func ends the session.
+func RestoreSession(ctx context.Context, store backup.ObjectStore, set string, ref *proto.Ref) (context.Context, func(), error) {
+	sessions, ok := store.(backup.SessionStore)
+	if !ok {
+		return ctx, func() {}, nil
+	}
+
+	sctx, err := sessions.BeginSession(ctx, &backup.Session{Set: set, Restore: ref})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sctx, func() {
+		if err := sessions.EndSession(sctx); err != nil {
+			log.Printf("Failed ending restore session: %v", err)
+		}
+	}, nil
 }
 
 func GetObjectStore(c *cli.Context) backup.ObjectStore {
@@ -198,8 +266,9 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 	return nil
 }
 
-func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
-	// if the provided store already implements index just return it
+// OpenIndex opens the index the --index location names, or the store
+// itself when it is one.
+func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	if idx, ok := store.(backup.Index); ok {
 		log.Println("Store implements index")
 		return idx
@@ -230,4 +299,13 @@ func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 
 	log.Fatalf("No driver for storage location %s", u.String())
 	return nil
+}
+
+// GetIndex opens the index for a command run without a server.
+func GetIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
+	return OpenIndex(c, store)
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

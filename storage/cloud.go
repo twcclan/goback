@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -129,8 +130,7 @@ func (s *cloudFile) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	if s.readOnly {
-		// this is a nop for read-only files
+	if s.readOnly || s.writer == nil {
 		return nil
 	}
 
@@ -300,19 +300,16 @@ func (c *cloudStore) DeleteAll() error {
 
 func (c *cloudStore) List(extension string) ([]string, error) {
 	prefix := blobObjectPrefix
-	delimiter := ""
 	if extension != "" {
 		if len(extension) < 2 || extension[0] != '.' {
 			return nil, pack.ErrInvalidExtension
 		}
 
 		prefix = fmt.Sprintf(blobObjectKey, extension, "")
-		delimiter = "/"
 	}
 
 	iter := c.bucket.List(&blob.ListOptions{
-		Prefix:    prefix,
-		Delimiter: delimiter,
+		Prefix: prefix,
 	})
 
 	var names []string
@@ -331,7 +328,15 @@ func (c *cloudStore) List(extension string) ([]string, error) {
 			continue
 		}
 
-		names = append(names, path.Base(attrs.Key))
+		// keys are pack/<extension>/<name>; the name may hold slashes
+		name := strings.TrimPrefix(attrs.Key, blobObjectPrefix)
+		if _, rest, ok := strings.Cut(name, "/"); ok && extension == "" {
+			name = rest
+		} else if extension != "" {
+			name = strings.TrimPrefix(attrs.Key, prefix)
+		}
+
+		names = append(names, name)
 	}
 
 	return names, nil
@@ -395,6 +400,8 @@ func NewCloudObjectStore(bucket *blob.Bucket, indexDir, cacheDir string) (backup
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
 		pack.WithMaxSize(1024 * 1024 * 1024),
+		pack.WithIdleFinalize(5 * time.Minute),
+		pack.WithSessionLease(30 * time.Minute),
 		pack.WithCompaction(pack.CompactionConfig{
 			Periodically:      24 * time.Hour,
 			MinimumCandidates: 1000,

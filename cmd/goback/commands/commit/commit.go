@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"context"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -9,13 +10,16 @@ import (
 )
 
 type commit struct {
-	reader *backup.BackupReader
-	index  backup.Index
-	when   time.Time
-	base   string
-	from   string
-	set    string
-	delete bool
+	ctx      context.Context
+	reader   *backup.BackupReader
+	restorer *backup.Restorer
+	store    backup.ObjectStore
+	index    backup.Index
+	when     time.Time
+	base     string
+	from     string
+	set      string
+	delete   bool
 }
 
 var Command = cli.Command{
@@ -25,5 +29,7 @@ var Command = cli.Command{
 		newCmd,
 		listCmd,
 		restoreCmd,
+		deleteCmd,
+		undeleteCmd,
 	},
 }

@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"hash/fnv"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 )
 
@@ -53,7 +55,7 @@ func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(Tr
 		return err
 	}
 
-	ref, err := PutTree(ctx, bt.store, node.sortedNodes())
+	ref, err := PutTree(ctx, bt.store, node.sortedNodes(), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -68,7 +70,7 @@ func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(Tr
 }
 
 func (bt *backupTree) File(ctx context.Context, info os.FileInfo, writer func(io.Writer) error) error {
-	fWriter := newFileWriter(ctx, bt.store)
+	fWriter := newFileWriter(ctx, bt.store, nil, info.Size())
 	node := &proto.TreeNode{
 		Stat: proto.GetFileInfo(info),
 	}
@@ -116,7 +118,7 @@ func (bt *backupTree) sortedNodes() []*proto.TreeNode {
 // requires.
 func SortNodes(nodes []*proto.TreeNode) []*proto.TreeNode {
 	sort.Slice(nodes, func(i int, j int) bool {
-		return nodes[i].Stat.Name < nodes[j].Stat.Name
+		return bytes.Compare(nodes[i].Stat.Name, nodes[j].Stat.Name) < 0
 	})
 
 	return nodes
@@ -129,17 +131,21 @@ func newTree(store ObjectStore) *backupTree {
 	}
 }
 
-// PutTree stores a directory's sorted nodes as one tree object, or as split
-// trees under a parent when the directory is large, and returns the ref of
-// the object a parent node should reference.
-func PutTree(ctx context.Context, store ObjectStore, nodes []*proto.TreeNode) (*proto.Ref, error) {
+// PutTree stores a directory's nodes as one tree object, or as split trees
+// under a parent when the directory is large, and returns the ref of the
+// object a parent node should reference. With a key the nodes' names are
+// sealed for the directory whose token is parent; the given nodes are not
+// modified.
+func PutTree(ctx context.Context, store ObjectStore, nodes []*proto.TreeNode, key *storekey.Key, parent []byte) (*proto.Ref, error) {
+	nodes = sealNodes(key, parent, nodes)
+
 	if len(nodes) <= treeFanout {
-		return putTreeObject(ctx, store, &proto.Tree{Nodes: nodes})
+		return putTreeObject(ctx, store, &proto.Tree{Nodes: nodes}, key)
 	}
 
 	var splits []*proto.Ref
 	for _, chunk := range splitNodes(nodes) {
-		ref, err := putTreeObject(ctx, store, &proto.Tree{Nodes: chunk})
+		ref, err := putTreeObject(ctx, store, &proto.Tree{Nodes: chunk}, key)
 		if err != nil {
 			return nil, err
 		}
@@ -147,11 +153,14 @@ func PutTree(ctx context.Context, store ObjectStore, nodes []*proto.TreeNode) (*
 		splits = append(splits, ref)
 	}
 
-	return putTreeObject(ctx, store, &proto.Tree{Splits: splits})
+	return putTreeObject(ctx, store, &proto.Tree{Splits: splits}, key)
 }
 
-func putTreeObject(ctx context.Context, store ObjectStore, tree *proto.Tree) (*proto.Ref, error) {
+func putTreeObject(ctx context.Context, store ObjectStore, tree *proto.Tree, key *storekey.Key) (*proto.Ref, error) {
 	obj := proto.NewObject(tree)
+	if key != nil {
+		obj.KeyId = key.ID()
+	}
 
 	err := store.Put(ctx, obj)
 	if err != nil {
@@ -187,9 +196,9 @@ func splitNodes(nodes []*proto.TreeNode) [][]*proto.TreeNode {
 	return chunks
 }
 
-func nameBoundary(name string) bool {
+func nameBoundary(name []byte) bool {
 	h := fnv.New64a()
-	h.Write([]byte(name))
+	h.Write(name)
 
 	return h.Sum64()%treeSplitAvg == 0
 }
@@ -197,6 +206,26 @@ func nameBoundary(name string) bool {
 // Getter is the read side of an ObjectStore.
 type Getter interface {
 	Get(context.Context, *proto.Ref) (*proto.Object, error)
+}
+
+// OpenTree loads a tree and opens its names for the directory whose token
+// is parent. Without a key it is LoadTree.
+func OpenTree(ctx context.Context, store Getter, ref *proto.Ref, key *storekey.Key, parent []byte) (*proto.Tree, error) {
+	tree, err := LoadTree(ctx, store, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	if key == nil {
+		return tree, nil
+	}
+
+	nodes, err := openNodes(key, parent, tree.Nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &proto.Tree{Nodes: nodes}, nil
 }
 
 // LoadTree fetches a tree and flattens its splits into one node list.

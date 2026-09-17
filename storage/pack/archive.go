@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"sort"
 	"sync"
 	"time"
@@ -16,10 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"github.com/bits-and-blooms/bitset"
-	"go.opencensus.io/stats"
-	"go.opencensus.io/tag"
-	"go.opencensus.io/trace"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -61,20 +60,10 @@ func checkArchiveHeader(hdr []byte) error {
 	return nil
 }
 
-// verifyStored checks a stored object against the ref in its header without
-// decoding it.
+// verifyStored checks a stored object against its header without decoding
+// it.
 func verifyStored(hdr *proto.ObjectHeader, stored []byte) error {
-	if hdr.Type == proto.ObjectType_TOMBSTONE {
-		if !proto.TombstoneRef(hdr.TombstoneFor).Equal(hdr.Ref) {
-			return proto.ErrRefMismatch
-		}
-
-		return nil
-	}
-
-	_, err := proto.VerifyPayload(stored, hdr.Compression, hdr.Type, hdr.Ref)
-
-	return err
+	return proto.VerifyStored(hdr, stored)
 }
 
 type readFile interface {
@@ -109,14 +98,21 @@ type archive struct {
 	readOnly   bool
 	size       uint64
 	writeIndex map[string]*IndexRecord
-	gcBits     *bitset.BitSet
+	gc         *gcFile
 	mtx        sync.RWMutex
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
+
+	// owner is the session writing this archive, nil once finalized or
+	// when opened from storage
+	owner   *writeSession
+	session string
+	state   ArchiveState
 }
 
-func newArchive(storage ArchiveStorage) (*archive, error) {
+// newArchive opens a writable archive named by a fresh uuid under dir.
+func newArchive(storage ArchiveStorage, dir string) (*archive, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -124,7 +120,7 @@ func newArchive(storage ArchiveStorage) (*archive, error) {
 
 	a := &archive{
 		storage:  storage,
-		name:     id.String(),
+		name:     path.Join(dir, id.String()),
 		readOnly: false,
 	}
 
@@ -256,6 +252,28 @@ func (a *archive) indexLocation(ref *proto.Ref) *IndexRecord {
 	return a.writeIndex[string(ref.Hash)]
 }
 
+func (a *archive) gcResult() *gcFile {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	return a.gc
+}
+
+func (a *archive) setGCResult(g *gcFile) {
+	a.mtx.Lock()
+	a.gc = g
+	a.mtx.Unlock()
+}
+
+// candidate reports whether the last completed generation found the object
+// unreachable, so a presence check must not rely on this copy.
+func (a *archive) candidate(hash []byte) bool {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	return a.gc != nil && a.gc.candidate(hash)
+}
+
 func (a *archive) releaseWriteIndex() {
 	a.mtx.Lock()
 	a.writeIndex = nil
@@ -270,40 +288,58 @@ func (a *archive) indexName() string {
 	return a.name + IndexExt
 }
 
-func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) (*proto.Object, error) {
-	ctx, span := trace.StartSpan(ctx, "archive.getRaw")
-	defer span.End()
-
+// readRecord returns the raw bytes of one index record.
+func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
 	buf := make([]byte, loc.Length)
 
-	start := time.Now()
 	if readerAt, ok := a.readFile.(io.ReaderAt); ok {
-		span.AddAttributes(trace.BoolAttribute("lock-free", true))
-
 		_, err := readerAt.ReadAt(buf, int64(loc.Offset))
 		if err != nil {
-			return nil, errors.Wrap(err, "Failed filling buffer")
-		}
-	} else {
-		span.AddAttributes(trace.BoolAttribute("lock-free", false))
-
-		// need to get an exclusive lock if we can't use ReadAt
-		a.mtx.Lock()
-
-		_, err := a.readFile.Seek(int64(loc.Offset), io.SeekStart)
-		if err != nil {
-			a.mtx.Unlock()
-			return nil, errors.Wrap(err, "Failed seeking in file")
+			return nil, true, errors.Wrap(err, "Failed filling buffer")
 		}
 
-		_, err = io.ReadFull(a.readFile, buf)
-		if err != nil {
-			a.mtx.Unlock()
-			return nil, errors.Wrap(err, "Failed filling buffer")
-		}
-
-		a.mtx.Unlock()
+		return buf, true, nil
 	}
+
+	// need to get an exclusive lock if we can't use ReadAt
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	_, err := a.readFile.Seek(int64(loc.Offset), io.SeekStart)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "Failed seeking in file")
+	}
+
+	_, err = io.ReadFull(a.readFile, buf)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "Failed filling buffer")
+	}
+
+	return buf, false, nil
+}
+
+// readHeader decodes the object header of one index record.
+func (a *archive) readHeader(loc *IndexRecord) (*proto.ObjectHeader, error) {
+	buf, _, err := a.readRecord(loc)
+	if err != nil {
+		return nil, err
+	}
+
+	hdrSize, consumed := proto.DecodeVarint(buf)
+
+	return proto.NewObjectHeaderFromBytes(buf[consumed : consumed+int(hdrSize)])
+}
+
+func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) (*proto.Object, error) {
+	ctx, span := tracer.Start(ctx, "archive.getRaw")
+	defer span.End()
+
+	start := time.Now()
+	buf, lockFree, err := a.readRecord(loc)
+	if err != nil {
+		return nil, err
+	}
+	span.SetAttributes(attribute.Bool("lock-free", lockFree))
 
 	readLatency := float64(time.Since(start)) / float64(time.Millisecond)
 
@@ -324,17 +360,12 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 		return nil, errors.Errorf("ref %x is a tombstone and has no object", ref.Hash)
 	}
 
-	if ctx, err := tag.New(ctx,
-		tag.Insert(KeyObjectType, hdr.Type.String()),
-	); err == nil {
-		stats.Record(ctx,
-			GetObjectSize.M(int64(hdr.Size)),
-			ArchiveReadLatency.M(readLatency),
-			ArchiveReadSize.M(int64(loc.Length)),
-		)
-	}
+	attrs := metric.WithAttributes(keyObjectType.String(hdr.Type.String()))
+	getObjectSize.Record(ctx, int64(hdr.Size), attrs)
+	archiveReadLatency.Record(ctx, readLatency, attrs)
+	archiveReadSize.Record(ctx, int64(loc.Length), attrs)
 
-	obj, err := proto.NewVerifiedObject(buf[consumed+int(hdrSize):], hdr.Compression, hdr.Type, ref)
+	obj, err := proto.ObjectFromStored(hdr, buf[consumed+int(hdrSize):])
 	if err != nil {
 		return nil, errors.Wrapf(err, "reading object %x from archive %s", ref.Hash, a.name)
 	}
@@ -343,30 +374,23 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 }
 
 func (a *archive) Put(ctx context.Context, object *proto.Object) error {
-	ctx, span := trace.StartSpan(ctx, "archive.Put")
+	ctx, span := tracer.Start(ctx, "archive.Put")
 	defer span.End()
 
-	payload, err := object.Canonical()
+	hdr, stored, err := proto.HeaderFor(object)
 	if err != nil {
 		return err
-	}
-
-	stored, compression := proto.Encode(payload)
-
-	hdr := &proto.ObjectHeader{
-		Compression: compression,
-		Ref:         proto.HashPayload(object.Type(), payload),
-		Type:        object.Type(),
 	}
 
 	return a.putRaw(ctx, hdr, stored)
 }
 
-func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref) error {
+func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref, erase bool) error {
 	hdr := &proto.ObjectHeader{
 		Ref:          proto.TombstoneRef(ref),
 		TombstoneFor: ref,
 		Type:         proto.ObjectType_TOMBSTONE,
+		Erase:        erase,
 	}
 
 	return a.putRaw(ctx, hdr, nil)
@@ -381,10 +405,6 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	}
 
 	ref := hdr.Ref
-	// make sure not to have duplicates within a single file
-	if _, ok := a.writeIndex[string(ref.Hash)]; ok {
-		return nil
-	}
 
 	if hdr.Type == proto.ObjectType_INVALID {
 		return errors.New("object header has no type")
@@ -434,28 +454,13 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	a.size += uint64(record.Length)
 	a.last = ref
 
-	if ctx, err := tag.New(ctx,
-		tag.Insert(KeyObjectType, hdr.Type.String()),
-	); err == nil {
-		stats.Record(ctx,
-			PutObjectSize.M(int64(hdr.Size)),
-			ArchiveWriteLatency.M(writeLatency),
-			ArchiveWriteSize.M(int64(len(data))),
-		)
-	}
+	attrs := metric.WithAttributes(keyObjectType.String(hdr.Type.String()))
+	putObjectSize.Record(ctx, int64(hdr.Size), attrs)
+	archiveWriteLatency.Record(ctx, writeLatency, attrs)
+	archiveWriteSize.Record(ctx, int64(len(data)), attrs)
 
 	return nil
 }
-
-//func (a *archive) markObject(ref *proto.Ref) {
-//	a.mtx.Lock()
-//	defer a.mtx.Unlock()
-//
-//	n, record := a.readIndex.lookup(ref)
-//	if record != nil {
-//		a.gcBits.Set(n)
-//	}
-//}
 
 type loadPredicate func(*proto.ObjectHeader) bool
 
@@ -611,20 +616,15 @@ func (a *archive) storeIndex() (IndexFile, error) {
 	return idx, a.storeReadIndex(idx)
 }
 
+// Close finalizes a still-open writer, which reopens the reader, and then
+// closes the reader.
 func (a *archive) Close() error {
-	err := a.CloseReader()
-	if err != nil {
+	_, err := a.CloseWriter()
+	if err != nil && err != errAlreadyClosed {
 		return err
 	}
 
-	_, err = a.CloseWriter()
-
-	// this should be a nop here
-	if err == errAlreadyClosed {
-		err = nil
-	}
-
-	return err
+	return a.CloseReader()
 }
 
 func (a *archive) CloseReader() error {
@@ -646,6 +646,14 @@ func (a *archive) CloseWriter() (IndexFile, error) {
 
 	// switch to read-only mode
 	a.readOnly = true
+
+	// the read handle may have been opened against the upload in flight;
+	// reads must now come from what the storage holds
+	_ = a.readFile.Close()
+	a.readFile, err = a.storage.Open(a.archiveName())
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed reopening archive for reading")
+	}
 
 	return a.storeIndex()
 }

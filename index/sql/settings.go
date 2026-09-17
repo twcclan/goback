@@ -1,0 +1,139 @@
+package sql
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/index"
+	"github.com/twcclan/goback/index/sql/ent"
+	"github.com/twcclan/goback/index/sql/ent/settings"
+)
+
+// settingsID is the id of the one settings row.
+const settingsID = 1
+
+// loadSettings returns the settings row, creating it with the defaults on
+// first use.
+func loadSettings(ctx context.Context, c *ent.Client) (*ent.Settings, error) {
+	err := ignoreNoRows(c.Settings.Create().SetID(settingsID).OnConflict().DoNothing().Exec(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	return c.Settings.Get(ctx, settingsID)
+}
+
+// GetStorePolicy returns the store's policy; a store that never had one
+// set reports version 0 with the default parameters.
+func (x *Index) GetStorePolicy(ctx context.Context) (index.StorePolicy, error) {
+	p := index.StorePolicy{Policy: storekey.DefaultPolicy()}
+
+	s, err := loadSettings(ctx, x.client)
+	if err != nil {
+		return p, err
+	}
+
+	if s.Policy != nil {
+		err = json.Unmarshal([]byte(*s.Policy), &p.Policy)
+		if err != nil {
+			return p, fmt.Errorf("store policy: %w", err)
+		}
+	}
+
+	p.Policy.Version = s.PolicyVersion
+	p.KeyAcknowledgedAt = s.KeyAcknowledgedAt
+
+	return p, nil
+}
+
+// SetStorePolicy stores policy under the next version and, when
+// acknowledge is set, records that the operator has saved the store key.
+func (x *Index) SetStorePolicy(ctx context.Context, policy storekey.Policy, acknowledge bool, now time.Time) (index.StorePolicy, error) {
+	var acknowledged *time.Time
+
+	err := x.tx(ctx, func(tx *ent.Tx) error {
+		if _, err := loadSettings(ctx, tx.Client()); err != nil {
+			return err
+		}
+
+		s, err := forUpdate(x, tx.Settings.Query().Where(settings.ID(settingsID))).Only(ctx)
+		if err != nil {
+			return err
+		}
+
+		policy.Version = s.PolicyVersion + 1
+
+		encoded, err := json.Marshal(policy)
+		if err != nil {
+			return err
+		}
+
+		acknowledged = s.KeyAcknowledgedAt
+		if acknowledge && acknowledged == nil {
+			acknowledged = ptr(now.UTC())
+		}
+
+		return tx.Settings.UpdateOneID(settingsID).SetPolicy(string(encoded)).SetPolicyVersion(policy.Version).SetNillableKeyAcknowledgedAt(acknowledged).Exec(ctx)
+	})
+	if err != nil {
+		return index.StorePolicy{}, err
+	}
+
+	return index.StorePolicy{Policy: policy, KeyAcknowledgedAt: acknowledged}, nil
+}
+
+// StorePolicy implements backup.PolicySource: nil until an operator set a
+// policy.
+func (x *Index) StorePolicy(ctx context.Context) (*storekey.Policy, error) {
+	p, err := x.GetStorePolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Policy.Version == 0 {
+		return nil, nil
+	}
+
+	return &p.Policy, nil
+}
+
+// SetDefaultPolicy stores the retention policy sets inherit until they
+// set their own, nil for the built-in default, and re-evaluates every set.
+func (x *Index) SetDefaultPolicy(ctx context.Context, p *retention.Policy) error {
+	raw, err := x.encodePolicy(p)
+	if err != nil {
+		return err
+	}
+
+	if _, err := loadSettings(ctx, x.client); err != nil {
+		return err
+	}
+
+	update := x.client.Settings.UpdateOneID(settingsID)
+	if raw == nil {
+		update.ClearRetentionPolicy()
+	} else {
+		update.SetRetentionPolicy(*raw)
+	}
+
+	if err := update.Exec(ctx); err != nil {
+		return err
+	}
+
+	ids, err := x.client.Set.Query().IDs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		if err := x.EvaluateSet(ctx, id); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

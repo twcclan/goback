@@ -2,11 +2,16 @@ package backup
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sort"
+	"sync"
 	"sync/atomic"
 
+	"github.com/twcclan/goback/backup/blobcache"
 	"github.com/twcclan/goback/backup/chunker"
+	"github.com/twcclan/goback/backup/presence"
+	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/pkg/errors"
@@ -22,13 +27,29 @@ const (
 	// splitting the file object
 	maxFileParts = 25000
 
+	// SplitFileSize is the smallest content size whose file object may be
+	// split into sub-file objects.
+	SplitFileSize = maxFileParts * chunker.MinSize
+
 	inFlightChunks = 80
+
+	// readWindow bounds the parts a streaming read holds in memory
+	readWindow = 32
 )
 
-func newFileWriter(ctx context.Context, store ObjectStore) *fileWriter {
+// newFileWriter cuts a file of the given size into blobs. With a key the
+// blobs are sealed under the store policy and the File carries their keys.
+func newFileWriter(ctx context.Context, store ObjectStore, key *storekey.Key, size int64) *fileWriter {
+	if key != nil && key.Policy.Mode == storekey.ModeNone {
+		key = nil
+	}
+
 	return &fileWriter{
 		store:            store,
+		key:              key,
+		size:             size,
 		parts:            make([]*proto.FilePart, 0),
+		assumed:          make(map[string]*proto.FilePart),
 		storageErr:       new(atomic.Value),
 		storageSemaphore: syncutil.NewGate(inFlightChunks),
 		ctx:              ctx,
@@ -37,22 +58,121 @@ func newFileWriter(ctx context.Context, store ObjectStore) *fileWriter {
 
 type fileWriter struct {
 	store            ObjectStore
+	key              *storekey.Key
+	size             int64
 	buf              [maxBlobSize]byte
 	blobSize         int
 	offset           int64
 	chunker          chunker.FastCDC
 	parts            []*proto.FilePart
+	keys             [][]byte
 	storageErr       *atomic.Value
 	storageGroup     syncutil.Group
 	storageSemaphore *syncutil.Gate
 	ref              *proto.Ref
 	ctx              context.Context
 
-	// known holds blob refs the store is known to hold, which are neither
-	// checked nor uploaded
+	// known holds blob refs the previous version of the file had, which
+	// are not uploaded
 	known map[string]struct{}
 
+	// sent holds the refs uploaded so far in this run, shared across files
+	sent *sentSet
+
+	// filters say which refs the store probably holds; only consulted when
+	// a confirmer can check the assumption
+	filters   presence.Set
+	confirmer Confirmer
+
+	// forced refs are uploaded whatever known and the filters say
+	forced map[string]struct{}
+
+	// assumed are the parts skipped on the strength of known or a filter,
+	// by ref, until the confirmer answers for them
+	assumed  map[string]*proto.FilePart
+	window   *chunkWindow
+	source   io.ReaderAt
+	repaired int
+
+	// waits are uploads other files of the run own that this file's parts
+	// depend on
+	waits []*sentEntry
+
+	// cache, when set, receives every blob this file uploads
+	cache *blobcache.Cache
+
 	pending int32
+}
+
+// fileChangedError reports parts whose content on disk no longer hashes
+// to the ref the store lacks, so the file has to be read again.
+type fileChangedError struct {
+	refs []*proto.Ref
+}
+
+func (e *fileChangedError) Error() string {
+	return fmt.Sprintf("%d parts changed on disk before the store confirmed them", len(e.refs))
+}
+
+// sentSet remembers the refs one backup run uploads, so a chunk that
+// appears in several files goes up once: the first writer claims it and
+// the others wait for that upload.
+type sentSet struct {
+	mtx  sync.Mutex
+	refs map[string]*sentEntry
+}
+
+type sentEntry struct {
+	done chan struct{}
+	err  error
+}
+
+func newSentSet() *sentSet {
+	return &sentSet{refs: make(map[string]*sentEntry)}
+}
+
+// claim reports whether the caller has to upload the ref; when not, the
+// entry says when the upload that was claimed earlier has finished.
+func (s *sentSet) claim(ref *proto.Ref) (*sentEntry, bool) {
+	if s == nil {
+		return nil, true
+	}
+
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if entry, ok := s.refs[string(ref.Hash)]; ok {
+		return entry, false
+	}
+
+	s.refs[string(ref.Hash)] = &sentEntry{done: make(chan struct{})}
+
+	return nil, true
+}
+
+// finish records the outcome of a claimed upload.
+func (s *sentSet) finish(ref *proto.Ref, err error) {
+	if s == nil {
+		return
+	}
+
+	s.mtx.Lock()
+	entry := s.refs[string(ref.Hash)]
+	if err != nil {
+		delete(s.refs, string(ref.Hash))
+	}
+	s.mtx.Unlock()
+
+	if entry != nil {
+		entry.err = err
+		close(entry.done)
+	}
+}
+
+func (e *sentEntry) wait() error {
+	<-e.done
+
+	return e.err
 }
 
 // split emits buf[:length] as a blob and uploads it in the background.
@@ -60,19 +180,55 @@ func (bfw *fileWriter) split(length int) {
 	chunkBytes := make([]byte, length)
 	copy(chunkBytes, bfw.buf[:length])
 
-	blob := proto.NewObject(&proto.Blob{
-		Data: chunkBytes,
-	})
+	blob, ref, blobKey := bfw.seal(chunkBytes)
+	if blobKey != nil {
+		bfw.keys = append(bfw.keys, blobKey)
+	}
 
-	bfw.parts = append(bfw.parts, &proto.FilePart{
-		Ref:    blob.Ref(),
+	part := &proto.FilePart{
+		Ref:    ref,
 		Offset: uint64(bfw.offset),
 		Length: uint64(length),
-	})
+	}
 
+	bfw.parts = append(bfw.parts, part)
 	bfw.offset += int64(length)
 
-	if _, ok := bfw.known[string(blob.Ref().Hash)]; ok {
+	key := string(ref.Hash)
+	if _, forced := bfw.forced[key]; !forced {
+		_, known := bfw.known[key]
+		if known || (bfw.confirmer != nil && bfw.filters.Test(ref.Hash)) {
+			if bfw.confirmer != nil {
+				bfw.assumed[key] = part
+				bfw.window.put(key, blob, length)
+			}
+
+			return
+		}
+	}
+
+	bfw.upload(ref, blob)
+}
+
+// seal turns a chunk into the blob object that is stored for it, plain or
+// sealed under the store key, and returns its ref and blob key.
+func (bfw *fileWriter) seal(chunk []byte) (*proto.Object, *proto.Ref, []byte) {
+	if bfw.key == nil {
+		blob := proto.NewObject(&proto.Blob{Data: chunk})
+		return blob, blob.Ref(), nil
+	}
+
+	sealed, blobKey := bfw.key.SealBlob(bfw.key.Choose(bfw.size, chunk), chunk)
+
+	return proto.NewObject(sealed), sealed.Ref, blobKey
+}
+
+// upload stores a blob in the background unless another file of the run
+// is already uploading it, in which case that upload is awaited at Close.
+func (bfw *fileWriter) upload(ref *proto.Ref, blob *proto.Object) {
+	entry, mine := bfw.sent.claim(ref)
+	if !mine {
+		bfw.waits = append(bfw.waits, entry)
 		return
 	}
 
@@ -83,13 +239,11 @@ func (bfw *fileWriter) split(length int) {
 		defer bfw.storageSemaphore.Done()
 		defer atomic.AddInt32(&bfw.pending, -1)
 
-		has, err := bfw.store.Has(bfw.ctx, blob.Ref())
-		if err == nil && has {
-			return nil
-		}
+		err := bfw.store.Put(bfw.ctx, blob)
+		bfw.sent.finish(ref, err)
 
-		if err == nil {
-			err = bfw.store.Put(bfw.ctx, blob)
+		if err == nil && bfw.cache != nil {
+			_ = bfw.cache.Put(ref, blob)
 		}
 
 		if err != nil {
@@ -98,6 +252,121 @@ func (bfw *fileWriter) split(length int) {
 		}
 		return err
 	})
+}
+
+// settle waits for this file's uploads and for the ones it shares with
+// other files.
+func (bfw *fileWriter) settle() error {
+	err := bfw.storageGroup.Err()
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range bfw.waits {
+		if err := entry.wait(); err != nil {
+			return err
+		}
+	}
+
+	bfw.waits = nil
+
+	return nil
+}
+
+// assumedRefs lists the parts among the given ones the store still has to
+// confirm.
+func (bfw *fileWriter) assumedRefs(parts []*proto.FilePart) []*proto.Ref {
+	var refs []*proto.Ref
+	for _, part := range parts {
+		if _, ok := bfw.assumed[string(part.Ref.Hash)]; ok {
+			refs = append(refs, part.Ref)
+		}
+	}
+
+	return refs
+}
+
+// storeFile stores a file object over parts, first having the store confirm
+// the parts that were not uploaded and repairing the ones it lacks.
+func (bfw *fileWriter) storeFile(obj *proto.Object, parts []*proto.FilePart) error {
+	assumed := bfw.assumedRefs(parts)
+	if bfw.confirmer == nil || len(assumed) == 0 {
+		return bfw.store.Put(bfw.ctx, obj)
+	}
+
+	keys := make([]string, len(assumed))
+	for i, ref := range assumed {
+		keys[i] = string(ref.Hash)
+	}
+	defer bfw.window.drop(keys)
+
+	for attempt := 0; ; attempt++ {
+		missing, err := bfw.confirmer.PutFile(bfw.ctx, obj, assumed)
+		if err != nil {
+			return err
+		}
+
+		if len(missing) == 0 {
+			return nil
+		}
+
+		if attempt > 0 {
+			return fmt.Errorf("store still lacks %d parts after they were uploaded", len(missing))
+		}
+
+		err = bfw.repair(missing)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// repair uploads assumed parts the store lacks, from the window or from
+// the file, and fails with fileChangedError for parts the file no longer
+// contains.
+func (bfw *fileWriter) repair(missing []*proto.Ref) error {
+	var changed []*proto.Ref
+
+	for _, ref := range missing {
+		key := string(ref.Hash)
+
+		blob := bfw.window.take(key)
+		if blob == nil {
+			part := bfw.assumed[key]
+			if part == nil || bfw.source == nil {
+				changed = append(changed, ref)
+				continue
+			}
+
+			chunk := make([]byte, part.Length)
+			_, err := bfw.source.ReadAt(chunk, int64(part.Offset))
+			if err != nil {
+				changed = append(changed, ref)
+				continue
+			}
+
+			var current *proto.Ref
+			blob, current, _ = bfw.seal(chunk)
+			if !current.Equal(ref) {
+				changed = append(changed, ref)
+				continue
+			}
+		}
+
+		bfw.upload(ref, blob)
+		bfw.repaired++
+	}
+
+	err := bfw.settle()
+	if err != nil {
+		return err
+	}
+
+	if len(changed) > 0 {
+		return &fileChangedError{refs: changed}
+	}
+
+	return nil
 }
 
 func (bfw *fileWriter) Ref() *proto.Ref {
@@ -138,21 +407,68 @@ func (bfw *fileWriter) Write(p []byte) (int, error) {
 	return written, nil
 }
 
+// fileObject builds a File over parts, sealing the part keys when the
+// store is encrypted.
+func (bfw *fileWriter) fileObject(parts []*proto.FilePart, keys [][]byte) (*proto.Object, error) {
+	file := &proto.File{Parts: parts}
+
+	if bfw.key != nil {
+		refs := make([]*proto.Ref, len(parts))
+		for i, part := range parts {
+			refs[i] = part.Ref
+		}
+
+		sealed, err := bfw.key.SealKeys(refs, keys)
+		if err != nil {
+			return nil, err
+		}
+
+		file.Keys = sealed
+	}
+
+	return bfw.object(file), nil
+}
+
+func (bfw *fileWriter) object(file *proto.File) *proto.Object {
+	obj := proto.NewObject(file)
+	if bfw.key != nil {
+		obj.KeyId = bfw.key.ID()
+	}
+
+	return obj
+}
+
 func (bfw *fileWriter) Close() (err error) {
 	if len(bfw.parts) == 0 && bfw.blobSize <= proto.InlineLimit {
 		inline := make([]byte, bfw.blobSize)
 		copy(inline, bfw.buf[:bfw.blobSize])
 
-		file := proto.NewObject(&proto.File{Inline: inline})
-		bfw.ref = file.Ref()
+		file := &proto.File{Inline: inline}
 
-		return bfw.store.Put(bfw.ctx, file)
+		if bfw.key != nil {
+			ciphertext, blobKey := bfw.key.SealInline(inline)
+			file.Inline = ciphertext
+			file.Keys, err = bfw.key.SealKeys([]*proto.Ref{storekey.RefOf(blobKey)}, [][]byte{blobKey})
+			if err != nil {
+				return err
+			}
+		}
+
+		obj := bfw.object(file)
+		bfw.ref = obj.Ref()
+
+		return bfw.store.Put(bfw.ctx, obj)
 	}
 
 	if bfw.blobSize > 0 {
 		bfw.split(bfw.blobSize)
 		bfw.blobSize = 0
 		bfw.chunker.Reset()
+	}
+
+	// the store checks a file's parts, so the uploads must land first
+	if err = bfw.settle(); err != nil {
+		return err
 	}
 
 	var file *proto.Object
@@ -165,9 +481,18 @@ func (bfw *fileWriter) Close() (err error) {
 				max = len(bfw.parts)
 			}
 
-			split := proto.NewObject(&proto.File{Parts: bfw.parts[:max]})
+			var keys [][]byte
+			if bfw.key != nil {
+				keys = bfw.keys[:max]
+				bfw.keys = bfw.keys[max:]
+			}
 
-			err := bfw.store.Put(bfw.ctx, split)
+			split, err := bfw.fileObject(bfw.parts[:max], keys)
+			if err != nil {
+				return err
+			}
+
+			err = bfw.storeFile(split, bfw.parts[:max])
 			if err != nil {
 				return err
 			}
@@ -176,31 +501,53 @@ func (bfw *fileWriter) Close() (err error) {
 			splits = append(splits, split.Ref())
 		}
 
-		file = proto.NewObject(&proto.File{
-			Splits: splits,
-		})
-	} else {
-		file = proto.NewObject(&proto.File{
-			Parts: bfw.parts,
-		})
+		file = bfw.object(&proto.File{Splits: splits})
+		bfw.ref = file.Ref()
+
+		return bfw.store.Put(bfw.ctx, file)
+	}
+
+	file, err = bfw.fileObject(bfw.parts, bfw.keys)
+	if err != nil {
+		return err
 	}
 
 	bfw.ref = file.Ref()
 
-	if err = bfw.store.Put(bfw.ctx, file); err != nil {
-		return
-	}
-
-	// wait for all chunk uploads to finish
-	return bfw.storageGroup.Err()
+	return bfw.storeFile(file, bfw.parts)
 }
 
 var _ io.WriteCloser = new(fileWriter)
 
-func newFileReader(ctx context.Context, store ObjectStore, file *proto.File) *fileReader {
+// FileParts returns a file's parts with its splits flattened, in order;
+// an inline file has none.
+func FileParts(ctx context.Context, store Getter, file *proto.File) ([]*proto.FilePart, error) {
+	if len(file.GetSplits()) == 0 {
+		return file.GetParts(), nil
+	}
+
+	var parts []*proto.FilePart
+	for i, split := range file.GetSplits() {
+		obj, err := store.Get(ctx, split)
+		if err != nil {
+			return nil, errors.Wrapf(err, "split %d (%x) of file", i, split.GetHash())
+		}
+
+		if obj.GetFile() == nil {
+			return nil, errors.Errorf("split %d (%x) of file is not a file object", i, split.GetHash())
+		}
+
+		parts = append(parts, obj.GetFile().GetParts()...)
+	}
+
+	return parts, nil
+}
+
+func newFileReader(ctx context.Context, store ObjectStore, file *proto.File, key *storekey.Key) *fileReader {
 	return &fileReader{
 		store: store,
 		file:  file,
+		key:   key,
 		ctx:   ctx,
 	}
 }
@@ -208,7 +555,10 @@ func newFileReader(ctx context.Context, store ObjectStore, file *proto.File) *fi
 type fileReader struct {
 	store     ObjectStore
 	file      *proto.File
+	key       *storekey.Key
 	parts     []*proto.FilePart
+	partKeys  [][]byte
+	inline    []byte
 	blob      *proto.Object
 	partIndex int
 	offset    int64
@@ -242,28 +592,74 @@ type partRequest struct {
 	part  *proto.FilePart
 }
 
+func (bfr *fileReader) fileRef() []byte {
+	return proto.NewObject(bfr.file).Ref().Hash
+}
+
 // getPart fetches one part's blob and fails on a missing or mistyped object.
-// Inline content is represented as a single part without a ref.
+// Inline content is a single part without a ref.
 func (bfr *fileReader) getPart(ctx context.Context, index int, part *proto.FilePart) (*proto.Blob, error) {
 	if part.Ref == nil {
-		return &proto.Blob{Data: bfr.file.Inline}, nil
+		return &proto.Blob{Data: bfr.inline}, nil
 	}
 
 	obj, err := bfr.store.Get(ctx, part.Ref)
 	if err != nil {
-		return nil, errors.Wrapf(err, "part %d (%x) of file %x", index, part.Ref.Hash, proto.NewObject(bfr.file).Ref().Hash)
+		return nil, errors.Wrapf(err, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
 	}
 
-	blob := obj.GetBlob()
-	if blob == nil {
-		return nil, errors.Errorf("part %d (%x) of file %x is not a blob", index, part.Ref.Hash, proto.NewObject(bfr.file).Ref().Hash)
+	data, err := bfr.openPart(index, part, obj)
+	if err != nil {
+		return nil, err
 	}
 
-	if uint64(len(blob.Data)) != part.Length {
-		return nil, errors.Errorf("part %d (%x) of file %x has %d bytes, expected %d", index, part.Ref.Hash, proto.NewObject(bfr.file).Ref().Hash, len(blob.Data), part.Length)
+	return &proto.Blob{Data: data}, nil
+}
+
+// openPart returns the plaintext of a part's stored object.
+func (bfr *fileReader) openPart(index int, part *proto.FilePart, obj *proto.Object) ([]byte, error) {
+	var data []byte
+	var err error
+
+	switch {
+	case obj.GetSealed() != nil:
+		if index >= len(bfr.partKeys) {
+			return nil, errors.Wrapf(storekey.ErrNoKey, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
+		}
+
+		data, err = storekey.OpenBlob(bfr.partKeys[index], obj.GetSealed())
+		if err != nil {
+			return nil, errors.Wrapf(err, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
+		}
+	case obj.GetBlob() != nil:
+		if !proto.NewObject(obj.GetBlob()).Ref().Equal(part.Ref) {
+			return nil, errors.Errorf("part %d (%x) of file %x does not hash to its ref", index, part.Ref.Hash, bfr.fileRef())
+		}
+
+		data = obj.GetBlob().Data
+	default:
+		return nil, errors.Errorf("part %d (%x) of file %x is not a blob", index, part.Ref.Hash, bfr.fileRef())
 	}
 
-	return blob, nil
+	if uint64(len(data)) != part.Length {
+		return nil, errors.Errorf("part %d (%x) of file %x has %d bytes, expected %d", index, part.Ref.Hash, bfr.fileRef(), len(data), part.Length)
+	}
+
+	return data, nil
+}
+
+// openKeys returns a file's part keys, which needs the store key whenever
+// the file carries any.
+func (bfr *fileReader) openKeys(file *proto.File) ([][]byte, error) {
+	if len(file.Keys) == 0 {
+		return nil, nil
+	}
+
+	if bfr.key == nil {
+		return nil, storekey.ErrNoKey
+	}
+
+	return bfr.key.OpenKeys(file.Keys)
 }
 
 func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, error) {
@@ -273,7 +669,20 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 
 	switch {
 	case len(bfr.file.Inline) > 0:
-		bfr.parts = []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.file.Inline))}}
+		keys, err := bfr.openKeys(bfr.file)
+		if err != nil {
+			return nil, err
+		}
+
+		bfr.inline = bfr.file.Inline
+		if len(keys) == 1 {
+			bfr.inline, err = storekey.OpenInline(keys[0], bfr.file.Inline)
+			if err != nil {
+				return nil, errors.Wrapf(err, "inline content of file %x", bfr.fileRef())
+			}
+		}
+
+		bfr.parts = []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.inline))}}
 	case bfr.file.Splits != nil:
 		// this is a large file so we need to fetch the referenced file objects
 		subFiles := make([]*proto.File, len(bfr.file.Splits))
@@ -307,10 +716,22 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 
 		bfr.parts = make([]*proto.FilePart, 0)
 		for _, subFile := range subFiles {
+			keys, err := bfr.openKeys(subFile)
+			if err != nil {
+				return nil, err
+			}
+
 			bfr.parts = append(bfr.parts, subFile.GetParts()...)
+			bfr.partKeys = append(bfr.partKeys, keys...)
 		}
 	default:
+		keys, err := bfr.openKeys(bfr.file)
+		if err != nil {
+			return nil, err
+		}
+
 		bfr.parts = bfr.file.Parts
+		bfr.partKeys = keys
 		if bfr.parts == nil {
 			bfr.parts = []*proto.FilePart{}
 		}
@@ -319,91 +740,57 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 	return bfr.parts, nil
 }
 
+// WriteTo streams the file, fetching a window of parts ahead of the
+// writer so memory stays bounded whatever the part latency.
 func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
-	group, ctx := errgroup.WithContext(bfr.ctx)
-	requests := make(chan partRequest)
-	parts := make(chan partResponse)
-	numWorker := 512
-	bytesWritten := int64(0)
-
-	fileParts, err := bfr.getFileParts(ctx)
+	fileParts, err := bfr.getFileParts(bfr.ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	numParts := len(fileParts)
+	var written int64
 
-	// writer goroutine
-	group.Go(func() error {
-		stash := make(map[int]*proto.Blob)
+	for start := 0; start < len(fileParts); start += readWindow {
+		if err := bfr.ctx.Err(); err != nil {
+			return written, err
+		}
 
-		for partIndex := 0; partIndex < numParts; {
-			// check if we have the next part stashed already
-			if p, ok := stash[partIndex]; ok {
-				n, err := writer.Write(p.Data)
-				bytesWritten += int64(n)
+		end := start + readWindow
+		if end > len(fileParts) {
+			end = len(fileParts)
+		}
 
+		blobs := make([]*proto.Blob, end-start)
+		grp, ctx := errgroup.WithContext(bfr.ctx)
+
+		for i := start; i < end; i++ {
+			grp.Go(func() error {
+				blob, err := bfr.getPart(ctx, i, fileParts[i])
 				if err != nil {
 					return err
 				}
 
-				delete(stash, partIndex)
-				partIndex++
-				continue
-			}
+				blobs[i-start] = blob
 
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case p := <-parts:
-				// stash it for later
-				stash[p.index] = p.blob
-			}
+				return nil
+			})
 		}
 
-		return nil
-	})
-
-	// scheduler goroutine
-	group.Go(func() error {
-		defer func() {
-			close(requests)
-		}()
-
-		// push all parts to the request channel
-		for i, part := range fileParts {
-			select {
-			// cancelling the context is the only way this should ever exit early
-			case <-ctx.Done():
-				return ctx.Err()
-			case requests <- partRequest{index: i, part: part}:
-			}
+		if err := grp.Wait(); err != nil {
+			return written, err
 		}
 
-		return nil
-	})
+		for _, blob := range blobs {
+			n, err := writer.Write(blob.Data)
+			written += int64(n)
 
-	// start workers
-	for i := 0; i < numWorker; i++ {
-		group.Go(func() error {
-			for req := range requests {
-				blob, err := bfr.getPart(ctx, req.index, req.part)
-				if err != nil {
-					return err
-				}
-
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case parts <- partResponse{index: req.index, blob: blob}:
-				}
+			if err != nil {
+				return written, err
 			}
-
-			return nil
-		})
+		}
 	}
 
-	return bytesWritten, group.Wait()
+	return written, nil
 }
 
 func (bfr *fileReader) Read(b []byte) (n int, err error) {

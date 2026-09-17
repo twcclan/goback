@@ -1,9 +1,7 @@
 package file
 
 import (
-	"context"
 	"errors"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,7 +14,7 @@ import (
 )
 
 func (f *file) restore() error {
-	files, err := f.index.FileInfo(context.Background(), f.set, f.src, f.when, 1)
+	files, err := f.index.FileInfo(f.ctx, f.set, backup.IndexPath(f.key, f.src), f.when, 1)
 	if err != nil {
 		return err
 	}
@@ -29,38 +27,28 @@ func (f *file) restore() error {
 
 	log.Printf("name: %s, size: %d, mod: %s", info.Name, info.Size, info.ModTime())
 
-	outFile, err := os.CreateTemp(filepath.Dir(f.dst), filepath.Base(f.dst))
+	ctx, done, err := common.RestoreSession(f.ctx, f.store, f.set, files[0].Ref)
 	if err != nil {
 		return err
 	}
-	defer outFile.Close()
+	defer done()
+	f.ctx = ctx
 
-	inFile, err := f.reader.ReadFile(context.Background(), files[0].Ref)
-	if err != nil {
-		return err
+	if !f.restorer.DryRun {
+		if err := os.MkdirAll(filepath.Dir(f.dst), 0775); err != nil {
+			return err
+		}
 	}
 
-	_, err = io.Copy(outFile, inFile)
-	if err != nil {
-		return err
-	}
-
-	outFile.Close()
-
-	err = os.Chtimes(outFile.Name(), time.Now(), info.ModTime())
+	outcome, err := f.restorer.RestoreFile(f.ctx, f.dst, info, files[0].Ref)
 	if err != nil {
 		return err
 	}
 
-	err = os.Chmod(outFile.Name(), os.FileMode(info.Mode))
-	if err != nil {
-		return err
-	}
+	log.Printf("%s: %s", outcome, f.dst)
 
-	err = os.Rename(outFile.Name(), f.dst)
-	if err != nil {
-		return err
-	}
+	stats := f.restorer.Stats()
+	log.Printf("bytes from destination %d, seeds %d, cache %d, store %d", stats.BytesFromDestination, stats.BytesFromSeeds, stats.BytesFromCache, stats.BytesFromStore)
 
 	return nil
 }
@@ -83,18 +71,48 @@ func restoreAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	idx := common.GetIndex(c, store)
 
+	key := common.StoreKey(c)
+
+	restorer := &backup.Restorer{
+		Store:   store,
+		Key:     key,
+		Cache:   common.BlobCache(c, key),
+		Workers: c.Int("workers"),
+		Verify:  c.Bool("verify"),
+		DryRun:  c.Bool("dry-run"),
+	}
+
+	if c.String("overwrite") == "if-changed" {
+		restorer.Overwrite = backup.OverwriteIfChanged
+	}
+
+	if seeds := c.StringSlice("seed"); len(seeds) > 0 {
+		restorer.Seeds = backup.NewSeedMap(key)
+		for _, seed := range seeds {
+			if err := restorer.Seeds.Add(seed); err != nil {
+				log.Fatalf("indexing seed %s: %v", seed, err)
+			}
+		}
+	}
+
 	f := &file{
-		reader: backup.NewBackupReader(store),
-		src:    src,
-		dst:    dst,
-		when:   when,
-		index:  idx,
-		set:    c.GlobalString("set"),
+		ctx:      common.Context(c),
+		key:      key,
+		reader:   backup.NewBackupReader(store).WithKey(key),
+		restorer: restorer,
+		store:    store,
+		src:      src,
+		dst:      dst,
+		when:     when,
+		index:    idx,
+		set:      c.GlobalString("set"),
 	}
 
 	if err := f.restore(); err != nil {
 		log.Fatal(err)
 	}
+
+	common.SweepBlobCache(restorer.Cache)
 
 	if err := idx.Close(); err != nil {
 		log.Fatal(err)
@@ -103,6 +121,31 @@ func restoreAction(c *cli.Context) {
 
 var restoreCmd = cli.Command{
 	Name:        "restore",
-	Description: "Restore a file",
+	Description: "Restore a file in place, downloading only the parts the destination does not already hold",
 	Action:      restoreAction,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "overwrite",
+			Usage: "always: hash every part of an existing file and rewrite what differs; if-changed: trust a size and mtime match",
+			Value: "always",
+		},
+		cli.BoolFlag{
+			Name:  "verify",
+			Usage: "rehash the written file before it replaces the destination",
+		},
+		cli.BoolFlag{
+			Name:  "dry-run",
+			Usage: "report what would change without writing",
+		},
+		cli.StringSliceFlag{
+			Name:  "seed",
+			Usage: "file or directory whose chunks may be used instead of downloading; repeatable",
+			Value: new(cli.StringSlice),
+		},
+		cli.IntFlag{
+			Name:  "workers",
+			Usage: "parts fetched at once",
+			Value: 32,
+		},
+	},
 }

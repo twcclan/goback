@@ -16,14 +16,14 @@ var testObjects = map[string]*proto.Object{
 		Nodes: []*proto.TreeNode{
 			{
 				Stat: &proto.FileInfo{
-					Name: "test.dir",
+					Name: []byte("test.dir"),
 					Type: proto.NodeType_NODE_DIRECTORY,
 				},
 				Ref: testRef("test.dir"),
 			},
 			{
 				Stat: &proto.FileInfo{
-					Name: "test.file1",
+					Name: []byte("test.file1"),
 				},
 				Ref: testRef("test.file1"),
 			},
@@ -33,7 +33,7 @@ var testObjects = map[string]*proto.Object{
 		Nodes: []*proto.TreeNode{
 			{
 				Stat: &proto.FileInfo{
-					Name: "test.file2",
+					Name: []byte("test.file2"),
 				},
 				Ref: testRef("test.file2"),
 			},

@@ -1,0 +1,60 @@
+package pack
+
+import (
+	"context"
+	"testing"
+
+	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/proto"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestPackSealedRoundTrip(t *testing.T) {
+	base := t.TempDir()
+	store := newTestStore(t, base)
+
+	key, err := storekey.Generate("s1")
+	require.NoError(t, err)
+
+	sealed, blobKey := key.SealBlob(proto.Encryption_CONVERGENT, []byte("shared level data"))
+	ctx := context.Background()
+	require.NoError(t, store.Put(ctx, proto.NewObject(sealed)))
+
+	tree := proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte{0xff, 0x00}}, Ref: sealed.Ref}}})
+	tree.KeyId = key.ID()
+	require.NoError(t, store.Put(ctx, tree))
+	require.NoError(t, store.Close())
+
+	// reopen so the objects are read back from the archive
+	store = newTestStore(t, base)
+	t.Cleanup(func() { _ = store.Close() })
+
+	got, err := store.Get(ctx, sealed.Ref)
+	require.NoError(t, err)
+	require.NotNil(t, got.GetSealed())
+	require.Equal(t, sealed.Data, got.GetSealed().Data)
+	require.Equal(t, proto.Encryption_CONVERGENT, got.GetSealed().Encryption)
+
+	opened, err := storekey.OpenBlob(blobKey, got.GetSealed())
+	require.NoError(t, err)
+	require.Equal(t, []byte("shared level data"), opened)
+
+	gotTree, err := store.Get(ctx, tree.Ref())
+	require.NoError(t, err)
+	require.Equal(t, key.ID(), gotTree.KeyId)
+	require.Equal(t, []byte{0xff, 0x00}, gotTree.GetTree().Nodes[0].Stat.Name)
+
+	var blobs, trees int
+	require.NoError(t, store.Walk(ctx, true, proto.ObjectType_BLOB, func(obj *proto.Object) error {
+		require.NotNil(t, obj.GetSealed())
+		blobs++
+		return nil
+	}))
+	require.NoError(t, store.Walk(ctx, true, proto.ObjectType_TREE, func(obj *proto.Object) error {
+		trees++
+		return nil
+	}))
+	require.Equal(t, 1, blobs)
+	require.Equal(t, 1, trees)
+}

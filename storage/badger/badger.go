@@ -3,13 +3,15 @@ package badger
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
-	"go.opencensus.io/trace"
+	"go.opentelemetry.io/otel"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func New(path string) (*Store, error) {
@@ -26,40 +28,57 @@ func New(path string) (*Store, error) {
 	}, nil
 }
 
-// Store keeps canonical payloads in badger, keyed by ref. The entry's user
-// meta byte carries the object type in its low nibble and the codec in its
-// high nibble.
+// Store keeps objects in badger, keyed by ref. Each value is the object
+// header, length-prefixed, followed by the stored bytes; the entry's user
+// meta byte carries the object type so Walk can filter without loading.
 type Store struct {
 	db *badger.DB
 }
 
-func entryMeta(t proto.ObjectType, c proto.Compression) byte {
-	return byte(t) | byte(c)<<4
+func encodeEntry(hdr *proto.ObjectHeader, stored []byte) []byte {
+	hdrBytes := proto.Bytes(hdr)
+	val := protowire.AppendVarint(nil, uint64(len(hdrBytes)))
+	val = append(val, hdrBytes...)
+
+	return append(val, stored...)
 }
 
-func splitMeta(meta byte) (proto.ObjectType, proto.Compression) {
-	return proto.ObjectType(meta & 0x0f), proto.Compression(meta >> 4)
+func objectFromEntry(val []byte, ref *proto.Ref) (*proto.Object, error) {
+	hdrLen, n := protowire.ConsumeVarint(val)
+	if n < 0 || uint64(len(val)-n) < hdrLen {
+		return nil, fmt.Errorf("corrupt entry for %x", ref.Hash)
+	}
+
+	hdr, err := proto.NewObjectHeaderFromBytes(val[n : n+int(hdrLen)])
+	if err != nil {
+		return nil, err
+	}
+
+	if !hdr.Ref.Equal(ref) {
+		return nil, proto.ErrRefMismatch
+	}
+
+	return proto.ObjectFromStored(hdr, val[n+int(hdrLen):])
 }
+
+var tracer = otel.Tracer("goback.io/storage/badger")
 
 func (s *Store) Put(ctx context.Context, object *proto.Object) error {
-	ctx, span := trace.StartSpan(ctx, "BadgerStore.Put")
+	ctx, span := tracer.Start(ctx, "BadgerStore.Put")
 	defer span.End()
 
-	payload, err := object.Canonical()
+	hdr, stored, err := proto.HeaderFor(object)
 	if err != nil {
 		return err
 	}
 
-	ref := proto.HashPayload(object.Type(), payload)
-	stored, compression := proto.Encode(payload)
-
 	return s.db.Update(func(txn *badger.Txn) error {
-		return txn.SetEntry(badger.NewEntry(objectKey(ref.Hash), stored).WithMeta(entryMeta(object.Type(), compression)))
+		return txn.SetEntry(badger.NewEntry(objectKey(hdr.Ref.Hash), encodeEntry(hdr, stored)).WithMeta(byte(hdr.Type)))
 	})
 }
 
 func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	ctx, span := trace.StartSpan(ctx, "BadgerStore.Get")
+	ctx, span := tracer.Start(ctx, "BadgerStore.Get")
 	defer span.End()
 
 	var obj *proto.Object
@@ -70,11 +89,9 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 			return err
 		}
 
-		typ, compression := splitMeta(item.UserMeta())
-
 		return item.Value(func(val []byte) error {
 			var err error
-			obj, err = proto.NewVerifiedObject(val, compression, typ, ref)
+			obj, err = objectFromEntry(val, ref)
 
 			return err
 		})
@@ -92,7 +109,7 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 }
 
 func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
-	ctx, span := trace.StartSpan(ctx, "BadgerStore.Delete")
+	ctx, span := tracer.Start(ctx, "BadgerStore.Delete")
 	defer span.End()
 
 	return s.db.Update(func(txn *badger.Txn) error {
@@ -101,7 +118,7 @@ func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 }
 
 func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType, receiver backup.ObjectReceiver) error {
-	ctx, span := trace.StartSpan(ctx, "BadgerStore.Walk")
+	ctx, span := tracer.Start(ctx, "BadgerStore.Walk")
 	defer span.End()
 
 	return s.db.View(func(txn *badger.Txn) error {
@@ -114,9 +131,8 @@ func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType,
 
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
-			typ, compression := splitMeta(item.UserMeta())
 
-			if typ != filterFor {
+			if proto.ObjectType(item.UserMeta()) != filterFor {
 				continue
 			}
 
@@ -132,7 +148,7 @@ func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType,
 			ref := &proto.Ref{Hash: item.Key()[len(objectKeyPrefix):]}
 
 			err := item.Value(func(val []byte) error {
-				obj, err := proto.NewVerifiedObject(val, compression, typ, ref)
+				obj, err := objectFromEntry(val, ref)
 				if err != nil {
 					return err
 				}
@@ -149,7 +165,7 @@ func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType,
 }
 
 func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
-	ctx, span := trace.StartSpan(ctx, "BadgerStore.Has")
+	ctx, span := tracer.Start(ctx, "BadgerStore.Has")
 	defer span.End()
 
 	var exists bool

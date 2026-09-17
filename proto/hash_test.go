@@ -48,6 +48,16 @@ func TestCanonicalGoldenVectors(t *testing.T) {
 			payload: "0880e2cfaa0612220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb82921106221a05776f726c642a076167656e742d31308080a8b1e39fe7cb173801",
 		},
 		{
+			name:    "commit with metadata",
+			object:  NewObject(&Commit{Timestamp: 1700000000, Tree: tree, BackupSet: "world", AgentId: "agent-1", ScanStartNs: 1700000000000000000, Partial: true, Metadata: map[string]string{"env": "prod", "a": "b"}}),
+			payload: "0880e2cfaa0612220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb82921106221a05776f726c642a076167656e742d31308080a8b1e39fe7cb1738016a060a01611201626a0b0a03656e76120470726f64",
+		},
+		{
+			name:    "consistent commit",
+			object:  NewObject(&Commit{Timestamp: 1700000000, Tree: tree, BackupSet: "world", AgentId: "agent-1", ScanStartNs: 1700000000000000000, Consistent: true}),
+			payload: "0880e2cfaa0612220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb82921106221a05776f726c642a076167656e742d31308080a8b1e39fe7cb176001",
+		},
+		{
 			name:    "file",
 			object:  NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 5, Ref: part}}}),
 			payload: "0a2610051a220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed1",
@@ -65,8 +75,8 @@ func TestCanonicalGoldenVectors(t *testing.T) {
 		{
 			name: "tree",
 			object: NewObject(&Tree{Nodes: []*TreeNode{
-				{Stat: &FileInfo{Name: "a", Mode: 0644, Size: 5, MtimeNs: 1}, Ref: part},
-				{Stat: &FileInfo{Name: "b", Mode: 0755 | 1<<31, Type: NodeType_NODE_DIRECTORY}, Ref: tree},
+				{Stat: &FileInfo{Name: []byte("a"), Mode: 0644, Size: 5, MtimeNs: 1}, Ref: part},
+				{Stat: &FileInfo{Name: []byte("b"), Mode: 0755 | 1<<31, Type: NodeType_NODE_DIRECTORY}, Ref: tree},
 			}}),
 			payload: "0a300a0a0a016110a4033005400112220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed10a310a0b0a016210ed83808008480112220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb8292110622",
 		},
@@ -101,12 +111,11 @@ func TestCanonicalRejects(t *testing.T) {
 	cases := map[string]*Object{
 		"short ref":          NewObject(&Commit{Tree: &Ref{Hash: []byte("short")}}),
 		"missing ref":        NewObject(&Commit{}),
-		"unsorted tree":      NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "b"}, Ref: good}, {Stat: &FileInfo{Name: "a"}, Ref: good}}}),
-		"duplicate name":     NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a"}, Ref: good}, {Stat: &FileInfo{Name: "a"}, Ref: good}}}),
+		"unsorted tree":      NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("b")}, Ref: good}, {Stat: &FileInfo{Name: []byte("a")}, Ref: good}}}),
+		"duplicate name":     NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("a")}, Ref: good}, {Stat: &FileInfo{Name: []byte("a")}, Ref: good}}}),
 		"nameless node":      NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{}, Ref: good}}}),
-		"link target on dir": NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a", Type: NodeType_NODE_DIRECTORY, LinkTarget: "x"}, Ref: good}}}),
-		"invalid utf8":       NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a\xff"}, Ref: good}}}),
-		"nodes and splits":   NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: "a"}, Ref: good}}, Splits: []*Ref{good}}),
+		"link target on dir": NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("a"), Type: NodeType_NODE_DIRECTORY, LinkTarget: []byte("x")}, Ref: good}}}),
+		"nodes and splits":   NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("a")}, Ref: good}}, Splits: []*Ref{good}}),
 		"gap in parts":       NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 5, Ref: good}, {Offset: 6, Length: 1, Ref: good}}}),
 		"empty part":         NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 0, Ref: good}}}),
 		"parts and splits":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Splits: []*Ref{good}}),

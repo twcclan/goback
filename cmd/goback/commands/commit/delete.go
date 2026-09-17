@@ -1,0 +1,57 @@
+package commit
+
+import (
+	"log"
+
+	"github.com/twcclan/goback/cmd/goback/commands/common"
+
+	"github.com/urfave/cli"
+)
+
+func deleteAction(c *cli.Context) {
+	if c.NArg() != 1 {
+		log.Fatal("usage: commit delete <ref>")
+	}
+
+	store := common.GetObjectStore(c)
+	index := common.GetIndex(c, store)
+
+	err := common.GetRetention(index).DeleteCommit(common.Context(c), common.ParseRef(c.Args().First()))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Commit %s retired; undelete it within the trash window", c.Args().First())
+	index.Close()
+}
+
+func undeleteAction(c *cli.Context) {
+	if c.NArg() != 1 {
+		log.Fatal("usage: commit undelete <ref>")
+	}
+
+	store := common.GetObjectStore(c)
+	index := common.GetIndex(c, store)
+
+	err := common.GetRetention(index).UndeleteCommit(common.Context(c), common.ParseRef(c.Args().First()))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Commit %s is live again", c.Args().First())
+	index.Close()
+}
+
+var deleteCmd = cli.Command{
+	Name:        "delete",
+	Description: "Retire a commit into the trash window",
+	ArgsUsage:   "<ref>",
+	Action:      deleteAction,
+}
+
+var undeleteCmd = cli.Command{
+	Name:        "undelete",
+	Description: "Bring a retired commit back before its window ends",
+	ArgsUsage:   "<ref>",
+	Action:      undeleteAction,
+}

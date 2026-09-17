@@ -19,15 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Store_Put_FullMethodName          = "/proto.Store/Put"
-	Store_Get_FullMethodName          = "/proto.Store/Get"
-	Store_Delete_FullMethodName       = "/proto.Store/Delete"
-	Store_Walk_FullMethodName         = "/proto.Store/Walk"
-	Store_Has_FullMethodName          = "/proto.Store/Has"
-	Store_FileInfo_FullMethodName     = "/proto.Store/FileInfo"
-	Store_CommitInfo_FullMethodName   = "/proto.Store/CommitInfo"
-	Store_LatestCommit_FullMethodName = "/proto.Store/LatestCommit"
-	Store_GetTree_FullMethodName      = "/proto.Store/GetTree"
+	Store_Put_FullMethodName            = "/proto.Store/Put"
+	Store_Get_FullMethodName            = "/proto.Store/Get"
+	Store_ReadFile_FullMethodName       = "/proto.Store/ReadFile"
+	Store_FileInfo_FullMethodName       = "/proto.Store/FileInfo"
+	Store_CommitInfo_FullMethodName     = "/proto.Store/CommitInfo"
+	Store_LatestCommit_FullMethodName   = "/proto.Store/LatestCommit"
+	Store_GetTree_FullMethodName        = "/proto.Store/GetTree"
+	Store_BeginCommit_FullMethodName    = "/proto.Store/BeginCommit"
+	Store_BeginSession_FullMethodName   = "/proto.Store/BeginSession"
+	Store_EndSession_FullMethodName     = "/proto.Store/EndSession"
+	Store_GetPresence_FullMethodName    = "/proto.Store/GetPresence"
+	Store_DeleteCommit_FullMethodName   = "/proto.Store/DeleteCommit"
+	Store_UndeleteCommit_FullMethodName = "/proto.Store/UndeleteCommit"
+	Store_DeleteSet_FullMethodName      = "/proto.Store/DeleteSet"
+	Store_UndeleteSet_FullMethodName    = "/proto.Store/UndeleteSet"
+	Store_Unpin_FullMethodName          = "/proto.Store/Unpin"
+	Store_ListPins_FullMethodName       = "/proto.Store/ListPins"
 )
 
 // StoreClient is the client API for Store service.
@@ -35,15 +43,29 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StoreClient interface {
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
+	// Get serves a commit, tree or file object the store references; blobs
+	// are read through ReadFile
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
-	Walk(ctx context.Context, in *WalkRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WalkResponse], error)
-	Has(ctx context.Context, in *HasRequest, opts ...grpc.CallOption) (*HasResponse, error)
+	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFileResponse], error)
 	FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error)
 	CommitInfo(ctx context.Context, in *CommitInfoRequest, opts ...grpc.CallOption) (*CommitInfoResponse, error)
 	LatestCommit(ctx context.Context, in *LatestCommitRequest, opts ...grpc.CallOption) (*LatestCommitResponse, error)
 	// GetTree streams a subtree's tree objects breadth-first from the server
 	GetTree(ctx context.Context, in *GetTreeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetTreeResponse], error)
+	// BeginSession opens a backup session; its writes are visible to other
+	// callers only once it stores a commit
+	// BeginCommit checks the set's state and ownership before a run
+	BeginCommit(ctx context.Context, in *BeginCommitRequest, opts ...grpc.CallOption) (*BeginCommitResponse, error)
+	BeginSession(ctx context.Context, in *BeginSessionRequest, opts ...grpc.CallOption) (*BeginSessionResponse, error)
+	EndSession(ctx context.Context, in *EndSessionRequest, opts ...grpc.CallOption) (*EndSessionResponse, error)
+	// GetPresence streams the presence filters of the caller's scope
+	GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetPresenceResponse], error)
+	DeleteCommit(ctx context.Context, in *DeleteCommitRequest, opts ...grpc.CallOption) (*DeleteCommitResponse, error)
+	UndeleteCommit(ctx context.Context, in *UndeleteCommitRequest, opts ...grpc.CallOption) (*UndeleteCommitResponse, error)
+	DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error)
+	UndeleteSet(ctx context.Context, in *UndeleteSetRequest, opts ...grpc.CallOption) (*UndeleteSetResponse, error)
+	Unpin(ctx context.Context, in *UnpinRequest, opts ...grpc.CallOption) (*UnpinResponse, error)
+	ListPins(ctx context.Context, in *ListPinsRequest, opts ...grpc.CallOption) (*ListPinsResponse, error)
 }
 
 type storeClient struct {
@@ -74,23 +96,13 @@ func (c *storeClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.Call
 	return out, nil
 }
 
-func (c *storeClient) Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error) {
+func (c *storeClient) ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFileResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteResponse)
-	err := c.cc.Invoke(ctx, Store_Delete_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[0], Store_ReadFile_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (c *storeClient) Walk(ctx context.Context, in *WalkRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WalkResponse], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[0], Store_Walk_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[WalkRequest, WalkResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ReadFileRequest, ReadFileResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -101,17 +113,7 @@ func (c *storeClient) Walk(ctx context.Context, in *WalkRequest, opts ...grpc.Ca
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Store_WalkClient = grpc.ServerStreamingClient[WalkResponse]
-
-func (c *storeClient) Has(ctx context.Context, in *HasRequest, opts ...grpc.CallOption) (*HasResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HasResponse)
-	err := c.cc.Invoke(ctx, Store_Has_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
+type Store_ReadFileClient = grpc.ServerStreamingClient[ReadFileResponse]
 
 func (c *storeClient) FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -162,20 +164,143 @@ func (c *storeClient) GetTree(ctx context.Context, in *GetTreeRequest, opts ...g
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Store_GetTreeClient = grpc.ServerStreamingClient[GetTreeResponse]
 
+func (c *storeClient) BeginCommit(ctx context.Context, in *BeginCommitRequest, opts ...grpc.CallOption) (*BeginCommitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginCommitResponse)
+	err := c.cc.Invoke(ctx, Store_BeginCommit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) BeginSession(ctx context.Context, in *BeginSessionRequest, opts ...grpc.CallOption) (*BeginSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginSessionResponse)
+	err := c.cc.Invoke(ctx, Store_BeginSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) EndSession(ctx context.Context, in *EndSessionRequest, opts ...grpc.CallOption) (*EndSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EndSessionResponse)
+	err := c.cc.Invoke(ctx, Store_EndSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetPresenceResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[2], Store_GetPresence_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetPresenceRequest, GetPresenceResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Store_GetPresenceClient = grpc.ServerStreamingClient[GetPresenceResponse]
+
+func (c *storeClient) DeleteCommit(ctx context.Context, in *DeleteCommitRequest, opts ...grpc.CallOption) (*DeleteCommitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteCommitResponse)
+	err := c.cc.Invoke(ctx, Store_DeleteCommit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) UndeleteCommit(ctx context.Context, in *UndeleteCommitRequest, opts ...grpc.CallOption) (*UndeleteCommitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UndeleteCommitResponse)
+	err := c.cc.Invoke(ctx, Store_UndeleteCommit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSetResponse)
+	err := c.cc.Invoke(ctx, Store_DeleteSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) UndeleteSet(ctx context.Context, in *UndeleteSetRequest, opts ...grpc.CallOption) (*UndeleteSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UndeleteSetResponse)
+	err := c.cc.Invoke(ctx, Store_UndeleteSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) Unpin(ctx context.Context, in *UnpinRequest, opts ...grpc.CallOption) (*UnpinResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnpinResponse)
+	err := c.cc.Invoke(ctx, Store_Unpin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) ListPins(ctx context.Context, in *ListPinsRequest, opts ...grpc.CallOption) (*ListPinsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPinsResponse)
+	err := c.cc.Invoke(ctx, Store_ListPins_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StoreServer is the server API for Store service.
 // All implementations must embed UnimplementedStoreServer
 // for forward compatibility.
 type StoreServer interface {
 	Put(context.Context, *PutRequest) (*PutResponse, error)
+	// Get serves a commit, tree or file object the store references; blobs
+	// are read through ReadFile
 	Get(context.Context, *GetRequest) (*GetResponse, error)
-	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
-	Walk(*WalkRequest, grpc.ServerStreamingServer[WalkResponse]) error
-	Has(context.Context, *HasRequest) (*HasResponse, error)
+	ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error
 	FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error)
 	CommitInfo(context.Context, *CommitInfoRequest) (*CommitInfoResponse, error)
 	LatestCommit(context.Context, *LatestCommitRequest) (*LatestCommitResponse, error)
 	// GetTree streams a subtree's tree objects breadth-first from the server
 	GetTree(*GetTreeRequest, grpc.ServerStreamingServer[GetTreeResponse]) error
+	// BeginSession opens a backup session; its writes are visible to other
+	// callers only once it stores a commit
+	// BeginCommit checks the set's state and ownership before a run
+	BeginCommit(context.Context, *BeginCommitRequest) (*BeginCommitResponse, error)
+	BeginSession(context.Context, *BeginSessionRequest) (*BeginSessionResponse, error)
+	EndSession(context.Context, *EndSessionRequest) (*EndSessionResponse, error)
+	// GetPresence streams the presence filters of the caller's scope
+	GetPresence(*GetPresenceRequest, grpc.ServerStreamingServer[GetPresenceResponse]) error
+	DeleteCommit(context.Context, *DeleteCommitRequest) (*DeleteCommitResponse, error)
+	UndeleteCommit(context.Context, *UndeleteCommitRequest) (*UndeleteCommitResponse, error)
+	DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error)
+	UndeleteSet(context.Context, *UndeleteSetRequest) (*UndeleteSetResponse, error)
+	Unpin(context.Context, *UnpinRequest) (*UnpinResponse, error)
+	ListPins(context.Context, *ListPinsRequest) (*ListPinsResponse, error)
 	mustEmbedUnimplementedStoreServer()
 }
 
@@ -192,14 +317,8 @@ func (UnimplementedStoreServer) Put(context.Context, *PutRequest) (*PutResponse,
 func (UnimplementedStoreServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
 }
-func (UnimplementedStoreServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Delete not implemented")
-}
-func (UnimplementedStoreServer) Walk(*WalkRequest, grpc.ServerStreamingServer[WalkResponse]) error {
-	return status.Error(codes.Unimplemented, "method Walk not implemented")
-}
-func (UnimplementedStoreServer) Has(context.Context, *HasRequest) (*HasResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Has not implemented")
+func (UnimplementedStoreServer) ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error {
+	return status.Error(codes.Unimplemented, "method ReadFile not implemented")
 }
 func (UnimplementedStoreServer) FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FileInfo not implemented")
@@ -212,6 +331,36 @@ func (UnimplementedStoreServer) LatestCommit(context.Context, *LatestCommitReque
 }
 func (UnimplementedStoreServer) GetTree(*GetTreeRequest, grpc.ServerStreamingServer[GetTreeResponse]) error {
 	return status.Error(codes.Unimplemented, "method GetTree not implemented")
+}
+func (UnimplementedStoreServer) BeginCommit(context.Context, *BeginCommitRequest) (*BeginCommitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginCommit not implemented")
+}
+func (UnimplementedStoreServer) BeginSession(context.Context, *BeginSessionRequest) (*BeginSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginSession not implemented")
+}
+func (UnimplementedStoreServer) EndSession(context.Context, *EndSessionRequest) (*EndSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EndSession not implemented")
+}
+func (UnimplementedStoreServer) GetPresence(*GetPresenceRequest, grpc.ServerStreamingServer[GetPresenceResponse]) error {
+	return status.Error(codes.Unimplemented, "method GetPresence not implemented")
+}
+func (UnimplementedStoreServer) DeleteCommit(context.Context, *DeleteCommitRequest) (*DeleteCommitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteCommit not implemented")
+}
+func (UnimplementedStoreServer) UndeleteCommit(context.Context, *UndeleteCommitRequest) (*UndeleteCommitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UndeleteCommit not implemented")
+}
+func (UnimplementedStoreServer) DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSet not implemented")
+}
+func (UnimplementedStoreServer) UndeleteSet(context.Context, *UndeleteSetRequest) (*UndeleteSetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UndeleteSet not implemented")
+}
+func (UnimplementedStoreServer) Unpin(context.Context, *UnpinRequest) (*UnpinResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Unpin not implemented")
+}
+func (UnimplementedStoreServer) ListPins(context.Context, *ListPinsRequest) (*ListPinsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPins not implemented")
 }
 func (UnimplementedStoreServer) mustEmbedUnimplementedStoreServer() {}
 func (UnimplementedStoreServer) testEmbeddedByValue()               {}
@@ -270,52 +419,16 @@ func _Store_Get_Handler(srv interface{}, ctx context.Context, dec func(interface
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Store_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StoreServer).Delete(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Store_Delete_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StoreServer).Delete(ctx, req.(*DeleteRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Store_Walk_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(WalkRequest)
+func _Store_ReadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ReadFileRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(StoreServer).Walk(m, &grpc.GenericServerStream[WalkRequest, WalkResponse]{ServerStream: stream})
+	return srv.(StoreServer).ReadFile(m, &grpc.GenericServerStream[ReadFileRequest, ReadFileResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Store_WalkServer = grpc.ServerStreamingServer[WalkResponse]
-
-func _Store_Has_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HasRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StoreServer).Has(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Store_Has_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StoreServer).Has(ctx, req.(*HasRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+type Store_ReadFileServer = grpc.ServerStreamingServer[ReadFileResponse]
 
 func _Store_FileInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FileInfoRequest)
@@ -382,6 +495,179 @@ func _Store_GetTree_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Store_GetTreeServer = grpc.ServerStreamingServer[GetTreeResponse]
 
+func _Store_BeginCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).BeginCommit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_BeginCommit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).BeginCommit(ctx, req.(*BeginCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_BeginSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).BeginSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_BeginSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).BeginSession(ctx, req.(*BeginSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_EndSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).EndSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_EndSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).EndSession(ctx, req.(*EndSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_GetPresence_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetPresenceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StoreServer).GetPresence(m, &grpc.GenericServerStream[GetPresenceRequest, GetPresenceResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Store_GetPresenceServer = grpc.ServerStreamingServer[GetPresenceResponse]
+
+func _Store_DeleteCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).DeleteCommit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_DeleteCommit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).DeleteCommit(ctx, req.(*DeleteCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_UndeleteCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UndeleteCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).UndeleteCommit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_UndeleteCommit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).UndeleteCommit(ctx, req.(*UndeleteCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_DeleteSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).DeleteSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_DeleteSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).DeleteSet(ctx, req.(*DeleteSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_UndeleteSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UndeleteSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).UndeleteSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_UndeleteSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).UndeleteSet(ctx, req.(*UndeleteSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_Unpin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnpinRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).Unpin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_Unpin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).Unpin(ctx, req.(*UnpinRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_ListPins_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPinsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).ListPins(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_ListPins_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).ListPins(ctx, req.(*ListPinsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Store_ServiceDesc is the grpc.ServiceDesc for Store service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -398,14 +684,6 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Store_Get_Handler,
 		},
 		{
-			MethodName: "Delete",
-			Handler:    _Store_Delete_Handler,
-		},
-		{
-			MethodName: "Has",
-			Handler:    _Store_Has_Handler,
-		},
-		{
 			MethodName: "FileInfo",
 			Handler:    _Store_FileInfo_Handler,
 		},
@@ -417,16 +695,57 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "LatestCommit",
 			Handler:    _Store_LatestCommit_Handler,
 		},
+		{
+			MethodName: "BeginCommit",
+			Handler:    _Store_BeginCommit_Handler,
+		},
+		{
+			MethodName: "BeginSession",
+			Handler:    _Store_BeginSession_Handler,
+		},
+		{
+			MethodName: "EndSession",
+			Handler:    _Store_EndSession_Handler,
+		},
+		{
+			MethodName: "DeleteCommit",
+			Handler:    _Store_DeleteCommit_Handler,
+		},
+		{
+			MethodName: "UndeleteCommit",
+			Handler:    _Store_UndeleteCommit_Handler,
+		},
+		{
+			MethodName: "DeleteSet",
+			Handler:    _Store_DeleteSet_Handler,
+		},
+		{
+			MethodName: "UndeleteSet",
+			Handler:    _Store_UndeleteSet_Handler,
+		},
+		{
+			MethodName: "Unpin",
+			Handler:    _Store_Unpin_Handler,
+		},
+		{
+			MethodName: "ListPins",
+			Handler:    _Store_ListPins_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Walk",
-			Handler:       _Store_Walk_Handler,
+			StreamName:    "ReadFile",
+			Handler:       _Store_ReadFile_Handler,
 			ServerStreams: true,
 		},
 		{
 			StreamName:    "GetTree",
 			Handler:       _Store_GetTree_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetPresence",
+			Handler:       _Store_GetPresence_Handler,
 			ServerStreams: true,
 		},
 	},

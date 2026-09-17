@@ -15,11 +15,13 @@ enum NodeType {
 
 // this contains file metadata, which can be different
 // accross backups, even if file content is the same
+// Name, user, group and link_target are plaintext bytes in an unencrypted
+// store and deterministic tokens under the store key otherwise.
 message FileInfo {
-	string name = 1;
+	bytes name = 1;
 	uint32 mode = 2;
-	string user = 3;
-	string group = 4;
+	bytes user = 3;
+	bytes group = 4;
 	reserved 5, 7;
 	reserved "timestamp", "tree";
 	int64 size = 6;
@@ -29,7 +31,7 @@ message FileInfo {
 	NodeType type = 9;
 
 	// the target of a symlink, empty for every other type
-	string link_target = 10;
+	bytes link_target = 10;
 }
 
 // Chunker names the boundary function and parameters that cut a file.
@@ -48,8 +50,13 @@ message File {
 	// the chunker that cut the parts
 	Chunker chunker = 3;
 
-	// the whole content of a small file, stored without a blob
+	// the whole content of a small file, stored without a blob; sealed
+	// under the key in keys when the store is encrypted
 	bytes inline = 4;
+
+	// the per-part blob keys (one 32-byte key per part, or one for inline
+	// content), encrypted under the store key; empty in a plaintext store
+	bytes keys = 5;
 }
 
 message FilePart {

@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package admin;
+
+option go_package = "github.com/twcclan/goback/proto/admin";
+
+import "google/protobuf/timestamp.proto";
+
+// Admin is the operator surface of a store server: sets, the store policy
+// and job triggers. It is served on its own listener behind the admin
+// token, over gRPC and, through grpc-gateway, REST.
+service Admin {
+    rpc ListSets(ListSetsRequest) returns (ListSetsResponse) {}
+    // TransferSet hands a set to another agent
+    rpc TransferSet(TransferSetRequest) returns (BackupSet) {}
+    rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}
+    rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
+
+    rpc GetStorePolicy(GetStorePolicyRequest) returns (StorePolicy) {}
+    // SetStorePolicy replaces the policy under the next version and may
+    // record the operator's acknowledgement that the store key is saved
+    rpc SetStorePolicy(SetStorePolicyRequest) returns (StorePolicy) {}
+
+    // Retire tombstones every commit whose window has passed
+    rpc Retire(RetireRequest) returns (RetireResponse) {}
+    rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse) {}
+}
+
+message BackupSet {
+    uint64 id = 1;
+    string name = 2;
+    string agent_id = 3;
+    // active, closing or deleted
+    string state = 4;
+    // the logical size of the newest live commit
+    int64 logical_size = 5;
+}
+
+message ListSetsRequest {}
+
+message ListSetsResponse {
+    repeated BackupSet sets = 1;
+}
+
+message TransferSetRequest {
+    string name = 1;
+    string agent_id = 2;
+}
+
+message DeleteSetRequest {
+    string name = 1;
+    bool erase = 2;
+}
+
+message DeleteSetResponse {}
+
+message UndeleteSetRequest {
+    string name = 1;
+}
+
+message UndeleteSetResponse {}
+
+message StorePolicy {
+    uint32 version = 1;
+    // hybrid, convergent-all, store-keyed-all or none
+    string mode = 2;
+    int64 size_threshold = 3;
+    string entropy_estimator = 4;
+    double entropy_threshold = 5;
+    string presence_scope = 6;
+    string escrow = 7;
+    // when the operator confirmed the store key is saved
+    google.protobuf.Timestamp key_acknowledged_at = 8;
+}
+
+message GetStorePolicyRequest {}
+
+message SetStorePolicyRequest {
+    string mode = 1;
+    int64 size_threshold = 2;
+    string entropy_estimator = 3;
+    double entropy_threshold = 4;
+    string presence_scope = 5;
+    string escrow = 6;
+    // the operator confirms the store key is saved
+    bool acknowledge_key = 7;
+}
+
+message RetireRequest {}
+
+message RetireResponse {
+    int64 retired = 1;
+}
+
+message CollectGarbageRequest {}
+
+message CollectGarbageResponse {
+    string report = 1;
+}

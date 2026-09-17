@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -13,19 +12,40 @@ type ObjectReceiver func(*proto.Object) error
 
 var (
 	ErrNotImplemented = errors.New("the store doesn't implement this feature")
-	ErrAlreadyMarked  = errors.New("object already marked")
 	ErrNotFound       = errors.New("the requested object was not found")
 	// ErrDanglingRef is returned when an object references objects the store
 	// does not hold.
 	ErrDanglingRef = errors.New("object references missing objects")
+	// ErrSetOwned is returned for a commit into a set that another agent
+	// owns.
+	ErrSetOwned = errors.New("set is owned by another agent")
+	// ErrSetClosed is returned for a commit into a set that is being
+	// deleted.
+	ErrSetClosed = errors.New("set is closed")
+	// ErrTombstoned is returned when a commit or pin already has a
+	// tombstone; there is no undo past that point.
+	ErrTombstoned = errors.New("object is tombstoned")
+	// ErrNewestCommit is returned when deleting a set's newest live commit
+	// on its own.
+	ErrNewestCommit = errors.New("the newest commit of a set cannot be deleted")
+	// ErrPinned refuses the deletion of a commit a live pin holds.
+	ErrPinned = errors.New("commit is pinned")
+	// ErrOutOfOrder is returned for a commit received before the set's
+	// newest indexed commit.
+	ErrOutOfOrder = errors.New("commit is older than the set's newest commit")
+	// ErrCommitDenied is returned by BeginCommit when the store refuses the
+	// run, with the reason.
+	ErrCommitDenied = errors.New("commit refused")
 )
 
 // References lists the refs an object points at directly: a commit's tree,
-// a tree's nodes and splits, a file's parts.
+// a tree's nodes and splits, a file's parts, a pin's target.
 func References(obj *proto.Object) []*proto.Ref {
 	switch obj.Type() {
 	case proto.ObjectType_COMMIT:
 		return []*proto.Ref{obj.GetCommit().GetTree()}
+	case proto.ObjectType_PIN:
+		return []*proto.Ref{obj.GetPin().GetTarget()}
 	case proto.ObjectType_TREE:
 		tree := obj.GetTree()
 		refs := make([]*proto.Ref, 0, len(tree.Nodes)+len(tree.Splits))
@@ -74,11 +94,13 @@ type ObjectStore interface {
 	Has(context.Context, *proto.Ref) (bool, error)
 }
 
-type Counter interface {
-	Count() (total uint64, unique uint64, err error)
+// Eraser deletes as an erasure: the tombstone asks garbage collection to
+// rewrite the archives holding the target's objects as soon as its rules
+// allow, instead of waiting for the dead ratio or the erasure bound.
+type Eraser interface {
+	Erase(context.Context, *proto.Ref) error
 }
 
-type Collector interface {
-	io.Closer
-	Mark(ref *proto.Ref) error
+type Counter interface {
+	Count() (total uint64, unique uint64, err error)
 }

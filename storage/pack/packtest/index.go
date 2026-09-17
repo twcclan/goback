@@ -53,7 +53,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
 	for _, archive := range archives {
-		err := idx.IndexArchive(archive.name, archive.index)
+		err := idx.IndexArchive(pack.ArchiveInfo{Name: archive.name}, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -61,7 +61,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 
 	for _, archive := range archives {
 		for _, i := range rand.Perm(len(archive.index)) {
-			location, err := idx.LocateObject(&proto.Ref{Hash: archive.index[i].Sum[:]})
+			location, err := idx.LocateObject(&proto.Ref{Hash: archive.index[i].Sum[:]}, pack.Scope{})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -85,7 +85,7 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 		}
 
 		for _, record := range archive.index {
-			_, err := idx.LocateObject(&proto.Ref{Hash: record.Sum[:]})
+			_, err := idx.LocateObject(&proto.Ref{Hash: record.Sum[:]}, pack.Scope{})
 			if err != pack.ErrRecordNotFound {
 				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
 			}
@@ -105,7 +105,7 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 	}
 
 	for _, archive := range archives {
-		err := idx.IndexArchive(archive.name, archive.index)
+		err := idx.IndexArchive(pack.ArchiveInfo{Name: archive.name}, archive.index)
 		if err != nil {
 			t.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -115,13 +115,13 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 		for _, i := range rand.Perm(len(archive.index)) {
 			record := archive.index[i].Sum[:]
 
-			location1, err := idx.LocateObject(&proto.Ref{Hash: record})
+			location1, err := idx.LocateObject(&proto.Ref{Hash: record}, pack.Scope{})
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
 			}
 
-			location2, err := idx.LocateObject(&proto.Ref{Hash: record}, archive.name)
+			location2, err := idx.LocateObject(&proto.Ref{Hash: record}, pack.Scope{}, archive.name)
 			if err != nil {
 				t.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -138,7 +138,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
 	for _, archive := range archives {
-		err := idx.IndexArchive(archive.name, archive.index)
+		err := idx.IndexArchive(pack.ArchiveInfo{Name: archive.name}, archive.index)
 		if err != nil {
 			b.Fatalf("failed indexing test archive: %s", err)
 		}
@@ -156,7 +156,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 		b.ResetTimer()
 
 		for _, ref := range lookups {
-			_, err := idx.LocateObject(ref)
+			_, err := idx.LocateObject(ref, pack.Scope{})
 			if err != nil {
 				b.Errorf("couldn't find expected index record: %s", err)
 				continue
@@ -170,8 +170,14 @@ func BenchmarkIndex(b *testing.B, idx pack.ArchiveIndex) {
 
 	b.ResetTimer()
 
-	err := idx.IndexArchive(archive.name, archive.index)
+	err := idx.IndexArchive(pack.ArchiveInfo{Name: archive.name}, archive.index)
 	if err != nil {
 		b.Fatal(err)
 	}
 }
+
+// Name is the archive's name.
+func (a TestArchive) Name() string { return a.name }
+
+// Index is the archive's index file.
+func (a TestArchive) Index() pack.IndexFile { return a.index }

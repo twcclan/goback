@@ -2,14 +2,16 @@ package commit
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/hooks"
 	"github.com/twcclan/goback/backup/statcache"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage/badger"
@@ -48,28 +50,21 @@ func includeFilter(includes, excludes []string) func(string) bool {
 	}
 }
 
-// runHook runs a shell command with the process's stdio attached.
-func runHook(name, command string) error {
-	if command == "" {
-		return nil
-	}
-
-	log.Printf("Running %s hook: %s", name, command)
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", command)
-	} else {
-		cmd = exec.Command("sh", "-c", command)
-	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
-}
+// errDirty marks a run that committed but recorded torn or unreadable files.
+var errDirty = errors.New("some files were torn or unreadable")
 
 func newAction(c *cli.Context) {
+	err := runNew(c)
+	if errors.Is(err, errDirty) {
+		os.Exit(1)
+	}
+
+	if err != nil {
+		log.Fatalf("%+v", err)
+	}
+}
+
+func runNew(c *cli.Context) error {
 	base := "."
 	if c.Args().Present() {
 		base = c.Args().First()
@@ -77,12 +72,19 @@ func newAction(c *cli.Context) {
 
 	root, err := filepath.Abs(base)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	store := common.GetObjectStore(c)
 	index := common.GetIndex(c, store)
-	log.Println(index.Open())
+
+	defer func() {
+		index.Close()
+
+		if cl, ok := store.(common.Closer); ok {
+			log.Println(cl.Close())
+		}
+	}()
 
 	objects := backup.ObjectStore(index)
 
@@ -90,29 +92,29 @@ func newAction(c *cli.Context) {
 	if dir := c.String("state-dir"); dir != "" {
 		stats, err = statcache.Open(filepath.Join(dir, "stat"))
 		if err != nil {
-			log.Fatalf("opening stat cache: %v", err)
+			return errors.Join(errors.New("opening stat cache"), err)
 		}
 		defer stats.Close()
 
 		treeCache, err := badger.New(filepath.Join(dir, "objects"))
 		if err != nil {
-			log.Fatalf("opening object cache: %v", err)
+			return errors.Join(errors.New("opening object cache"), err)
 		}
 		defer treeCache.Close()
 
 		objects = cache.New(treeCache, index)
 	}
 
-	agent := c.String("agent-id")
-	if agent == "" {
-		agent, _ = os.Hostname()
-	}
+	sessions, _ := store.(backup.SessionStore)
 
 	walker := &backup.Walker{
 		Index:              index,
 		Objects:            objects,
+		Sessions:           sessions,
 		Set:                c.GlobalString("set"),
-		AgentID:            agent,
+		AgentID:            common.AgentID(c),
+		Metadata:           metadata(c.StringSlice("meta")),
+		Key:                common.StoreKey(c),
 		Root:               root,
 		Include:            includeFilter(c.StringSlice("include"), c.StringSlice("exclude")),
 		Workers:            c.Int("workers"),
@@ -126,37 +128,72 @@ func newAction(c *cli.Context) {
 		walker.Cache = stats
 	}
 
-	err = runHook("pre", c.String("pre-hook"))
-	if err != nil {
-		log.Fatalf("pre hook failed: %v", err)
+	if c.GlobalBoolT("blob-cache-on-backup") {
+		walker.BlobCache = common.BlobCache(c, walker.Key)
 	}
 
-	result, walkErr := walker.Run(context.Background())
+	ctx := common.Context(c)
+	if d := c.Duration("max-duration"); d > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
+	}
 
-	err = runHook("post", c.String("post-hook"))
+	runner := &hooks.Runner{
+		Pre:     c.String("pre-hook"),
+		Post:    c.String("post-hook"),
+		Timeout: c.Duration("hook-timeout"),
+		Logf:    log.Printf,
+	}
+
+	preOut, err := runner.RunPre(ctx)
 	if err != nil {
-		log.Printf("post hook failed: %v", err)
+		if !c.Bool("hook-optional") {
+			// the hook may have quiesced the application before failing
+			if postErr := runner.RunPost(ctx); postErr != nil {
+				log.Println(postErr)
+			}
+
+			return err
+		}
+
+		log.Printf("%v; continuing because --hook-optional is set", err)
+	}
+
+	walker.Quiesced = runner.Pre != "" && err == nil
+
+	if dir := hooks.Redirect(preOut); dir != "" {
+		walker.Root, err = filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Pre hook redirected the walk to %s", walker.Root)
+	}
+
+	result, walkErr := walker.Run(ctx)
+
+	if err := runner.RunPost(ctx); err != nil {
+		log.Println(err)
 	}
 
 	if walkErr != nil {
-		log.Fatalf("%+v", walkErr)
+		return walkErr
 	}
 
 	log.Printf("Commit %x: %d files, %d reused, %d read, %d checkpoints", result.Ref.Hash, result.Files, result.Reused, result.Read, result.Checkpoints)
+
+	common.SweepBlobCache(walker.BlobCache)
 
 	if result.Torn > 0 || result.Unreadable > 0 || result.Skipped > 0 {
 		log.Printf("%d files changed while being read, %d could not be read, %d irregular entries skipped", result.Torn, result.Unreadable, result.Skipped)
 	}
 
-	index.Close()
-
-	if cl, ok := store.(common.Closer); ok {
-		log.Println(cl.Close())
-	}
-
 	if result.Dirty() {
-		os.Exit(1)
+		return errDirty
 	}
+
+	return nil
 }
 
 var newCmd = cli.Command{
@@ -194,17 +231,45 @@ var newCmd = cli.Command{
 			Name:  "state-dir",
 			Usage: "per-machine directory for the stat cache and tree cache; optional",
 		},
-		cli.StringFlag{
-			Name:  "agent-id",
-			Usage: "identifier recorded in the commit; defaults to the hostname",
+		cli.StringSliceFlag{
+			Name:  "meta",
+			Usage: "key=value label recorded on the commit; repeatable",
 		},
 		cli.StringFlag{
 			Name:  "pre-hook",
-			Usage: "shell command run before the walk, for example a save-off over RCON",
+			Usage: "shell command run before the walk, for example one that pauses the application's writes; see contrib/hooks",
 		},
 		cli.StringFlag{
 			Name:  "post-hook",
-			Usage: "shell command run after the walk, even when it fails",
+			Usage: "shell command run after the walk on every exit the agent controls: success, failure, Ctrl-C and deadlines",
+		},
+		cli.DurationFlag{
+			Name:  "hook-timeout",
+			Usage: "deadline for each hook",
+			Value: 5 * time.Minute,
+		},
+		cli.BoolFlag{
+			Name:  "hook-optional",
+			Usage: "back up anyway when the pre hook fails",
+		},
+		cli.DurationFlag{
+			Name:  "max-duration",
+			Usage: "cancel the walk after this long, still running the post hook; 0 disables",
 		},
 	},
+}
+
+// metadata parses repeated key=value flags; a bare key gets an empty value.
+func metadata(pairs []string) map[string]string {
+	if len(pairs) == 0 {
+		return nil
+	}
+
+	out := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		key, value, _ := strings.Cut(pair, "=")
+		out[key] = value
+	}
+
+	return out
 }

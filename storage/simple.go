@@ -45,12 +45,12 @@ func (s *SimpleChunkStore) Has(ctx context.Context, ref *proto.Ref) (bool, error
 }
 
 func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
-	payload, err := obj.Canonical()
+	err := obj.Validate()
 	if err != nil {
 		return err
 	}
 
-	return s.db.Put(proto.HashPayload(obj.Type(), payload).Hash, obj.Bytes(), nil)
+	return s.db.Put(obj.Ref().Hash, obj.Bytes(), nil)
 }
 
 func (s *SimpleChunkStore) Delete(ctx context.Context, ref *proto.Ref) error {
@@ -73,12 +73,12 @@ func (s *SimpleChunkStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Obje
 		return nil, err
 	}
 
-	payload, err := obj.Canonical()
+	err = obj.Validate()
 	if err != nil {
 		return nil, err
 	}
 
-	if !proto.HashPayload(obj.Type(), payload).Equal(ref) {
+	if !obj.Ref().Equal(ref) {
 		return nil, proto.ErrRefMismatch
 	}
 

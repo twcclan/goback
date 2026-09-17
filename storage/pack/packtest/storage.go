@@ -28,6 +28,7 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		{"missing file", testMissingFiles},
 		{"list files", testListAllFiles},
 		{"list files filtered", testListSomeFiles},
+		{"nested names", testNestedNames},
 		{"test delete all", testDeleteAll},
 	}
 
@@ -247,4 +248,65 @@ func getStorageTestFiles(t *testing.T) []file {
 	}
 
 	return files
+}
+
+// testNestedNames stores under a slash-separated name, as session archives
+// are, and expects listing to return the full name.
+func testNestedNames(t *testing.T, store pack.ArchiveStorage, files []file) {
+	const name = "s1/t1/session/nested.goback"
+
+	f, err := store.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = f.Write([]byte("nested")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	names, err := store.List(".goback")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, n := range names {
+		if n == name {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Fatalf("expected %q in %v", name, names)
+	}
+
+	f, err = store.Open(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "nested" {
+		t.Fatalf("unexpected content %q", data)
+	}
+
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Delete(name); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = store.Open(name); err != pack.ErrFileNotFound {
+		t.Fatalf("expected the file to be gone, got %v", err)
+	}
 }

@@ -76,7 +76,7 @@ func writeTestFile(t *testing.T, store ObjectStore, size int) ([]byte, *proto.Fi
 	_, err := rand.New(rand.NewSource(int64(size))).Read(data)
 	require.NoError(t, err)
 
-	writer := newFileWriter(context.Background(), store)
+	writer := newFileWriter(context.Background(), store, nil, 0)
 	_, err = writer.Write(data)
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
@@ -94,20 +94,20 @@ func TestFileReaderRoundTrip(t *testing.T) {
 
 	t.Run("WriteTo", func(t *testing.T) {
 		var out bytes.Buffer
-		n, err := newFileReader(context.Background(), store, file).WriteTo(&out)
+		n, err := newFileReader(context.Background(), store, file, nil).WriteTo(&out)
 		require.NoError(t, err)
 		require.EqualValues(t, len(data), n)
 		require.True(t, bytes.Equal(data, out.Bytes()))
 	})
 
 	t.Run("Read", func(t *testing.T) {
-		out, err := io.ReadAll(newFileReader(context.Background(), store, file))
+		out, err := io.ReadAll(newFileReader(context.Background(), store, file, nil))
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(data, out))
 	})
 
 	t.Run("SeekEnd", func(t *testing.T) {
-		reader := newFileReader(context.Background(), store, file)
+		reader := newFileReader(context.Background(), store, file, nil)
 
 		pos, err := reader.Seek(-100, io.SeekEnd)
 		require.NoError(t, err)
@@ -135,13 +135,13 @@ func TestFileReaderMissingPart(t *testing.T) {
 
 	t.Run("WriteTo fails instead of zero-filling", func(t *testing.T) {
 		var out bytes.Buffer
-		_, err := newFileReader(context.Background(), store, file).WriteTo(&out)
+		_, err := newFileReader(context.Background(), store, file, nil).WriteTo(&out)
 		require.ErrorIs(t, err, ErrNotFound)
 		require.Less(t, out.Len(), len(data))
 	})
 
 	t.Run("Read fails instead of zero-filling", func(t *testing.T) {
-		_, err := io.ReadAll(newFileReader(context.Background(), store, file))
+		_, err := io.ReadAll(newFileReader(context.Background(), store, file, nil))
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 }
@@ -155,7 +155,7 @@ func TestFileReaderWriteToCancel(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := newFileReader(ctx, store, file).WriteTo(io.Discard)
+		_, err := newFileReader(ctx, store, file, nil).WriteTo(io.Discard)
 		done <- err
 	}()
 
@@ -174,7 +174,7 @@ func TestRootTreeOrderIsDeterministic(t *testing.T) {
 		rand.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })
 
 		for _, name := range names {
-			writer.Node(&proto.TreeNode{Stat: &proto.FileInfo{Name: name}, Ref: testRef(name)})
+			writer.Node(&proto.TreeNode{Stat: &proto.FileInfo{Name: []byte(name)}, Ref: testRef(name)})
 		}
 
 		tree := proto.NewObject(&proto.Tree{Nodes: writer.sortedNodes()})

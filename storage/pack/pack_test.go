@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/twcclan/goback/backup"
@@ -148,6 +150,74 @@ func TestPackMissingObject(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
+// TestCompactionKeepsAnsweringReaders runs Has and Get against every object
+// while a compaction retires their archives: no committed object may look
+// absent, and a retired archive is never opened again.
+func TestCompactionKeepsAnsweringReaders(t *testing.T) {
+	base := t.TempDir()
+	index := NewInMemoryIndex()
+
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(base)),
+		WithArchiveIndex(index),
+		WithMaxSize(1024*1024),
+		WithCompaction(CompactionConfig{MinimumCandidates: 0}),
+	)
+	require.NoError(t, err)
+
+	// many small archives, so the compaction has plenty to retire
+	objects := makeTestData(t, numObjects)
+	for i, object := range objects {
+		require.NoError(t, store.Put(context.Background(), object))
+		if i%10 == 9 {
+			require.NoError(t, store.Flush())
+		}
+	}
+	require.NoError(t, store.Flush())
+
+	before, err := store.storage.List(ArchiveSuffix)
+	require.NoError(t, err)
+	require.Greater(t, len(before), 10)
+
+	compacted := make(chan error, 1)
+	go func() { compacted <- store.doCompaction() }()
+
+	ctx := context.Background()
+	for done := false; !done; {
+		select {
+		case err := <-compacted:
+			require.NoError(t, err)
+			done = true
+		default:
+		}
+
+		for _, object := range objects {
+			has, err := store.Has(ctx, object.Ref())
+			require.NoError(t, err)
+			require.True(t, has, "object %x looked absent during compaction", object.Ref().Hash)
+
+			_, err = store.Get(ctx, object.Ref())
+			require.NoError(t, err, "object %x during compaction", object.Ref().Hash)
+		}
+	}
+
+	after, err := store.storage.List(ArchiveSuffix)
+	require.NoError(t, err)
+	require.Less(t, len(after), len(before))
+
+	for _, name := range before {
+		name = strings.TrimSuffix(name, ArchiveSuffix)
+		if slices.Contains(after, name+ArchiveSuffix) {
+			continue
+		}
+
+		_, err := store.archiveByName(name)
+		require.ErrorIs(t, err, errArchiveRetired, "a stale location must not reopen %s", name)
+	}
+
+	require.NoError(t, store.Close())
+}
+
 // TestPackCompaction writes objects across many small archives, compacts them
 // while the store stays open, and expects every object to remain readable.
 func TestPackCompaction(t *testing.T) {
@@ -189,7 +259,7 @@ func TestPackCompaction(t *testing.T) {
 		require.NoError(t, err, "object %x after compaction", original.Ref().Hash)
 		require.True(t, bytes.Equal(object.Bytes(), original.Bytes()))
 
-		loc, err := index.LocateObject(original.Ref())
+		loc, err := index.LocateObject(original.Ref(), Scope{})
 		require.NoError(t, err)
 		require.Contains(t, archivesAfter, loc.Archive+ArchiveSuffix)
 	}

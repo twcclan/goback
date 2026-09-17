@@ -1,6 +1,0 @@
-BEGIN;
-
-DROP TABLE objects;
-DROP TABLE archives;
-
-COMMIT;

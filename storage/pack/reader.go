@@ -24,7 +24,7 @@ type Reader struct {
 }
 
 func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
-	_, err := r.index.LocateObject(ref)
+	_, err := r.index.LocateObject(ref, Scope{})
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
 			return false, nil
@@ -37,7 +37,7 @@ func (r *Reader) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 }
 
 func (r *Reader) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	location, err := r.index.LocateObject(ref)
+	location, err := r.index.LocateObject(ref, Scope{})
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
 			return nil, backup.ErrNotFound
@@ -84,7 +84,7 @@ func (w *Writer) Walk(ctx context.Context, load bool, t proto.ObjectType, fn bac
 				var err error
 
 				if load {
-					obj, err = proto.NewVerifiedObject(bytes, hdr.Compression, hdr.Type, hdr.Ref)
+					obj, err = proto.ObjectFromStored(hdr, bytes)
 					if err != nil {
 						return fmt.Errorf("object %x in archive %s: %w", hdr.Ref.Hash, archive.name, err)
 					}

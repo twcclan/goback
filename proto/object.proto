@@ -10,6 +10,7 @@ import "tree.proto";
 import "commit.proto";
 import "blob.proto";
 import "file.proto";
+import "pin.proto";
 import "ref.proto";
 
 enum ObjectType {
@@ -19,12 +20,23 @@ enum ObjectType {
   FILE = 3;
   BLOB = 4;
   TOMBSTONE = 5;
+  PIN = 6;
 }
 
 enum Compression {
   NONE = 0;
   GZIP = 1;
   ZSTD = 2;
+}
+
+// Encryption says under which kind of key a blob's stored bytes are
+// sealed. Structure objects are never sealed as a whole.
+enum Encryption {
+  PLAINTEXT = 0;
+  // blob_key = HMAC(store_key, "blob" || plaintext); private to the store
+  STORE_KEYED = 1;
+  // blob_key = H("blob" || plaintext); dedupes across stores
+  CONVERGENT = 2;
 }
 
 message ObjectHeader {
@@ -35,6 +47,28 @@ message ObjectHeader {
   google.protobuf.Timestamp timestamp = 5;
   ObjectType type = 6;
   Ref tombstone_for = 7;
+
+  Encryption encryption = 8;
+  // identifies the store key under which the object's sealed parts were
+  // encrypted; empty for plaintext and convergent objects
+  bytes key_id = 9;
+  // SHA-256 of the stored bytes, so a copy can be checked without a key
+  bytes stored_hash = 10;
+  // set on a tombstone written for an erasure: garbage collection rewrites
+  // the archives holding the target's objects as soon as its rules allow
+  bool erase = 11;
+}
+
+// Sealed carries a blob that the client encrypted: its ref is derived from
+// the blob key, not from the stored bytes, so the server stores it as is.
+message Sealed {
+  Ref ref = 1;
+  ObjectType type = 2;
+  bytes data = 3;
+  // the codec applied before encryption
+  Compression compression = 4;
+  Encryption encryption = 5;
+  bytes key_id = 6;
 }
 
 message Object {
@@ -43,5 +77,11 @@ message Object {
     Tree tree = 2;
     File file = 3;
     Blob blob = 4;
+    Sealed sealed = 5;
+    Pin pin = 6;
   }
+
+  // the store key under which a tree's names or a file's part keys are
+  // encrypted; transport only, never part of the hashed payload
+  bytes key_id = 10;
 }

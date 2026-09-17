@@ -118,18 +118,20 @@ func (Chunker) EnumDescriptor() ([]byte, []int) {
 
 // this contains file metadata, which can be different
 // accross backups, even if file content is the same
+// Name, user, group and link_target are plaintext bytes in an unencrypted
+// store and deterministic tokens under the store key otherwise.
 type FileInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name  []byte                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Mode  uint32                 `protobuf:"varint,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	User  string                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
-	Group string                 `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
+	User  []byte                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	Group []byte                 `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
 	Size  int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
 	// modification time in nanoseconds since the Unix epoch
 	MtimeNs int64    `protobuf:"varint,8,opt,name=mtime_ns,json=mtimeNs,proto3" json:"mtime_ns,omitempty"`
 	Type    NodeType `protobuf:"varint,9,opt,name=type,proto3,enum=proto.NodeType" json:"type,omitempty"`
 	// the target of a symlink, empty for every other type
-	LinkTarget    string `protobuf:"bytes,10,opt,name=link_target,json=linkTarget,proto3" json:"link_target,omitempty"`
+	LinkTarget    []byte `protobuf:"bytes,10,opt,name=link_target,json=linkTarget,proto3" json:"link_target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,11 +166,11 @@ func (*FileInfo) Descriptor() ([]byte, []int) {
 	return file_file_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *FileInfo) GetName() string {
+func (x *FileInfo) GetName() []byte {
 	if x != nil {
 		return x.Name
 	}
-	return ""
+	return nil
 }
 
 func (x *FileInfo) GetMode() uint32 {
@@ -178,18 +180,18 @@ func (x *FileInfo) GetMode() uint32 {
 	return 0
 }
 
-func (x *FileInfo) GetUser() string {
+func (x *FileInfo) GetUser() []byte {
 	if x != nil {
 		return x.User
 	}
-	return ""
+	return nil
 }
 
-func (x *FileInfo) GetGroup() string {
+func (x *FileInfo) GetGroup() []byte {
 	if x != nil {
 		return x.Group
 	}
-	return ""
+	return nil
 }
 
 func (x *FileInfo) GetSize() int64 {
@@ -213,11 +215,11 @@ func (x *FileInfo) GetType() NodeType {
 	return NodeType_NODE_FILE
 }
 
-func (x *FileInfo) GetLinkTarget() string {
+func (x *FileInfo) GetLinkTarget() []byte {
 	if x != nil {
 		return x.LinkTarget
 	}
-	return ""
+	return nil
 }
 
 type File struct {
@@ -228,8 +230,12 @@ type File struct {
 	Splits []*Ref `protobuf:"bytes,2,rep,name=splits,proto3" json:"splits,omitempty"`
 	// the chunker that cut the parts
 	Chunker Chunker `protobuf:"varint,3,opt,name=chunker,proto3,enum=proto.Chunker" json:"chunker,omitempty"`
-	// the whole content of a small file, stored without a blob
-	Inline        []byte `protobuf:"bytes,4,opt,name=inline,proto3" json:"inline,omitempty"`
+	// the whole content of a small file, stored without a blob; sealed
+	// under the key in keys when the store is encrypted
+	Inline []byte `protobuf:"bytes,4,opt,name=inline,proto3" json:"inline,omitempty"`
+	// the per-part blob keys (one 32-byte key per part, or one for inline
+	// content), encrypted under the store key; empty in a plaintext store
+	Keys          []byte `protobuf:"bytes,5,opt,name=keys,proto3" json:"keys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -288,6 +294,13 @@ func (x *File) GetChunker() Chunker {
 func (x *File) GetInline() []byte {
 	if x != nil {
 		return x.Inline
+	}
+	return nil
+}
+
+func (x *File) GetKeys() []byte {
+	if x != nil {
+		return x.Keys
 	}
 	return nil
 }
@@ -359,22 +372,23 @@ const file_file_proto_rawDesc = "" +
 	"\n" +
 	"file.proto\x12\x05proto\x1a\tref.proto\"\xee\x01\n" +
 	"\bFileInfo\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\fR\x04name\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\rR\x04mode\x12\x12\n" +
-	"\x04user\x18\x03 \x01(\tR\x04user\x12\x14\n" +
-	"\x05group\x18\x04 \x01(\tR\x05group\x12\x12\n" +
+	"\x04user\x18\x03 \x01(\fR\x04user\x12\x14\n" +
+	"\x05group\x18\x04 \x01(\fR\x05group\x12\x12\n" +
 	"\x04size\x18\x06 \x01(\x03R\x04size\x12\x19\n" +
 	"\bmtime_ns\x18\b \x01(\x03R\amtimeNs\x12#\n" +
 	"\x04type\x18\t \x01(\x0e2\x0f.proto.NodeTypeR\x04type\x12\x1f\n" +
 	"\vlink_target\x18\n" +
-	" \x01(\tR\n" +
-	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\x93\x01\n" +
+	" \x01(\fR\n" +
+	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\xa7\x01\n" +
 	"\x04File\x12%\n" +
 	"\x05parts\x18\x01 \x03(\v2\x0f.proto.FilePartR\x05parts\x12\"\n" +
 	"\x06splits\x18\x02 \x03(\v2\n" +
 	".proto.RefR\x06splits\x12(\n" +
 	"\achunker\x18\x03 \x01(\x0e2\x0e.proto.ChunkerR\achunker\x12\x16\n" +
-	"\x06inline\x18\x04 \x01(\fR\x06inline\"X\n" +
+	"\x06inline\x18\x04 \x01(\fR\x06inline\x12\x12\n" +
+	"\x04keys\x18\x05 \x01(\fR\x04keys\"X\n" +
 	"\bFilePart\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x04R\x06offset\x12\x16\n" +
 	"\x06length\x18\x02 \x01(\x04R\x06length\x12\x1c\n" +
