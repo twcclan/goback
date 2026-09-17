@@ -16,6 +16,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+// TestArchiveStorage runs the ArchiveStorage contract against an empty
+// store and leaves it empty.
 func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 	type test struct {
 		name string
@@ -32,7 +34,6 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		{"test delete all", testDeleteAll},
 	}
 
-	// get test data
 	files := getStorageTestFiles(t)
 	runTests := func(t *testing.T, store pack.ArchiveStorage) {
 		for _, test := range tests {
@@ -42,13 +43,11 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		}
 	}
 
-	// run standard tests
 	runTests(t, store)
 
 }
 
 func testCreateFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
-	// try to store all the files
 	for _, f := range files {
 		file, err := store.Create(f.key)
 		if err != nil {
@@ -192,7 +191,7 @@ type file struct {
 func getStorageTestFiles(t *testing.T) []file {
 	t.Helper()
 
-	// need to get path of current file to locate the testdata folder
+	// testdata lives beside this file, not the caller's
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("couldn't get caller")
@@ -208,7 +207,6 @@ func getStorageTestFiles(t *testing.T) []file {
 			return err
 		}
 
-		// ignore folders
 		if d.IsDir() {
 			return nil
 		}

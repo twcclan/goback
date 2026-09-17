@@ -43,6 +43,7 @@ func Open(dir string) (*Cache, error) {
 	return &Cache{db: db}, nil
 }
 
+// Close closes the database.
 func (c *Cache) Close() error {
 	return c.db.Close()
 }

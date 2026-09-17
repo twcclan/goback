@@ -93,8 +93,7 @@ func (x *Index) BuildPresence(ctx context.Context, commit *proto.Ref) error {
 }
 
 // BuildPendingPresence builds the filter of every set whose newest live
-// commit has none and reports how many it built. Nothing runs it but the
-// caller.
+// commit has none and reports how many it built.
 func (x *Index) BuildPendingPresence(ctx context.Context) (int, error) {
 	sets, err := x.client.Set.Query().All(ctx)
 	if err != nil {

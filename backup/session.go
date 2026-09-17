@@ -24,6 +24,7 @@ type Session struct {
 
 // RestoreLeaser reports the refs that live restore sessions are reading.
 type RestoreLeaser interface {
+	// RestoreLeases returns the refs of every live restore session.
 	RestoreLeases(ctx context.Context) ([]*proto.Ref, error)
 }
 
@@ -48,12 +49,16 @@ func SessionFromContext(ctx context.Context) (*Session, bool) {
 // with that context belongs to the session. EndSession drops whatever the
 // session has not committed.
 type SessionStore interface {
+	// BeginSession opens s, fills in its ID and returns a context that
+	// carries it.
 	BeginSession(ctx context.Context, s *Session) (context.Context, error)
+	// EndSession ends the context's session.
 	EndSession(ctx context.Context) error
 }
 
 // Leased is a session store that ends sessions after a lease without a
 // write.
 type Leased interface {
+	// SessionLease is how long a session lives without a write.
 	SessionLease() time.Duration
 }

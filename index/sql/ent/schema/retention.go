@@ -8,12 +8,13 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// Settings is the one row of store settings: the write policy of docs/12
-// and the retention defaults of docs/09.
+// Settings is the one row of store settings: the write policy with its
+// version and key acknowledgement, and the retention defaults.
 type Settings struct {
 	ent.Schema
 }
 
+// Fields of Settings.
 func (Settings) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int("id"),
@@ -31,6 +32,7 @@ type Pin struct {
 	ent.Schema
 }
 
+// Fields of Pin.
 func (Pin) Fields() []ent.Field {
 	return []ent.Field{
 		field.Bytes("ref").Immutable(),
@@ -40,6 +42,7 @@ func (Pin) Fields() []ent.Field {
 	}
 }
 
+// Indexes of Pin.
 func (Pin) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("ref").Unique(),
@@ -47,6 +50,7 @@ func (Pin) Indexes() []ent.Index {
 	}
 }
 
+// Annotations of Pin.
 func (Pin) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Checks: map[string]string{
@@ -57,11 +61,12 @@ func (Pin) Annotations() []schema.Annotation {
 }
 
 // DeletedRef is a ref a tombstone names: written before the tombstone is
-// durable, consulted by every commit and pin Put (docs/09).
+// durable, consulted by every commit and pin Put.
 type DeletedRef struct {
 	ent.Schema
 }
 
+// Fields of DeletedRef.
 func (DeletedRef) Fields() []ent.Field {
 	return []ent.Field{
 		field.Bytes("ref").Immutable(),
@@ -69,12 +74,14 @@ func (DeletedRef) Fields() []ent.Field {
 	}
 }
 
+// Indexes of DeletedRef.
 func (DeletedRef) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("ref").Unique(),
 	}
 }
 
+// Annotations of DeletedRef.
 func (DeletedRef) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("deleted_refs", "ref")}
 }

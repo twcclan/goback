@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the maintain command.
 var Command = cli.Command{
 	Name:        "maintain",
 	Description: "Run one maintenance operation against the store, as the server does on its schedule",

@@ -161,6 +161,8 @@ func (s *bucketFile) Stat() (os.FileInfo, error) {
 
 var _ pack.File = (*bucketFile)(nil)
 
+// BucketStore is a pack.ArchiveStorage over a gocloud bucket, keyed
+// pack/<extension>/<name>.
 type BucketStore struct {
 	bucket *blob.Bucket
 
@@ -170,8 +172,7 @@ type BucketStore struct {
 
 func (c *BucketStore) openFile(key string) (pack.File, error) {
 	bucketLogger.WithField("key", key).Debug("Opening file")
-	// if this is a file we are currently uploading
-	// return the active instance instead
+	// a file still uploading is not in the bucket yet
 	c.openFilesMtx.Lock()
 	file, ok := c.openFiles[key]
 	c.openFilesMtx.Unlock()
@@ -180,7 +181,6 @@ func (c *BucketStore) openFile(key string) (pack.File, error) {
 		return file, nil
 	}
 
-	// request information about the file
 	attrs, err := c.bucket.Attributes(context.Background(), key)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
@@ -225,18 +225,22 @@ func (c *BucketStore) key(name string) string {
 	return fmt.Sprintf(blobObjectKey, path.Ext(name), name)
 }
 
+// Open implements pack.ArchiveStorage.
 func (c *BucketStore) Open(name string) (pack.File, error) {
 	return c.openFile(c.key(name))
 }
 
+// Create implements pack.ArchiveStorage.
 func (c *BucketStore) Create(name string) (pack.File, error) {
 	return c.newGCSFile(c.key(name))
 }
 
+// Delete implements pack.ArchiveStorage.
 func (c *BucketStore) Delete(name string) error {
 	return c.bucket.Delete(context.Background(), c.key(name))
 }
 
+// DeleteAll implements pack.ArchiveStorage.
 func (c *BucketStore) DeleteAll() error {
 	iter := c.bucket.List(&blob.ListOptions{
 		Prefix: blobObjectPrefix,
@@ -263,6 +267,7 @@ func (c *BucketStore) DeleteAll() error {
 	}
 }
 
+// List implements pack.ArchiveStorage.
 func (c *BucketStore) List(extension string) ([]string, error) {
 	prefix := blobObjectPrefix
 	if extension != "" {
@@ -336,6 +341,7 @@ func (s *bucketFileInfo) IsDir() bool {
 	return false
 }
 
+// NewBucketStore returns an archive storage over bucket.
 func NewBucketStore(bucket *blob.Bucket) *BucketStore {
 	storage := &BucketStore{
 		bucket:    bucket,

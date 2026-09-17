@@ -8,11 +8,16 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+// ObjectReceiver is called for every object a Walk visits; a non-nil error
+// stops the walk.
 type ObjectReceiver func(*proto.Object) error
 
 var (
+	// ErrNotImplemented is returned by a store or index that lacks the
+	// requested feature.
 	ErrNotImplemented = errors.New("the store doesn't implement this feature")
-	ErrNotFound       = errors.New("the requested object was not found")
+	// ErrNotFound is returned when nothing matches the given ref or set.
+	ErrNotFound = errors.New("the requested object was not found")
 	// ErrDanglingRef is returned when an object references objects the store
 	// does not hold.
 	ErrDanglingRef = errors.New("object references missing objects")
@@ -86,11 +91,19 @@ func CheckReferences(ctx context.Context, store ObjectStore, obj *proto.Object) 
 }
 
 //go:generate go run github.com/vektra/mockery/v2 --testonly --inpackage --name ObjectStore
+
+// ObjectStore is content-addressed storage of objects by ref.
 type ObjectStore interface {
+	// Put stores the object.
 	Put(context.Context, *proto.Object) error
+	// Get returns the object at the ref, or ErrNotFound.
 	Get(context.Context, *proto.Ref) (*proto.Object, error)
+	// Delete removes the object at the ref.
 	Delete(context.Context, *proto.Ref) error
+	// Walk calls the receiver for every object of the type, or of every
+	// type when it is INVALID; the bool says whether objects are decoded.
 	Walk(context.Context, bool, proto.ObjectType, ObjectReceiver) error
+	// Has reports whether the store holds the ref.
 	Has(context.Context, *proto.Ref) (bool, error)
 }
 
@@ -98,9 +111,12 @@ type ObjectStore interface {
 // rewrite the archives holding the target's objects as soon as its rules
 // allow, instead of waiting for the dead ratio or the erasure bound.
 type Eraser interface {
+	// Erase tombstones the ref as an erasure.
 	Erase(context.Context, *proto.Ref) error
 }
 
+// Counter is implemented by stores that can count their objects.
 type Counter interface {
+	// Count reports how many objects the store holds, in total and distinct.
 	Count() (total uint64, unique uint64, err error)
 }

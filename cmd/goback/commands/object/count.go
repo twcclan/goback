@@ -14,7 +14,6 @@ import (
 )
 
 func (o *object) count() {
-	// if our store provides counting functionality use that ...
 	if counter, ok := o.store.(backup.Counter); ok {
 		total, unique, err := counter.Count()
 		if err == nil {
@@ -25,7 +24,6 @@ func (o *object) count() {
 		log.Println(fmt.Errorf("couldn't count objects, using fallback: %w", err))
 	}
 
-	// ... otherwise fall back to counting ourselves
 	var count uint64
 
 	err := o.store.Walk(context.Background(), false, proto.ObjectType_INVALID, func(p *proto.Object) error {

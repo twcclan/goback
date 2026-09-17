@@ -55,6 +55,7 @@ func (r *RemoteClient) EndSession(ctx context.Context) error {
 	return err
 }
 
+// BeginSession implements proto.StoreServer.
 func (r *RemoteServer) BeginSession(ctx context.Context, request *proto.BeginSessionRequest) (*proto.BeginSessionResponse, error) {
 	session, err := r.store.BeginSession(ctx, request.BackupSet, request.Restore)
 	if err != nil {
@@ -64,6 +65,7 @@ func (r *RemoteServer) BeginSession(ctx context.Context, request *proto.BeginSes
 	return &proto.BeginSessionResponse{SessionId: session.ID, LeaseSeconds: int64(r.store.Lease / time.Second)}, nil
 }
 
+// EndSession implements proto.StoreServer.
 func (r *RemoteServer) EndSession(ctx context.Context, request *proto.EndSessionRequest) (*proto.EndSessionResponse, error) {
 	err := r.store.EndSession(ctx, request.SessionId)
 	if err != nil {

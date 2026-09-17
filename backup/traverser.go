@@ -15,10 +15,15 @@ type concurrentTreeNode struct {
 	object *proto.Object
 }
 
+// SkipTree, returned by a TraverserHandler for a directory, leaves that
+// subtree unvisited.
 var SkipTree = errors.New("skip tree")
 
+// TraverserHandler receives every visited node with its slash-joined path.
 type TraverserHandler func(string, *proto.TreeNode) error
 
+// TraverseTree visits every node under tree, calling handler from workers
+// goroutines at once; an error other than SkipTree stops the traversal.
 func TraverseTree(ctx context.Context, store ObjectStore, tree *proto.Object, workers int, handler TraverserHandler) error {
 	tr := &concurrentTreeTraverser{
 		store:      store,
@@ -60,9 +65,8 @@ func (c *concurrentTreeTraverser) run(ctx context.Context, root *proto.Object, w
 }
 
 func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurrentTreeNode) error {
-	// we traverse depth-first to distribute the work to as many goroutines
-	// as possible. this means we're going to iterate twice, because our
-	// trees nodes are sorted lexicographically
+	// directories go first so sub-trees reach idle workers early; files
+	// follow in a second pass
 	for _, node := range t.object.GetTree().GetNodes() {
 		info := node.Stat
 		if !info.IsDir() {
@@ -71,8 +75,6 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 
 		err := c.traverseFn(proto.JoinPath(t.prefix, info.Name), node)
 		if err != nil {
-			// if the TraverseFunc signals that we should skip the tree
-			// we will just continue and won't create a new concurrentTreeNode
 			if errors.Is(err, SkipTree) {
 				continue
 			}
@@ -80,7 +82,6 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 			return err
 		}
 
-		// retrieve the sub-tree object, flattening any splits
 		subTree, err := LoadTree(ctx, c.store, node.Ref)
 		if err != nil {
 			return errors.Wrapf(err, "Sub tree %x could not be retrieved", node.Ref.Hash)
@@ -92,11 +93,10 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 		}
 
 		c.wg.Add(1)
-		// try to hand to an idle worker
+		// an idle worker takes the sub-tree; without one it is done here
 		select {
 		case c.queue <- subTreeNode:
 
-		// if no other worker is idle, do the job ourselves
 		default:
 			c.wg.Done()
 			err = c.traverseTree(ctx, subTreeNode)
@@ -106,7 +106,6 @@ func (c *concurrentTreeTraverser) traverseTree(ctx context.Context, t *concurren
 		}
 	}
 
-	// iterate a second time for the files
 	for _, node := range t.object.GetTree().GetNodes() {
 		info := node.Stat
 		if info.IsDir() {

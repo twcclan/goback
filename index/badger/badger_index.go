@@ -28,6 +28,8 @@ const indexFormatVersion = 3
 // format version.
 var ErrIndexVersion = errors.New("badger index was written by another format version; reset it and re-index the archives")
 
+// NewBadgerIndex opens the index at path, creating it if needed; an index
+// in another format version fails with ErrIndexVersion.
 func NewBadgerIndex(path string) (*BadgerIndex, error) {
 	opts := badger.DefaultOptions(path).
 		WithCompression(options.Snappy)
@@ -116,6 +118,8 @@ type BadgerIndex struct {
 	archiveInfos map[uint64]pack.ArchiveInfo
 }
 
+// CountObjects implements pack.ArchiveIndex: the records and the distinct
+// refs among them.
 func (b *BadgerIndex) CountObjects() (uint64, uint64, error) {
 	var total uint64
 	var unique uint64
@@ -145,12 +149,14 @@ func (b *BadgerIndex) CountObjects() (uint64, uint64, error) {
 	})
 }
 
+// Close closes the database.
 func (b *BadgerIndex) Close() error {
 	return b.db.Close()
 }
 
 var _ pack.ArchiveIndex = (*BadgerIndex)(nil)
 
+// LocateObject implements pack.ArchiveIndex.
 func (b *BadgerIndex) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string) (pack.IndexLocation, error) {
 	var location pack.IndexLocation
 
@@ -269,6 +275,7 @@ func (b *BadgerIndex) archiveID(archive string) (uint64, bool) {
 	return id, ok
 }
 
+// LookupArchive implements pack.ArchiveIndex.
 func (b *BadgerIndex) LookupArchive(archive string) (pack.ArchiveInfo, bool, error) {
 	b.archivesMtx.RLock()
 	defer b.archivesMtx.RUnlock()
@@ -334,6 +341,8 @@ func decodeArchive(name string, val []byte) (uint64, pack.ArchiveInfo, error) {
 	return id, info, nil
 }
 
+// IndexArchive implements pack.ArchiveIndex; a pending archive needs a
+// live session and a known archive is left alone.
 func (b *BadgerIndex) IndexArchive(archive pack.ArchiveInfo, index pack.IndexFile) error {
 	if _, ok := b.archiveID(archive.Name); ok {
 		return nil
@@ -403,6 +412,7 @@ func (b *BadgerIndex) IndexArchive(archive pack.ArchiveInfo, index pack.IndexFil
 	})
 }
 
+// DeleteArchive implements pack.ArchiveIndex.
 func (b *BadgerIndex) DeleteArchive(archive string, index pack.IndexFile) error {
 	archiveId, ok := b.archiveID(archive)
 	if !ok {
@@ -489,6 +499,7 @@ func (b *BadgerIndex) sessionKey(id string) []byte {
 	return b.key(prefixSession, []byte(id))
 }
 
+// BeginSession implements pack.SessionIndex.
 func (b *BadgerIndex) BeginSession(s *backup.Session) error {
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -509,6 +520,7 @@ func (b *BadgerIndex) BeginSession(s *backup.Session) error {
 	})
 }
 
+// TouchSession implements pack.SessionIndex.
 func (b *BadgerIndex) TouchSession(id string, at time.Time) error {
 	return b.db.Update(func(txn *badger.Txn) error {
 		s, err := b.getSession(txn, id)
@@ -544,6 +556,7 @@ func (b *BadgerIndex) getSession(txn *badger.Txn, id string) (*backup.Session, e
 	})
 }
 
+// GetSession implements pack.SessionIndex.
 func (b *BadgerIndex) GetSession(id string) (*backup.Session, error) {
 	var s *backup.Session
 
@@ -557,6 +570,7 @@ func (b *BadgerIndex) GetSession(id string) (*backup.Session, error) {
 	return s, err
 }
 
+// ListSessions implements pack.SessionIndex.
 func (b *BadgerIndex) ListSessions() ([]*backup.Session, error) {
 	var sessions []*backup.Session
 
@@ -597,6 +611,8 @@ func (b *BadgerIndex) pendingArchives(session string) []pack.ArchiveInfo {
 	return archives
 }
 
+// EndSession implements pack.SessionIndex: the session's pending archives
+// go with it.
 func (b *BadgerIndex) EndSession(id string) ([]string, error) {
 	var dropped []string
 
@@ -627,6 +643,8 @@ func (b *BadgerIndex) EndSession(id string) ([]string, error) {
 	})
 }
 
+// CommitSession implements pack.SessionIndex: the session must still be
+// live, then its pending archives become committed.
 func (b *BadgerIndex) CommitSession(id string) error {
 	if _, err := b.GetSession(id); err != nil {
 		return err
@@ -654,6 +672,7 @@ func (b *BadgerIndex) CommitSession(id string) error {
 	return nil
 }
 
+// Clear is Reset.
 func (b *BadgerIndex) Clear() error {
 	return b.Reset()
 }

@@ -815,7 +815,6 @@ func (x *Index) Reachable(ctx context.Context, sets []string, ref *proto.Ref) (b
 	return x.client.SetRef.Query().Where(setref.Ref(ref.GetHash()), setref.HasSetWith(set.NameIn(sets...))).Exist(ctx)
 }
 
-// callerSet resolves a set name.
 func (x *Index) callerSet(ctx context.Context, backupSet string) (int64, error) {
 	return findSet(ctx, x.client, backupSet)
 }
@@ -912,7 +911,6 @@ func (x *Index) Presence(ctx context.Context, scope backup.PresenceScope, backup
 	return loadPresence(ctx, x.client, scope, backupSet)
 }
 
-// mapAll maps every row.
 func mapAll[S, T any](in []S, f func(S) T) []T {
 	if len(in) == 0 {
 		return nil

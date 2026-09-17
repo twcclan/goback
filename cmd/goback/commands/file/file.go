@@ -23,6 +23,7 @@ type file struct {
 	set      string
 }
 
+// Command is the file command.
 var Command = cli.Command{
 	Name:        "file",
 	Description: "Manage files",

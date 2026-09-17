@@ -1,6 +1,6 @@
 package pack
 
-// TODO: locking is a big mess right now, find a better way of handling concurrency
+// TODO: simplify the locking
 
 import (
 	"context"
@@ -35,6 +35,8 @@ var (
 	ErrInvalidExtension = errors.New("the provided extension is invalid")
 )
 
+// NewPackStorage builds a store from options; WithArchiveStorage and
+// WithArchiveIndex are required.
 func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	opts := &packOptions{
 		maxParallel: 1,
@@ -218,10 +220,12 @@ func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Obje
 	return nil
 }
 
+// Count implements backup.Counter.
 func (ps *PackStorage) Count() (uint64, uint64, error) {
 	return ps.index.CountObjects()
 }
 
+// Put implements backup.ObjectStore.
 func (ps *PackStorage) Put(ctx context.Context, object *proto.Object) error {
 	ctx, span := tracer.Start(ctx, "PackStorage.Put")
 	defer span.End()
@@ -394,6 +398,7 @@ func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) 
 	return &loc, nil
 }
 
+// Get implements backup.ObjectStore.
 func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	ctx, span := tracer.Start(ctx, "PackStorage.Get")
 	defer span.End()
@@ -441,6 +446,7 @@ func (ps *PackStorage) get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 	return archive.getRaw(ctx, ref, rec)
 }
 
+// Delete implements backup.ObjectStore.
 func (ps *PackStorage) Delete(ctx context.Context, ref *proto.Ref) error {
 	return ps.tombstone(ctx, ref, false)
 }
@@ -494,6 +500,7 @@ func (ps *PackStorage) WalkHeaders(ctx context.Context, t proto.ObjectType, fn f
 	return nil
 }
 
+// Walk implements backup.ObjectStore.
 func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
@@ -545,7 +552,6 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 	return nil
 }
 
-// unloadArchive removes the provided archive from this storage (e.g. after it is not needed anymore)
 func (ps *PackStorage) unloadArchive(a *archive) {
 	ps.mtx.Lock()
 	filtered := make([]*archive, 0, len(ps.archives))
@@ -794,6 +800,7 @@ func (ps *PackStorage) withReadLock(do func()) {
 	do()
 }
 
+// Close implements backup.ObjectStore.
 func (ps *PackStorage) Close() error {
 	err := ps.Flush()
 	if err != nil {
@@ -819,6 +826,7 @@ func (ps *PackStorage) Close() error {
 	return nil
 }
 
+// Open implements backup.ObjectStore.
 func (ps *PackStorage) Open() error {
 	matches, err := ps.storage.List(ArchiveSuffix)
 	if err != nil {
@@ -852,6 +860,8 @@ func (ps *PackStorage) Open() error {
 	return nil
 }
 
+// File is one archive, index or gc file held by an ArchiveStorage.
+//
 //go:generate go run github.com/vektra/mockery/v2 --name File --inpackage --testonly --outpkg pack
 type File interface {
 	io.Reader
@@ -862,6 +872,9 @@ type File interface {
 	Stat() (fs.FileInfo, error)
 }
 
+// ArchiveStorage holds a store's files under slash-separated names; Open of
+// a missing name is ErrFileNotFound.
+//
 //go:generate go run github.com/vektra/mockery/v2 --name ArchiveStorage --inpackage --testonly --outpkg pack
 type ArchiveStorage interface {
 	Create(name string) (File, error)
@@ -871,12 +884,14 @@ type ArchiveStorage interface {
 	DeleteAll() error
 }
 
+// IndexLocation is where an ArchiveIndex found an object.
 type IndexLocation struct {
 	Archive string
 	Record  IndexRecord
 }
 
 var (
+	// ErrRecordNotFound is LocateObject's answer when no visible archive holds the object.
 	ErrRecordNotFound = errors.New("couldn't find index record")
 )
 

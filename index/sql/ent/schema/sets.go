@@ -1,6 +1,6 @@
-// Package schema is the ent schema of the index: the store configuration
-// of docs/12, the set caches and retention state of docs/09, the presence
-// filters of docs/08 and the archive index of docs/07, in one database.
+// Package schema is the ent schema of the index: store settings, sets with
+// their commits, versions, refs and retention state, pins, tombstoned refs
+// and the archive index, in one database.
 package schema
 
 import (
@@ -18,6 +18,7 @@ type Set struct {
 	ent.Schema
 }
 
+// Fields of Set.
 func (Set) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id"),
@@ -30,6 +31,7 @@ func (Set) Fields() []ent.Field {
 	}
 }
 
+// Edges of Set.
 func (Set) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("files", File.Type),
@@ -38,6 +40,7 @@ func (Set) Edges() []ent.Edge {
 	}
 }
 
+// Indexes of Set.
 func (Set) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("name").Unique(),
@@ -45,12 +48,15 @@ func (Set) Indexes() []ent.Index {
 }
 
 // CommitRow is an indexed commit with its receipt order, presence filter,
-// verified size and the retention lifecycle of docs/09. (Commit is what
-// ent calls ending a transaction.)
+// verified size and retention lifecycle: retire_at and expires_at are set
+// by policy, deleted_at by an operator, tombstoned_at once the tombstone
+// is durable; a live commit has none of them. (Commit is what ent calls
+// ending a transaction.)
 type CommitRow struct {
 	ent.Schema
 }
 
+// Fields of CommitRow.
 func (CommitRow) Fields() []ent.Field {
 	return []ent.Field{
 		field.Bytes("ref").Immutable(),
@@ -75,12 +81,14 @@ func (CommitRow) Fields() []ent.Field {
 	}
 }
 
+// Edges of CommitRow.
 func (CommitRow) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("set", Set.Type).Unique().Required().Field("set_id"),
 	}
 }
 
+// Indexes of CommitRow.
 func (CommitRow) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("ref").Unique(),
@@ -90,6 +98,7 @@ func (CommitRow) Indexes() []ent.Index {
 	}
 }
 
+// Annotations of CommitRow.
 func (CommitRow) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "commits", Checks: map[string]string{
@@ -105,6 +114,7 @@ type File struct {
 	ent.Schema
 }
 
+// Fields of File.
 func (File) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("set_id"),
@@ -121,12 +131,14 @@ func (File) Fields() []ent.Field {
 	}
 }
 
+// Edges of File.
 func (File) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("set", Set.Type).Ref("files").Unique().Required().Field("set_id"),
 	}
 }
 
+// Indexes of File.
 func (File) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("set_id", "path", "valid_from").Unique(),
@@ -134,6 +146,7 @@ func (File) Indexes() []ent.Index {
 	}
 }
 
+// Annotations of File.
 func (File) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("files", "ref")}
 }
@@ -143,6 +156,7 @@ type Tree struct {
 	ent.Schema
 }
 
+// Fields of Tree.
 func (Tree) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("set_id"),
@@ -154,12 +168,14 @@ func (Tree) Fields() []ent.Field {
 	}
 }
 
+// Edges of Tree.
 func (Tree) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("set", Set.Type).Ref("trees").Unique().Required().Field("set_id"),
 	}
 }
 
+// Indexes of Tree.
 func (Tree) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("set_id", "path", "valid_from").Unique(),
@@ -167,16 +183,18 @@ func (Tree) Indexes() []ent.Index {
 	}
 }
 
+// Annotations of Tree.
 func (Tree) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("trees", "ref")}
 }
 
 // SetRef records that a set references a commit, tree or file object,
-// which is what makes the object readable (docs/08).
+// which is what makes the object readable.
 type SetRef struct {
 	ent.Schema
 }
 
+// Fields of SetRef.
 func (SetRef) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("set_id"),
@@ -184,12 +202,14 @@ func (SetRef) Fields() []ent.Field {
 	}
 }
 
+// Edges of SetRef.
 func (SetRef) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("set", Set.Type).Ref("refs").Unique().Required().Field("set_id"),
 	}
 }
 
+// Indexes of SetRef.
 func (SetRef) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("set_id", "ref").Unique(),
@@ -197,6 +217,7 @@ func (SetRef) Indexes() []ent.Index {
 	}
 }
 
+// Annotations of SetRef.
 func (SetRef) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("set_refs", "ref")}
 }

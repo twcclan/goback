@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+// NewInMemoryIndex returns an empty index.
 func NewInMemoryIndex() *InMemoryIndex {
 	return &InMemoryIndex{
 		index:    make(map[string]map[[proto.HashSize]byte]IndexRecord),
@@ -28,6 +29,7 @@ type InMemoryIndex struct {
 	sessions map[string]*backup.Session
 }
 
+// LocateObject implements pack.ArchiveIndex.
 func (i *InMemoryIndex) LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error) {
 	var sum [proto.HashSize]byte
 	copy(sum[:], ref.Hash)
@@ -58,6 +60,7 @@ outer:
 	return IndexLocation{}, ErrRecordNotFound
 }
 
+// LookupArchive implements pack.ArchiveIndex.
 func (i *InMemoryIndex) LookupArchive(archive string) (ArchiveInfo, bool, error) {
 	i.mtx.RLock()
 	defer i.mtx.RUnlock()
@@ -67,6 +70,7 @@ func (i *InMemoryIndex) LookupArchive(archive string) (ArchiveInfo, bool, error)
 	return info, ok, nil
 }
 
+// IndexArchive implements pack.ArchiveIndex.
 func (i *InMemoryIndex) IndexArchive(archive ArchiveInfo, index IndexFile) error {
 	a := make(map[[proto.HashSize]byte]IndexRecord)
 
@@ -93,6 +97,7 @@ func (i *InMemoryIndex) IndexArchive(archive ArchiveInfo, index IndexFile) error
 	return nil
 }
 
+// DeleteArchive implements pack.ArchiveIndex.
 func (i *InMemoryIndex) DeleteArchive(archive string, index IndexFile) error {
 	i.mtx.Lock()
 	delete(i.index, archive)
@@ -102,6 +107,7 @@ func (i *InMemoryIndex) DeleteArchive(archive string, index IndexFile) error {
 	return nil
 }
 
+// BeginSession implements SessionIndex.
 func (i *InMemoryIndex) BeginSession(s *backup.Session) error {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
@@ -116,6 +122,7 @@ func (i *InMemoryIndex) BeginSession(s *backup.Session) error {
 	return nil
 }
 
+// TouchSession implements SessionIndex.
 func (i *InMemoryIndex) TouchSession(id string, at time.Time) error {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
@@ -130,6 +137,7 @@ func (i *InMemoryIndex) TouchSession(id string, at time.Time) error {
 	return nil
 }
 
+// GetSession implements SessionIndex.
 func (i *InMemoryIndex) GetSession(id string) (*backup.Session, error) {
 	i.mtx.RLock()
 	defer i.mtx.RUnlock()
@@ -144,6 +152,7 @@ func (i *InMemoryIndex) GetSession(id string) (*backup.Session, error) {
 	return &copied, nil
 }
 
+// ListSessions implements SessionIndex.
 func (i *InMemoryIndex) ListSessions() ([]*backup.Session, error) {
 	i.mtx.RLock()
 	defer i.mtx.RUnlock()
@@ -157,6 +166,7 @@ func (i *InMemoryIndex) ListSessions() ([]*backup.Session, error) {
 	return sessions, nil
 }
 
+// EndSession implements SessionIndex.
 func (i *InMemoryIndex) EndSession(id string) ([]string, error) {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
@@ -175,6 +185,7 @@ func (i *InMemoryIndex) EndSession(id string) ([]string, error) {
 	return dropped, nil
 }
 
+// CommitSession implements SessionIndex.
 func (i *InMemoryIndex) CommitSession(id string) error {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
@@ -194,6 +205,7 @@ func (i *InMemoryIndex) CommitSession(id string) error {
 	return nil
 }
 
+// Close implements io.Closer.
 func (i *InMemoryIndex) Close() error {
 	i.mtx.Lock()
 	i.index = make(map[string]map[[proto.HashSize]byte]IndexRecord)
@@ -204,6 +216,7 @@ func (i *InMemoryIndex) Close() error {
 	return nil
 }
 
+// CountObjects reports the indexed and the distinct object count.
 func (i *InMemoryIndex) CountObjects() (uint64, uint64, error) {
 	return 0, 0, errors.New("not implemented")
 }

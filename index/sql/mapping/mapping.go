@@ -1,7 +1,6 @@
 // Package mapping turns index rows into the protos and structs the rest
-// of goback speaks. It sits one package below the index because the
-// generator asserts its output against this interface, and declaring it
-// in the index package would be an import cycle.
+// of goback speaks. The generated mapper asserts against Mapper, which
+// would be an import cycle if the interface lived in package sql.
 package mapping
 
 import (

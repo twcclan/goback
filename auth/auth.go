@@ -123,10 +123,12 @@ type Credentials struct {
 	AgentID string
 }
 
+// GetRequestMetadata implements credentials.PerRPCCredentials.
 func (c Credentials) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
 	return map[string]string{secretHeader: "Bearer " + c.Secret, AgentHeader: c.AgentID}, nil
 }
 
+// RequireTransportSecurity implements credentials.PerRPCCredentials.
 func (Credentials) RequireTransportSecurity() bool { return true }
 
 func equalSecrets(a, b string) bool {

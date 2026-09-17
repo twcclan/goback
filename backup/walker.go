@@ -31,12 +31,15 @@ type StatCache interface {
 	// Lookup reports whether an entry exists for path and whether it still
 	// matches the file's identity.
 	Lookup(path string, info os.FileInfo) (present bool, matches bool)
+	// Store records the file's identity and the ref its read produced.
 	Store(path string, info os.FileInfo, ref *proto.Ref) error
 }
 
 // TreeFetcher is implemented by stores that can stream a subtree in one
 // round trip.
 type TreeFetcher interface {
+	// GetTree returns the tree at ref and the trees below it, maxDepth
+	// levels down.
 	GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error)
 }
 

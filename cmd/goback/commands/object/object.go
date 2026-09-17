@@ -7,6 +7,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the object command.
 var Command = cli.Command{
 	Name:        "object",
 	Description: "Do stuff with objects",

@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the pin command.
 var Command = cli.Command{
 	Name:        "pin",
 	Description: "Keep commits, trees or files regardless of retention",

@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// Command is the server command.
 var Command = cli.Command{
 	Action:      serverAction,
 	Name:        "server",

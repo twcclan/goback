@@ -15,6 +15,8 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
+// NewSimpleObjectStore returns a SimpleChunkStore at base; Open creates the
+// database.
 func NewSimpleObjectStore(base string) *SimpleChunkStore {
 	return &SimpleChunkStore{
 		base: base,
@@ -23,11 +25,13 @@ func NewSimpleObjectStore(base string) *SimpleChunkStore {
 
 var _ backup.ObjectStore = (*SimpleChunkStore)(nil)
 
+// SimpleChunkStore keeps objects in a leveldb database keyed by ref.
 type SimpleChunkStore struct {
 	base string
 	db   *leveldb.DB
 }
 
+// Open creates the directory.
 func (s *SimpleChunkStore) Open() (err error) {
 	s.db, err = leveldb.OpenFile(s.base, &opt.Options{
 		NoSync: true,
@@ -36,14 +40,17 @@ func (s *SimpleChunkStore) Open() (err error) {
 	return err
 }
 
+// Close implements io.Closer.
 func (s *SimpleChunkStore) Close() error {
 	return s.db.Close()
 }
 
+// Has implements backup.ObjectStore.
 func (s *SimpleChunkStore) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return s.db.Has(ref.Hash, nil)
 }
 
+// Put implements backup.ObjectStore.
 func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
 	err := obj.Validate()
 	if err != nil {
@@ -53,10 +60,12 @@ func (s *SimpleChunkStore) Put(ctx context.Context, obj *proto.Object) error {
 	return s.db.Put(obj.Ref().Hash, obj.Bytes(), nil)
 }
 
+// Delete implements backup.ObjectStore.
 func (s *SimpleChunkStore) Delete(ctx context.Context, ref *proto.Ref) error {
 	return s.db.Delete(ref.Hash, nil)
 }
 
+// Get implements backup.ObjectStore.
 func (s *SimpleChunkStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	data, err := s.db.Get(ref.Hash, nil)
 
@@ -85,6 +94,7 @@ func (s *SimpleChunkStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Obje
 	return obj, nil
 }
 
+// Walk implements backup.ObjectStore.
 func (s *SimpleChunkStore) Walk(ctx context.Context, load bool, chunkType proto.ObjectType, fn backup.ObjectReceiver) error {
 	matches, err := filepath.Glob(path.Join(s.base, fmt.Sprintf("%d-*", chunkType)))
 	if err != nil {

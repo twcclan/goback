@@ -25,16 +25,8 @@ var (
 	ErrSkipFile = errors.New("skip file")
 )
 
-const (
-	// bufioReaderSize is an explicit size for our bufio.Reader,
-	// so we don't rely on NewReader's implicit size.
-	// We care about the buffer size because it affects how far
-	// in advance we can detect EOF from an io.Reader that doesn't
-	// know its size.  Detecting an EOF bufioReaderSize bytes early
-	// means we can plan for the final chunk.
-	bufioReaderSize = 32 << 10
-)
-
+// BackupWriter collects a plaintext tree through the TreeWriter methods and
+// commits it on Close.
 type BackupWriter struct {
 	store     ObjectStore
 	backupSet string
@@ -43,6 +35,7 @@ type BackupWriter struct {
 
 var _ TreeWriter = (*BackupWriter)(nil)
 
+// Close stores the collected tree and a commit pointing at it.
 func (br *BackupWriter) Close(ctx context.Context) error {
 	tree, err := PutTree(ctx, br.store, br.sortedNodes(), nil, nil)
 	if err != nil {
@@ -60,6 +53,7 @@ func (br *BackupWriter) Close(ctx context.Context) error {
 	return errors.Wrap(err, "Failed to store commit")
 }
 
+// NewBackupWriter returns a writer that commits into backupSet.
 func NewBackupWriter(store ObjectStore, backupSet string) *BackupWriter {
 	return &BackupWriter{
 		store:      store,
@@ -68,11 +62,14 @@ func NewBackupWriter(store ObjectStore, backupSet string) *BackupWriter {
 	}
 }
 
+// BackupReader reads the files and trees of a commit back from a store.
 type BackupReader struct {
 	store ObjectStore
 	key   *storekey.Key
 }
 
+// NewBackupReader returns a reader for a plaintext store; WithKey adds the
+// store key.
 func NewBackupReader(store ObjectStore) *BackupReader {
 	return &BackupReader{
 		store: store,
@@ -84,6 +81,7 @@ func (br *BackupReader) WithKey(key *storekey.Key) *BackupReader {
 	return &BackupReader{store: br.store, key: key}
 }
 
+// ReadFile opens the file object at ref for seekable reading.
 func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSeeker, error) {
 	obj, err := br.store.Get(ctx, ref)
 	if err != nil {
@@ -97,6 +95,8 @@ func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSe
 	return newFileReader(ctx, br.store, obj.GetFile(), br.key), nil
 }
 
+// WalkFn is called for every node a walk visits; a non-nil error stops the
+// walk.
 type WalkFn func(path string, info os.FileInfo, ref *proto.Ref) error
 
 // walk visits an opened tree; parent is the token of the directory the

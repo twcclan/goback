@@ -37,12 +37,19 @@ const (
 type Outcome int
 
 const (
+	// OutcomeWritten means the file was written.
 	OutcomeWritten Outcome = iota
+	// OutcomeUnchanged means the destination already held every part and
+	// only its stat was applied.
 	OutcomeUnchanged
+	// OutcomeSkipped means the destination matched by size and mtime under
+	// OverwriteIfChanged and was left unread.
 	OutcomeSkipped
+	// OutcomeWouldWrite means a dry run would have written the file.
 	OutcomeWouldWrite
 )
 
+// String implements fmt.Stringer.
 func (o Outcome) String() string {
 	switch o {
 	case OutcomeWritten:

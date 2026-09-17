@@ -9,12 +9,13 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// Archive is a pack archive with its placement and visibility (docs/07):
-// a pending archive is visible only to its session and goes with it.
+// Archive is a pack archive with its state and owning session: a pending
+// archive is visible only to its session and goes with it.
 type Archive struct {
 	ent.Schema
 }
 
+// Fields of Archive.
 func (Archive) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id"),
@@ -23,6 +24,7 @@ func (Archive) Fields() []ent.Field {
 	}
 }
 
+// Edges of Archive.
 func (Archive) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("session", Session.Type).Ref("archives").Unique().Field("session_id").Annotations(cascade()),
@@ -30,6 +32,7 @@ func (Archive) Edges() []ent.Edge {
 	}
 }
 
+// Indexes of Archive.
 func (Archive) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("session_id").Annotations(entsql.IndexWhere("session_id IS NOT NULL")).StorageKey("archives_session"),
@@ -41,6 +44,7 @@ type Object struct {
 	ent.Schema
 }
 
+// Fields of Object.
 func (Object) Fields() []ent.Field {
 	return []ent.Field{
 		field.Bytes("ref"),
@@ -51,18 +55,21 @@ func (Object) Fields() []ent.Field {
 	}
 }
 
+// Edges of Object.
 func (Object) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("archive", Archive.Type).Ref("objects").Unique().Required().Field("archive_id"),
 	}
 }
 
+// Indexes of Object.
 func (Object) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("ref", "archive_id").Unique(),
 	}
 }
 
+// Annotations of Object.
 func (Object) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("objects", "ref")}
 }
@@ -73,6 +80,7 @@ type Session struct {
 	ent.Schema
 }
 
+// Fields of Session.
 func (Session) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id"),
@@ -84,6 +92,7 @@ func (Session) Fields() []ent.Field {
 	}
 }
 
+// Edges of Session.
 func (Session) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("archives", Archive.Type).Annotations(cascade()),

@@ -20,11 +20,9 @@ import (
 )
 
 const (
-	// maxBlobSize is the largest blob we ever make when cutting up a file.
 	maxBlobSize = chunker.MaxSize
 
-	// maxFileParts is the number of file parts at which we start
-	// splitting the file object
+	// maxFileParts is the part count above which a file object is split
 	maxFileParts = 25000
 
 	// SplitFileSize is the smallest content size whose file object may be
@@ -684,14 +682,12 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 
 		bfr.parts = []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.inline))}}
 	case bfr.file.Splits != nil:
-		// this is a large file so we need to fetch the referenced file objects
 		subFiles := make([]*proto.File, len(bfr.file.Splits))
 		grp, grpCtx := errgroup.WithContext(ctx)
 
 		for i := range bfr.file.Splits {
 			index := i
 
-			// get all parts in parallel, can add bounds later if required
 			grp.Go(func() error {
 				ref := bfr.file.Splits[index]
 
@@ -799,39 +795,27 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 		return 0, err
 	}
 
-	// check if we reached EOF
-
 	if bfr.offset >= bfr.size() {
 		return 0, io.EOF
 	}
 
-	// the number of bytes requested by the caller
-	// we return fewer bytes if we hit a chunk border
 	n = len(b)
 
-	// the chunk that represents the currently active part
-	// of the file that is being read
 	part := fileParts[bfr.partIndex]
 
-	// calculate the offset for the currently active chunk
 	relativeOffset := bfr.offset - int64(part.Offset)
-
-	// calculate the bytes left for reading in this file part
 
 	bytesRemaining := int64(part.Length) - relativeOffset
 
-	// exit early if no buffer was provided
 	if n == 0 {
 		return 0, ErrEmptyBuffer
 	}
 
-	// limit the number of bytes read
-	// so we don't cross chunk borders
+	// a read stops at the part boundary and returns short
 	if n > int(bytesRemaining) {
 		n = int(bytesRemaining)
 	}
 
-	// lazily load blob from our object store
 	if bfr.blob == nil {
 		blob, err := bfr.getPart(bfr.ctx, bfr.partIndex, part)
 		if err != nil {
@@ -841,17 +825,13 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 		bfr.blob = proto.NewObject(blob)
 	}
 
-	// read data from chunk
 	copy(b, bfr.blob.GetBlob().Data[relativeOffset:relativeOffset+int64(n)])
 
-	// if we reached the end of the current chunk
-	// we'll unload it and increase the part index
 	if relativeOffset+int64(n) == int64(part.Length) {
 		bfr.blob = nil
 		bfr.partIndex++
 	}
 
-	// increase offset
 	bfr.offset += int64(n)
 
 	return
@@ -878,10 +858,7 @@ func (bfr *fileReader) Seek(offset int64, whence int) (int64, error) {
 		return bfr.offset, ErrIllegalOffset
 	}
 
-	// find the part that contains the requested data
 	if i := sort.Search(len(fileParts), bfr.search); i != bfr.partIndex {
-		// if it is not the currently active part
-		// unload the currently loaded chunk
 		bfr.partIndex = i
 		bfr.blob = nil
 	}

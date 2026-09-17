@@ -11,11 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// TestArchive is a random archive name and index for exercising an
+// ArchiveIndex.
 type TestArchive struct {
 	name  string
 	index pack.IndexFile
 }
 
+// RandomIndexFile makes records with random sums, unsorted.
 func RandomIndexFile(records int) pack.IndexFile {
 	idx := make(pack.IndexFile, records)
 
@@ -31,6 +34,7 @@ func RandomIndexFile(records int) pack.IndexFile {
 	return idx
 }
 
+// RandomArchive makes a TestArchive with numRecords random records.
 func RandomArchive(numRecords int) TestArchive {
 	archive := TestArchive{
 		name:  uuid.New().String(),
@@ -49,6 +53,7 @@ func getTestArchives(num int) []TestArchive {
 	return archives
 }
 
+// TestArchiveIndex exercises indexing, lookup and deletion on idx.
 func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
@@ -93,10 +98,11 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 	}
 }
 
+// TestArchiveIndexExclusion checks that LocateObject skips excluded archives.
 func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
-	// replace the second half of the archives with a copy of the first
+	// the second half duplicates the first
 	for i := 0; i < len(archives)/2; i++ {
 		to := i + len(archives)/2
 		from := i
@@ -134,6 +140,7 @@ func TestArchiveIndexExclusion(t *testing.T, idx pack.ArchiveIndex) {
 	}
 }
 
+// BenchmarkLookup times LocateObject over ten indexed archives.
 func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 	archives := getTestArchives(10)
 
@@ -165,6 +172,7 @@ func BenchmarkLookup(b *testing.B, idx pack.ArchiveIndex) {
 	})
 }
 
+// BenchmarkIndex times IndexArchive on an archive of b.N records.
 func BenchmarkIndex(b *testing.B, idx pack.ArchiveIndex) {
 	archive := RandomArchive(b.N)
 

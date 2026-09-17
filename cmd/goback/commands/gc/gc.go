@@ -14,6 +14,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the gc command.
 var Command = cli.Command{
 	Name:        "gc",
 	Description: "Mark every object reachable from a live commit or pin and rewrite archives whose dead share justifies it",

@@ -17,6 +17,7 @@ type Scrubber interface {
 	Scrub(ctx context.Context) (*pack.ScrubReport, error)
 }
 
+// Command is the scrub command.
 var Command = cli.Command{
 	Name:        "scrub",
 	Description: "Rehash every stored object and report corruption; exits non-zero if any object fails",

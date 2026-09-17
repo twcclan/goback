@@ -77,6 +77,7 @@ func (s *Server) now() time.Time {
 	return time.Now()
 }
 
+// ListSets implements pb.AdminServer.
 func (s *Server) ListSets(ctx context.Context, request *pb.ListSetsRequest) (*pb.ListSetsResponse, error) {
 	sets, err := s.Index.ListSets(ctx)
 	if err != nil {
@@ -91,6 +92,7 @@ func (s *Server) ListSets(ctx context.Context, request *pb.ListSetsRequest) (*pb
 	return resp, nil
 }
 
+// TransferSet implements pb.AdminServer.
 func (s *Server) TransferSet(ctx context.Context, request *pb.TransferSetRequest) (*pb.BackupSet, error) {
 	err := s.Index.TransferSet(ctx, request.Name, request.AgentId)
 	if err != nil {
@@ -115,6 +117,7 @@ func (s *Server) set(ctx context.Context, name string) (*pb.BackupSet, error) {
 	return nil, status.Errorf(codes.NotFound, "set %q not found", name)
 }
 
+// DeleteSet implements pb.AdminServer.
 func (s *Server) DeleteSet(ctx context.Context, request *pb.DeleteSetRequest) (*pb.DeleteSetResponse, error) {
 	err := s.Index.DeleteSet(ctx, request.Name, request.Erase)
 	if err != nil {
@@ -124,6 +127,7 @@ func (s *Server) DeleteSet(ctx context.Context, request *pb.DeleteSetRequest) (*
 	return &pb.DeleteSetResponse{}, nil
 }
 
+// UndeleteSet implements pb.AdminServer.
 func (s *Server) UndeleteSet(ctx context.Context, request *pb.UndeleteSetRequest) (*pb.UndeleteSetResponse, error) {
 	err := s.Index.UndeleteSet(ctx, request.Name)
 	if err != nil {
@@ -133,6 +137,7 @@ func (s *Server) UndeleteSet(ctx context.Context, request *pb.UndeleteSetRequest
 	return &pb.UndeleteSetResponse{}, nil
 }
 
+// GetStorePolicy implements pb.AdminServer.
 func (s *Server) GetStorePolicy(ctx context.Context, _ *pb.GetStorePolicyRequest) (*pb.StorePolicy, error) {
 	p, err := s.Index.GetStorePolicy(ctx)
 	if err != nil {
@@ -142,6 +147,7 @@ func (s *Server) GetStorePolicy(ctx context.Context, _ *pb.GetStorePolicyRequest
 	return m.Policy(p), nil
 }
 
+// SetStorePolicy implements pb.AdminServer.
 func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyRequest) (*pb.StorePolicy, error) {
 	policy := storekey.Policy{
 		Mode:             storekey.Mode(request.Mode),
@@ -170,10 +176,12 @@ func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyR
 	return m.Policy(p), nil
 }
 
+// GetRetention implements pb.AdminServer.
 func (s *Server) GetRetention(ctx context.Context, request *pb.GetRetentionRequest) (*pb.Retention, error) {
 	return s.retention(ctx, request.Set)
 }
 
+// SetRetention implements pb.AdminServer.
 func (s *Server) SetRetention(ctx context.Context, request *pb.SetRetentionRequest) (*pb.Retention, error) {
 	var policy *retention.Policy
 	if request.Policy != nil {
@@ -276,6 +284,7 @@ func fromPolicy(p *pb.RetentionPolicy) retention.Policy {
 	}
 }
 
+// Retire implements pb.AdminServer.
 func (s *Server) Retire(ctx context.Context, _ *pb.RetireRequest) (*pb.RetireResponse, error) {
 	if s.RetireJob == nil {
 		return nil, status.Error(codes.Unimplemented, "this index keeps no retention state")
@@ -289,6 +298,7 @@ func (s *Server) Retire(ctx context.Context, _ *pb.RetireRequest) (*pb.RetireRes
 	return &pb.RetireResponse{Retired: int64(n)}, nil
 }
 
+// CollectGarbage implements pb.AdminServer.
 func (s *Server) CollectGarbage(ctx context.Context, _ *pb.CollectGarbageRequest) (*pb.CollectGarbageResponse, error) {
 	if s.CollectJob == nil {
 		return nil, status.Error(codes.Unimplemented, "this store cannot garbage collect itself")
@@ -352,8 +362,10 @@ func UnaryInterceptor(token string) grpc.UnaryServerInterceptor {
 // Credentials presents the admin token on every call.
 type Credentials string
 
+// GetRequestMetadata implements credentials.PerRPCCredentials.
 func (c Credentials) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
 	return map[string]string{header: "Bearer " + string(c)}, nil
 }
 
+// RequireTransportSecurity implements credentials.PerRPCCredentials.
 func (Credentials) RequireTransportSecurity() bool { return false }

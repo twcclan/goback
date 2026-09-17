@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+// IndexFile is an archive's index; a stored one is sorted by Sum.
 type IndexFile []IndexRecord
 
 var indexEndianness = binary.BigEndian
@@ -19,8 +20,11 @@ var indexEndianness = binary.BigEndian
 var indexFileMagicBytes = []byte("GOBACKIDX_0002")
 var errIndexHeaderMismatch = errors.New("received unexpected index file header")
 
+// Len implements sort.Interface.
 func (idx IndexFile) Len() int           { return len(idx) }
+// Swap implements sort.Interface.
 func (idx IndexFile) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
+// Less implements sort.Interface.
 func (idx IndexFile) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
 
 // position returns the index of the record for hash, or -1.
@@ -33,6 +37,7 @@ func (idx IndexFile) position(hash []byte) int {
 	return -1
 }
 
+// ReadFrom implements io.ReaderFrom.
 func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)
 	var count uint32
@@ -69,6 +74,7 @@ func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	return byteCounter.count, nil
 }
 
+// WriteTo implements io.WriterTo.
 func (idx IndexFile) WriteTo(writer io.Writer) (int64, error) {
 	buf := bufio.NewWriter(writer)
 	count := uint32(len(idx))
@@ -96,6 +102,7 @@ func (idx IndexFile) WriteTo(writer io.Writer) (int64, error) {
 	return byteCounter.count, buf.Flush()
 }
 
+// IndexRecord locates one object in its archive.
 type IndexRecord struct {
 	Sum    [proto.HashSize]byte
 	Offset uint32

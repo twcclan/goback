@@ -6,10 +6,12 @@ import (
 	"github.com/twcclan/goback/backup"
 )
 
+// Wrapper is a store layered over another store.
 type Wrapper interface {
 	Unwrap() backup.ObjectStore
 }
 
+// Unwrap returns the store beneath store, nil when it wraps none.
 func Unwrap(store backup.ObjectStore) backup.ObjectStore {
 	if s, ok := store.(Wrapper); ok {
 		return s.Unwrap()
@@ -18,6 +20,8 @@ func Unwrap(store backup.ObjectStore) backup.ObjectStore {
 	return nil
 }
 
+// As sets *target, a non-nil pointer to an interface, to the first store in
+// the chain that implements it and reports whether one did.
 func As(store backup.ObjectStore, target interface{}) bool {
 	if target == nil {
 		panic("wrapped: target cannot be nil")

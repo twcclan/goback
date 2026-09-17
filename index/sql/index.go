@@ -94,6 +94,7 @@ func NewMemory(name string, store backup.ObjectStore, opts ...Option) *Index {
 	return New("memory://"+name, store, opts...)
 }
 
+// Open connects to the database and applies the pending migrations.
 func (x *Index) Open() error {
 	var (
 		db      *sql.DB
@@ -180,6 +181,7 @@ func openSQLite(dsn string) (*sql.DB, string, error) {
 	return db, dialect.SQLite, nil
 }
 
+// Close releases the database; one passed through WithDB stays open.
 func (x *Index) Close() error {
 	if x.client == nil {
 		return nil
@@ -229,8 +231,7 @@ func ping(db *sql.DB) error {
 // busyWait bounds how long an open waits for another process's migration.
 const busyWait = 5 * time.Minute
 
-// tx runs fn in a transaction, retrying a serialization failure on a
-// database that reports one.
+// tx runs fn in one transaction.
 func (x *Index) tx(ctx context.Context, fn func(tx *ent.Tx) error) (err error) {
 	tx, err := x.client.Tx(ctx)
 	if err != nil {

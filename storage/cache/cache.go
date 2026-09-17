@@ -24,6 +24,7 @@ func cacheable(obj *proto.Object) bool {
 	return false
 }
 
+// New layers cache over wrapped for its commits, trees and files.
 func New(cache backup.ObjectStore, wrapped backup.ObjectStore) *Store {
 	return &Store{
 		cache:   cache,
@@ -32,14 +33,18 @@ func New(cache backup.ObjectStore, wrapped backup.ObjectStore) *Store {
 	}
 }
 
+// Store serves metadata objects from cache before wrapped, filling the cache
+// on reads and writes; cache failures are ignored.
 type Store struct {
 	cache   backup.ObjectStore
 	wrapped backup.ObjectStore
 	test    func(object *proto.Object) bool
 }
 
+// Unwrap implements wrapped.Wrapper.
 func (s *Store) Unwrap() backup.ObjectStore { return s.wrapped }
 
+// Put implements backup.ObjectStore.
 func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	err := s.wrapped.Put(ctx, object)
 
@@ -72,6 +77,7 @@ func (s *Store) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([
 	return objects, nil
 }
 
+// Get implements backup.ObjectStore.
 func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	obj, _ := s.cache.Get(ctx, ref)
 
@@ -82,6 +88,7 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 	return s.wrapped.Get(ctx, ref)
 }
 
+// Delete implements backup.ObjectStore.
 func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	err := s.wrapped.Delete(ctx, ref)
 	if err == nil {
@@ -91,10 +98,12 @@ func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	return err
 }
 
+// Walk implements backup.ObjectStore.
 func (s *Store) Walk(ctx context.Context, b bool, objectType proto.ObjectType, receiver backup.ObjectReceiver) error {
 	return s.wrapped.Walk(ctx, b, objectType, receiver)
 }
 
+// Has implements backup.ObjectStore.
 func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	has, err := s.cache.Has(ctx, ref)
 	if err == nil && has {

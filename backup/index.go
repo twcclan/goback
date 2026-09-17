@@ -13,20 +13,29 @@ import (
 // the stamped object afterwards. An object that already carries a receipt
 // time is a replay and is stored as it is.
 type Index interface {
+	// Open readies the index for use.
 	Open() error
+	// Close releases the index.
 	Close() error
 
 	ObjectStore
+	// FileInfo lists the versions of name that live commits of the set hold,
+	// newest first, none newer than notAfter, at most count.
 	FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error)
+	// CommitInfo lists the live, complete commits of the set, newest first,
+	// none newer than notAfter, at most count.
 	CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error)
 	// LatestCommit returns the ref of the set's newest commit, or ErrNotFound.
 	LatestCommit(ctx context.Context, set string) (*proto.Ref, error)
+	// ReIndex rebuilds the index from the store's objects.
 	ReIndex(ctx context.Context) error
 }
 
 // HeaderWalker visits object headers without loading bodies. Tombstones
 // have no body and are only reachable this way.
 type HeaderWalker interface {
+	// WalkHeaders calls fn for every header of type t; an error from fn
+	// stops the walk.
 	WalkHeaders(ctx context.Context, t proto.ObjectType, fn func(*proto.ObjectHeader) error) error
 }
 
@@ -55,6 +64,7 @@ type CommitGrant struct {
 
 // CommitGate is asked before a run whether the caller may commit to a set.
 type CommitGate interface {
+	// BeginCommit returns the grant for a run on set, or ErrCommitDenied.
 	BeginCommit(ctx context.Context, set string) (*CommitGrant, error)
 }
 
@@ -62,11 +72,13 @@ type CommitGate interface {
 // skipping the given part indexes; the objects are as uploaded, sealed
 // when the store is encrypted.
 type PartReader interface {
+	// ReadParts calls fn with every part of file whose index is not in
+	// skip, in part order.
 	ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(index int, obj *proto.Object) error) error
 }
 
-// Retention is implemented by indexes that keep the lifecycle of docs/09:
-// a commit is live, then retired for a hold window, then tombstoned.
+// Retention is implemented by indexes that keep the commit lifecycle: live,
+// then retired for a hold window, then tombstoned.
 type Retention interface {
 	// DeleteCommit retires a commit into its trash window; the newest
 	// live commit of a set is refused with ErrNewestCommit.
@@ -88,5 +100,7 @@ type Retention interface {
 // Retirer runs the retirement job: every retired commit past its window
 // gets a tombstone and loses its index rows.
 type Retirer interface {
+	// Retire tombstones the commits whose window has passed at now and
+	// returns how many.
 	Retire(ctx context.Context, now time.Time) (int, error)
 }

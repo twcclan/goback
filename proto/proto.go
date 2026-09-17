@@ -60,26 +60,34 @@ func decompressedBytes(compressed []byte) ([]byte, error) {
 	return b, reader.Close()
 }
 
+// Bytes marshals the index.
 func (i *Index) Bytes() []byte {
 	return Bytes(i)
 }
 
+// CompressedBytes marshals and gzips the index.
 func (i *Index) CompressedBytes() []byte {
 	return CompressedBytes(i)
 }
 
+// Size is the marshaled size of a message.
 func Size(msg pb.Message) int {
 	return pb.Size(msg)
 }
 
+// EncodeVarint appends x as a protobuf varint.
 func EncodeVarint(buf []byte, x uint64) []byte {
 	return protowire.AppendVarint(buf, x)
 }
 
+// DecodeVarint reads a protobuf varint and the number of bytes it took;
+// n is negative on a malformed input.
 func DecodeVarint(buf []byte) (x uint64, n int) {
 	return protowire.ConsumeVarint(buf)
 }
 
+// Type is the object's type; a sealed object reports the type it carries,
+// an empty wrapper INVALID.
 func (o *Object) Type() ObjectType {
 	switch t := o.GetObject().(type) {
 	case *Object_Commit:
@@ -105,6 +113,8 @@ func (o *Object) Bytes() []byte {
 	return Bytes(o)
 }
 
+// NewObject wraps a Commit, Tree, Blob, File, Sealed or Pin; it panics on
+// anything else.
 func NewObject(in interface{}) *Object {
 	var out isObject_Object
 
@@ -128,6 +138,7 @@ func NewObject(in interface{}) *Object {
 	return &Object{Object: out}
 }
 
+// NewObjectHeaderFromBytes decodes a marshaled ObjectHeader.
 func NewObjectHeaderFromBytes(bytes []byte) (*ObjectHeader, error) {
 	hdr := new(ObjectHeader)
 
@@ -141,6 +152,7 @@ func NewObjectFromBytes(bytes []byte) (*Object, error) {
 	return obj, pb.Unmarshal(bytes, obj)
 }
 
+// NewIndexFromCompressedBytes decodes an index written by CompressedBytes.
 func NewIndexFromCompressedBytes(bytes []byte) (*Index, error) {
 	b, err := decompressedBytes(bytes)
 	if err != nil {
@@ -150,6 +162,7 @@ func NewIndexFromCompressedBytes(bytes []byte) (*Index, error) {
 	return NewIndexFromBytes(b)
 }
 
+// NewIndexFromBytes decodes an index written by Bytes.
 func NewIndexFromBytes(bytes []byte) (*Index, error) {
 	idx := new(Index)
 
@@ -247,6 +260,8 @@ func (bi *backupFileInfo) Sys() interface{} {
 	return bi.FileInfo
 }
 
+// GetOSFileInfo presents a recorded FileInfo as an os.FileInfo whose Sys
+// returns the FileInfo itself.
 func GetOSFileInfo(info *FileInfo) os.FileInfo {
 	return &backupFileInfo{info}
 }

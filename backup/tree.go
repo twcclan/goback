@@ -26,9 +26,15 @@ const (
 	treeSplitMax = 1024
 )
 
+// TreeWriter receives the entries of one directory being backed up.
 type TreeWriter interface {
+	// File records a regular file whose content the callback writes;
+	// ErrSkipFile from it leaves the file out.
 	File(context.Context, os.FileInfo, func(io.Writer) error) error
+	// Tree records a subdirectory the callback fills; ErrSkipFile from it
+	// leaves the directory out.
 	Tree(context.Context, os.FileInfo, func(TreeWriter) error) error
+	// Node adds a finished node.
 	Node(*proto.TreeNode)
 }
 
@@ -46,7 +52,6 @@ func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(Tr
 		store: bt.store,
 	}
 
-	// allow the caller to populate this sub-tree
 	err := writer(node)
 	if err != nil {
 		if errors.Is(err, ErrSkipFile) {
@@ -60,7 +65,6 @@ func (bt *backupTree) Tree(ctx context.Context, info os.FileInfo, writer func(Tr
 		return err
 	}
 
-	// save a reference to the sub-tree
 	bt.Node(&proto.TreeNode{
 		Stat: proto.GetFileInfo(info),
 		Ref:  ref,
@@ -77,7 +81,6 @@ func (bt *backupTree) File(ctx context.Context, info os.FileInfo, writer func(io
 
 	err := writer(fWriter)
 	if err != nil {
-		// if the writer is asking to skip the file just continue
 		if errors.Is(err, ErrSkipFile) {
 			return nil
 		}
@@ -87,8 +90,6 @@ func (bt *backupTree) File(ctx context.Context, info os.FileInfo, writer func(io
 
 	bt.Node(node)
 
-	// closing the writer will finish uploading all parts
-	// and also store the metadata
 	err = fWriter.Close()
 	if err != nil {
 		return err
@@ -205,6 +206,7 @@ func nameBoundary(name []byte) bool {
 
 // Getter is the read side of an ObjectStore.
 type Getter interface {
+	// Get returns the object at the ref, or ErrNotFound.
 	Get(context.Context, *proto.Ref) (*proto.Object, error)
 }
 

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
+// New opens or creates a Store at path.
 func New(path string) (*Store, error) {
 	opts := badger.DefaultOptions(path).
 		WithCompression(options.Snappy)
@@ -63,6 +64,7 @@ func objectFromEntry(val []byte, ref *proto.Ref) (*proto.Object, error) {
 
 var tracer = otel.Tracer("goback.io/storage/badger")
 
+// Put implements backup.ObjectStore.
 func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Put")
 	defer span.End()
@@ -77,6 +79,7 @@ func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	})
 }
 
+// Get implements backup.ObjectStore.
 func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Get")
 	defer span.End()
@@ -108,6 +111,7 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 	return obj, nil
 }
 
+// Delete implements backup.ObjectStore.
 func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Delete")
 	defer span.End()
@@ -117,6 +121,7 @@ func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	})
 }
 
+// Walk implements backup.ObjectStore.
 func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType, receiver backup.ObjectReceiver) error {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Walk")
 	defer span.End()
@@ -164,6 +169,7 @@ func (s *Store) Walk(ctx context.Context, load bool, filterFor proto.ObjectType,
 	})
 }
 
+// Has implements backup.ObjectStore.
 func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Has")
 	defer span.End()
@@ -186,6 +192,7 @@ func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return exists, err
 }
 
+// Close releases the database.
 func (s *Store) Close() error {
 	return s.db.Close()
 }

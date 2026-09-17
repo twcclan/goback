@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the key command.
 var Command = cli.Command{
 	Name:        "key",
 	Description: "Manage the store key that encrypts names and contents before upload",

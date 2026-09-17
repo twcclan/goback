@@ -27,10 +27,12 @@ import (
 	_ "gocloud.dev/blob/gcsblob"
 )
 
+// Opener is implemented by stores that must be opened before use.
 type Opener interface {
 	Open() error
 }
 
+// Closer is implemented by stores and indexes that must be closed.
 type Closer interface {
 	Close() error
 }
@@ -277,6 +279,8 @@ func RestoreSession(ctx context.Context, store backup.ObjectStore, set string, r
 	}, nil
 }
 
+// GetObjectStore opens the store the global --storage location names, or
+// exits.
 func GetObjectStore(c *cli.Context) backup.ObjectStore {
 	location := c.GlobalString("storage")
 	u, err := url.Parse(location)
@@ -339,8 +343,6 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	log.Fatalf("No driver for storage location %s", u.String())
 	return nil
 }
-
-// GetIndex opens the index for a command run without a server.
 
 func ptr[T any](v T) *T {
 	return &v

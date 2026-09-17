@@ -69,13 +69,17 @@ var (
 	_ backup.CommitGate = (*RemoteClient)(nil)
 )
 
+// RemoteClient is a backup.Index over a store server's gRPC API.
 type RemoteClient struct {
 	store proto.StoreClient
 }
 
+// Open is a no-op; the connection is dialed by NewRemoteClient.
 func (r *RemoteClient) Open() error  { return nil }
+// Close is a no-op; close the connection instead.
 func (r *RemoteClient) Close() error { return nil }
 
+// FileInfo implements backup.Index.
 func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
 	ctx = r.outgoing(ctx)
 
@@ -95,6 +99,7 @@ func (r *RemoteClient) FileInfo(ctx context.Context, set string, name string, no
 	return response.Files, nil
 }
 
+// CommitInfo implements backup.Index.
 func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
 	ctx = r.outgoing(ctx)
 
@@ -113,6 +118,7 @@ func (r *RemoteClient) CommitInfo(ctx context.Context, set string, notAfter time
 	return response.Commits, nil
 }
 
+// ReIndex implements backup.Index.
 func (r *RemoteClient) ReIndex(ctx context.Context) error {
 	ctx = r.outgoing(ctx)
 
@@ -166,6 +172,7 @@ func (r *RemoteClient) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uin
 	}
 }
 
+// Put implements backup.ObjectStore.
 func (r *RemoteClient) Put(ctx context.Context, object *proto.Object) error {
 	_, err := r.put(ctx, object, nil)
 
@@ -273,6 +280,7 @@ func (r *RemoteClient) Presence(ctx context.Context, set string) (presence.Set, 
 	return result, nil
 }
 
+// Get implements backup.ObjectStore.
 func (r *RemoteClient) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	ctx = r.outgoing(ctx)
 
@@ -437,6 +445,7 @@ type RemoteServer struct {
 // Store is the store the server serves.
 func (r *RemoteServer) Store() *Store { return r.store }
 
+// BeginCommit implements proto.StoreServer.
 func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginCommitRequest) (*proto.BeginCommitResponse, error) {
 	grant, err := r.store.BeginCommit(ctx, request.BackupSet)
 	if errors.Is(err, backup.ErrCommitDenied) {
@@ -450,6 +459,7 @@ func (r *RemoteServer) BeginCommit(ctx context.Context, request *proto.BeginComm
 	return &proto.BeginCommitResponse{SetId: grant.SetID, Allowed: true, Policy: policyProto(grant.Policy)}, nil
 }
 
+// FileInfo implements proto.StoreServer.
 func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (*proto.FileInfoResponse, error) {
 	err := request.NotAfter.CheckValid()
 	if err != nil {
@@ -464,6 +474,7 @@ func (r *RemoteServer) FileInfo(ctx context.Context, request *proto.FileInfoRequ
 	return &proto.FileInfoResponse{Files: files}, nil
 }
 
+// CommitInfo implements proto.StoreServer.
 func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfoRequest) (*proto.CommitInfoResponse, error) {
 	err := request.NotAfter.CheckValid()
 	if err != nil {
@@ -478,6 +489,7 @@ func (r *RemoteServer) CommitInfo(ctx context.Context, request *proto.CommitInfo
 	return &proto.CommitInfoResponse{Commits: commits}, nil
 }
 
+// Put implements proto.StoreServer.
 func (r *RemoteServer) Put(ctx context.Context, request *proto.PutRequest) (*proto.PutResponse, error) {
 	receipt, err := r.store.Put(ctx, Upload{Object: request.GetObject(), Ref: request.Ref, Assumed: request.AssumedRefs})
 	if err != nil {
@@ -501,12 +513,14 @@ func (r *RemoteServer) LatestCommit(ctx context.Context, request *proto.LatestCo
 	return &proto.LatestCommitResponse{Ref: ref}, nil
 }
 
+// GetTree implements proto.StoreServer.
 func (r *RemoteServer) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTreeServer) error {
 	return ToStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, func(ref *proto.Ref, obj *proto.Object) error {
 		return stream.Send(&proto.GetTreeResponse{Ref: ref, Object: obj})
 	}))
 }
 
+// Get implements proto.StoreServer.
 func (r *RemoteServer) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
 	obj, err := r.store.Get(ctx, request.Ref)
 	if err != nil {
@@ -549,6 +563,7 @@ func ToStatus(err error) error {
 	return err
 }
 
+// DeleteCommit implements proto.StoreServer.
 func (r *RemoteServer) DeleteCommit(ctx context.Context, request *proto.DeleteCommitRequest) (*proto.DeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
@@ -558,6 +573,7 @@ func (r *RemoteServer) DeleteCommit(ctx context.Context, request *proto.DeleteCo
 	return &proto.DeleteCommitResponse{}, ToStatus(ret.DeleteCommit(ctx, request.GetRef()))
 }
 
+// UndeleteCommit implements proto.StoreServer.
 func (r *RemoteServer) UndeleteCommit(ctx context.Context, request *proto.UndeleteCommitRequest) (*proto.UndeleteCommitResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
@@ -567,6 +583,7 @@ func (r *RemoteServer) UndeleteCommit(ctx context.Context, request *proto.Undele
 	return &proto.UndeleteCommitResponse{}, ToStatus(ret.UndeleteCommit(ctx, request.GetRef()))
 }
 
+// DeleteSet implements proto.StoreServer.
 func (r *RemoteServer) DeleteSet(ctx context.Context, request *proto.DeleteSetRequest) (*proto.DeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
@@ -576,6 +593,7 @@ func (r *RemoteServer) DeleteSet(ctx context.Context, request *proto.DeleteSetRe
 	return &proto.DeleteSetResponse{}, ToStatus(ret.DeleteSet(ctx, request.GetBackupSet(), request.GetErase()))
 }
 
+// UndeleteSet implements proto.StoreServer.
 func (r *RemoteServer) UndeleteSet(ctx context.Context, request *proto.UndeleteSetRequest) (*proto.UndeleteSetResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
@@ -585,6 +603,7 @@ func (r *RemoteServer) UndeleteSet(ctx context.Context, request *proto.UndeleteS
 	return &proto.UndeleteSetResponse{}, ToStatus(ret.UndeleteSet(ctx, request.GetBackupSet()))
 }
 
+// Unpin implements proto.StoreServer.
 func (r *RemoteServer) Unpin(ctx context.Context, request *proto.UnpinRequest) (*proto.UnpinResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {
@@ -594,6 +613,7 @@ func (r *RemoteServer) Unpin(ctx context.Context, request *proto.UnpinRequest) (
 	return &proto.UnpinResponse{}, ToStatus(ret.Unpin(ctx, request.GetPin()))
 }
 
+// ListPins implements proto.StoreServer.
 func (r *RemoteServer) ListPins(ctx context.Context, _ *proto.ListPinsRequest) (*proto.ListPinsResponse, error) {
 	ret, err := r.store.Retention()
 	if err != nil {

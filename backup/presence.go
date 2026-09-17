@@ -39,6 +39,7 @@ func ParsePresenceScope(s string) (PresenceScope, error) {
 	return PresenceOff, fmt.Errorf("unknown presence scope %q", s)
 }
 
+// String implements fmt.Stringer.
 func (s PresenceScope) String() string {
 	switch s {
 	case PresenceSet:
@@ -52,22 +53,27 @@ func (s PresenceScope) String() string {
 
 // PresenceSource hands an agent the filters of its scope.
 type PresenceSource interface {
+	// Presence returns the filters for a run on set.
 	Presence(ctx context.Context, set string) (presence.Set, error)
 }
 
 // Confirmer stores a file object once the store holds every part the
 // caller assumed; otherwise it stores nothing and names the missing refs.
 type Confirmer interface {
+	// PutFile stores obj when every assumed ref is held; otherwise it
+	// returns the refs that are not.
 	PutFile(ctx context.Context, obj *proto.Object, assumed []*proto.Ref) (missing []*proto.Ref, err error)
 }
 
 // PresenceIndex serves the filters of a scope.
 type PresenceIndex interface {
+	// Presence returns the filters of scope; set matters for PresenceSet.
 	Presence(ctx context.Context, scope PresenceScope, set string) ([]*proto.PresenceFilter, error)
 }
 
 // PolicySource knows the store's policy; nil means the store has none set.
 type PolicySource interface {
+	// StorePolicy returns the store's policy, or nil.
 	StorePolicy(ctx context.Context) (*storekey.Policy, error)
 }
 

@@ -1,11 +1,7 @@
 // Package migrations holds the versioned migrations of the index, one
-// directory per dialect, and applies them on open. A schema change is
-// recorded by regenerating the ent client and then running, with Docker
-// or a scratch Postgres at hand,
-//
-//	cd index/sql/migrations && go run ./gen -name <change>
-//
-// which appends a migration to every dialect's directory.
+// directory per dialect, and applies them on open. After a schema change,
+// regenerate the ent client and run `go run ./gen -name <change>` from
+// index/sql/migrations to append a migration to every dialect's directory.
 package migrations
 
 import (

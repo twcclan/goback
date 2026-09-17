@@ -15,6 +15,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the set command.
 var Command = cli.Command{
 	Name:        "set",
 	Description: "Manage backup sets",

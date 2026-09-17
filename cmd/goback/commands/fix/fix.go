@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// Command is the fix command.
 var Command = cli.Command{
 	Name:        "fix",
 	Description: "Detect and fix problems",

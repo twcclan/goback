@@ -174,9 +174,7 @@ func (a *archive) recoverIndex(err error) (IndexFile, error) {
 func (a *archive) getIndex() (IndexFile, error) {
 	idxFile, err := a.storage.Open(a.indexName())
 	if err != nil {
-		// attempt to recover index
-		// TODO: make this configurable since it may potentially take very long
-
+		// TODO: recovery may take very long; make it configurable
 		return a.recoverIndex(err)
 	}
 	defer idxFile.Close()
@@ -232,7 +230,6 @@ func (a *archive) open() (err error) {
 			return err
 		}
 
-		// store the size of the archive here for later
 		a.size = uint64(info.Size())
 
 		hdr := make([]byte, archiveHeaderSize)
@@ -308,7 +305,8 @@ func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
 		return buf, true, nil
 	}
 
-	// need to get an exclusive lock if we can't use ReadAt
+	// Seek and Read share the file position, so the fallback needs the
+	// exclusive lock
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -350,10 +348,8 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 
 	readLatency := float64(time.Since(start)) / float64(time.Millisecond)
 
-	// read size of object header
 	hdrSize, consumed := proto.DecodeVarint(buf)
 
-	// read object header
 	hdr, err := proto.NewObjectHeaderFromBytes(buf[consumed : consumed+int(hdrSize)])
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed parsing object header")
@@ -440,9 +436,8 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 
 	hdr.Size = uint64(len(bytes))
 
-	// keep the timestamp if it's already present. this is important,
-	// because we rely on the information of when a certain object
-	// first entered our system
+	// an existing timestamp says when the object first entered the store;
+	// rewrites carry it over
 	if hdr.Timestamp == nil {
 		hdr.Timestamp = timestamppb.Now()
 	}
@@ -450,10 +445,8 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	hdrBytes := proto.Bytes(hdr)
 	hdrBytesSize := uint64(len(hdrBytes))
 
-	// construct a buffer with our header preceeded by a varint describing its size
+	// record layout: varint header size, header, payload
 	hdrBytes = append(proto.EncodeVarint(nil, hdrBytesSize), hdrBytes...)
-
-	// add our payload
 	data := append(hdrBytes, bytes...)
 
 	start := time.Now()
@@ -512,11 +505,9 @@ func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback f
 	offset := uint32(archiveHeaderSize)
 
 	for {
-		// read size of object header
 		hdrSizeBytes, err := bufReader.Peek(varIntMaxSize)
 		if len(hdrSizeBytes) != varIntMaxSize {
 			if err == io.EOF {
-				// we're done reading this archive
 				break
 			}
 			return err
@@ -528,7 +519,6 @@ func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback f
 			return err
 		}
 
-		// read object header
 		hdrBytes := make([]byte, hdrSize)
 		n, err := io.ReadFull(bufReader, hdrBytes)
 		if n != int(hdrSize) {
@@ -562,7 +552,6 @@ func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback f
 				return err
 			}
 		} else {
-			// skip the object data
 			bufReader.Discard(int(hdr.Size))
 		}
 
@@ -586,7 +575,6 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 
 	defer file.Close()
 
-	// use streaming if the underlying storage supports it
 	if writerTo, ok := file.(io.WriterTo); ok {
 		pReader, pWriter := io.Pipe()
 		var grp errgroup.Group
@@ -672,7 +660,6 @@ func (a *archive) CloseWriter() (IndexFile, error) {
 		return nil, errors.Wrap(err, "Failed closing file")
 	}
 
-	// switch to read-only mode
 	a.readOnly = true
 
 	// the read handle may have been opened against the upload in flight;

@@ -22,6 +22,7 @@ type commit struct {
 	delete   bool
 }
 
+// Command is the commit command.
 var Command = cli.Command{
 	Name:        "commit",
 	Description: "Manage your commits",

@@ -45,13 +45,23 @@ var (
 type Mode string
 
 const (
-	ModeHybrid         Mode = "hybrid"
-	ModeConvergentAll  Mode = "convergent-all"
-	ModeStoreKeyedAll  Mode = "store-keyed-all"
-	ModeNone           Mode = "none"
-	DefaultThreshold        = 128 << 10
-	DefaultEntropyBits      = 7.0
-	EntropyHistogramV1      = "histogram-v1"
+	// ModeHybrid seals files under the size threshold and chunks under the
+	// entropy threshold with the store key, the rest convergently.
+	ModeHybrid Mode = "hybrid"
+	// ModeConvergentAll seals every chunk convergently.
+	ModeConvergentAll Mode = "convergent-all"
+	// ModeStoreKeyedAll seals every chunk with the store key.
+	ModeStoreKeyedAll Mode = "store-keyed-all"
+	// ModeNone writes in the clear.
+	ModeNone Mode = "none"
+	// DefaultThreshold is the hybrid size threshold in bytes when the policy
+	// sets none.
+	DefaultThreshold = 128 << 10
+	// DefaultEntropyBits is the hybrid entropy threshold in bits per byte
+	// when the policy sets none.
+	DefaultEntropyBits = 7.0
+	// EntropyHistogramV1 names the estimator Entropy implements.
+	EntropyHistogramV1 = "histogram-v1"
 )
 
 // Policy is the store's write policy, as the agent holds it.
@@ -367,9 +377,13 @@ func OpenInline(blobKey, ciphertext []byte) ([]byte, error) {
 type Field string
 
 const (
-	FieldName   Field = "name"
-	FieldUser   Field = "user"
-	FieldGroup  Field = "group"
+	// FieldName is the entry name.
+	FieldName Field = "name"
+	// FieldUser is the owning user.
+	FieldUser Field = "user"
+	// FieldGroup is the owning group.
+	FieldGroup Field = "group"
+	// FieldTarget is a symlink's target.
 	FieldTarget Field = "link_target"
 )
 
