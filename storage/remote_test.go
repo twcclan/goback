@@ -362,10 +362,10 @@ func TestRemoteBeginCommit(t *testing.T) {
 
 	gatedDial := startServerWith(t, gated{index}, nil)
 
-	index.deny = "set is closing"
+	index.deny = "set is frozen"
 	_, err = gatedDial("node-1").BeginCommit(ctx, "world")
 	require.ErrorIs(t, err, backup.ErrCommitDenied)
-	require.ErrorContains(t, err, "closing")
+	require.ErrorContains(t, err, "frozen")
 
 	index.deny = ""
 	grant, err = gatedDial("node-1").BeginCommit(ctx, "world")

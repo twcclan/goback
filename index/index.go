@@ -11,7 +11,11 @@ import (
 
 // Set states.
 const (
-	SetActive  = "active"
+	// SetActive accepts commits.
+	SetActive = "active"
+	// SetClosing was deleted and keeps its commits through the trash window.
+	SetClosing = "closing"
+	// SetDeleted has no live commits left.
 	SetDeleted = "deleted"
 )
 

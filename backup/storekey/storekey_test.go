@@ -213,21 +213,21 @@ func TestSaveLoad(t *testing.T) {
 func TestDeriveIsDeterministicPerName(t *testing.T) {
 	master := testKey(t)
 
-	a, err := master.Derive("customer-a")
+	a, err := master.Derive("s1")
 	require.NoError(t, err)
-	again, err := master.Derive("customer-a")
+	again, err := master.Derive("s1")
 	require.NoError(t, err)
-	b, err := master.Derive("customer-b")
+	b, err := master.Derive("s2")
 	require.NoError(t, err)
 
 	require.Equal(t, a.Bytes(), again.Bytes())
-	require.Equal(t, "customer-a", a.Name)
+	require.Equal(t, "s1", a.Name)
 	require.NotEqual(t, a.Bytes(), b.Bytes())
 	require.NotEqual(t, master.Bytes(), a.Bytes())
 
 	other, err := Generate("s2")
 	require.NoError(t, err)
-	fromOther, err := other.Derive("customer-a")
+	fromOther, err := other.Derive("s1")
 	require.NoError(t, err)
 	require.NotEqual(t, a.Bytes(), fromOther.Bytes(), "the name alone does not determine the key")
 

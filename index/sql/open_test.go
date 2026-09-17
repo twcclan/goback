@@ -13,8 +13,6 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/index/sql/migrations"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack/packtest"
 
 	"ariga.io/atlas/sql/migrate"
 	"github.com/stretchr/testify/require"
@@ -244,7 +242,7 @@ func TestPostgres(t *testing.T) {
 
 	for name, test := range map[string]func(*testing.T){
 		"RangesFollowVersions":             TestIndexerRangesFollowVersions,
-		"RefusesOutOfOrderAndClosedSets":   TestIndexerRefusesOutOfOrderAndClosedSets,
+		"KeepsOrderAndRefusesClosedSets":   TestIndexerKeepsOrderAndRefusesClosedSets,
 		"RetentionLifecycle":               TestRetentionLifecycle,
 		"RetireMarksRowsOnlyAfterFlush":    TestRetireMarksRowsOnlyAfterFlush,
 		"PinsFollowTheSetState":            TestPinsFollowTheSetState,
@@ -284,6 +282,3 @@ func TestPostgres(t *testing.T) {
 		t.Run(name, test)
 	}
 }
-
-var _ = packtest.RandomArchive
-var _ = proto.HashSize

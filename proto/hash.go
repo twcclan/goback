@@ -661,19 +661,3 @@ func canonicalFile(f *File) ([]byte, error) {
 
 	return b, nil
 }
-
-// CanonicalEqual reports whether an already encoded payload is canonical,
-// which holds when re-encoding its decoded form gives the same bytes.
-func CanonicalEqual(payload []byte, t ObjectType) (bool, error) {
-	obj, err := NewObjectFromPayload(payload, t)
-	if err != nil {
-		return false, err
-	}
-
-	canonical, err := obj.Canonical()
-	if err != nil {
-		return false, err
-	}
-
-	return bytes.Equal(payload, canonical), nil
-}

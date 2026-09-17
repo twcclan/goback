@@ -26,7 +26,8 @@ message Commit {
   // the store policy version the agent wrote under, 0 for no policy
   uint32 policy_version = 9;
 
-  // the set's server-assigned id, globally unique; 0 in a local index
+  // the set's id, globally unique; the receiving index assigns it on Put
+  // and ignores the client's value
   uint64 set_id = 10;
 
   // server clock at receipt, nanoseconds since the Unix epoch; ordering,

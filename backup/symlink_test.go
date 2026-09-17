@@ -12,7 +12,7 @@ import (
 
 func TestSymlinkNodesRoundTrip(t *testing.T) {
 	store := newMemStore()
-	writer := NewBackupWriter(store, "set")
+	writer := newTree(store)
 
 	writer.Node(&proto.TreeNode{
 		Stat: &proto.FileInfo{Name: []byte("link"), Mode: uint32(os.ModeSymlink | 0777), Type: proto.NodeType_NODE_SYMLINK, LinkTarget: []byte("../shared/plugins")},

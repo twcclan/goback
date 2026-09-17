@@ -3,9 +3,7 @@ package pack
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"math/rand"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -21,11 +19,6 @@ const numObjects = 1000
 
 // average size of objects
 const ObjectSize = 1024 * 8
-
-type testingInterface interface {
-	Logf(string, ...interface{})
-	Fatalf(string, ...interface{})
-}
 
 func makeRef() *proto.Ref {
 	hash := make([]byte, proto.HashSize)
@@ -267,36 +260,6 @@ func TestPackCompaction(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
-/*
-func BenchmarkReadIndex(b *testing.B) {
-	locs := make([]*proto.Location, b.N)
-	for i := 0; i < b.N; i++ {
-		locs[i] = &proto.Location{
-			Ref:    makeRef(),
-			Offset: uint64(rand.Int63()),
-			Size:   uint64(rand.Int63()),
-			Type:   proto.ObjectType_INVALID,
-		}
-	}
-
-	sort.Sort(byRef(locs))
-
-	idx := &proto.Index{
-		Locations: locs,
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for _, i := range rand.Perm(b.N) {
-		loc := idx.Lookup(locs[i].Ref)
-		if loc == nil {
-			panic("Could not find location in index")
-		}
-	}
-}
-*/
-
 var benchRnd = rand.New(rand.NewSource(0))
 
 type Opener interface {
@@ -337,27 +300,5 @@ func benchmarkStorage(b *testing.B, store backup.ObjectStore) {
 		if err != nil {
 			b.Fatal(err)
 		}
-	}
-}
-
-func BenchmarkArchiveStorage(b *testing.B) {
-	storage, err := NewPackStorage(WithArchiveStorage(newLocal(b.TempDir())))
-	if err != nil {
-		b.Fatal(err)
-	}
-	benchmarkStorage(b, storage)
-}
-
-func testIndex(t interface{}) {
-	// First ask Go to give us some information about the MyData type
-	typ := reflect.TypeOf(t)
-	fmt.Printf("Struct is %d bytes long\n", typ.Size())
-	// We can run through the fields in the structure in order
-	n := typ.NumField()
-	for i := 0; i < n; i++ {
-		field := typ.Field(i)
-		fmt.Printf("%s at offset %v, size=%d, align=%d\n",
-			field.Name, field.Offset, field.Type.Size(),
-			field.Type.Align())
 	}
 }

@@ -46,7 +46,7 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 			report.Objects++
 			report.Bytes += uint64(length)
 
-			err := verifyStored(hdr, bytes)
+			err := proto.VerifyStored(hdr, bytes)
 			if err != nil {
 				ps.logger.Warn("corrupt object", "ref", fmt.Sprintf("%x", hdr.Ref.GetHash()), "archive", a.name, "offset", offset, "err", err)
 				report.Corrupt = append(report.Corrupt, ScrubFailure{Archive: a.name, Ref: hdr.Ref, Err: err})

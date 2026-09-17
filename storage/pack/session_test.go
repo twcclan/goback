@@ -206,7 +206,7 @@ func TestIdleArchivesAreFinalized(t *testing.T) {
 
 	loc, err := store.index.LocateObject(obj.Ref(), Scope{Session: session.ID})
 	require.NoError(t, err)
-	require.Equal(t, PlacementSession, ParsePlacement(loc.Archive).Kind)
+	require.Equal(t, session.ID, ParsePlacement(loc.Archive).Session)
 
 	requireVisible(t, store, ctx, obj, true)
 	requireVisible(t, store, context.Background(), obj, false)
@@ -242,33 +242,32 @@ func TestLeaseRenewalOnWrites(t *testing.T) {
 
 func TestPlacementParsing(t *testing.T) {
 	cases := map[string]Placement{
-		"abc":      {Kind: PlacementRoot},
-		"sess/abc": {Kind: PlacementSession, Session: "sess"},
-		"a/b/c":    {Kind: PlacementRoot},
+		"abc":      {},
+		"sess/abc": {Session: "sess"},
+		"a/b/c":    {},
 	}
 
 	for name, want := range cases {
 		require.Equal(t, want, ParsePlacement(name), name)
 	}
 
-	require.Equal(t, "", ParsePlacement("sess/abc").Group().Dir())
 	require.Equal(t, "sess", ParsePlacement("sess/abc").Dir())
-	require.Equal(t, "", ParsePlacement("abc").Group().Dir())
+	require.Equal(t, "", ParsePlacement("abc").Dir())
 }
 
-// placements returns, per object, the placement kind of the archive the
-// index serves it from.
-func placements(t *testing.T, store *PackStorage, objects ...*proto.Object) []PlacementKind {
+// inSession reports, per object, whether the index serves it from a
+// session's archive rather than a root one.
+func inSession(t *testing.T, store *PackStorage, objects ...*proto.Object) []bool {
 	t.Helper()
 
-	kinds := make([]PlacementKind, len(objects))
+	result := make([]bool, len(objects))
 	for i, obj := range objects {
 		loc, err := store.index.LocateObject(obj.Ref(), Scope{})
 		require.NoError(t, err, "object %x", obj.Ref().Hash)
-		kinds[i] = ParsePlacement(loc.Archive).Kind
+		result[i] = ParsePlacement(loc.Archive).Session != ""
 	}
 
-	return kinds
+	return result
 }
 
 // timestamps reads the header timestamps of every object in the store's
@@ -318,7 +317,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	}
 
 	blob := makeTestData(t, 1)[0]
-	public := convergentBlob(t, "convergent chunk")
+	convergent := convergentBlob(t, "convergent chunk")
 	onlyA := tree("a")
 	onlyB := tree("b")
 	both := tree("both")
@@ -326,28 +325,28 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	ctxA, _ := beginSession(t, store, "agent-a")
 	ctxB, _ := beginSession(t, store, "agent-b")
 
-	for _, obj := range []*proto.Object{blob, public, onlyA, both} {
+	for _, obj := range []*proto.Object{blob, convergent, onlyA, both} {
 		require.NoError(t, store.Put(ctxA, obj))
 	}
 
-	for _, obj := range []*proto.Object{blob, public, onlyB, both} {
+	for _, obj := range []*proto.Object{blob, convergent, onlyB, both} {
 		require.NoError(t, store.Put(ctxB, obj))
 	}
 
 	require.NoError(t, store.Put(ctxA, commitObject()))
 	require.NoError(t, store.Put(ctxB, commitObject()))
 
-	all := []*proto.Object{blob, public, onlyA, onlyB, both}
-	require.Equal(t, []PlacementKind{PlacementSession, PlacementSession, PlacementSession, PlacementSession, PlacementSession}, placements(t, store, all...))
+	all := []*proto.Object{blob, convergent, onlyA, onlyB, both}
+	require.Equal(t, []bool{true, true, true, true, true}, inSession(t, store, all...))
 
 	before := timestamps(t, store)
 	require.NoError(t, store.doCompaction())
 
-	merged := []PlacementKind{PlacementRoot, PlacementRoot, PlacementRoot, PlacementRoot, PlacementRoot}
-	require.Equal(t, merged, placements(t, store, all...))
+	merged := []bool{false, false, false, false, false}
+	require.Equal(t, merged, inSession(t, store, all...))
 
 	// one copy survives of an object two sessions wrote
-	for _, obj := range []*proto.Object{blob, public, both} {
+	for _, obj := range []*proto.Object{blob, convergent, both} {
 		loc, err := store.index.LocateObject(obj.Ref(), Scope{})
 		require.NoError(t, err)
 		_, err = store.index.LocateObject(obj.Ref(), Scope{}, loc.Archive)
@@ -364,12 +363,12 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	names, err := store.storage.List(ArchiveSuffix)
 	require.NoError(t, err)
 	for _, name := range names {
-		require.NotEqual(t, PlacementSession, ParsePlacement(name).Kind, "session archives are merged away: %s", name)
+		require.Empty(t, ParsePlacement(name).Session, "session archives are merged away: %s", name)
 	}
 
 	// a second run finds every object in place
 	require.NoError(t, store.doCompaction())
-	require.Equal(t, merged, placements(t, store, all...))
+	require.Equal(t, merged, inSession(t, store, all...))
 	keptTimestamps(t, after, timestamps(t, store))
 
 	require.NoError(t, store.Close())

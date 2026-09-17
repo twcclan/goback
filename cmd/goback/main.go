@@ -8,8 +8,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"runtime"
-	"runtime/trace"
-	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
 	"github.com/twcclan/goback/cmd/goback/commands/file"
@@ -30,19 +28,6 @@ import (
 
 func webserver() {
 	http.ListenAndServe(":8080", nil)
-}
-
-func tracer() {
-	f, err := os.Create("trace.out")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	trace.Start(f)
-
-	time.Sleep(15 * time.Second)
-	trace.Stop()
 }
 
 func main() {
@@ -94,7 +79,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "api-key",
-			Usage:  "the key a goback:// store server accepts: its shared secret",
+			Usage:  "the token a goback:// store server accepts, whether its shared secret or an api key it issued",
 			EnvVar: "GOBACK_API_KEY",
 		},
 		cli.StringFlag{

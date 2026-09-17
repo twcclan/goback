@@ -264,11 +264,10 @@ func TestBeginCommitGates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, &wanted, policy)
 
-	// the commit must carry the set id it was given, or none
+	// the index assigns the set id, whatever the commit carried
 	commit := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", "one")).Ref(), BackupSet: "world", AgentId: "node-1", SetId: setID + 1})
-	require.ErrorIs(t, f.x.Put(ctx, commit), auth.ErrForbidden)
-	commit.GetCommit().SetId = setID
 	require.NoError(t, f.x.Put(ctx, commit))
+	require.Equal(t, setID, commit.GetCommit().GetSetId())
 	f.presence()
 
 	// ownership is checked before any bytes move

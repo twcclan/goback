@@ -35,7 +35,8 @@ type Commit struct {
 	Partial bool `protobuf:"varint,7,opt,name=partial,proto3" json:"partial,omitempty"`
 	// the store policy version the agent wrote under, 0 for no policy
 	PolicyVersion uint32 `protobuf:"varint,9,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
-	// the set's server-assigned id, globally unique; 0 in a local index
+	// the set's id, globally unique; the receiving index assigns it on Put
+	// and ignores the client's value
 	SetId uint64 `protobuf:"varint,10,opt,name=set_id,json=setId,proto3" json:"set_id,omitempty"`
 	// server clock at receipt, nanoseconds since the Unix epoch; ordering,
 	// retention and "latest commit" use this, timestamp is display metadata

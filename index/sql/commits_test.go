@@ -88,14 +88,21 @@ func TestIndexerRangesFollowVersions(t *testing.T) {
 	require.Len(t, f.ranges(f.x, "files"), 5)
 }
 
-func TestIndexerRefusesOutOfOrderAndClosedSets(t *testing.T) {
+func TestIndexerKeepsOrderAndRefusesClosedSets(t *testing.T) {
 	f := newFixture(t)
 
 	root := f.tree(f.file("a.txt", "one"))
-	f.commit("world", root, false)
+	first := f.commit("world", root, false)
 
-	stale := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: root.Ref(), BackupSet: "world", AgentId: "node-1", SetId: 1, ReceivedAtNs: f.clock.Add(-time.Hour).UnixNano()})
-	require.ErrorIs(t, f.x.Put(f.ctx, stale), backup.ErrOutOfOrder)
+	// the index clock stepping back cannot reorder a set's commits: the
+	// next receipt is stamped after the newest
+	f.advance(-time.Hour)
+	stale := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: root.Ref(), BackupSet: "world", AgentId: "node-1"})
+	require.NoError(t, f.x.Put(f.ctx, stale))
+	latest, err := f.x.LatestCommit(f.ctx, "world")
+	require.NoError(t, err)
+	require.False(t, latest.Equal(first), "the commit received last is the newest")
+	f.advance(time.Hour)
 
 	require.NoError(t, f.x.DeleteSet(f.ctx, "world", false))
 
@@ -511,9 +518,12 @@ func TestDeleteSetAndRebuild(t *testing.T) {
 	require.True(t, f.deleted(y, worldB))
 	require.False(t, f.deleted(y, logs))
 
+	// a resubmitted commit is stamped afresh: a new commit, not the tombstoned one
 	obj, err := f.store.Get(f.ctx, worldA)
 	require.NoError(t, err)
-	require.ErrorIs(t, y.Put(f.ctx, obj), backup.ErrTombstoned, "a deleted commit is not re-indexed")
+	require.NoError(t, y.Put(f.ctx, obj))
+	require.False(t, obj.Ref().Equal(worldA))
+	require.False(t, f.deleted(y, obj.Ref()))
 
 	count, err = y.client.Pin.Query().Where(pin.DeletedAtIsNil()).Count(f.ctx)
 	require.NoError(t, err)
@@ -556,9 +566,9 @@ func TestReIndexReproducesRanges(t *testing.T) {
 	require.Len(t, f.ranges(f.x, "trees"), 4)
 }
 
-// TestPresenceFilterNeverLandsOnATombstonedCommit stores a filter for a
-// commit after its tombstone, as a slow builder would, and expects the
-// row to stay without one.
+// TestPresenceFilterNeverLandsOnATombstonedCommit stores a presence
+// filter for a commit after its tombstone and expects the row to stay
+// without one.
 func TestPresenceFilterNeverLandsOnATombstonedCommit(t *testing.T) {
 	f := newFixture(t)
 

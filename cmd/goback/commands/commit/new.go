@@ -140,7 +140,6 @@ func runNew(c *cli.Context) error {
 		Pre:     c.String("pre-hook"),
 		Post:    c.String("post-hook"),
 		Timeout: c.Duration("hook-timeout"),
-		Logf:    log.Printf,
 	}
 
 	preOut, err := runner.RunPre(ctx)

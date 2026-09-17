@@ -16,7 +16,6 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 )
@@ -25,8 +24,6 @@ const (
 	blobObjectPrefix = "pack/"
 	blobObjectKey    = blobObjectPrefix + "%s/%s" // pack/<extension>/<filename>
 )
-
-var bucketLogger = logrus.WithField("storage", "cloud")
 
 var _ io.ReadSeeker = (*bucketFile)(nil)
 var _ io.WriterTo = (*bucketFile)(nil)
@@ -171,7 +168,6 @@ type BucketStore struct {
 }
 
 func (c *BucketStore) openFile(key string) (pack.File, error) {
-	bucketLogger.WithField("key", key).Debug("Opening file")
 	// a file still uploading is not in the bucket yet
 	c.openFilesMtx.Lock()
 	file, ok := c.openFiles[key]
@@ -197,7 +193,7 @@ func (c *BucketStore) openFile(key string) (pack.File, error) {
 	}, nil
 }
 
-func (c *BucketStore) newGCSFile(key string) (pack.File, error) {
+func (c *BucketStore) newWriteFile(key string) (pack.File, error) {
 	writer, err := c.bucket.NewWriter(context.Background(), key, nil)
 	if err != nil {
 		return nil, err
@@ -232,7 +228,7 @@ func (c *BucketStore) Open(name string) (pack.File, error) {
 
 // Create implements pack.ArchiveStorage.
 func (c *BucketStore) Create(name string) (pack.File, error) {
-	return c.newGCSFile(c.key(name))
+	return c.newWriteFile(c.key(name))
 }
 
 // Delete implements pack.ArchiveStorage.

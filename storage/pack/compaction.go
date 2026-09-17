@@ -2,7 +2,6 @@ package pack
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"github.com/twcclan/goback/proto"
@@ -13,7 +12,6 @@ import (
 )
 
 type compactionGroup struct {
-	placement  Placement
 	candidates []*archive
 	total      uint64
 
@@ -27,8 +25,8 @@ type compactionGroup struct {
 	droppedBytes   uint64
 }
 
-// Compact rewrites the small committed archives of every placement group
-// into full-sized archives of that group and returns when it is done.
+// Compact rewrites the small committed archives into full-sized archives at
+// the root and returns when it is done.
 func (ps *PackStorage) Compact() error {
 	return ps.doCompaction()
 }
@@ -37,7 +35,7 @@ func (ps *PackStorage) doCompaction() error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
-	groups := make(map[string]*compactionGroup)
+	group := &compactionGroup{}
 
 	ps.mtx.RLock()
 	for _, candidate := range ps.archives {
@@ -49,50 +47,30 @@ func (ps *PackStorage) doCompaction() error {
 			continue
 		}
 
-		placement := ParsePlacement(candidate.name).Group()
-		group, ok := groups[placement.Dir()]
-		if !ok {
-			group = &compactionGroup{placement: placement}
-			groups[placement.Dir()] = group
-		}
-
 		group.candidates = append(group.candidates, candidate)
 		group.total += candidate.size
 	}
 	ps.mtx.RUnlock()
 
-	keys := make([]string, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.maxSize {
+		ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total))
 
-	for _, key := range keys {
-		group := groups[key]
-
-		if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.maxSize {
-			ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total), "dir", key)
-
-			err := ps.compactGroup(context.Background(), group)
-			if err != nil {
-				return err
-			}
-		}
+		return ps.compactGroup(context.Background(), group)
 	}
 
 	return nil
 }
 
 // compactGroup rewrites the group's candidates. An object found committed
-// elsewhere is dropped; the rest is copied into the group with its
+// elsewhere is dropped; the rest is copied into root archives with its
 // timestamp kept.
 func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup) error {
 	written := make(map[string]bool)
-	open := make(map[string]*archive)
 
+	var open *archive
 	var outputs []*archive
 
-	closeArchive := func(a *archive, placement Placement) error {
+	closeArchive := func(a *archive) error {
 		index, err := a.CloseWriter()
 		if err != nil {
 			return err
@@ -114,33 +92,31 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		return nil
 	}
 
-	getArchive := func(placement Placement) (*archive, error) {
-		dir := placement.Dir()
-
-		if a := open[dir]; a != nil && a.size >= ps.maxSize {
-			err := closeArchive(a, placement)
+	getArchive := func() (*archive, error) {
+		if open != nil && open.size >= ps.maxSize {
+			err := closeArchive(open)
 			if err != nil {
 				return nil, err
 			}
 
-			delete(open, dir)
+			open = nil
 		}
 
-		if open[dir] == nil {
-			a, err := newArchive(ps.storage, dir, ps.atRest, ps.logger)
+		if open == nil {
+			a, err := newArchive(ps.storage, "", ps.atRest, ps.logger)
 			if err != nil {
 				return nil, err
 			}
 
-			open[dir] = a
+			open = a
 		}
 
-		return open[dir], nil
+		return open, nil
 	}
 
 	abort := func() {
-		for _, a := range open {
-			_ = a.Close()
+		if open != nil {
+			_ = open.Close()
 		}
 	}
 
@@ -176,12 +152,12 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 			// a copy between archives is a trust boundary: never carry
 			// a corrupted payload forward under a valid ref
-			err = verifyStored(hdr, bytes)
+			err = proto.VerifyStored(hdr, bytes)
 			if err != nil {
 				return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, candidate.name)
 			}
 
-			ar, err := getArchive(group.placement)
+			ar, err := getArchive()
 			if err != nil {
 				return err
 			}
@@ -201,10 +177,10 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 	ps.logger.Info("compaction dropped objects", "objects", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes))
 
-	for dir, a := range open {
-		err := closeArchive(a, ParsePlacement(a.name))
+	if open != nil {
+		err := closeArchive(open)
 		if err != nil {
-			return errors.Wrapf(err, "closing compaction output under %q", dir)
+			return errors.Wrap(err, "closing compaction output")
 		}
 	}
 

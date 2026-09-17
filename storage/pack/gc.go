@@ -775,41 +775,30 @@ func (r *gcRun) sweepBlocker() string {
 // sweep rewrites the archives whose dead share or age selects them, dropping
 // objects unmarked in two consecutive generations.
 func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
-	groups := make(map[string]*compactionGroup)
-	var keys []string
+	group := &compactionGroup{keep: r.keep, marked: r.marked}
 
 	for _, ga := range r.order {
 		if !r.selected(ga) {
 			continue
 		}
 
-		placement := ParsePlacement(ga.a.name).Group()
-		group, ok := groups[placement.Dir()]
-		if !ok {
-			group = &compactionGroup{placement: placement, keep: r.keep, marked: r.marked}
-			groups[placement.Dir()] = group
-			keys = append(keys, placement.Dir())
-		}
-
 		group.candidates = append(group.candidates, ga.a)
 		group.total += ga.a.size
 	}
 
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		group := groups[key]
-
-		r.ps.logger.Info("gc sweeping archives", "count", len(group.candidates), "dir", key)
-
-		if err := r.ps.compactGroup(ctx, group); err != nil {
-			return err
-		}
-
-		report.Swept += len(group.candidates)
-		report.ReclaimedObjects += group.droppedObjects
-		report.ReclaimedBytes += group.droppedBytes
+	if len(group.candidates) == 0 {
+		return nil
 	}
+
+	r.ps.logger.Info("gc sweeping archives", "count", len(group.candidates))
+
+	if err := r.ps.compactGroup(ctx, group); err != nil {
+		return err
+	}
+
+	report.Swept += len(group.candidates)
+	report.ReclaimedObjects += group.droppedObjects
+	report.ReclaimedBytes += group.droppedBytes
 
 	return nil
 }

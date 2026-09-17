@@ -8,7 +8,7 @@ import (
 	"gocloud.dev/blob/fileblob"
 )
 
-func TestCloudStore(t *testing.T) {
+func TestBucketStore(t *testing.T) {
 	dir := t.TempDir()
 
 	bucket, err := fileblob.OpenBucket(dir, nil) //memblob.OpenBucket(nil)

@@ -672,11 +672,6 @@ func (b *BadgerIndex) CommitSession(id string) error {
 	return nil
 }
 
-// Clear is Reset.
-func (b *BadgerIndex) Clear() error {
-	return b.Reset()
-}
-
 const (
 	prefixRecord  = "record|"
 	prefixArchive = "archive|"

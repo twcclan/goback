@@ -8,19 +8,10 @@ import (
 	"github.com/twcclan/goback/backup"
 )
 
-// PlacementKind says which prefix an archive lives under.
-type PlacementKind int
-
-const (
-	// PlacementRoot is a committed archive at the root of the storage.
-	PlacementRoot PlacementKind = iota
-	// PlacementSession is an archive a session wrote and has not committed: <session>/<id>.
-	PlacementSession
-)
-
-// Placement is the decoded prefix of an archive name.
+// Placement is the decoded prefix of an archive name: the session that
+// wrote it and has not committed (<session>/<id>), or none for a committed
+// archive at the root.
 type Placement struct {
-	Kind    PlacementKind
 	Session string
 }
 
@@ -28,34 +19,20 @@ type Placement struct {
 func ParsePlacement(name string) Placement {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2 {
-		return Placement{Kind: PlacementRoot}
+		return Placement{}
 	}
 
-	return Placement{Kind: PlacementSession, Session: parts[0]}
-}
-
-// Group is the prefix compaction rewrites into: the root for a session's
-// archives, otherwise the placement itself.
-func (p Placement) Group() Placement {
-	if p.Kind == PlacementSession {
-		return Placement{Kind: PlacementRoot}
-	}
-
-	return Placement{Kind: p.Kind}
+	return Placement{Session: parts[0]}
 }
 
 // Dir is the prefix under which archives of this placement are written.
 func (p Placement) Dir() string {
-	if p.Kind == PlacementSession {
-		return p.Session
-	}
-
-	return ""
+	return p.Session
 }
 
 // sessionPlacement is where a session's archives are written.
 func sessionPlacement(s *backup.Session) Placement {
-	return Placement{Kind: PlacementSession, Session: s.ID}
+	return Placement{Session: s.ID}
 }
 
 // ArchiveState is the visibility of an archive: committed archives are

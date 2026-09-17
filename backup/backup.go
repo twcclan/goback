@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/pkg/errors"
 
@@ -24,43 +23,6 @@ var (
 	// ErrSkipFile can be returned during backup to make the TreeWrite skip/ignore a file
 	ErrSkipFile = errors.New("skip file")
 )
-
-// BackupWriter collects a plaintext tree through the TreeWriter methods and
-// commits it on Close.
-type BackupWriter struct {
-	store     ObjectStore
-	backupSet string
-	*backupTree
-}
-
-var _ TreeWriter = (*BackupWriter)(nil)
-
-// Close stores the collected tree and a commit pointing at it.
-func (br *BackupWriter) Close(ctx context.Context) error {
-	tree, err := PutTree(ctx, br.store, br.sortedNodes(), nil, nil)
-	if err != nil {
-		return errors.Wrap(err, "Failed to store backup tree")
-	}
-
-	commit := proto.NewObject(&proto.Commit{
-		Timestamp: time.Now().Unix(),
-		Tree:      tree,
-		BackupSet: br.backupSet,
-	})
-
-	err = br.store.Put(ctx, commit)
-
-	return errors.Wrap(err, "Failed to store commit")
-}
-
-// NewBackupWriter returns a writer that commits into backupSet.
-func NewBackupWriter(store ObjectStore, backupSet string) *BackupWriter {
-	return &BackupWriter{
-		store:      store,
-		backupTree: newTree(store),
-		backupSet:  backupSet,
-	}
-}
 
 // BackupReader reads the files and trees of a commit back from a store.
 type BackupReader struct {

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
@@ -28,27 +27,43 @@ import (
 // m maps index rows to what the callers speak; one value for the package.
 var m = gen.MapperImpl{}
 
-// Stamp assigns the receipt time and set id to a commit or pin that has
-// none yet.
+// Stamp assigns the receipt time to a commit or pin and the set id to a
+// commit, replacing whatever they carried.
 func (x *Index) Stamp(ctx context.Context, object *proto.Object) error {
-	if object.ReceivedAtNs() != 0 {
+	commit := object.GetCommit()
+	if commit == nil && object.GetPin() == nil {
 		return nil
 	}
 
 	var setID int64
-	if commit := object.GetCommit(); commit != nil {
+	if commit != nil {
 		var err error
 		setID, err = x.ensureSet(ctx, x.client, commit, nil, true)
 		if err != nil {
 			return err
 		}
-
-		if commit.GetSetId() != 0 && commit.GetSetId() != uint64(setID) {
-			return fmt.Errorf("%w: commit names set %d, %q is set %d", auth.ErrForbidden, commit.GetSetId(), commit.GetBackupSet(), setID)
-		}
 	}
 
-	object.Stamp(uint64(setID), x.now())
+	object.Stamp(uint64(setID), x.stamp())
+
+	return nil
+}
+
+// seedStamp continues the receipt clock from the newest commit, so stamps
+// stay strictly increasing across restarts and clock steps.
+func (x *Index) seedStamp(ctx context.Context) error {
+	newest, err := x.client.CommitRow.Query().Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
+	if ent.IsNotFound(err) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	x.stampMu.Lock()
+	x.lastStamp = newest.ReceivedAt.UTC()
+	x.stampMu.Unlock()
 
 	return nil
 }
@@ -221,10 +236,6 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		}
 
 		if err == nil && !at.After(newest.ReceivedAt) {
-			if strict {
-				return fmt.Errorf("%w: %x received %s, newest %s", backup.ErrOutOfOrder, ref.Hash, at, newest.ReceivedAt)
-			}
-
 			x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", at, "newest", newest.ReceivedAt)
 			return nil
 		}
@@ -743,7 +754,7 @@ func (x *Index) ReIndex(ctx context.Context) error {
 			return err
 		}
 
-		err = x.EvaluateSet(ctx, setID)
+		err = x.reevaluateSet(ctx, setID)
 		if err != nil {
 			return err
 		}
@@ -815,10 +826,6 @@ func (x *Index) Reachable(ctx context.Context, sets []string, ref *proto.Ref) (b
 	return x.client.SetRef.Query().Where(setref.Ref(ref.GetHash()), setref.HasSetWith(set.NameIn(sets...))).Exist(ctx)
 }
 
-func (x *Index) callerSet(ctx context.Context, backupSet string) (int64, error) {
-	return findSet(ctx, x.client, backupSet)
-}
-
 // liveCommit is the condition under which a commits row is offered.
 func liveCommit() predicate.CommitRow {
 	return commitrow.And(commitrow.TombstonedAtIsNil(), commitrow.RetireAtIsNil(), commitrow.DeletedAtIsNil())
@@ -845,7 +852,7 @@ func liveCommitColumns(c *entsql.SelectTable) *entsql.Predicate {
 // FileInfo lists the versions of a path that a live commit of the set
 // contains, newest first.
 func (x *Index) FileInfo(ctx context.Context, backupSet string, name string, notAfter time.Time, count int) ([]*proto.TreeNode, error) {
-	setID, err := x.callerSet(ctx, backupSet)
+	setID, err := findSet(ctx, x.client, backupSet)
 	if errors.Is(err, backup.ErrNotFound) {
 		return nil, nil
 	}
@@ -866,7 +873,7 @@ func (x *Index) FileInfo(ctx context.Context, backupSet string, name string, not
 
 // CommitInfo lists the live, complete commits of a set, newest first.
 func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*proto.Commit, error) {
-	setID, err := x.callerSet(ctx, backupSet)
+	setID, err := findSet(ctx, x.client, backupSet)
 	if errors.Is(err, backup.ErrNotFound) {
 		return nil, nil
 	}
@@ -888,7 +895,7 @@ func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 // LatestCommit returns the set's newest commit without a tombstone,
 // partial or not, or backup.ErrNotFound.
 func (x *Index) LatestCommit(ctx context.Context, backupSet string) (*proto.Ref, error) {
-	setID, err := x.callerSet(ctx, backupSet)
+	setID, err := findSet(ctx, x.client, backupSet)
 	if err != nil {
 		return nil, err
 	}

@@ -189,7 +189,7 @@ func (f *fixture) index() *Index {
 	return x
 }
 
-// presence builds the filters the goroutine used to build after a Put.
+// presence builds the presence filters of commits still without one.
 func (f *fixture) presence() {
 	f.t.Helper()
 	_, err := f.x.BuildPendingPresence(f.ctx)

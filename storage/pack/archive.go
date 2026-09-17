@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
-	"os"
 	"path"
 	"sort"
 	"sync"
@@ -60,12 +59,6 @@ func checkArchiveHeader(hdr []byte) error {
 	return nil
 }
 
-// verifyStored checks a stored object against its header without decoding
-// it.
-func verifyStored(hdr *proto.ObjectHeader, stored []byte) error {
-	return proto.VerifyStored(hdr, stored)
-}
-
 type readFile interface {
 	io.ReadSeeker
 	io.Closer
@@ -73,23 +66,6 @@ type readFile interface {
 
 type writeFile interface {
 	io.WriteCloser
-}
-
-//go:generate go run github.com/vektra/mockery/v2 --name fileInfo --inpackage --testonly --outpkg pack
-type fileInfo interface {
-	os.FileInfo
-}
-
-//go:generate go run github.com/vektra/mockery/v2 --name readerAt --inpackage --testonly --outpkg pack
-type readerAt interface {
-	readFile
-	io.ReaderAt
-}
-
-//go:generate go run github.com/vektra/mockery/v2 --name writerTo --inpackage --testonly --outpkg pack
-type writerTo interface {
-	File
-	io.WriterTo
 }
 
 type archive struct {
@@ -379,18 +355,6 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 	}
 
 	return obj, nil
-}
-
-func (a *archive) Put(ctx context.Context, object *proto.Object) error {
-	ctx, span := tracer.Start(ctx, "archive.Put")
-	defer span.End()
-
-	hdr, stored, err := proto.HeaderFor(object)
-	if err != nil {
-		return err
-	}
-
-	return a.putRaw(ctx, hdr, stored)
 }
 
 func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref, erase bool) error {

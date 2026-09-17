@@ -23,9 +23,8 @@ import (
 )
 
 const (
-	IndexOpenerThreads = 10
+	indexOpenerThreads = 10
 	ArchiveSuffix      = ".goback"
-	ArchivePattern     = "*" + ArchiveSuffix
 	IndexExt           = ".idx"
 	varIntMaxSize      = 10
 )
@@ -687,7 +686,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		return nil, err
 	}
 
-	if !known && ParsePlacement(name).Kind == PlacementSession && !ps.hasIndexFile(name) {
+	if !known && ParsePlacement(name).Session != "" && !ps.hasIndexFile(name) {
 		ps.logger.Info("deleting archive of an unfinished session", "archive", name)
 		ps.deleteArchiveFiles(name)
 
@@ -793,13 +792,6 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 	return writer(ws.archive)
 }
 
-func (ps *PackStorage) withReadLock(do func()) {
-	ps.mtx.RLock()
-	defer ps.mtx.RUnlock()
-
-	do()
-}
-
 // Close implements backup.ObjectStore.
 func (ps *PackStorage) Close() error {
 	err := ps.Flush()
@@ -833,7 +825,7 @@ func (ps *PackStorage) Open() error {
 		return errors.Wrap(err, "failed listing archive names")
 	}
 
-	sem := semaphore.NewWeighted(IndexOpenerThreads)
+	sem := semaphore.NewWeighted(indexOpenerThreads)
 	group, ctx := errgroup.WithContext(context.Background())
 
 	for _, match := range matches {
@@ -861,8 +853,6 @@ func (ps *PackStorage) Open() error {
 }
 
 // File is one archive, index or gc file held by an ArchiveStorage.
-//
-//go:generate go run github.com/vektra/mockery/v2 --name File --inpackage --testonly --outpkg pack
 type File interface {
 	io.Reader
 	io.Writer
@@ -874,8 +864,6 @@ type File interface {
 
 // ArchiveStorage holds a store's files under slash-separated names; Open of
 // a missing name is ErrFileNotFound.
-//
-//go:generate go run github.com/vektra/mockery/v2 --name ArchiveStorage --inpackage --testonly --outpkg pack
 type ArchiveStorage interface {
 	Create(name string) (File, error)
 	Open(name string) (File, error)

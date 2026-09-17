@@ -37,7 +37,7 @@ message BackupSet {
     uint64 id = 1;
     string name = 2;
     string agent_id = 3;
-    // active or deleted
+    // active, closing or deleted
     string state = 4;
     // the logical size of the newest live commit
     int64 logical_size = 5;

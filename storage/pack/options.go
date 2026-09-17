@@ -59,8 +59,8 @@ type PackOption func(p *packOptions)
 
 // CompactionConfig tunes Compact; when it runs is the caller's business.
 type CompactionConfig struct {
-	// MinimumCandidates is how many eligible archives a placement group
-	// needs before Compact rewrites it.
+	// MinimumCandidates is how many eligible archives Compact needs before
+	// it rewrites them.
 	MinimumCandidates int
 }
 

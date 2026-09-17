@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -22,7 +23,8 @@ type Runner struct {
 	// Stdout and Stderr receive the hooks' output; nil means the process's.
 	Stdout io.Writer
 	Stderr io.Writer
-	Logf   func(format string, args ...interface{})
+	// Logger is where the runner reports; nil means slog.Default.
+	Logger *slog.Logger
 }
 
 // RunPre runs the pre hook and returns what it printed to stdout.
@@ -48,9 +50,7 @@ func (r *Runner) run(ctx context.Context, name, command string) (string, error) 
 		defer cancel()
 	}
 
-	if r.Logf != nil {
-		r.Logf("Running %s hook: %s", name, command)
-	}
+	r.logger().Info("running hook", "hook", name, "command", command)
 
 	var out bytes.Buffer
 
@@ -91,4 +91,12 @@ func (r *Runner) writer(w io.Writer, fallback io.Writer) io.Writer {
 	}
 
 	return fallback
+}
+
+func (r *Runner) logger() *slog.Logger {
+	if r.Logger != nil {
+		return r.Logger
+	}
+
+	return slog.Default()
 }

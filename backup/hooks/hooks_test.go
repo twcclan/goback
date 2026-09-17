@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os/exec"
 	"runtime"
 	"testing"
@@ -23,13 +24,14 @@ func commands() (echo, fail, hang string) {
 func TestRunPreCapturesOutput(t *testing.T) {
 	echo, _, _ := commands()
 
-	var stdout bytes.Buffer
-	r := &Runner{Pre: echo, Stdout: &stdout}
+	var stdout, logged bytes.Buffer
+	r := &Runner{Pre: echo, Stdout: &stdout, Logger: slog.New(slog.NewTextHandler(&logged, nil))}
 
 	out, err := r.RunPre(context.Background())
 	require.NoError(t, err)
 	require.Contains(t, out, "hello")
 	require.Contains(t, stdout.String(), "hello", "output is echoed as well as captured")
+	require.Contains(t, logged.String(), "hook=pre")
 }
 
 func TestRunPreReportsFailure(t *testing.T) {

@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto index.proto object.proto pin.proto presence.proto ref.proto tree.proto
+//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto file.proto object.proto pin.proto presence.proto ref.proto tree.proto
 
 import (
 	"bytes"
@@ -58,21 +58,6 @@ func decompressedBytes(compressed []byte) ([]byte, error) {
 	}
 
 	return b, reader.Close()
-}
-
-// Bytes marshals the index.
-func (i *Index) Bytes() []byte {
-	return Bytes(i)
-}
-
-// CompressedBytes marshals and gzips the index.
-func (i *Index) CompressedBytes() []byte {
-	return CompressedBytes(i)
-}
-
-// Size is the marshaled size of a message.
-func Size(msg pb.Message) int {
-	return pb.Size(msg)
 }
 
 // EncodeVarint appends x as a protobuf varint.
@@ -150,23 +135,6 @@ func NewObjectFromBytes(bytes []byte) (*Object, error) {
 	obj := new(Object)
 
 	return obj, pb.Unmarshal(bytes, obj)
-}
-
-// NewIndexFromCompressedBytes decodes an index written by CompressedBytes.
-func NewIndexFromCompressedBytes(bytes []byte) (*Index, error) {
-	b, err := decompressedBytes(bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewIndexFromBytes(b)
-}
-
-// NewIndexFromBytes decodes an index written by Bytes.
-func NewIndexFromBytes(bytes []byte) (*Index, error) {
-	idx := new(Index)
-
-	return idx, pb.Unmarshal(bytes, idx)
 }
 
 // GetFileInfo converts stat data into a FileInfo. Owner names and the

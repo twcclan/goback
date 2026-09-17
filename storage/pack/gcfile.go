@@ -20,7 +20,6 @@ const GCExt = ".gc"
 const (
 	gcStateName = "gc-state.json"
 	gcMagic     = "GOBACKGC_0002"
-	gcMagicV1   = "GOBACKGC_0001"
 )
 
 // gcState is the store's record of its last completed generation.
@@ -144,8 +143,7 @@ func (g *gcFile) ReadFrom(r io.Reader) (int64, error) {
 		return cr.count, err
 	}
 
-	v1 := bytes.Equal(magic, []byte(gcMagicV1))
-	if !v1 && !bytes.Equal(magic, []byte(gcMagic)) {
+	if !bytes.Equal(magic, []byte(gcMagic)) {
 		return cr.count, errors.New("bad gc file magic")
 	}
 
@@ -153,12 +151,7 @@ func (g *gcFile) ReadFrom(r io.Reader) (int64, error) {
 	var hasPrevious, erase uint8
 	var dead uint32
 
-	fields := []interface{}{&g.Generation, &snapshot, &g.DeadObjects, &g.DeadBytes, &deadSince, &hasPrevious, &erase, &dead}
-	if v1 {
-		fields = []interface{}{&g.Generation, &snapshot, &g.DeadObjects, &g.DeadBytes, &deadSince, &hasPrevious, &dead}
-	}
-
-	for _, v := range fields {
+	for _, v := range []interface{}{&g.Generation, &snapshot, &g.DeadObjects, &g.DeadBytes, &deadSince, &hasPrevious, &erase, &dead} {
 		if err := binary.Read(cr, binary.BigEndian, v); err != nil {
 			return cr.count, err
 		}

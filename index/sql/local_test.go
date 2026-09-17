@@ -31,10 +31,15 @@ func newLocalIndex(t *testing.T) *localIndex {
 	return &localIndex{t: t, ctx: auth.WithPrincipal(context.Background(), &auth.Principal{AgentID: "local"}), x: x}
 }
 
-// commit writes a commit with one file; a non-zero receivedAt replays a
-// commit that already carries a receipt time.
+// commit writes a commit with one file; a non-zero receivedAt is the
+// index clock at receipt.
 func (l *localIndex) commit(set, name string, timestamp, receivedAt int64, content string) *proto.Ref {
 	l.t.Helper()
+
+	if receivedAt != 0 {
+		l.x.Now = func() time.Time { return time.Unix(0, receivedAt) }
+		defer func() { l.x.Now = nil }()
+	}
 
 	blob := proto.NewObject(&proto.Blob{Data: []byte(content)})
 	require.NoError(l.t, l.x.Put(l.ctx, blob))
@@ -48,7 +53,7 @@ func (l *localIndex) commit(set, name string, timestamp, receivedAt int64, conte
 	}}})
 	require.NoError(l.t, l.x.Put(l.ctx, tree))
 
-	commit := proto.NewObject(&proto.Commit{Timestamp: timestamp, Tree: tree.Ref(), BackupSet: set, ReceivedAtNs: receivedAt})
+	commit := proto.NewObject(&proto.Commit{Timestamp: timestamp, Tree: tree.Ref(), BackupSet: set})
 	require.NoError(l.t, l.x.Put(l.ctx, commit))
 	_, err := l.x.BuildPendingPresence(l.ctx)
 	require.NoError(l.t, err)

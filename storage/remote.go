@@ -119,12 +119,8 @@ func (r *Client) CommitInfo(ctx context.Context, set string, notAfter time.Time,
 	return response.Commits, nil
 }
 
-// ReIndex implements backup.Index.
-func (r *Client) ReIndex(ctx context.Context) error {
-	ctx = r.outgoing(ctx)
-
-	return errors.New("not supported")
-}
+// ReIndex is not offered by the server.
+func (r *Client) ReIndex(context.Context) error { return backup.ErrNotImplemented }
 
 // LatestCommit implements backup.Index.
 func (r *Client) LatestCommit(ctx context.Context, set string) (*proto.Ref, error) {
@@ -227,8 +223,7 @@ func (r *Client) put(ctx context.Context, object *proto.Object, assumed []*proto
 	return resp.Missing, nil
 }
 
-// Presence implements backup.PresenceSource; a server without the RPC
-// yields no filters.
+// Presence implements backup.PresenceSource.
 func (r *Client) Presence(ctx context.Context, set string) (presence.Set, error) {
 	ctx = r.outgoing(ctx)
 
@@ -249,10 +244,6 @@ func (r *Client) Presence(ctx context.Context, set string) (presence.Set, error)
 		resp, err := stream.Recv()
 		if err == io.EOF {
 			break
-		}
-
-		if status.Code(err) == codes.Unimplemented {
-			return nil, nil
 		}
 
 		if err != nil {
@@ -443,9 +434,6 @@ type Server struct {
 	store *Store
 }
 
-// Store is the store the server serves.
-func (r *Server) Store() *Store { return r.store }
-
 // BeginCommit implements proto.StoreServer.
 func (r *Server) BeginCommit(ctx context.Context, request *proto.BeginCommitRequest) (*proto.BeginCommitResponse, error) {
 	grant, err := r.store.BeginCommit(ctx, request.BackupSet)
@@ -554,7 +542,7 @@ func ToStatus(err error) error {
 	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetOwned), errors.Is(err, backup.ErrSetClosed),
-		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit), errors.Is(err, backup.ErrOutOfOrder),
+		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit),
 		errors.Is(err, backup.ErrPinned), errors.Is(err, backup.ErrNoSession), errors.Is(err, backup.ErrCommitDenied):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, backup.ErrNotImplemented):

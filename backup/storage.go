@@ -35,9 +35,6 @@ var (
 	ErrNewestCommit = errors.New("the newest commit of a set cannot be deleted")
 	// ErrPinned refuses the deletion of a commit a live pin holds.
 	ErrPinned = errors.New("commit is pinned")
-	// ErrOutOfOrder is returned for a commit received before the set's
-	// newest indexed commit.
-	ErrOutOfOrder = errors.New("commit is older than the set's newest commit")
 	// ErrCommitDenied is returned by BeginCommit when the store refuses the
 	// run, with the reason.
 	ErrCommitDenied = errors.New("commit refused")

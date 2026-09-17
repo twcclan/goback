@@ -20,6 +20,7 @@ import (
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
+	"github.com/twcclan/goback/storage/wrapped"
 
 	"github.com/urfave/cli"
 	"gocloud.dev/blob"
@@ -70,14 +71,11 @@ func StoreKey(c *cli.Context) *storekey.Key {
 
 // Unwrap peels caching and wrapping stores off until the innermost store.
 func Unwrap(store backup.ObjectStore) backup.ObjectStore {
-	for {
-		wrapper, ok := store.(interface{ Unwrap() backup.ObjectStore })
-		if !ok {
-			return store
-		}
-
-		store = wrapper.Unwrap()
+	for inner := wrapped.Unwrap(store); inner != nil; inner = wrapped.Unwrap(store) {
+		store = inner
 	}
+
+	return store
 }
 
 func createFolders(loc string) (string, error) {

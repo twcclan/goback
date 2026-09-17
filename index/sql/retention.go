@@ -144,8 +144,8 @@ func (x *Index) evaluateSet(ctx context.Context, tx *ent.Tx, setID int64, now ti
 	return nil
 }
 
-// EvaluateSet re-applies a set's policy, as after a policy change.
-func (x *Index) EvaluateSet(ctx context.Context, setID int64) error {
+// reevaluateSet re-applies a set's policy, as after a policy change.
+func (x *Index) reevaluateSet(ctx context.Context, setID int64) error {
 	return x.tx(ctx, func(tx *ent.Tx) error {
 		if _, err := x.lockSet(ctx, tx, setID); err != nil {
 			return err
@@ -210,7 +210,7 @@ func (x *Index) SetPolicy(ctx context.Context, name string, p *retention.Policy)
 		return err
 	}
 
-	return x.EvaluateSet(ctx, setID)
+	return x.reevaluateSet(ctx, setID)
 }
 
 func (x *Index) encodePolicy(p *retention.Policy) (*string, error) {

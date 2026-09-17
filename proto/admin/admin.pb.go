@@ -27,7 +27,7 @@ type BackupSet struct {
 	Id      uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	AgentId string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	// active or deleted
+	// active, closing or deleted
 	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	// the logical size of the newest live commit
 	LogicalSize   int64 `protobuf:"varint,5,opt,name=logical_size,json=logicalSize,proto3" json:"logical_size,omitempty"`

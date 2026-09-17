@@ -189,7 +189,7 @@ func (x *Index) evaluateAll(ctx context.Context) error {
 	}
 
 	for _, id := range ids {
-		if err := x.EvaluateSet(ctx, id); err != nil {
+		if err := x.reevaluateSet(ctx, id); err != nil {
 			return err
 		}
 	}

@@ -167,8 +167,7 @@ func TestRootTreeOrderIsDeterministic(t *testing.T) {
 	refs := make(map[string]bool)
 
 	for run := 0; run < 5; run++ {
-		store := newMemStore()
-		writer := NewBackupWriter(store, "set")
+		writer := newTree(newMemStore())
 
 		names := []string{"b", "a", "d", "c"}
 		rand.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -66,6 +67,9 @@ type Index struct {
 	Now func() time.Time
 	// Logger is where the index reports; nil means slog.Default.
 	Logger *slog.Logger
+
+	stampMu   sync.Mutex
+	lastStamp time.Time
 }
 
 func (x *Index) logger() *slog.Logger {
@@ -149,7 +153,7 @@ func (x *Index) Open() error {
 	x.db = db
 	x.client = client
 
-	return nil
+	return x.seedStamp(context.Background())
 }
 
 // migrationDialect names the migration directory of an ent dialect.
@@ -197,11 +201,6 @@ func (x *Index) Close() error {
 	return client.Close()
 }
 
-// Client is the ent client, for tests that inspect rows.
-func (x *Index) Client() *ent.Client {
-	return x.client
-}
-
 func (x *Index) now() time.Time {
 	now := time.Now()
 	if x.Now != nil {
@@ -211,6 +210,22 @@ func (x *Index) now() time.Time {
 	// Postgres keeps microseconds; a stamp that survives the round trip
 	// keeps a commit's hash stable
 	return now.UTC().Truncate(time.Microsecond)
+}
+
+// stamp is the clock for receipt times: strictly increasing, so two
+// commits of one set received within a microsecond stay ordered.
+func (x *Index) stamp() time.Time {
+	x.stampMu.Lock()
+	defer x.stampMu.Unlock()
+
+	now := x.now()
+	if !now.After(x.lastStamp) {
+		now = x.lastStamp.Add(time.Microsecond)
+	}
+
+	x.lastStamp = now
+
+	return now
 }
 
 // ping opens the first connection. On SQLite the connection's pragmas
