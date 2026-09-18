@@ -262,6 +262,24 @@ func RestoreSession(ctx context.Context, store backup.ObjectStore, set string, r
 	}, nil
 }
 
+// SalvageFlag turns --salvage on a restore command.
+var SalvageFlag = cli.BoolFlag{
+	Name:  "salvage",
+	Usage: "write what can be read when parts are missing, leaving holes, and report them",
+}
+
+// Salvage applies --salvage to the restorer and logs every hole it leaves.
+func Salvage(c *cli.Context, restorer *backup.Restorer) {
+	if !c.Bool("salvage") {
+		return
+	}
+
+	restorer.Salvage = true
+	restorer.OnHole = func(hole backup.Hole) {
+		log.Printf("missing %d bytes at offset %d of %s (%x)", hole.Length, hole.Offset, hole.Path, hole.Ref.GetHash())
+	}
+}
+
 // GetObjectStore opens the store the global --storage location names, or
 // exits.
 func GetObjectStore(c *cli.Context) backup.ObjectStore {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -47,7 +49,20 @@ const (
 	OutcomeSkipped
 	// OutcomeWouldWrite means a dry run would have written the file.
 	OutcomeWouldWrite
+	// OutcomeSalvaged means the file was written with holes where parts
+	// could not be read.
+	OutcomeSalvaged
 )
+
+// A Hole is a range of a salvaged file that no source could fill; the
+// restored file holds zeroes there.
+type Hole struct {
+	Path   string
+	Offset int64
+	Length int64
+	// Ref is the part that could not be read.
+	Ref *proto.Ref
+}
 
 // String implements fmt.Stringer.
 func (o Outcome) String() string {
@@ -60,6 +75,8 @@ func (o Outcome) String() string {
 		return "skipped"
 	case OutcomeWouldWrite:
 		return "would write"
+	case OutcomeSalvaged:
+		return "salvaged"
 	}
 
 	return "unknown"
@@ -71,6 +88,10 @@ type RestoreStats struct {
 	Written   int64
 	Unchanged int64
 	Skipped   int64
+	// Salvaged counts files written with holes, and MissingBytes the bytes
+	// of those holes.
+	Salvaged     int64
+	MissingBytes int64
 
 	BytesFromDestination int64
 	BytesFromSeeds       int64
@@ -114,6 +135,12 @@ type Restorer struct {
 	Verify bool
 	// DryRun reports what would change and writes nothing.
 	DryRun bool
+	// Salvage writes a file whose parts cannot all be read, leaving the
+	// unreadable ranges as zeroes, instead of failing it.
+	Salvage bool
+	// OnHole, when set, is called for every hole a salvaged file was left
+	// with, possibly from several goroutines at once.
+	OnHole func(Hole)
 
 	stats RestoreStats
 }
@@ -125,6 +152,8 @@ func (r *Restorer) Stats() RestoreStats {
 		Written:              atomic.LoadInt64(&r.stats.Written),
 		Unchanged:            atomic.LoadInt64(&r.stats.Unchanged),
 		Skipped:              atomic.LoadInt64(&r.stats.Skipped),
+		Salvaged:             atomic.LoadInt64(&r.stats.Salvaged),
+		MissingBytes:         atomic.LoadInt64(&r.stats.MissingBytes),
 		BytesFromDestination: atomic.LoadInt64(&r.stats.BytesFromDestination),
 		BytesFromSeeds:       atomic.LoadInt64(&r.stats.BytesFromSeeds),
 		BytesFromCache:       atomic.LoadInt64(&r.stats.BytesFromCache),
@@ -221,9 +250,14 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 		return 0, err
 	}
 
-	err = r.assemble(ctx, tmp, source, reader, matched, ref)
+	missing, err := r.assemble(ctx, tmp, source, reader, matched, ref)
+	if err == nil && len(missing) > 0 {
+		// a hole at the end would otherwise leave the file short
+		err = tmp.Truncate(reader.size())
+	}
+
 	if err == nil && r.Verify {
-		err = r.verifyWritten(tmp, reader)
+		err = r.verifyWritten(tmp, reader, missing)
 	}
 
 	if err == nil {
@@ -252,9 +286,31 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 		return 0, errors.Wrapf(err, "restoring %s", path)
 	}
 
+	if len(missing) > 0 {
+		r.reportHoles(path, reader, missing)
+		r.countFile(ctx, OutcomeSalvaged)
+
+		return OutcomeSalvaged, nil
+	}
+
 	r.countFile(ctx, OutcomeWritten)
 
 	return OutcomeWritten, nil
+}
+
+// reportHoles counts the parts a salvaged file went without and hands each
+// one to OnHole.
+func (r *Restorer) reportHoles(path string, reader *fileReader, missing []int) {
+	atomic.AddInt64(&r.stats.Salvaged, 1)
+
+	for _, i := range missing {
+		part := reader.parts[i]
+		atomic.AddInt64(&r.stats.MissingBytes, int64(part.Length))
+
+		if r.OnHole != nil {
+			r.OnHole(Hole{Path: path, Offset: int64(part.Offset), Length: int64(part.Length), Ref: part.Ref})
+		}
+	}
 }
 
 // replace renames tmp over path and makes the rename durable; a read-only
@@ -333,9 +389,19 @@ func (r *Restorer) verifyParts(file *os.File, reader *fileReader) []bool {
 	return matched
 }
 
-// verifyWritten rehashes every part of the assembled file.
-func (r *Restorer) verifyWritten(file *os.File, reader *fileReader) error {
+// verifyWritten rehashes every part of the assembled file, except the
+// holes a salvage left.
+func (r *Restorer) verifyWritten(file *os.File, reader *fileReader, missing []int) error {
+	holes := make(map[int]bool, len(missing))
+	for _, i := range missing {
+		holes[i] = true
+	}
+
 	for i, part := range reader.parts {
+		if holes[i] {
+			continue
+		}
+
 		buf := make([]byte, part.Length)
 
 		if _, err := file.ReadAt(buf, int64(part.Offset)); err != nil {
@@ -395,8 +461,9 @@ func otherMode(mode proto.Encryption) proto.Encryption {
 }
 
 // assemble writes every part at its offset: matched parts are copied from
-// source, the rest come from the seeds, the cache or the store.
-func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched []bool, ref *proto.Ref) error {
+// source, the rest come from the seeds, the cache or the store. It returns
+// the parts no source held, which is empty unless Salvage is set.
+func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched []bool, ref *proto.Ref) ([]int, error) {
 	var fromStore []int
 
 	for i, part := range reader.parts {
@@ -404,7 +471,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 
 		if part.Ref == nil {
 			if _, err := dst.WriteAt(reader.inline, 0); err != nil {
-				return err
+				return nil, err
 			}
 
 			r.countBytes(ctx, &r.stats.BytesFromStore, "store", int64(len(reader.inline)))
@@ -415,11 +482,11 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 		if matched != nil && matched[i] {
 			buf := make([]byte, part.Length)
 			if _, err := source.ReadAt(buf, offset); err != nil {
-				return errors.Wrapf(err, "rereading part %d of %s", i, source.Name())
+				return nil, errors.Wrapf(err, "rereading part %d of %s", i, source.Name())
 			}
 
 			if _, err := dst.WriteAt(buf, offset); err != nil {
-				return err
+				return nil, err
 			}
 
 			r.countBytes(ctx, &r.stats.BytesFromDestination, "destination", int64(part.Length))
@@ -430,7 +497,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 		if r.Seeds != nil {
 			if buf, ok := r.Seeds.read(part); ok && r.matches(reader, i, buf) {
 				if _, err := dst.WriteAt(buf, offset); err != nil {
-					return err
+					return nil, err
 				}
 
 				r.countBytes(ctx, &r.stats.BytesFromSeeds, "seed", int64(part.Length))
@@ -444,7 +511,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 				data, err := reader.openPart(i, part, obj)
 				if err == nil {
 					if _, err := dst.WriteAt(data, offset); err != nil {
-						return err
+						return nil, err
 					}
 
 					r.countBytes(ctx, &r.stats.BytesFromCache, "cache", int64(len(data)))
@@ -460,12 +527,19 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 	}
 
 	if len(fromStore) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	if parts, ok := r.Store.(PartReader); ok {
-		return r.stream(ctx, parts, dst, reader, fromStore, ref)
+	// a stream reports the file, not the part, so salvage asks for each
+	// part on its own and learns exactly which ones are gone
+	if parts, ok := r.Store.(PartReader); ok && !r.Salvage {
+		return nil, r.stream(ctx, parts, dst, reader, fromStore, ref)
 	}
+
+	var (
+		mu      sync.Mutex
+		missing []int
+	)
 
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(r.workers())
@@ -476,6 +550,14 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 
 			obj, err := r.Store.Get(gctx, part.Ref)
 			if err != nil {
+				if r.Salvage && errors.Is(err, ErrNotFound) {
+					mu.Lock()
+					missing = append(missing, i)
+					mu.Unlock()
+
+					return nil
+				}
+
 				return errors.Wrapf(err, "part %d (%x) of file %x", i, part.Ref.Hash, reader.fileRef())
 			}
 
@@ -483,7 +565,13 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 		})
 	}
 
-	return grp.Wait()
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	sort.Ints(missing)
+
+	return missing, nil
 }
 
 // stream fetches the wanted parts through one ReadParts call, skipping

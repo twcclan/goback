@@ -417,3 +417,79 @@ func TestRestoreFileStreamsPartsFromPartReader(t *testing.T) {
 		})
 	}
 }
+
+// zeroed returns data with the parts' ranges blanked, which is what a
+// salvaged file holds where its holes are.
+func zeroed(data []byte, parts ...*proto.FilePart) []byte {
+	want := append([]byte(nil), data...)
+	for _, part := range parts {
+		copy(want[part.Offset:part.Offset+part.Length], make([]byte, part.Length))
+	}
+
+	return want
+}
+
+func TestSalvageWritesWhatItCanAndNamesTheHoles(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newMemStore()
+
+			data := randomData(5*maxBlobSize+99, 11)
+			ref := putFile(t, store, key, data)
+
+			obj, err := store.Get(ctx, ref)
+			require.NoError(t, err)
+
+			parts := obj.GetFile().GetParts()
+			require.Greater(t, len(parts), 3)
+
+			// one hole in the middle and one at the end, which would leave
+			// the file short if it were not filled
+			lost := []*proto.FilePart{parts[1], parts[len(parts)-1]}
+			for _, part := range lost {
+				require.NoError(t, store.Delete(ctx, part.Ref))
+			}
+
+			path := filepath.Join(t.TempDir(), "world.dat")
+
+			var holes []Hole
+			restorer := &Restorer{Store: store, Key: key, Salvage: true, Verify: true, OnHole: func(h Hole) { holes = append(holes, h) }}
+
+			outcome, err := restorer.RestoreFile(ctx, path, statFor(data), ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeSalvaged, outcome)
+			require.Len(t, holes, 2)
+			require.EqualValues(t, lost[0].Offset, holes[0].Offset)
+			require.EqualValues(t, lost[1].Length, holes[1].Length)
+
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(zeroed(data, lost...), got), "only the missing parts are blank")
+
+			stats := restorer.Stats()
+			require.EqualValues(t, 1, stats.Salvaged)
+			require.EqualValues(t, lost[0].Length+lost[1].Length, stats.MissingBytes)
+		})
+	}
+}
+
+func TestAMissingPartFailsTheFileWithoutSalvage(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+
+	data := randomData(3*maxBlobSize, 12)
+	ref := putFile(t, store, nil, data)
+
+	obj, err := store.Get(ctx, ref)
+	require.NoError(t, err)
+	require.NoError(t, store.Delete(ctx, obj.GetFile().GetParts()[1].Ref))
+
+	path := filepath.Join(t.TempDir(), "world.dat")
+
+	_, err = (&Restorer{Store: store}).RestoreFile(ctx, path, statFor(data), ref)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	_, err = os.Stat(path)
+	require.True(t, os.IsNotExist(err), "nothing is left behind")
+}

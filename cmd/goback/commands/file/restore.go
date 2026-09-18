@@ -82,6 +82,8 @@ func restoreAction(c *cli.Context) {
 		DryRun:  c.Bool("dry-run"),
 	}
 
+	common.Salvage(c, restorer)
+
 	if c.String("overwrite") == "if-changed" {
 		restorer.Overwrite = backup.OverwriteIfChanged
 	}
@@ -147,5 +149,6 @@ var restoreCmd = cli.Command{
 			Usage: "parts fetched at once",
 			Value: 32,
 		},
+		common.SalvageFlag,
 	},
 }

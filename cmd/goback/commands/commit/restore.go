@@ -55,6 +55,7 @@ func (c *commit) restore() error {
 
 	restored := map[string]bool{}
 	var dirs []restoredDir
+	var unrestored int
 
 	err = c.reader.WalkTree(c.ctx, tree, parent, func(path string, info os.FileInfo, ref *proto.Ref) error {
 		path = filepath.Join(c.base, path)
@@ -86,7 +87,15 @@ func (c *commit) restore() error {
 
 		outcome, err := c.restorer.RestoreFile(c.ctx, path, stat, ref)
 		if err != nil {
-			return err
+			// a salvage restores what it can and reports the rest
+			if !c.restorer.Salvage {
+				return err
+			}
+
+			unrestored++
+			log.Printf("cannot restore %s: %v", path, err)
+
+			return nil
 		}
 
 		if outcome != backup.OutcomeUnchanged && outcome != backup.OutcomeSkipped {
@@ -117,6 +126,10 @@ func (c *commit) restore() error {
 
 	logStats(c.restorer.Stats())
 
+	if unrestored > 0 {
+		log.Printf("%d files could not be restored at all", unrestored)
+	}
+
 	return nil
 }
 
@@ -142,6 +155,10 @@ func logStats(stats backup.RestoreStats) {
 		stats.Files, stats.Written, stats.Unchanged, stats.Skipped,
 		humanize.Bytes(uint64(stats.BytesFromDestination)), humanize.Bytes(uint64(stats.BytesFromSeeds)),
 		humanize.Bytes(uint64(stats.BytesFromCache)), humanize.Bytes(uint64(stats.BytesFromStore)))
+
+	if stats.Salvaged > 0 {
+		log.Printf("%d files salvaged with %s missing", stats.Salvaged, humanize.Bytes(uint64(stats.MissingBytes)))
+	}
 }
 
 // restoreSymlink recreates a link as recorded and never follows it.
@@ -291,6 +308,8 @@ func restoreAction(c *cli.Context) {
 		DryRun:    c.Bool("dry-run"),
 	}
 
+	common.Salvage(c, restorer)
+
 	if seeds := c.StringSlice("seed"); len(seeds) > 0 {
 		restorer.Seeds = backup.NewSeedMap(key)
 		for _, seed := range seeds {
@@ -351,6 +370,7 @@ var restoreFlags = []cli.Flag{
 		Usage: "parts fetched at once",
 		Value: 32,
 	},
+	common.SalvageFlag,
 }
 
 var restoreCmd = cli.Command{
