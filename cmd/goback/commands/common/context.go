@@ -2,11 +2,8 @@ package common
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/twcclan/goback/auth"
@@ -37,24 +34,4 @@ func AgentID(c *cli.Context) string {
 	host, _ := os.Hostname()
 
 	return host
-}
-
-// APIKey is what a goback:// store server is shown: the global
-// --api-key-file, else --api-key or GOBACK_API_KEY.
-func APIKey(c *cli.Context) (string, error) {
-	if path := c.GlobalString("api-key-file"); path != "" {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("reading the api key: %w", err)
-		}
-
-		return strings.TrimSpace(string(data)), nil
-	}
-
-	key := c.GlobalString("api-key")
-	if key == "" {
-		return "", errors.New("--api-key, --api-key-file or GOBACK_API_KEY is required for a goback:// store")
-	}
-
-	return key, nil
 }

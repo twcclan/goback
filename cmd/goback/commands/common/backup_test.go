@@ -2,10 +2,21 @@ package common
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func parse(t *testing.T, raw string) *url.URL {
+	t.Helper()
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	return u
+}
 
 func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {
 	for _, test := range []struct{ raw, want string }{
@@ -13,6 +24,7 @@ func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {
 		{"goback://store.example:8443", "store.example:8443"},
 		{"goback://127.0.0.1:8443", "127.0.0.1:8443"},
 		{"goback://[::1]:8443", "[::1]:8443"},
+		{"goback://gbk_abc-123_x@store.example:8443", "store.example:8443"},
 	} {
 		u, err := url.Parse(test.raw)
 		require.NoError(t, err)
@@ -21,11 +33,46 @@ func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {
 }
 
 func TestOnlyThePlaintextSchemeSkipsTLS(t *testing.T) {
-	require.Contains(t, storageDrivers, plaintextScheme, "the scheme reaches a store server")
+	require.Contains(t, storageDrivers, insecureScheme, "the scheme reaches a store server")
 
-	for _, raw := range []string{"goback://store.example", "goback+plaintext://localhost:6060"} {
+	for _, raw := range []string{"goback://store.example", "goback+insecure://localhost:6060"} {
 		u, err := url.Parse(raw)
 		require.NoError(t, err)
-		require.Equal(t, u.Scheme == plaintextScheme, raw == "goback+plaintext://localhost:6060", raw)
+		require.Equal(t, u.Scheme == insecureScheme, raw == "goback+insecure://localhost:6060", raw)
 	}
+}
+
+func TestTheUrlCarriesTheApiKey(t *testing.T) {
+	key, err := remoteKey(parse(t, "goback://gbk_abc-123_x@store.example:8443"))
+	require.NoError(t, err)
+	require.Equal(t, "gbk_abc-123_x", key)
+}
+
+func TestAKeyFileKeepsTheSecretOutOfTheUrl(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	require.NoError(t, os.WriteFile(path, []byte("gbk_from_the_file\n"), 0o600))
+
+	key, err := remoteKey(parse(t, "goback://store.example?key-file="+url.QueryEscape(path)))
+	require.NoError(t, err)
+	require.Equal(t, "gbk_from_the_file", key, "trimmed of the trailing newline an editor leaves")
+}
+
+func TestAKeyWithAPasswordAfterItIsRefused(t *testing.T) {
+	_, err := remoteKey(parse(t, "goback://gbk_abc:secret@store.example"))
+	require.ErrorContains(t, err, "no password")
+}
+
+func TestAStoreServerWithNoKeyAnywhereSaysWhereToPutOne(t *testing.T) {
+	_, err := remoteKey(parse(t, "goback://store.example"))
+	require.ErrorContains(t, err, "in front of the host")
+	require.ErrorContains(t, err, "key-file")
+}
+
+func TestAMisspelledParameterIsNotIgnored(t *testing.T) {
+	require.NoError(t, checkRemoteParams(parse(t, "goback://store.example?ca=root.crt&key-file=k")))
+
+	err := checkRemoteParams(parse(t, "goback://store.example?cacert=root.crt"))
+	require.ErrorContains(t, err, "cacert")
+	require.ErrorContains(t, err, "ca=", "the error names what the url does carry")
+	require.ErrorContains(t, err, "key-file=")
 }

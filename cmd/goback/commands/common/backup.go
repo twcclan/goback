@@ -2,12 +2,15 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/twcclan/goback/auth"
@@ -182,10 +185,16 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
 }
 
-// plaintextScheme names a store server reached without TLS, which puts
-// the api key and every object on the wire in the clear. It is for a
-// store on the same machine; anywhere else, goback:// is the scheme.
-const plaintextScheme = "goback+plaintext"
+// insecureScheme names a store server reached without TLS, which puts the
+// api key and every object on the wire in the clear. It is for a store on
+// the same machine; anywhere else, goback:// is the scheme.
+const insecureScheme = "goback+insecure"
+
+// remoteParams are the query parameters a goback:// URL may carry.
+var remoteParams = map[string]string{
+	"ca":       "a PEM certificate authority the store server must present",
+	"key-file": "a file holding the api key, for when the url itself would show it",
+}
 
 // remoteAddress is the address a goback:// URL dials, defaulting to the
 // store server's port.
@@ -198,24 +207,78 @@ func remoteAddress(u *url.URL) string {
 	return net.JoinHostPort(u.Hostname(), port)
 }
 
+// checkRemoteParams rejects a query parameter a goback:// URL does not
+// carry, so a misspelled one is a mistake rather than a silent default.
+func checkRemoteParams(u *url.URL) error {
+	for name := range u.Query() {
+		if _, ok := remoteParams[name]; !ok {
+			known := make([]string, 0, len(remoteParams))
+			for param, what := range remoteParams {
+				known = append(known, param+"= ("+what+")")
+			}
+
+			sort.Strings(known)
+
+			return fmt.Errorf("%q is not something a %s:// url carries; it takes %s", name, u.Scheme, strings.Join(known, " and "))
+		}
+	}
+
+	return nil
+}
+
+// remoteKey is the api key the URL carries in front of the host, else the
+// contents of the file its key-file parameter names.
+func remoteKey(u *url.URL) (string, error) {
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			return "", errors.New("a goback:// url carries the api key alone, with no password after it")
+		}
+
+		if key := u.User.Username(); key != "" {
+			return key, nil
+		}
+	}
+
+	path := u.Query().Get("key-file")
+	if path == "" {
+		return "", fmt.Errorf("a %s:// store needs an api key, in front of the host or in the file its key-file parameter names", u.Scheme)
+	}
+
+	key, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading the api key: %w", err)
+	}
+
+	return strings.TrimSpace(string(key)), nil
+}
+
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	if err := checkRemoteParams(u); err != nil {
+		return nil, err
+	}
+
 	addr := remoteAddress(u)
 
-	key, err := APIKey(c)
+	key, err := remoteKey(u)
 	if err != nil {
 		return nil, err
 	}
 
+	ca := u.Query().Get("ca")
 	creds := auth.Credentials{Secret: key, AgentID: AgentID(c)}
 
-	if u.Scheme == plaintextScheme {
+	if u.Scheme == insecureScheme {
+		if ca != "" {
+			return nil, fmt.Errorf("%s:// presents no certificate to check against %s", u.Scheme, ca)
+		}
+
 		log.Printf("Talking to %s without TLS; the api key and everything uploaded is readable on the way", addr)
 		creds.Plaintext = true
 
 		return storage.NewPlaintextClient(addr, creds)
 	}
 
-	tlsConfig, err := storage.ClientTLS(c.GlobalString("ca-cert"))
+	tlsConfig, err := storage.ClientTLS(ca)
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +321,10 @@ func indexDialect(scheme string) string {
 }
 
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":                 initPack,
-	"gcs":              initGCS,
-	"goback":           initRemote,
-	"goback+plaintext": initRemote,
+	"":                initPack,
+	"gcs":             initGCS,
+	"goback":          initRemote,
+	"goback+insecure": initRemote,
 }
 
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){

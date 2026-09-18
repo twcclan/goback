@@ -48,9 +48,10 @@ func main() {
 	}
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "storage",
-			Usage: "where the objects live: a directory, gcs://bucket, goback://host:port for a store server, or goback+plaintext://host:port for one on this machine with no TLS in front of it",
-			Value: "storage",
+			Name:   "storage",
+			Usage:  "where the objects live: a directory, gcs://bucket, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it",
+			Value:  "storage",
+			EnvVar: "GOBACK_STORAGE",
 		},
 		cli.StringFlag{
 			Name:  "index",
@@ -62,19 +63,6 @@ func main() {
 		cli.StringFlag{
 			Name:  "agent-id",
 			Usage: "identifier recorded in commits and presented to a goback:// store server; defaults to the hostname",
-		},
-		cli.StringFlag{
-			Name:   "api-key",
-			Usage:  "the token a goback:// store server accepts, whether its shared secret or an api key it issued",
-			EnvVar: "GOBACK_API_KEY",
-		},
-		cli.StringFlag{
-			Name:  "api-key-file",
-			Usage: "file holding the api key, for when a flag or the environment would show it",
-		},
-		cli.StringFlag{
-			Name:  "ca-cert",
-			Usage: "PEM certificate authority a goback:// store server must present; the system roots are trusted without it",
 		},
 		cli.StringFlag{
 			Name:  "store-key",
