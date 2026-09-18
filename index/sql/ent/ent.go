@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/twcclan/goback/index/sql/ent/archive"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/damagedpath"
 	"github.com/twcclan/goback/index/sql/ent/deletedref"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/object"
@@ -83,17 +84,18 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			archive.Table:    archive.ValidColumn,
-			commitrow.Table:  commitrow.ValidColumn,
-			deletedref.Table: deletedref.ValidColumn,
-			file.Table:       file.ValidColumn,
-			object.Table:     object.ValidColumn,
-			pin.Table:        pin.ValidColumn,
-			session.Table:    session.ValidColumn,
-			set.Table:        set.ValidColumn,
-			setref.Table:     setref.ValidColumn,
-			settings.Table:   settings.ValidColumn,
-			tree.Table:       tree.ValidColumn,
+			archive.Table:     archive.ValidColumn,
+			commitrow.Table:   commitrow.ValidColumn,
+			damagedpath.Table: damagedpath.ValidColumn,
+			deletedref.Table:  deletedref.ValidColumn,
+			file.Table:        file.ValidColumn,
+			object.Table:      object.ValidColumn,
+			pin.Table:         pin.ValidColumn,
+			session.Table:     session.ValidColumn,
+			set.Table:         set.ValidColumn,
+			setref.Table:      setref.ValidColumn,
+			settings.Table:    settings.ValidColumn,
+			tree.Table:        tree.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

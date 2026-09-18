@@ -88,6 +88,10 @@ type Walker struct {
 
 	filters   presence.Set
 	confirmer Confirmer
+	// rescan and damaged come from the commit grant: what the store lost
+	// and needs read again rather than assumed unchanged
+	rescan  bool
+	damaged map[string]bool
 	window    *chunkWindow
 	gate      *syncutil.Gate
 	trees     *treeSource
@@ -177,6 +181,8 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		w.adoptDamage(grant)
 	}
 
 	w.policyVersion = 0
@@ -480,7 +486,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 			index := i
 			stat := w.stat(info, "")
 
-			if w.reusable(childPath, info, stat, baseNode) {
+			if w.reusable(childPath, childRel, info, stat, baseNode) {
 				atomic.AddInt64(&w.result.Reused, 1)
 				node := &proto.TreeNode{Stat: stat, Ref: baseNode.Ref}
 				results[index] = node
@@ -589,8 +595,12 @@ func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, token []byte
 // reusable applies the change test: same metadata as the base node, older
 // than the base run, not contradicted by the stat cache, and not picked for
 // a sampled re-hash.
-func (w *Walker) reusable(path string, info os.FileInfo, stat *proto.FileInfo, baseNode *proto.TreeNode) bool {
+func (w *Walker) reusable(path, rel string, info os.FileInfo, stat *proto.FileInfo, baseNode *proto.TreeNode) bool {
 	if baseNode == nil || baseNode.Stat.GetType() != proto.NodeType_NODE_FILE || baseNode.Ref == nil {
+		return false
+	}
+
+	if w.lost(rel) {
 		return false
 	}
 
@@ -626,6 +636,11 @@ func (w *Walker) reusable(path string, info os.FileInfo, stat *proto.FileInfo, b
 func (w *Walker) backupFile(ctx context.Context, path, rel string, info os.FileInfo, baseNode *proto.TreeNode) (*proto.TreeNode, error) {
 	known := w.knownParts(ctx, rel, baseNode)
 	forced := map[string]struct{}{}
+
+	// nothing the store already holds may answer for a path it lost
+	if w.lost(rel) {
+		known, forced = nil, nil
+	}
 
 	var ref *proto.Ref
 	var err error
@@ -958,4 +973,29 @@ func (t *treeSource) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, er
 
 func (t *treeSource) load(ctx context.Context, ref *proto.Ref, parent []byte) (*proto.Tree, error) {
 	return OpenTree(ctx, t, ref, t.key, parent)
+}
+
+// adoptDamage takes what the store asked to be read again.
+func (w *Walker) adoptDamage(grant *CommitGrant) {
+	w.rescan = grant.Rescan
+	w.damaged = nil
+
+	if len(grant.Damaged) > 0 {
+		w.damaged = make(map[string]bool, len(grant.Damaged))
+		for _, path := range grant.Damaged {
+			w.damaged[path] = true
+		}
+	}
+
+	switch {
+	case w.rescan:
+		w.logger().Info("the store lost content it could not place, reading every file again", "set", w.Set)
+	case w.damaged != nil:
+		w.logger().Info("the store lost content at some paths, reading them again", "set", w.Set, "paths", len(w.damaged))
+	}
+}
+
+// lost reports whether the store asked for this path to be read again.
+func (w *Walker) lost(rel string) bool {
+	return w.rescan || w.damaged[IndexPath(w.Key, rel)]
 }

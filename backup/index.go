@@ -67,6 +67,13 @@ type CommitGrant struct {
 	// Policy is the store's write policy for this run; nil when the server
 	// holds none, which leaves the agent's key file in charge.
 	Policy *storekey.Policy
+	// Rescan asks the run to read every file again, because the store lost
+	// content it could not name a path for.
+	Rescan bool
+	// Damaged names the paths whose stored content the store lost. A run
+	// reads them again whatever its change detection says, and takes no
+	// chunk of theirs on trust.
+	Damaged []string
 }
 
 // CommitGate is asked before a run whether the caller may commit to a set.

@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/twcclan/goback/index/sql/ent/damagedpath"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
@@ -126,6 +127,20 @@ func (_u *SetUpdate) SetNillableErase(v *bool) *SetUpdate {
 	return _u
 }
 
+// SetRescan sets the "rescan" field.
+func (_u *SetUpdate) SetRescan(v bool) *SetUpdate {
+	_u.mutation.SetRescan(v)
+	return _u
+}
+
+// SetNillableRescan sets the "rescan" field if the given value is not nil.
+func (_u *SetUpdate) SetNillableRescan(v *bool) *SetUpdate {
+	if v != nil {
+		_u.SetRescan(*v)
+	}
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdate) AddFileIDs(ids ...int) *SetUpdate {
 	_u.mutation.AddFileIDs(ids...)
@@ -169,6 +184,21 @@ func (_u *SetUpdate) AddRefs(v ...*SetRef) *SetUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddRefIDs(ids...)
+}
+
+// AddDamagedIDs adds the "damaged" edge to the DamagedPath entity by IDs.
+func (_u *SetUpdate) AddDamagedIDs(ids ...int) *SetUpdate {
+	_u.mutation.AddDamagedIDs(ids...)
+	return _u
+}
+
+// AddDamaged adds the "damaged" edges to the DamagedPath entity.
+func (_u *SetUpdate) AddDamaged(v ...*DamagedPath) *SetUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddDamagedIDs(ids...)
 }
 
 // Mutation returns the SetMutation object of the builder.
@@ -237,6 +267,27 @@ func (_u *SetUpdate) RemoveRefs(v ...*SetRef) *SetUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveRefIDs(ids...)
+}
+
+// ClearDamaged clears all "damaged" edges to the DamagedPath entity.
+func (_u *SetUpdate) ClearDamaged() *SetUpdate {
+	_u.mutation.ClearDamaged()
+	return _u
+}
+
+// RemoveDamagedIDs removes the "damaged" edge to DamagedPath entities by IDs.
+func (_u *SetUpdate) RemoveDamagedIDs(ids ...int) *SetUpdate {
+	_u.mutation.RemoveDamagedIDs(ids...)
+	return _u
+}
+
+// RemoveDamaged removes "damaged" edges to DamagedPath entities.
+func (_u *SetUpdate) RemoveDamaged(v ...*DamagedPath) *SetUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveDamagedIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -311,6 +362,9 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Erase(); ok {
 		_spec.SetField(set.FieldErase, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Rescan(); ok {
+		_spec.SetField(set.FieldRescan, field.TypeBool, value)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -440,6 +494,51 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(setref.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DamagedCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedDamagedIDs(); len(nodes) > 0 && !_u.mutation.DamagedCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DamagedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -563,6 +662,20 @@ func (_u *SetUpdateOne) SetNillableErase(v *bool) *SetUpdateOne {
 	return _u
 }
 
+// SetRescan sets the "rescan" field.
+func (_u *SetUpdateOne) SetRescan(v bool) *SetUpdateOne {
+	_u.mutation.SetRescan(v)
+	return _u
+}
+
+// SetNillableRescan sets the "rescan" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillableRescan(v *bool) *SetUpdateOne {
+	if v != nil {
+		_u.SetRescan(*v)
+	}
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdateOne) AddFileIDs(ids ...int) *SetUpdateOne {
 	_u.mutation.AddFileIDs(ids...)
@@ -606,6 +719,21 @@ func (_u *SetUpdateOne) AddRefs(v ...*SetRef) *SetUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.AddRefIDs(ids...)
+}
+
+// AddDamagedIDs adds the "damaged" edge to the DamagedPath entity by IDs.
+func (_u *SetUpdateOne) AddDamagedIDs(ids ...int) *SetUpdateOne {
+	_u.mutation.AddDamagedIDs(ids...)
+	return _u
+}
+
+// AddDamaged adds the "damaged" edges to the DamagedPath entity.
+func (_u *SetUpdateOne) AddDamaged(v ...*DamagedPath) *SetUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddDamagedIDs(ids...)
 }
 
 // Mutation returns the SetMutation object of the builder.
@@ -674,6 +802,27 @@ func (_u *SetUpdateOne) RemoveRefs(v ...*SetRef) *SetUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveRefIDs(ids...)
+}
+
+// ClearDamaged clears all "damaged" edges to the DamagedPath entity.
+func (_u *SetUpdateOne) ClearDamaged() *SetUpdateOne {
+	_u.mutation.ClearDamaged()
+	return _u
+}
+
+// RemoveDamagedIDs removes the "damaged" edge to DamagedPath entities by IDs.
+func (_u *SetUpdateOne) RemoveDamagedIDs(ids ...int) *SetUpdateOne {
+	_u.mutation.RemoveDamagedIDs(ids...)
+	return _u
+}
+
+// RemoveDamaged removes "damaged" edges to DamagedPath entities.
+func (_u *SetUpdateOne) RemoveDamaged(v ...*DamagedPath) *SetUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveDamagedIDs(ids...)
 }
 
 // Where appends a list predicates to the SetUpdate builder.
@@ -778,6 +927,9 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 	}
 	if value, ok := _u.mutation.Erase(); ok {
 		_spec.SetField(set.FieldErase, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Rescan(); ok {
+		_spec.SetField(set.FieldRescan, field.TypeBool, value)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -907,6 +1059,51 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(setref.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DamagedCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedDamagedIDs(); len(nodes) > 0 && !_u.mutation.DamagedCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DamagedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

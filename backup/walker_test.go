@@ -29,6 +29,8 @@ type memIndex struct {
 	fetches   int64
 	gated     []string
 	putSetIDs []uint64
+	rescan    bool
+	damaged   []string
 
 	// versions are the file nodes FileInfo answers, newest first, by
 	// "<set>/<index path>"
@@ -91,7 +93,7 @@ func (m *memIndex) BeginCommit(_ context.Context, set string) (*CommitGrant, err
 
 	m.gated = append(m.gated, set)
 
-	return &CommitGrant{Policy: m.policy}, nil
+	return &CommitGrant{Policy: m.policy, Rescan: m.rescan, Damaged: m.damaged}, nil
 }
 
 func (m *memIndex) Put(ctx context.Context, obj *proto.Object) error {

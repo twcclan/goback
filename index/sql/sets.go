@@ -106,6 +106,11 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 		return nil, err
 	}
 
+	grant.Rescan, grant.Damaged, err = x.damage(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+
 	return grant, nil
 }
 

@@ -33,6 +33,18 @@ func (f CommitRowFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommitRowMutation", m)
 }
 
+// The DamagedPathFunc type is an adapter to allow the use of ordinary
+// function as DamagedPath mutator.
+type DamagedPathFunc func(context.Context, *ent.DamagedPathMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DamagedPathFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DamagedPathMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DamagedPathMutation", m)
+}
+
 // The DeletedRefFunc type is an adapter to allow the use of ordinary
 // function as DeletedRef mutator.
 type DeletedRefFunc func(context.Context, *ent.DeletedRefMutation) (ent.Value, error)

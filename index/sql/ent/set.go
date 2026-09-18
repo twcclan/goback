@@ -28,6 +28,8 @@ type Set struct {
 	RetentionPaused bool `json:"retention_paused,omitempty"`
 	// Erase holds the value of the "erase" field.
 	Erase bool `json:"erase,omitempty"`
+	// Rescan holds the value of the "rescan" field.
+	Rescan bool `json:"rescan,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SetQuery when eager-loading is set.
 	Edges        SetEdges `json:"edges"`
@@ -42,9 +44,11 @@ type SetEdges struct {
 	Trees []*Tree `json:"trees,omitempty"`
 	// Refs holds the value of the refs edge.
 	Refs []*SetRef `json:"refs,omitempty"`
+	// Damaged holds the value of the damaged edge.
+	Damaged []*DamagedPath `json:"damaged,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // FilesOrErr returns the Files value or an error if the edge
@@ -74,12 +78,21 @@ func (e SetEdges) RefsOrErr() ([]*SetRef, error) {
 	return nil, &NotLoadedError{edge: "refs"}
 }
 
+// DamagedOrErr returns the Damaged value or an error if the edge
+// was not loaded in eager-loading.
+func (e SetEdges) DamagedOrErr() ([]*DamagedPath, error) {
+	if e.loadedTypes[3] {
+		return e.Damaged, nil
+	}
+	return nil, &NotLoadedError{edge: "damaged"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Set) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case set.FieldRetentionPaused, set.FieldErase:
+		case set.FieldRetentionPaused, set.FieldErase, set.FieldRescan:
 			values[i] = new(sql.NullBool)
 		case set.FieldID:
 			values[i] = new(sql.NullInt64)
@@ -144,6 +157,12 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Erase = value.Bool
 			}
+		case set.FieldRescan:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field rescan", values[i])
+			} else if value.Valid {
+				_m.Rescan = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -170,6 +189,11 @@ func (_m *Set) QueryTrees() *TreeQuery {
 // QueryRefs queries the "refs" edge of the Set entity.
 func (_m *Set) QueryRefs() *SetRefQuery {
 	return NewSetClient(_m.config).QueryRefs(_m)
+}
+
+// QueryDamaged queries the "damaged" edge of the Set entity.
+func (_m *Set) QueryDamaged() *DamagedPathQuery {
+	return NewSetClient(_m.config).QueryDamaged(_m)
 }
 
 // Update returns a builder for updating this Set.
@@ -216,6 +240,9 @@ func (_m *Set) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("erase=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Erase))
+	builder.WriteString(", ")
+	builder.WriteString("rescan=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Rescan))
 	builder.WriteByte(')')
 	return builder.String()
 }

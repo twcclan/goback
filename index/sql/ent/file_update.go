@@ -241,6 +241,20 @@ func (_u *FileUpdate) ClearLinkTarget() *FileUpdate {
 	return _u
 }
 
+// SetLost sets the "lost" field.
+func (_u *FileUpdate) SetLost(v bool) *FileUpdate {
+	_u.mutation.SetLost(v)
+	return _u
+}
+
+// SetNillableLost sets the "lost" field if the given value is not nil.
+func (_u *FileUpdate) SetNillableLost(v *bool) *FileUpdate {
+	if v != nil {
+		_u.SetLost(*v)
+	}
+	return _u
+}
+
 // SetSet sets the "set" edge to the Set entity.
 func (_u *FileUpdate) SetSet(v *Set) *FileUpdate {
 	return _u.SetSetID(v.ID)
@@ -360,6 +374,9 @@ func (_u *FileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.LinkTargetCleared() {
 		_spec.ClearField(file.FieldLinkTarget, field.TypeBytes)
+	}
+	if value, ok := _u.mutation.Lost(); ok {
+		_spec.SetField(file.FieldLost, field.TypeBool, value)
 	}
 	if _u.mutation.SetCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -622,6 +639,20 @@ func (_u *FileUpdateOne) ClearLinkTarget() *FileUpdateOne {
 	return _u
 }
 
+// SetLost sets the "lost" field.
+func (_u *FileUpdateOne) SetLost(v bool) *FileUpdateOne {
+	_u.mutation.SetLost(v)
+	return _u
+}
+
+// SetNillableLost sets the "lost" field if the given value is not nil.
+func (_u *FileUpdateOne) SetNillableLost(v *bool) *FileUpdateOne {
+	if v != nil {
+		_u.SetLost(*v)
+	}
+	return _u
+}
+
 // SetSet sets the "set" edge to the Set entity.
 func (_u *FileUpdateOne) SetSet(v *Set) *FileUpdateOne {
 	return _u.SetSetID(v.ID)
@@ -771,6 +802,9 @@ func (_u *FileUpdateOne) sqlSave(ctx context.Context) (_node *File, err error) {
 	}
 	if _u.mutation.LinkTargetCleared() {
 		_spec.ClearField(file.FieldLinkTarget, field.TypeBytes)
+	}
+	if value, ok := _u.mutation.Lost(); ok {
+		_spec.SetField(file.FieldLost, field.TypeBool, value)
 	}
 	if _u.mutation.SetCleared() {
 		edge := &sqlgraph.EdgeSpec{

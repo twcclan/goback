@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/twcclan/goback/index/sql/ent/damagedpath"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
@@ -23,14 +24,15 @@ import (
 // SetQuery is the builder for querying Set entities.
 type SetQuery struct {
 	config
-	ctx        *QueryContext
-	order      []set.OrderOption
-	inters     []Interceptor
-	predicates []predicate.Set
-	withFiles  *FileQuery
-	withTrees  *TreeQuery
-	withRefs   *SetRefQuery
-	modifiers  []func(*sql.Selector)
+	ctx         *QueryContext
+	order       []set.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.Set
+	withFiles   *FileQuery
+	withTrees   *TreeQuery
+	withRefs    *SetRefQuery
+	withDamaged *DamagedPathQuery
+	modifiers   []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -126,6 +128,28 @@ func (_q *SetQuery) QueryRefs() *SetRefQuery {
 			sqlgraph.From(set.Table, set.FieldID, selector),
 			sqlgraph.To(setref.Table, setref.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, set.RefsTable, set.RefsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryDamaged chains the current query on the "damaged" edge.
+func (_q *SetQuery) QueryDamaged() *DamagedPathQuery {
+	query := (&DamagedPathClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(set.Table, set.FieldID, selector),
+			sqlgraph.To(damagedpath.Table, damagedpath.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, set.DamagedTable, set.DamagedColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -320,14 +344,15 @@ func (_q *SetQuery) Clone() *SetQuery {
 		return nil
 	}
 	return &SetQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]set.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.Set{}, _q.predicates...),
-		withFiles:  _q.withFiles.Clone(),
-		withTrees:  _q.withTrees.Clone(),
-		withRefs:   _q.withRefs.Clone(),
+		config:      _q.config,
+		ctx:         _q.ctx.Clone(),
+		order:       append([]set.OrderOption{}, _q.order...),
+		inters:      append([]Interceptor{}, _q.inters...),
+		predicates:  append([]predicate.Set{}, _q.predicates...),
+		withFiles:   _q.withFiles.Clone(),
+		withTrees:   _q.withTrees.Clone(),
+		withRefs:    _q.withRefs.Clone(),
+		withDamaged: _q.withDamaged.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -364,6 +389,17 @@ func (_q *SetQuery) WithRefs(opts ...func(*SetRefQuery)) *SetQuery {
 		opt(query)
 	}
 	_q.withRefs = query
+	return _q
+}
+
+// WithDamaged tells the query-builder to eager-load the nodes that are connected to
+// the "damaged" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *SetQuery) WithDamaged(opts ...func(*DamagedPathQuery)) *SetQuery {
+	query := (&DamagedPathClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withDamaged = query
 	return _q
 }
 
@@ -445,10 +481,11 @@ func (_q *SetQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Set, err
 	var (
 		nodes       = []*Set{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withFiles != nil,
 			_q.withTrees != nil,
 			_q.withRefs != nil,
+			_q.withDamaged != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -490,6 +527,13 @@ func (_q *SetQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Set, err
 		if err := _q.loadRefs(ctx, query, nodes,
 			func(n *Set) { n.Edges.Refs = []*SetRef{} },
 			func(n *Set, e *SetRef) { n.Edges.Refs = append(n.Edges.Refs, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withDamaged; query != nil {
+		if err := _q.loadDamaged(ctx, query, nodes,
+			func(n *Set) { n.Edges.Damaged = []*DamagedPath{} },
+			func(n *Set, e *DamagedPath) { n.Edges.Damaged = append(n.Edges.Damaged, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -571,6 +615,36 @@ func (_q *SetQuery) loadRefs(ctx context.Context, query *SetRefQuery, nodes []*S
 	}
 	query.Where(predicate.SetRef(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(set.RefsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SetID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "set_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *SetQuery) loadDamaged(ctx context.Context, query *DamagedPathQuery, nodes []*Set, init func(*Set), assign func(*Set, *DamagedPath)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Set)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(damagedpath.FieldSetID)
+	}
+	query.Where(predicate.DamagedPath(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(set.DamagedColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

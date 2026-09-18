@@ -38,6 +38,8 @@ const (
 	FieldType = "type"
 	// FieldLinkTarget holds the string denoting the link_target field in the database.
 	FieldLinkTarget = "link_target"
+	// FieldLost holds the string denoting the lost field in the database.
+	FieldLost = "lost"
 	// EdgeSet holds the string denoting the set edge name in mutations.
 	EdgeSet = "set"
 	// Table holds the table name of the file in the database.
@@ -67,6 +69,7 @@ var Columns = []string{
 	FieldSize,
 	FieldType,
 	FieldLinkTarget,
+	FieldLost,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -82,6 +85,8 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultType holds the default value on creation for the "type" field.
 	DefaultType uint32
+	// DefaultLost holds the default value on creation for the "lost" field.
+	DefaultLost bool
 )
 
 // OrderOption defines the ordering options for the File queries.
@@ -145,6 +150,11 @@ func BySize(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
+}
+
+// ByLost orders the results by the lost field.
+func ByLost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLost, opts...).ToFunc()
 }
 
 // BySetField orders the results by set field.

@@ -26,12 +26,16 @@ const (
 	FieldRetentionPaused = "retention_paused"
 	// FieldErase holds the string denoting the erase field in the database.
 	FieldErase = "erase"
+	// FieldRescan holds the string denoting the rescan field in the database.
+	FieldRescan = "rescan"
 	// EdgeFiles holds the string denoting the files edge name in mutations.
 	EdgeFiles = "files"
 	// EdgeTrees holds the string denoting the trees edge name in mutations.
 	EdgeTrees = "trees"
 	// EdgeRefs holds the string denoting the refs edge name in mutations.
 	EdgeRefs = "refs"
+	// EdgeDamaged holds the string denoting the damaged edge name in mutations.
+	EdgeDamaged = "damaged"
 	// Table holds the table name of the set in the database.
 	Table = "sets"
 	// FilesTable is the table that holds the files relation/edge.
@@ -55,6 +59,13 @@ const (
 	RefsInverseTable = "set_refs"
 	// RefsColumn is the table column denoting the refs relation/edge.
 	RefsColumn = "set_id"
+	// DamagedTable is the table that holds the damaged relation/edge.
+	DamagedTable = "damaged_paths"
+	// DamagedInverseTable is the table name for the DamagedPath entity.
+	// It exists in this package in order to avoid circular dependency with the "damagedpath" package.
+	DamagedInverseTable = "damaged_paths"
+	// DamagedColumn is the table column denoting the damaged relation/edge.
+	DamagedColumn = "set_id"
 )
 
 // Columns holds all SQL columns for set fields.
@@ -66,6 +77,7 @@ var Columns = []string{
 	FieldRetentionPolicy,
 	FieldRetentionPaused,
 	FieldErase,
+	FieldRescan,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -83,6 +95,8 @@ var (
 	DefaultRetentionPaused bool
 	// DefaultErase holds the default value on creation for the "erase" field.
 	DefaultErase bool
+	// DefaultRescan holds the default value on creation for the "rescan" field.
+	DefaultRescan bool
 )
 
 // State defines the type for the "state" enum field.
@@ -150,6 +164,11 @@ func ByErase(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldErase, opts...).ToFunc()
 }
 
+// ByRescan orders the results by the rescan field.
+func ByRescan(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRescan, opts...).ToFunc()
+}
+
 // ByFilesCount orders the results by files count.
 func ByFilesCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -191,6 +210,20 @@ func ByRefs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRefsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByDamagedCount orders the results by damaged count.
+func ByDamagedCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newDamagedStep(), opts...)
+	}
+}
+
+// ByDamaged orders the results by damaged terms.
+func ByDamaged(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDamagedStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newFilesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -210,5 +243,12 @@ func newRefsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RefsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, RefsTable, RefsColumn),
+	)
+}
+func newDamagedStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DamagedInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, DamagedTable, DamagedColumn),
 	)
 }

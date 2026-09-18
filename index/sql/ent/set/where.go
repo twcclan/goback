@@ -78,6 +78,11 @@ func Erase(v bool) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldErase, v))
 }
 
+// Rescan applies equality check predicate on the "rescan" field. It's identical to RescanEQ.
+func Rescan(v bool) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldRescan, v))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldName, v))
@@ -333,6 +338,16 @@ func EraseNEQ(v bool) predicate.Set {
 	return predicate.Set(sql.FieldNEQ(FieldErase, v))
 }
 
+// RescanEQ applies the EQ predicate on the "rescan" field.
+func RescanEQ(v bool) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldRescan, v))
+}
+
+// RescanNEQ applies the NEQ predicate on the "rescan" field.
+func RescanNEQ(v bool) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldRescan, v))
+}
+
 // HasFiles applies the HasEdge predicate on the "files" edge.
 func HasFiles() predicate.Set {
 	return predicate.Set(func(s *sql.Selector) {
@@ -394,6 +409,29 @@ func HasRefs() predicate.Set {
 func HasRefsWith(preds ...predicate.SetRef) predicate.Set {
 	return predicate.Set(func(s *sql.Selector) {
 		step := newRefsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasDamaged applies the HasEdge predicate on the "damaged" edge.
+func HasDamaged() predicate.Set {
+	return predicate.Set(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, DamagedTable, DamagedColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDamagedWith applies the HasEdge predicate on the "damaged" edge with a given conditions (other predicates).
+func HasDamagedWith(preds ...predicate.DamagedPath) predicate.Set {
+	return predicate.Set(func(s *sql.Selector) {
+		step := newDamagedStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

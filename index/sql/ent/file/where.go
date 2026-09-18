@@ -120,6 +120,11 @@ func LinkTarget(v []byte) predicate.File {
 	return predicate.File(sql.FieldEQ(FieldLinkTarget, v))
 }
 
+// Lost applies equality check predicate on the "lost" field. It's identical to LostEQ.
+func Lost(v bool) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldLost, v))
+}
+
 // SetIDEQ applies the EQ predicate on the "set_id" field.
 func SetIDEQ(v int64) predicate.File {
 	return predicate.File(sql.FieldEQ(FieldSetID, v))
@@ -748,6 +753,16 @@ func LinkTargetIsNil() predicate.File {
 // LinkTargetNotNil applies the NotNil predicate on the "link_target" field.
 func LinkTargetNotNil() predicate.File {
 	return predicate.File(sql.FieldNotNull(FieldLinkTarget))
+}
+
+// LostEQ applies the EQ predicate on the "lost" field.
+func LostEQ(v bool) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldLost, v))
+}
+
+// LostNEQ applies the NEQ predicate on the "lost" field.
+func LostNEQ(v bool) predicate.File {
+	return predicate.File(sql.FieldNEQ(FieldLost, v))
 }
 
 // HasSet applies the HasEdge predicate on the "set" edge.

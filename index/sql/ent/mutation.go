@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/twcclan/goback/index/sql/ent/archive"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/damagedpath"
 	"github.com/twcclan/goback/index/sql/ent/deletedref"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/object"
@@ -34,17 +35,18 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeArchive    = "Archive"
-	TypeCommitRow  = "CommitRow"
-	TypeDeletedRef = "DeletedRef"
-	TypeFile       = "File"
-	TypeObject     = "Object"
-	TypePin        = "Pin"
-	TypeSession    = "Session"
-	TypeSet        = "Set"
-	TypeSetRef     = "SetRef"
-	TypeSettings   = "Settings"
-	TypeTree       = "Tree"
+	TypeArchive     = "Archive"
+	TypeCommitRow   = "CommitRow"
+	TypeDamagedPath = "DamagedPath"
+	TypeDeletedRef  = "DeletedRef"
+	TypeFile        = "File"
+	TypeObject      = "Object"
+	TypePin         = "Pin"
+	TypeSession     = "Session"
+	TypeSet         = "Set"
+	TypeSetRef      = "SetRef"
+	TypeSettings    = "Settings"
+	TypeTree        = "Tree"
 )
 
 // ArchiveMutation represents an operation that mutates the Archive nodes in the graph.
@@ -2240,6 +2242,497 @@ func (m *CommitRowMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown CommitRow edge %s", name)
 }
 
+// DamagedPathMutation represents an operation that mutates the DamagedPath nodes in the graph.
+type DamagedPathMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	_path         *string
+	found_at      *time.Time
+	clearedFields map[string]struct{}
+	set           *int64
+	clearedset    bool
+	done          bool
+	oldValue      func(context.Context) (*DamagedPath, error)
+	predicates    []predicate.DamagedPath
+}
+
+var _ ent.Mutation = (*DamagedPathMutation)(nil)
+
+// damagedpathOption allows management of the mutation configuration using functional options.
+type damagedpathOption func(*DamagedPathMutation)
+
+// newDamagedPathMutation creates new mutation for the DamagedPath entity.
+func newDamagedPathMutation(c config, op Op, opts ...damagedpathOption) *DamagedPathMutation {
+	m := &DamagedPathMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeDamagedPath,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withDamagedPathID sets the ID field of the mutation.
+func withDamagedPathID(id int) damagedpathOption {
+	return func(m *DamagedPathMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *DamagedPath
+		)
+		m.oldValue = func(ctx context.Context) (*DamagedPath, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().DamagedPath.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withDamagedPath sets the old DamagedPath of the mutation.
+func withDamagedPath(node *DamagedPath) damagedpathOption {
+	return func(m *DamagedPathMutation) {
+		m.oldValue = func(context.Context) (*DamagedPath, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m DamagedPathMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m DamagedPathMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *DamagedPathMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *DamagedPathMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().DamagedPath.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetSetID sets the "set_id" field.
+func (m *DamagedPathMutation) SetSetID(i int64) {
+	m.set = &i
+}
+
+// SetID returns the value of the "set_id" field in the mutation.
+func (m *DamagedPathMutation) SetID() (r int64, exists bool) {
+	v := m.set
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSetID returns the old "set_id" field's value of the DamagedPath entity.
+// If the DamagedPath object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DamagedPathMutation) OldSetID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSetID: %w", err)
+	}
+	return oldValue.SetID, nil
+}
+
+// ResetSetID resets all changes to the "set_id" field.
+func (m *DamagedPathMutation) ResetSetID() {
+	m.set = nil
+}
+
+// SetPath sets the "path" field.
+func (m *DamagedPathMutation) SetPath(s string) {
+	m._path = &s
+}
+
+// Path returns the value of the "path" field in the mutation.
+func (m *DamagedPathMutation) Path() (r string, exists bool) {
+	v := m._path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPath returns the old "path" field's value of the DamagedPath entity.
+// If the DamagedPath object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DamagedPathMutation) OldPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPath: %w", err)
+	}
+	return oldValue.Path, nil
+}
+
+// ResetPath resets all changes to the "path" field.
+func (m *DamagedPathMutation) ResetPath() {
+	m._path = nil
+}
+
+// SetFoundAt sets the "found_at" field.
+func (m *DamagedPathMutation) SetFoundAt(t time.Time) {
+	m.found_at = &t
+}
+
+// FoundAt returns the value of the "found_at" field in the mutation.
+func (m *DamagedPathMutation) FoundAt() (r time.Time, exists bool) {
+	v := m.found_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFoundAt returns the old "found_at" field's value of the DamagedPath entity.
+// If the DamagedPath object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DamagedPathMutation) OldFoundAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFoundAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFoundAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFoundAt: %w", err)
+	}
+	return oldValue.FoundAt, nil
+}
+
+// ResetFoundAt resets all changes to the "found_at" field.
+func (m *DamagedPathMutation) ResetFoundAt() {
+	m.found_at = nil
+}
+
+// ClearSet clears the "set" edge to the Set entity.
+func (m *DamagedPathMutation) ClearSet() {
+	m.clearedset = true
+	m.clearedFields[damagedpath.FieldSetID] = struct{}{}
+}
+
+// SetCleared reports if the "set" edge to the Set entity was cleared.
+func (m *DamagedPathMutation) SetCleared() bool {
+	return m.clearedset
+}
+
+// SetIDs returns the "set" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SetID instead. It exists only for internal usage by the builders.
+func (m *DamagedPathMutation) SetIDs() (ids []int64) {
+	if id := m.set; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSet resets all changes to the "set" edge.
+func (m *DamagedPathMutation) ResetSet() {
+	m.set = nil
+	m.clearedset = false
+}
+
+// Where appends a list predicates to the DamagedPathMutation builder.
+func (m *DamagedPathMutation) Where(ps ...predicate.DamagedPath) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the DamagedPathMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *DamagedPathMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.DamagedPath, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *DamagedPathMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *DamagedPathMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (DamagedPath).
+func (m *DamagedPathMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *DamagedPathMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.set != nil {
+		fields = append(fields, damagedpath.FieldSetID)
+	}
+	if m._path != nil {
+		fields = append(fields, damagedpath.FieldPath)
+	}
+	if m.found_at != nil {
+		fields = append(fields, damagedpath.FieldFoundAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *DamagedPathMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case damagedpath.FieldSetID:
+		return m.SetID()
+	case damagedpath.FieldPath:
+		return m.Path()
+	case damagedpath.FieldFoundAt:
+		return m.FoundAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *DamagedPathMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case damagedpath.FieldSetID:
+		return m.OldSetID(ctx)
+	case damagedpath.FieldPath:
+		return m.OldPath(ctx)
+	case damagedpath.FieldFoundAt:
+		return m.OldFoundAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown DamagedPath field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DamagedPathMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case damagedpath.FieldSetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSetID(v)
+		return nil
+	case damagedpath.FieldPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPath(v)
+		return nil
+	case damagedpath.FieldFoundAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFoundAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown DamagedPath field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *DamagedPathMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *DamagedPathMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DamagedPathMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown DamagedPath numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *DamagedPathMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *DamagedPathMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *DamagedPathMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown DamagedPath nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *DamagedPathMutation) ResetField(name string) error {
+	switch name {
+	case damagedpath.FieldSetID:
+		m.ResetSetID()
+		return nil
+	case damagedpath.FieldPath:
+		m.ResetPath()
+		return nil
+	case damagedpath.FieldFoundAt:
+		m.ResetFoundAt()
+		return nil
+	}
+	return fmt.Errorf("unknown DamagedPath field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *DamagedPathMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.set != nil {
+		edges = append(edges, damagedpath.EdgeSet)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *DamagedPathMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case damagedpath.EdgeSet:
+		if id := m.set; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *DamagedPathMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *DamagedPathMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *DamagedPathMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedset {
+		edges = append(edges, damagedpath.EdgeSet)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *DamagedPathMutation) EdgeCleared(name string) bool {
+	switch name {
+	case damagedpath.EdgeSet:
+		return m.clearedset
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *DamagedPathMutation) ClearEdge(name string) error {
+	switch name {
+	case damagedpath.EdgeSet:
+		m.ClearSet()
+		return nil
+	}
+	return fmt.Errorf("unknown DamagedPath unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *DamagedPathMutation) ResetEdge(name string) error {
+	switch name {
+	case damagedpath.EdgeSet:
+		m.ResetSet()
+		return nil
+	}
+	return fmt.Errorf("unknown DamagedPath edge %s", name)
+}
+
 // DeletedRefMutation represents an operation that mutates the DeletedRef nodes in the graph.
 type DeletedRefMutation struct {
 	config
@@ -2642,6 +3135,7 @@ type FileMutation struct {
 	_type         *uint32
 	add_type      *int32
 	link_target   *[]byte
+	lost          *bool
 	clearedFields map[string]struct{}
 	set           *int64
 	clearedset    bool
@@ -3335,6 +3829,42 @@ func (m *FileMutation) ResetLinkTarget() {
 	delete(m.clearedFields, file.FieldLinkTarget)
 }
 
+// SetLost sets the "lost" field.
+func (m *FileMutation) SetLost(b bool) {
+	m.lost = &b
+}
+
+// Lost returns the value of the "lost" field in the mutation.
+func (m *FileMutation) Lost() (r bool, exists bool) {
+	v := m.lost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLost returns the old "lost" field's value of the File entity.
+// If the File object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FileMutation) OldLost(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLost: %w", err)
+	}
+	return oldValue.Lost, nil
+}
+
+// ResetLost resets all changes to the "lost" field.
+func (m *FileMutation) ResetLost() {
+	m.lost = nil
+}
+
 // ClearSet clears the "set" edge to the Set entity.
 func (m *FileMutation) ClearSet() {
 	m.clearedset = true
@@ -3396,7 +3926,7 @@ func (m *FileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *FileMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.set != nil {
 		fields = append(fields, file.FieldSetID)
 	}
@@ -3436,6 +3966,9 @@ func (m *FileMutation) Fields() []string {
 	if m.link_target != nil {
 		fields = append(fields, file.FieldLinkTarget)
 	}
+	if m.lost != nil {
+		fields = append(fields, file.FieldLost)
+	}
 	return fields
 }
 
@@ -3470,6 +4003,8 @@ func (m *FileMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case file.FieldLinkTarget:
 		return m.LinkTarget()
+	case file.FieldLost:
+		return m.Lost()
 	}
 	return nil, false
 }
@@ -3505,6 +4040,8 @@ func (m *FileMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldType(ctx)
 	case file.FieldLinkTarget:
 		return m.OldLinkTarget(ctx)
+	case file.FieldLost:
+		return m.OldLost(ctx)
 	}
 	return nil, fmt.Errorf("unknown File field %s", name)
 }
@@ -3604,6 +4141,13 @@ func (m *FileMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLinkTarget(v)
+		return nil
+	case file.FieldLost:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLost(v)
 		return nil
 	}
 	return fmt.Errorf("unknown File field %s", name)
@@ -3764,6 +4308,9 @@ func (m *FileMutation) ResetField(name string) error {
 		return nil
 	case file.FieldLinkTarget:
 		m.ResetLinkTarget()
+		return nil
+	case file.FieldLost:
+		m.ResetLost()
 		return nil
 	}
 	return fmt.Errorf("unknown File field %s", name)
@@ -5726,6 +6273,7 @@ type SetMutation struct {
 	retention_policy *string
 	retention_paused *bool
 	erase            *bool
+	rescan           *bool
 	clearedFields    map[string]struct{}
 	files            map[int]struct{}
 	removedfiles     map[int]struct{}
@@ -5736,6 +6284,9 @@ type SetMutation struct {
 	refs             map[int]struct{}
 	removedrefs      map[int]struct{}
 	clearedrefs      bool
+	damaged          map[int]struct{}
+	removeddamaged   map[int]struct{}
+	cleareddamaged   bool
 	done             bool
 	oldValue         func(context.Context) (*Set, error)
 	predicates       []predicate.Set
@@ -6087,6 +6638,42 @@ func (m *SetMutation) ResetErase() {
 	m.erase = nil
 }
 
+// SetRescan sets the "rescan" field.
+func (m *SetMutation) SetRescan(b bool) {
+	m.rescan = &b
+}
+
+// Rescan returns the value of the "rescan" field in the mutation.
+func (m *SetMutation) Rescan() (r bool, exists bool) {
+	v := m.rescan
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRescan returns the old "rescan" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldRescan(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRescan is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRescan requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRescan: %w", err)
+	}
+	return oldValue.Rescan, nil
+}
+
+// ResetRescan resets all changes to the "rescan" field.
+func (m *SetMutation) ResetRescan() {
+	m.rescan = nil
+}
+
 // AddFileIDs adds the "files" edge to the File entity by ids.
 func (m *SetMutation) AddFileIDs(ids ...int) {
 	if m.files == nil {
@@ -6249,6 +6836,60 @@ func (m *SetMutation) ResetRefs() {
 	m.removedrefs = nil
 }
 
+// AddDamagedIDs adds the "damaged" edge to the DamagedPath entity by ids.
+func (m *SetMutation) AddDamagedIDs(ids ...int) {
+	if m.damaged == nil {
+		m.damaged = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.damaged[ids[i]] = struct{}{}
+	}
+}
+
+// ClearDamaged clears the "damaged" edge to the DamagedPath entity.
+func (m *SetMutation) ClearDamaged() {
+	m.cleareddamaged = true
+}
+
+// DamagedCleared reports if the "damaged" edge to the DamagedPath entity was cleared.
+func (m *SetMutation) DamagedCleared() bool {
+	return m.cleareddamaged
+}
+
+// RemoveDamagedIDs removes the "damaged" edge to the DamagedPath entity by IDs.
+func (m *SetMutation) RemoveDamagedIDs(ids ...int) {
+	if m.removeddamaged == nil {
+		m.removeddamaged = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.damaged, ids[i])
+		m.removeddamaged[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedDamaged returns the removed IDs of the "damaged" edge to the DamagedPath entity.
+func (m *SetMutation) RemovedDamagedIDs() (ids []int) {
+	for id := range m.removeddamaged {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// DamagedIDs returns the "damaged" edge IDs in the mutation.
+func (m *SetMutation) DamagedIDs() (ids []int) {
+	for id := range m.damaged {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetDamaged resets all changes to the "damaged" edge.
+func (m *SetMutation) ResetDamaged() {
+	m.damaged = nil
+	m.cleareddamaged = false
+	m.removeddamaged = nil
+}
+
 // Where appends a list predicates to the SetMutation builder.
 func (m *SetMutation) Where(ps ...predicate.Set) {
 	m.predicates = append(m.predicates, ps...)
@@ -6283,7 +6924,7 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
 	}
@@ -6301,6 +6942,9 @@ func (m *SetMutation) Fields() []string {
 	}
 	if m.erase != nil {
 		fields = append(fields, set.FieldErase)
+	}
+	if m.rescan != nil {
+		fields = append(fields, set.FieldRescan)
 	}
 	return fields
 }
@@ -6322,6 +6966,8 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 		return m.RetentionPaused()
 	case set.FieldErase:
 		return m.Erase()
+	case set.FieldRescan:
+		return m.Rescan()
 	}
 	return nil, false
 }
@@ -6343,6 +6989,8 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldRetentionPaused(ctx)
 	case set.FieldErase:
 		return m.OldErase(ctx)
+	case set.FieldRescan:
+		return m.OldRescan(ctx)
 	}
 	return nil, fmt.Errorf("unknown Set field %s", name)
 }
@@ -6393,6 +7041,13 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetErase(v)
+		return nil
+	case set.FieldRescan:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRescan(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
@@ -6476,13 +7131,16 @@ func (m *SetMutation) ResetField(name string) error {
 	case set.FieldErase:
 		m.ResetErase()
 		return nil
+	case set.FieldRescan:
+		m.ResetRescan()
+		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *SetMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.files != nil {
 		edges = append(edges, set.EdgeFiles)
 	}
@@ -6491,6 +7149,9 @@ func (m *SetMutation) AddedEdges() []string {
 	}
 	if m.refs != nil {
 		edges = append(edges, set.EdgeRefs)
+	}
+	if m.damaged != nil {
+		edges = append(edges, set.EdgeDamaged)
 	}
 	return edges
 }
@@ -6517,13 +7178,19 @@ func (m *SetMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case set.EdgeDamaged:
+		ids := make([]ent.Value, 0, len(m.damaged))
+		for id := range m.damaged {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *SetMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedfiles != nil {
 		edges = append(edges, set.EdgeFiles)
 	}
@@ -6532,6 +7199,9 @@ func (m *SetMutation) RemovedEdges() []string {
 	}
 	if m.removedrefs != nil {
 		edges = append(edges, set.EdgeRefs)
+	}
+	if m.removeddamaged != nil {
+		edges = append(edges, set.EdgeDamaged)
 	}
 	return edges
 }
@@ -6558,13 +7228,19 @@ func (m *SetMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case set.EdgeDamaged:
+		ids := make([]ent.Value, 0, len(m.removeddamaged))
+		for id := range m.removeddamaged {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *SetMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedfiles {
 		edges = append(edges, set.EdgeFiles)
 	}
@@ -6573,6 +7249,9 @@ func (m *SetMutation) ClearedEdges() []string {
 	}
 	if m.clearedrefs {
 		edges = append(edges, set.EdgeRefs)
+	}
+	if m.cleareddamaged {
+		edges = append(edges, set.EdgeDamaged)
 	}
 	return edges
 }
@@ -6587,6 +7266,8 @@ func (m *SetMutation) EdgeCleared(name string) bool {
 		return m.clearedtrees
 	case set.EdgeRefs:
 		return m.clearedrefs
+	case set.EdgeDamaged:
+		return m.cleareddamaged
 	}
 	return false
 }
@@ -6611,6 +7292,9 @@ func (m *SetMutation) ResetEdge(name string) error {
 		return nil
 	case set.EdgeRefs:
 		m.ResetRefs()
+		return nil
+	case set.EdgeDamaged:
+		m.ResetDamaged()
 		return nil
 	}
 	return fmt.Errorf("unknown Set edge %s", name)

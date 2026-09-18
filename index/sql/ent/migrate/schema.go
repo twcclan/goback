@@ -104,6 +104,34 @@ var (
 			},
 		},
 	}
+	// DamagedPathsColumns holds the columns for the "damaged_paths" table.
+	DamagedPathsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "path", Type: field.TypeString},
+		{Name: "found_at", Type: field.TypeTime},
+		{Name: "set_id", Type: field.TypeInt64},
+	}
+	// DamagedPathsTable holds the schema information for the "damaged_paths" table.
+	DamagedPathsTable = &schema.Table{
+		Name:       "damaged_paths",
+		Columns:    DamagedPathsColumns,
+		PrimaryKey: []*schema.Column{DamagedPathsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "damaged_paths_sets_damaged",
+				Columns:    []*schema.Column{DamagedPathsColumns[3]},
+				RefColumns: []*schema.Column{SetsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "damagedpath_set_id_path",
+				Unique:  true,
+				Columns: []*schema.Column{DamagedPathsColumns[3], DamagedPathsColumns[1]},
+			},
+		},
+	}
 	// DeletedRefsColumns holds the columns for the "deleted_refs" table.
 	DeletedRefsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -138,6 +166,7 @@ var (
 		{Name: "size", Type: field.TypeInt64},
 		{Name: "type", Type: field.TypeUint32, Default: 0},
 		{Name: "link_target", Type: field.TypeBytes, Nullable: true},
+		{Name: "lost", Type: field.TypeBool, Default: false},
 		{Name: "set_id", Type: field.TypeInt64},
 	}
 	// FilesTable holds the schema information for the "files" table.
@@ -148,7 +177,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "files_sets_files",
-				Columns:    []*schema.Column{FilesColumns[13]},
+				Columns:    []*schema.Column{FilesColumns[14]},
 				RefColumns: []*schema.Column{SetsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -157,12 +186,12 @@ var (
 			{
 				Name:    "file_set_id_path_valid_from",
 				Unique:  true,
-				Columns: []*schema.Column{FilesColumns[13], FilesColumns[1], FilesColumns[3]},
+				Columns: []*schema.Column{FilesColumns[14], FilesColumns[1], FilesColumns[3]},
 			},
 			{
 				Name:    "files_open",
 				Unique:  false,
-				Columns: []*schema.Column{FilesColumns[13], FilesColumns[2]},
+				Columns: []*schema.Column{FilesColumns[14], FilesColumns[2]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "valid_until IS NULL",
 				},
@@ -257,6 +286,7 @@ var (
 		{Name: "retention_policy", Type: field.TypeString, Nullable: true},
 		{Name: "retention_paused", Type: field.TypeBool, Default: false},
 		{Name: "erase", Type: field.TypeBool, Default: false},
+		{Name: "rescan", Type: field.TypeBool, Default: false},
 	}
 	// SetsTable holds the schema information for the "sets" table.
 	SetsTable = &schema.Table{
@@ -362,6 +392,7 @@ var (
 	Tables = []*schema.Table{
 		ArchivesTable,
 		CommitsTable,
+		DamagedPathsTable,
 		DeletedRefsTable,
 		FilesTable,
 		ObjectsTable,
@@ -384,6 +415,7 @@ func init() {
 		"commits_ref_width":  "length(ref) = 32",
 		"commits_tree_width": "length(tree) = 32",
 	}
+	DamagedPathsTable.ForeignKeys[0].RefTable = SetsTable
 	DeletedRefsTable.Annotation = &entsql.Annotation{}
 	DeletedRefsTable.Annotation.Checks = map[string]string{
 		"deleted_refs_ref_width": "length(ref) = 32",

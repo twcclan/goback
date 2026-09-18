@@ -1,0 +1,149 @@
+package backup
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/twcclan/goback/proto"
+)
+
+// FilePath is where a file object is stored in a set.
+type FilePath struct {
+	Ref  *proto.Ref
+	Set  string
+	Path string
+	// Open reports whether this is the version the set's newest commit
+	// points at, which is the only one an agent can produce again.
+	Open bool
+}
+
+// DamageIndex records what a store lost, so the next backup of a set reads
+// those paths again instead of trusting that they are unchanged.
+type DamageIndex interface {
+	// PathsOfFiles returns where the given file objects are stored; a file
+	// object no live version references any more yields nothing.
+	PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]FilePath, error)
+	// MarkDamaged records paths a run must read again.
+	MarkDamaged(ctx context.Context, set string, paths []string) error
+	// MarkLost records versions no run can produce again, so a restore of
+	// the commits holding them says so rather than failing.
+	MarkLost(ctx context.Context, versions []FilePath) error
+	// MarkRescan records that a whole set must be read again.
+	MarkRescan(ctx context.Context, set string) error
+}
+
+// DamageReport is what ReportDamage made of a store's losses.
+type DamageReport struct {
+	// Paths are the paths marked for a re-read, by set.
+	Paths map[string][]string
+	// Rescan names the sets marked for a full re-read, because some loss
+	// could not be placed at a path.
+	Rescan []string
+	// Unplaced are the lost objects no live path holds.
+	Unplaced []*proto.Ref
+	// Lost are the closed versions nothing can produce again; the commits
+	// holding them are damaged for that path.
+	Lost []FilePath
+}
+
+// ReportDamage places a store's lost objects at the paths that held them
+// and records those, so the next backup of each set reads them again. A
+// loss it cannot place — a lost file or tree object, or a blob whose file
+// object is gone too — marks its sets for a full re-read instead, which
+// is the only way left to find it.
+func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets []string, lost []*proto.Ref) (*DamageReport, error) {
+	report := &DamageReport{Paths: map[string][]string{}}
+	if len(lost) == 0 {
+		return report, nil
+	}
+
+	missing := make(map[string]bool, len(lost))
+	for _, ref := range lost {
+		missing[string(ref.GetHash())] = true
+	}
+
+	// a lost object may be a file object itself, in which case the index
+	// knows its path without any walk
+	holders := append([]*proto.Ref(nil), lost...)
+	covers := make(map[string][]string, len(lost))
+
+	for _, ref := range lost {
+		covers[string(ref.GetHash())] = []string{string(ref.GetHash())}
+	}
+
+	err := store.Walk(ctx, true, proto.ObjectType_FILE, func(obj *proto.Object) error {
+		var held []string
+		for _, part := range obj.GetFile().GetParts() {
+			if missing[string(part.Ref.GetHash())] {
+				held = append(held, string(part.Ref.GetHash()))
+			}
+		}
+
+		if len(held) == 0 {
+			return nil
+		}
+
+		key := string(obj.Ref().GetHash())
+		holders = append(holders, obj.Ref())
+		covers[key] = append(covers[key], held...)
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking the file objects: %w", err)
+	}
+
+	placed, err := idx.PathsOfFiles(ctx, holders)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, at := range placed {
+		// only the version the newest commit points at is still on a
+		// source somewhere; a closed one is gone for good
+		if at.Open {
+			report.Paths[at.Set] = append(report.Paths[at.Set], at.Path)
+		}
+
+		report.Lost = append(report.Lost, at)
+
+		for _, held := range covers[string(at.Ref.GetHash())] {
+			delete(missing, held)
+		}
+	}
+
+	for set, paths := range report.Paths {
+		err := idx.MarkDamaged(ctx, set, paths)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(report.Lost) > 0 {
+		err = idx.MarkLost(ctx, report.Lost)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(missing) == 0 {
+		return report, nil
+	}
+
+	for _, ref := range lost {
+		if missing[string(ref.GetHash())] {
+			report.Unplaced = append(report.Unplaced, ref)
+		}
+	}
+
+	for _, set := range sets {
+		err := idx.MarkRescan(ctx, set)
+		if err != nil {
+			return nil, err
+		}
+
+		report.Rescan = append(report.Rescan, set)
+	}
+
+	return report, nil
+}

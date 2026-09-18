@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/twcclan/goback/index/sql/ent/damagedpath"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
@@ -100,6 +101,20 @@ func (_c *SetCreate) SetNillableErase(v *bool) *SetCreate {
 	return _c
 }
 
+// SetRescan sets the "rescan" field.
+func (_c *SetCreate) SetRescan(v bool) *SetCreate {
+	_c.mutation.SetRescan(v)
+	return _c
+}
+
+// SetNillableRescan sets the "rescan" field if the given value is not nil.
+func (_c *SetCreate) SetNillableRescan(v *bool) *SetCreate {
+	if v != nil {
+		_c.SetRescan(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SetCreate) SetID(v int64) *SetCreate {
 	_c.mutation.SetID(v)
@@ -151,6 +166,21 @@ func (_c *SetCreate) AddRefs(v ...*SetRef) *SetCreate {
 	return _c.AddRefIDs(ids...)
 }
 
+// AddDamagedIDs adds the "damaged" edge to the DamagedPath entity by IDs.
+func (_c *SetCreate) AddDamagedIDs(ids ...int) *SetCreate {
+	_c.mutation.AddDamagedIDs(ids...)
+	return _c
+}
+
+// AddDamaged adds the "damaged" edges to the DamagedPath entity.
+func (_c *SetCreate) AddDamaged(v ...*DamagedPath) *SetCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddDamagedIDs(ids...)
+}
+
 // Mutation returns the SetMutation object of the builder.
 func (_c *SetCreate) Mutation() *SetMutation {
 	return _c.mutation
@@ -198,6 +228,10 @@ func (_c *SetCreate) defaults() {
 		v := set.DefaultErase
 		_c.mutation.SetErase(v)
 	}
+	if _, ok := _c.mutation.Rescan(); !ok {
+		v := set.DefaultRescan
+		_c.mutation.SetRescan(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -218,6 +252,9 @@ func (_c *SetCreate) check() error {
 	}
 	if _, ok := _c.mutation.Erase(); !ok {
 		return &ValidationError{Name: "erase", err: errors.New(`ent: missing required field "Set.erase"`)}
+	}
+	if _, ok := _c.mutation.Rescan(); !ok {
+		return &ValidationError{Name: "rescan", err: errors.New(`ent: missing required field "Set.rescan"`)}
 	}
 	return nil
 }
@@ -276,6 +313,10 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 		_spec.SetField(set.FieldErase, field.TypeBool, value)
 		_node.Erase = value
 	}
+	if value, ok := _c.mutation.Rescan(); ok {
+		_spec.SetField(set.FieldRescan, field.TypeBool, value)
+		_node.Rescan = value
+	}
 	if nodes := _c.mutation.FilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -317,6 +358,22 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(setref.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.DamagedIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   set.DamagedTable,
+			Columns: []string{set.DamagedColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(damagedpath.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -457,6 +514,18 @@ func (u *SetUpsert) SetErase(v bool) *SetUpsert {
 // UpdateErase sets the "erase" field to the value that was provided on create.
 func (u *SetUpsert) UpdateErase() *SetUpsert {
 	u.SetExcluded(set.FieldErase)
+	return u
+}
+
+// SetRescan sets the "rescan" field.
+func (u *SetUpsert) SetRescan(v bool) *SetUpsert {
+	u.Set(set.FieldRescan, v)
+	return u
+}
+
+// UpdateRescan sets the "rescan" field to the value that was provided on create.
+func (u *SetUpsert) UpdateRescan() *SetUpsert {
+	u.SetExcluded(set.FieldRescan)
 	return u
 }
 
@@ -603,6 +672,20 @@ func (u *SetUpsertOne) SetErase(v bool) *SetUpsertOne {
 func (u *SetUpsertOne) UpdateErase() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateErase()
+	})
+}
+
+// SetRescan sets the "rescan" field.
+func (u *SetUpsertOne) SetRescan(v bool) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetRescan(v)
+	})
+}
+
+// UpdateRescan sets the "rescan" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateRescan() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateRescan()
 	})
 }
 
@@ -915,6 +998,20 @@ func (u *SetUpsertBulk) SetErase(v bool) *SetUpsertBulk {
 func (u *SetUpsertBulk) UpdateErase() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateErase()
+	})
+}
+
+// SetRescan sets the "rescan" field.
+func (u *SetUpsertBulk) SetRescan(v bool) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetRescan(v)
+	})
+}
+
+// UpdateRescan sets the "rescan" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateRescan() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateRescan()
 	})
 }
 

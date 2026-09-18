@@ -12,6 +12,9 @@ type Archive func(*sql.Selector)
 // CommitRow is the predicate function for commitrow builders.
 type CommitRow func(*sql.Selector)
 
+// DamagedPath is the predicate function for damagedpath builders.
+type DamagedPath func(*sql.Selector)
+
 // DeletedRef is the predicate function for deletedref builders.
 type DeletedRef func(*sql.Selector)
 

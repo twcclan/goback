@@ -30,6 +30,7 @@ func (Set) Fields() []ent.Field {
 		field.String("retention_policy").Optional().Nillable(),
 		field.Bool("retention_paused").Default(false),
 		field.Bool("erase").Default(false),
+		field.Bool("rescan").Default(false),
 	}
 }
 
@@ -39,6 +40,7 @@ func (Set) Edges() []ent.Edge {
 		edge.To("files", File.Type),
 		edge.To("trees", Tree.Type),
 		edge.To("refs", SetRef.Type),
+		edge.To("damaged", DamagedPath.Type),
 	}
 }
 
@@ -132,6 +134,7 @@ func (File) Fields() []ent.Field {
 		field.Int64("size"),
 		field.Uint32("type").Default(uint32(proto.NodeType_NODE_FILE)),
 		field.Bytes("link_target").Optional(),
+		field.Bool("lost").Default(false),
 	}
 }
 
@@ -235,4 +238,34 @@ func refWidth(table, column string) schema.Annotation {
 
 func cascade() entsql.Annotation {
 	return entsql.Annotation{OnDelete: entsql.Cascade}
+}
+
+// DamagedPath is a path whose stored content the store could not keep, so
+// the next backup of its set reads it again instead of trusting that it is
+// unchanged.
+type DamagedPath struct {
+	ent.Schema
+}
+
+// Fields of DamagedPath.
+func (DamagedPath) Fields() []ent.Field {
+	return []ent.Field{
+		field.Int64("set_id"),
+		field.String("path"),
+		field.Time("found_at"),
+	}
+}
+
+// Edges of DamagedPath.
+func (DamagedPath) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("set", Set.Type).Ref("damaged").Unique().Required().Field("set_id"),
+	}
+}
+
+// Indexes of DamagedPath.
+func (DamagedPath) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("set_id", "path").Unique(),
+	}
 }

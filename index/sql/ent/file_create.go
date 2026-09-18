@@ -117,6 +117,20 @@ func (_c *FileCreate) SetLinkTarget(v []byte) *FileCreate {
 	return _c
 }
 
+// SetLost sets the "lost" field.
+func (_c *FileCreate) SetLost(v bool) *FileCreate {
+	_c.mutation.SetLost(v)
+	return _c
+}
+
+// SetNillableLost sets the "lost" field if the given value is not nil.
+func (_c *FileCreate) SetNillableLost(v *bool) *FileCreate {
+	if v != nil {
+		_c.SetLost(*v)
+	}
+	return _c
+}
+
 // SetSet sets the "set" edge to the Set entity.
 func (_c *FileCreate) SetSet(v *Set) *FileCreate {
 	return _c.SetSetID(v.ID)
@@ -161,6 +175,10 @@ func (_c *FileCreate) defaults() {
 		v := file.DefaultType
 		_c.mutation.SetType(v)
 	}
+	if _, ok := _c.mutation.Lost(); !ok {
+		v := file.DefaultLost
+		_c.mutation.SetLost(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -194,6 +212,9 @@ func (_c *FileCreate) check() error {
 	}
 	if _, ok := _c.mutation.GetType(); !ok {
 		return &ValidationError{Name: "type", err: errors.New(`ent: missing required field "File.type"`)}
+	}
+	if _, ok := _c.mutation.Lost(); !ok {
+		return &ValidationError{Name: "lost", err: errors.New(`ent: missing required field "File.lost"`)}
 	}
 	if len(_c.mutation.SetIDs()) == 0 {
 		return &ValidationError{Name: "set", err: errors.New(`ent: missing required edge "File.set"`)}
@@ -272,6 +293,10 @@ func (_c *FileCreate) createSpec() (*File, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.LinkTarget(); ok {
 		_spec.SetField(file.FieldLinkTarget, field.TypeBytes, value)
 		_node.LinkTarget = value
+	}
+	if value, ok := _c.mutation.Lost(); ok {
+		_spec.SetField(file.FieldLost, field.TypeBool, value)
+		_node.Lost = value
 	}
 	if nodes := _c.mutation.SetIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -537,6 +562,18 @@ func (u *FileUpsert) UpdateLinkTarget() *FileUpsert {
 // ClearLinkTarget clears the value of the "link_target" field.
 func (u *FileUpsert) ClearLinkTarget() *FileUpsert {
 	u.SetNull(file.FieldLinkTarget)
+	return u
+}
+
+// SetLost sets the "lost" field.
+func (u *FileUpsert) SetLost(v bool) *FileUpsert {
+	u.Set(file.FieldLost, v)
+	return u
+}
+
+// UpdateLost sets the "lost" field to the value that was provided on create.
+func (u *FileUpsert) UpdateLost() *FileUpsert {
+	u.SetExcluded(file.FieldLost)
 	return u
 }
 
@@ -808,6 +845,20 @@ func (u *FileUpsertOne) UpdateLinkTarget() *FileUpsertOne {
 func (u *FileUpsertOne) ClearLinkTarget() *FileUpsertOne {
 	return u.Update(func(s *FileUpsert) {
 		s.ClearLinkTarget()
+	})
+}
+
+// SetLost sets the "lost" field.
+func (u *FileUpsertOne) SetLost(v bool) *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.SetLost(v)
+	})
+}
+
+// UpdateLost sets the "lost" field to the value that was provided on create.
+func (u *FileUpsertOne) UpdateLost() *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateLost()
 	})
 }
 
@@ -1243,6 +1294,20 @@ func (u *FileUpsertBulk) UpdateLinkTarget() *FileUpsertBulk {
 func (u *FileUpsertBulk) ClearLinkTarget() *FileUpsertBulk {
 	return u.Update(func(s *FileUpsert) {
 		s.ClearLinkTarget()
+	})
+}
+
+// SetLost sets the "lost" field.
+func (u *FileUpsertBulk) SetLost(v bool) *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.SetLost(v)
+	})
+}
+
+// UpdateLost sets the "lost" field to the value that was provided on create.
+func (u *FileUpsertBulk) UpdateLost() *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateLost()
 	})
 }
 

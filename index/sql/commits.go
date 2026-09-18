@@ -268,6 +268,11 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
+		err = x.clearDamage(ctx, tx, setID, commit.Partial, commit.GetScanStartNs())
+		if err != nil {
+			return err
+		}
+
 		if evaluate {
 			err = x.evaluateSet(ctx, tx, setID, x.now())
 			if err != nil {

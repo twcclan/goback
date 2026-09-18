@@ -18,6 +18,8 @@ type Tx struct {
 	Archive *ArchiveClient
 	// CommitRow is the client for interacting with the CommitRow builders.
 	CommitRow *CommitRowClient
+	// DamagedPath is the client for interacting with the DamagedPath builders.
+	DamagedPath *DamagedPathClient
 	// DeletedRef is the client for interacting with the DeletedRef builders.
 	DeletedRef *DeletedRefClient
 	// File is the client for interacting with the File builders.
@@ -169,6 +171,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Archive = NewArchiveClient(tx.config)
 	tx.CommitRow = NewCommitRowClient(tx.config)
+	tx.DamagedPath = NewDamagedPathClient(tx.config)
 	tx.DeletedRef = NewDeletedRefClient(tx.config)
 	tx.File = NewFileClient(tx.config)
 	tx.Object = NewObjectClient(tx.config)

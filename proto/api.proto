@@ -126,6 +126,12 @@ message BeginCommitResponse {
     // the store's write policy for this run; absent when the operator never
     // set one, which leaves the agent's key file in charge
     StorePolicy policy = 4;
+    // the run must read every file again, whatever its change detection
+    // says, because the store lost content it could not name a path for
+    bool rescan = 5;
+    // paths whose stored content the store lost: read them again and take
+    // no chunk of theirs on trust
+    repeated string damaged_paths = 6;
 }
 
 // StorePolicy is a store's write policy: the encryption mode of new

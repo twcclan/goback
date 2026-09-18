@@ -53,6 +53,10 @@ func init() {
 	fileDescType := fileFields[11].Descriptor()
 	// file.DefaultType holds the default value on creation for the type field.
 	file.DefaultType = fileDescType.Default.(uint32)
+	// fileDescLost is the schema descriptor for lost field.
+	fileDescLost := fileFields[13].Descriptor()
+	// file.DefaultLost holds the default value on creation for the lost field.
+	file.DefaultLost = fileDescLost.Default.(bool)
 	setFields := schema.Set{}.Fields()
 	_ = setFields
 	// setDescRetentionPaused is the schema descriptor for retention_paused field.
@@ -63,6 +67,10 @@ func init() {
 	setDescErase := setFields[6].Descriptor()
 	// set.DefaultErase holds the default value on creation for the erase field.
 	set.DefaultErase = setDescErase.Default.(bool)
+	// setDescRescan is the schema descriptor for rescan field.
+	setDescRescan := setFields[7].Descriptor()
+	// set.DefaultRescan holds the default value on creation for the rescan field.
+	set.DefaultRescan = setDescRescan.Default.(bool)
 	settingsFields := schema.Settings{}.Fields()
 	_ = settingsFields
 	// settingsDescPolicyVersion is the schema descriptor for policy_version field.

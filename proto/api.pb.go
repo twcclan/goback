@@ -922,7 +922,13 @@ type BeginCommitResponse struct {
 	Reason string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	// the store's write policy for this run; absent when the operator never
 	// set one, which leaves the agent's key file in charge
-	Policy        *StorePolicy `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
+	Policy *StorePolicy `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
+	// the run must read every file again, whatever its change detection
+	// says, because the store lost content it could not name a path for
+	Rescan bool `protobuf:"varint,5,opt,name=rescan,proto3" json:"rescan,omitempty"`
+	// paths whose stored content the store lost: read them again and take
+	// no chunk of theirs on trust
+	DamagedPaths  []string `protobuf:"bytes,6,rep,name=damaged_paths,json=damagedPaths,proto3" json:"damaged_paths,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -974,6 +980,20 @@ func (x *BeginCommitResponse) GetReason() string {
 func (x *BeginCommitResponse) GetPolicy() *StorePolicy {
 	if x != nil {
 		return x.Policy
+	}
+	return nil
+}
+
+func (x *BeginCommitResponse) GetRescan() bool {
+	if x != nil {
+		return x.Rescan
+	}
+	return false
+}
+
+func (x *BeginCommitResponse) GetDamagedPaths() []string {
+	if x != nil {
+		return x.DamagedPaths
 	}
 	return nil
 }
@@ -2081,11 +2101,13 @@ const file_api_proto_rawDesc = "" +
 	".proto.RefR\x03ref\"9\n" +
 	"\x12BeginCommitRequest\x12\x1d\n" +
 	"\n" +
-	"backup_set\x18\x01 \x01(\tR\tbackupSetJ\x04\b\x02\x10\x03\"y\n" +
+	"backup_set\x18\x01 \x01(\tR\tbackupSetJ\x04\b\x02\x10\x03\"\xb6\x01\n" +
 	"\x13BeginCommitResponse\x12\x18\n" +
 	"\aallowed\x18\x02 \x01(\bR\aallowed\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12*\n" +
-	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policyJ\x04\b\x01\x10\x02\"\xe9\x01\n" +
+	"\x06policy\x18\x04 \x01(\v2\x12.proto.StorePolicyR\x06policy\x12\x16\n" +
+	"\x06rescan\x18\x05 \x01(\bR\x06rescan\x12#\n" +
+	"\rdamaged_paths\x18\x06 \x03(\tR\fdamagedPathsJ\x04\b\x01\x10\x02\"\xe9\x01\n" +
 	"\vStorePolicy\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12%\n" +

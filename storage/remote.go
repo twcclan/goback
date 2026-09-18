@@ -383,7 +383,11 @@ func (r *Client) BeginCommit(ctx context.Context, set string) (*backup.CommitGra
 		return nil, fmt.Errorf("%w: %s", backup.ErrCommitDenied, resp.Reason)
 	}
 
-	return &backup.CommitGrant{Policy: policyFromProto(resp.Policy)}, nil
+	return &backup.CommitGrant{
+		Policy:  policyFromProto(resp.Policy),
+		Rescan:  resp.Rescan,
+		Damaged: resp.DamagedPaths,
+	}, nil
 }
 
 func policyFromProto(p *proto.StorePolicy) *storekey.Policy {
@@ -516,7 +520,12 @@ func (r *Server) BeginCommit(ctx context.Context, request *proto.BeginCommitRequ
 		return nil, ToStatus(err)
 	}
 
-	return &proto.BeginCommitResponse{Allowed: true, Policy: policyProto(grant.Policy)}, nil
+	return &proto.BeginCommitResponse{
+		Allowed:      true,
+		Policy:       policyProto(grant.Policy),
+		Rescan:       grant.Rescan,
+		DamagedPaths: grant.Damaged,
+	}, nil
 }
 
 // FileInfo implements proto.StoreServer.

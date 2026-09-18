@@ -44,6 +44,8 @@ type File struct {
 	Type uint32 `json:"type,omitempty"`
 	// LinkTarget holds the value of the "link_target" field.
 	LinkTarget []byte `json:"link_target,omitempty"`
+	// Lost holds the value of the "lost" field.
+	Lost bool `json:"lost,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the FileQuery when eager-loading is set.
 	Edges        FileEdges `json:"edges"`
@@ -77,6 +79,8 @@ func (*File) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case file.FieldRef, file.FieldLinkTarget:
 			values[i] = new([]byte)
+		case file.FieldLost:
+			values[i] = new(sql.NullBool)
 		case file.FieldID, file.FieldSetID, file.FieldMtimeNs, file.FieldMode, file.FieldSize, file.FieldType:
 			values[i] = new(sql.NullInt64)
 		case file.FieldPath, file.FieldDir, file.FieldUser, file.FieldGroup:
@@ -183,6 +187,12 @@ func (_m *File) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				_m.LinkTarget = *value
 			}
+		case file.FieldLost:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field lost", values[i])
+			} else if value.Valid {
+				_m.Lost = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -264,6 +274,9 @@ func (_m *File) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("link_target=")
 	builder.WriteString(fmt.Sprintf("%v", _m.LinkTarget))
+	builder.WriteString(", ")
+	builder.WriteString("lost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Lost))
 	builder.WriteByte(')')
 	return builder.String()
 }
