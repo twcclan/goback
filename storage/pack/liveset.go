@@ -23,24 +23,23 @@ func keyOf(hash []byte) refKey {
 
 // liveRuns collects refs and spills them as sorted runs on local disk.
 // Runs are named after the batch of roots they belong to, so a resumed
-// mark can pick up the runs of completed batches. Each run carries the
-// set whose roots it came from, which is what attributes an object to a
-// set.
+// mark can pick up the runs of completed batches. Each run carries what
+// its roots belonged to, which is what attributes an object.
 type liveRuns struct {
 	dir    string
 	limit  int
 	prefix string
-	owner  int64
+	owner  Attribution
 
 	mtx    sync.Mutex
 	buf    []refKey
 	files  []string
-	owners []int64
+	owners []Attribution
 	added  uint64
 }
 
 // adopt takes on a run an interrupted mark left behind.
-func (l *liveRuns) adopt(path string, owner int64) {
+func (l *liveRuns) adopt(path string, owner Attribution) {
 	l.files = append(l.files, path)
 	l.owners = append(l.owners, owner)
 }
@@ -67,11 +66,12 @@ func sortKeys(keys []refKey) {
 	sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
 }
 
-// sortRoots groups the roots by set, so a batch of them holds one set.
+// sortRoots groups the roots by group and then by set, so a batch of
+// them holds one set and every group's batches are contiguous.
 func sortRoots(roots []gcRoot) {
 	sort.Slice(roots, func(i, j int) bool {
 		if roots[i].owner != roots[j].owner {
-			return roots[i].owner < roots[j].owner
+			return roots[i].owner.before(roots[j].owner)
 		}
 
 		return bytes.Compare(roots[i].key[:], roots[j].key[:]) < 0
@@ -87,8 +87,8 @@ func keysOf(roots []gcRoot) []refKey {
 	return keys
 }
 
-// begin names the batch the next runs belong to and the set that owns it.
-func (l *liveRuns) begin(prefix string, owner int64) {
+// begin names the batch the next runs belong to and what owns it.
+func (l *liveRuns) begin(prefix string, owner Attribution) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -191,7 +191,7 @@ type runHead struct {
 	file   *os.File
 	reader *bufio.Reader
 	cur    refKey
-	owner  int64
+	owner  Attribution
 }
 
 func (h *runHead) advance() bool {
@@ -214,14 +214,14 @@ type runHeap []*runHead
 
 func (h runHeap) Len() int { return len(h) }
 
-// Less orders by ref, then by set, so an object two sets reach goes to
-// the one whose roots the mark walked first.
+// Less orders by ref, then by group and set, so an object several sets
+// reach goes to the one whose roots the mark walked first.
 func (h runHeap) Less(i, j int) bool {
 	if c := bytes.Compare(h[i].cur[:], h[j].cur[:]); c != 0 {
 		return c < 0
 	}
 
-	return h[i].owner < h[j].owner
+	return h[i].owner.before(h[j].owner)
 }
 func (h runHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *runHeap) Push(x interface{}) { *h = append(*h, x.(*runHead)) }
@@ -236,33 +236,58 @@ func (h *runHeap) Pop() interface{} {
 type liveIter struct {
 	heads []*runHead
 	heap  runHeap
-	last  refKey
-	begun bool
+
+	key    refKey
+	owners []Attribution
+	held   bool
+	drawn  bool
 }
 
-// next returns the next distinct key in ascending order, with the set it
-// belongs to.
-func (it *liveIter) next() (refKey, int64, bool) {
-	for it.heap.Len() > 0 {
+// at returns everything that reached key, in group then set order and
+// without repeats, or false when the runs hold nothing at key. The
+// answer stands until the caller asks after a later key, so the same
+// object in two archives is answered twice.
+func (it *liveIter) at(key refKey) ([]Attribution, bool) {
+	for {
+		if !it.drawn {
+			it.draw()
+		}
+
+		if !it.held || bytes.Compare(it.key[:], key[:]) > 0 {
+			return nil, false
+		}
+
+		if it.key == key {
+			return it.owners, true
+		}
+
+		it.drawn = false
+	}
+}
+
+// draw collects the runs' entries for the next key they hold.
+func (it *liveIter) draw() {
+	it.drawn, it.held, it.owners = true, false, it.owners[:0]
+
+	if it.heap.Len() == 0 {
+		return
+	}
+
+	it.key, it.held = it.heap[0].cur, true
+
+	for it.heap.Len() > 0 && it.heap[0].cur == it.key {
 		top := it.heap[0]
-		key, owner := top.cur, top.owner
+
+		if n := len(it.owners); n == 0 || it.owners[n-1] != top.owner {
+			it.owners = append(it.owners, top.owner)
+		}
 
 		if top.advance() {
 			heap.Fix(&it.heap, 0)
 		} else {
 			heap.Pop(&it.heap)
 		}
-
-		if it.begun && key == it.last {
-			continue
-		}
-
-		it.last, it.begun = key, true
-
-		return key, owner, true
 	}
-
-	return refKey{}, 0, false
 }
 
 func (it *liveIter) close() {

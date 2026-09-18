@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/twcclan/goback/storage/pack"
 )
 
 // findSet returns the id of the named set, or backup.ErrNotFound.
@@ -138,8 +139,17 @@ func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 
 // RootOwner returns the lookup a garbage collection attributes with: it
 // answers a root, a commit or a pin holding one, with the set it belongs
-// to, and anything else with zero.
-func (x *Index) RootOwner(ctx context.Context) (func(root []byte) int64, error) {
+// to and the group that set is collected in, and anything else with
+// nothing.
+func (x *Index) RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error) {
+	var groups map[int64]int64
+	if x.Grouping != nil {
+		var err error
+		if groups, err = x.Grouping(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	commits, err := x.client.CommitRow.Query().Select(commitrow.FieldRef, commitrow.FieldSetID).All(ctx)
 	if err != nil {
 		return nil, err
@@ -161,7 +171,14 @@ func (x *Index) RootOwner(ctx context.Context) (func(root []byte) int64, error) 
 		}
 	}
 
-	return func(root []byte) int64 { return owners[string(root)] }, nil
+	return func(root []byte) pack.Attribution {
+		set, ok := owners[string(root)]
+		if !ok {
+			return pack.Attribution{}
+		}
+
+		return pack.Attribution{Group: groups[set], Set: set}
+	}, nil
 }
 
 // RecordPhysicalSizes records what a garbage collection attributed to each

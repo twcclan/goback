@@ -54,7 +54,7 @@ var Command = cli.Command{
 // attributer is an index that names the set behind a root, so a
 // collection can record what each set's objects take up.
 type attributer interface {
-	RootOwner(ctx context.Context) (func(root []byte) int64, error)
+	RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error)
 	RecordPhysicalSizes(ctx context.Context, sizes map[int64]uint64) error
 }
 

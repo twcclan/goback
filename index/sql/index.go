@@ -65,6 +65,10 @@ type Index struct {
 	Now func() time.Time
 	// Logger is where the index reports; nil means slog.Default.
 	Logger *slog.Logger
+	// Grouping, when set, names the group each set is collected in: a
+	// group carries everything its sets reach, whatever another group
+	// reaches too. nil counts every set of the store together.
+	Grouping func(ctx context.Context) (map[int64]int64, error)
 
 	stampMu   sync.Mutex
 	lastStamp time.Time

@@ -43,9 +43,26 @@ type CollectOptions struct {
 	TempDir string
 	// Now is the snapshot time (time.Now()).
 	Now time.Time
-	// Owner names the set a root belongs to, so the mark can attribute the
-	// objects it reaches; nil, or 0 for a root, attributes nothing.
-	Owner func(root []byte) int64
+	// Owner names what a root belongs to, so the mark can attribute the
+	// objects it reaches; nil, or a zero Attribution, attributes nothing.
+	Owner func(root []byte) Attribution
+}
+
+// Attribution is what a root belongs to: the group its objects are
+// counted in and the set they are recorded against. An object is counted
+// once per group, so two groups that both hold it each carry it in full,
+// and within a group it goes to the first set the mark reached it from.
+type Attribution struct {
+	Group int64
+	Set   int64
+}
+
+func (a Attribution) before(b Attribution) bool {
+	if a.Group != b.Group {
+		return a.Group < b.Group
+	}
+
+	return a.Set < b.Set
 }
 
 const (
@@ -102,8 +119,9 @@ type CollectReport struct {
 	// an erased commit.
 	ErasedArchives int
 	// SetBytes is what each set's live objects take up in the archives,
-	// keyed by the ids Owner returned. An object several sets reach counts
-	// once, for the first of them the mark walked.
+	// keyed by the set ids Owner returned. Within a group an object counts
+	// once, for the first set the mark reached it from; across groups it
+	// counts in each.
 	SetBytes map[int64]uint64
 	// SweepSkipped names the reason when the run marked but did not sweep.
 	SweepSkipped     string
@@ -198,10 +216,10 @@ type gcRun struct {
 	setBytes map[int64]uint64
 }
 
-// gcRoot is a root with the set it belongs to, zero when nothing names it.
+// gcRoot is a root with what it belongs to, zero when nothing names it.
 type gcRoot struct {
 	key   refKey
-	owner int64
+	owner Attribution
 }
 
 // Collect marks every object reachable from a live commit or pin, records
@@ -606,10 +624,19 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 		return nil, err
 	}
 
+	// objects are counted once per group, so each group walks with a
+	// visited set of its own; the roots are sorted by group, so only the
+	// one being walked is ever held
+	var group int64
 	visited := newVisitedSet()
 	r.visited = visited
 
 	for batch, roots := range batches {
+		if owner := roots[0].owner; owner.Group != group {
+			group, visited = owner.Group, newVisitedSet()
+			r.visited = visited
+		}
+
 		if done[batch] {
 			r.resumed++
 			continue
@@ -885,12 +912,20 @@ func (h *mergeHeap) Pop() interface{} {
 func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 	var marked uint64
 
-	err := r.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, owner int64) {
+	err := r.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution) {
 		ga.cur.Set(uint(pos))
 		marked++
 
-		if owner != 0 {
-			r.setBytes[owner] += uint64(rec.Length)
+		// owners come in group order, so the first of each group is the
+		// set that group carries the object in
+		group := int64(0)
+		for i, owner := range owners {
+			if owner.Set == 0 || (i > 0 && owner.Group == group) {
+				continue
+			}
+
+			group = owner.Group
+			r.setBytes[owner.Set] += uint64(rec.Length)
 		}
 	}, func(sum refKey) {
 		if _, isTarget := r.targets[sum]; isTarget {
@@ -912,9 +947,9 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 }
 
 // scan walks every index record of the snapshot in ref order alongside the
-// sorted runs; hit sees the records the runs name, with the set they were
-// reached from, and each sees every record.
-func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owner int64), each func(sum refKey)) error {
+// sorted runs; hit sees the records the runs name, with everything that
+// reached them, and each sees every record.
+func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution), each func(sum refKey)) error {
 	it, err := runs.iterator()
 	if err != nil {
 		return err
@@ -951,18 +986,12 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *Index
 	}
 	heap.Init(&h)
 
-	cur, owner, ok := it.next()
-
 	for h.Len() > 0 {
 		top := h[0]
 		sum := top.rec.Sum
 
-		for ok && bytes.Compare(cur[:], sum[:]) < 0 {
-			cur, owner, ok = it.next()
-		}
-
-		if ok && cur == sum {
-			hit(top.ga, top.pos, top.rec, owner)
+		if owners, ok := it.at(sum); ok {
+			hit(top.ga, top.pos, top.rec, owners)
 		}
 
 		if each != nil {
@@ -1006,14 +1035,14 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 	}
 
 	runs := newLiveRuns(r.runDir, liveRunLimit)
-	runs.begin("erased-", 0)
+	runs.begin("erased-", Attribution{})
 	defer runs.close()
 
 	if err := r.markBatch(ctx, r.visited.claim(roots), r.visited, runs); err != nil {
 		return err
 	}
 
-	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ int64) { ga.erase = true }, nil)
+	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ []Attribution) { ga.erase = true }, nil)
 }
 
 func (r *gcRun) writeResults() error {

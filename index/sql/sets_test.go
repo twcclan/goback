@@ -13,6 +13,7 @@ import (
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 )
@@ -499,9 +500,18 @@ func TestRootOwnerNamesTheSetBehindACommitOrPin(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
 
-	require.Equal(t, sets[0].ID, owner(commit.Hash))
-	require.Equal(t, sets[0].ID, owner(pin.Hash), "a pin belongs to the set of the commit it holds")
+	require.Equal(t, pack.Attribution{Set: sets[0].ID}, owner(commit.Hash))
+	require.Equal(t, pack.Attribution{Set: sets[0].ID}, owner(pin.Hash), "a pin belongs to the set of the commit it holds")
 	require.Zero(t, owner([]byte("something else")), "a root of nobody's is attributed to nobody")
+
+	// a grouping puts each set in the group that carries what it holds
+	f.x.Grouping = func(context.Context) (map[int64]int64, error) {
+		return map[int64]int64{sets[0].ID: 42}, nil
+	}
+
+	owner, err = f.x.RootOwner(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, pack.Attribution{Group: 42, Set: sets[0].ID}, owner(commit.Hash))
 }
 
 func TestRecordedPhysicalSizesReplaceTheLastRuns(t *testing.T) {
