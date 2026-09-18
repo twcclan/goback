@@ -19,3 +19,13 @@ func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {
 		require.Equal(t, test.want, remoteAddress(u), test.raw)
 	}
 }
+
+func TestOnlyThePlaintextSchemeSkipsTLS(t *testing.T) {
+	require.Contains(t, storageDrivers, plaintextScheme, "the scheme reaches a store server")
+
+	for _, raw := range []string{"goback://store.example", "goback+plaintext://localhost:6060"} {
+		u, err := url.Parse(raw)
+		require.NoError(t, err)
+		require.Equal(t, u.Scheme == plaintextScheme, raw == "goback+plaintext://localhost:6060", raw)
+	}
+}

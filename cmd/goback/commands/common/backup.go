@@ -182,6 +182,11 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
 }
 
+// plaintextScheme names a store server reached without TLS, which puts
+// the api key and every object on the wire in the clear. It is for a
+// store on the same machine; anywhere else, goback:// is the scheme.
+const plaintextScheme = "goback+plaintext"
+
 // remoteAddress is the address a goback:// URL dials, defaulting to the
 // store server's port.
 func remoteAddress(u *url.URL) string {
@@ -203,7 +208,7 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 
 	creds := auth.Credentials{Secret: key, AgentID: AgentID(c)}
 
-	if c.GlobalBool("plaintext") {
+	if u.Scheme == plaintextScheme {
 		log.Printf("Talking to %s without TLS; the api key and everything uploaded is readable on the way", addr)
 		creds.Plaintext = true
 
@@ -253,9 +258,10 @@ func indexDialect(scheme string) string {
 }
 
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
-	"":       initPack,
-	"gcs":    initGCS,
-	"goback": initRemote,
+	"":                 initPack,
+	"gcs":              initGCS,
+	"goback":           initRemote,
+	"goback+plaintext": initRemote,
 }
 
 var indexDrivers = map[string]func(*url.URL, *cli.Context, backup.ObjectStore) (backup.Index, error){

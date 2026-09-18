@@ -49,6 +49,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "storage",
+			Usage: "where the objects live: a directory, gcs://bucket, goback://host:port for a store server, or goback+plaintext://host:port for one on this machine with no TLS in front of it",
 			Value: "storage",
 		},
 		cli.StringFlag{
@@ -74,10 +75,6 @@ func main() {
 		cli.StringFlag{
 			Name:  "ca-cert",
 			Usage: "PEM certificate authority a goback:// store server must present; the system roots are trusted without it",
-		},
-		cli.BoolFlag{
-			Name:  "plaintext",
-			Usage: "talk to a goback:// store server without TLS, putting the api key and every object in the clear; for a store on this machine only",
 		},
 		cli.StringFlag{
 			Name:  "store-key",
