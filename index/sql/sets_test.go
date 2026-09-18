@@ -484,3 +484,45 @@ func TestFillingSizesLeavesATombstonedCommitAlone(t *testing.T) {
 	require.EqualValues(t, 10, *f.commitRow(second).LogicalSize)
 	require.Nil(t, f.commitRow(first).LogicalSize, "the versions it held are gone, so there is nothing to sum")
 }
+
+func TestRootOwnerNamesTheSetBehindACommitOrPin(t *testing.T) {
+	f := newFixture(t)
+
+	commit := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	pin, err := f.pin(commit)
+	require.NoError(t, err)
+
+	owner, err := f.x.RootOwner(f.ctx)
+	require.NoError(t, err)
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, sets, 1)
+
+	require.Equal(t, sets[0].ID, owner(commit.Hash))
+	require.Equal(t, sets[0].ID, owner(pin.Hash), "a pin belongs to the set of the commit it holds")
+	require.Zero(t, owner([]byte("something else")), "a root of nobody's is attributed to nobody")
+}
+
+func TestRecordedPhysicalSizesReplaceTheLastRuns(t *testing.T) {
+	f := newFixture(t)
+
+	f.commit("world", f.tree(f.file("a.txt", "one")), false)
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.Zero(t, sets[0].PhysicalSize, "nothing has collected yet")
+
+	require.NoError(t, f.x.RecordPhysicalSizes(f.ctx, map[int64]uint64{sets[0].ID: 4096}))
+
+	sets, err = f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 4096, sets[0].PhysicalSize)
+
+	// a run that reaches nothing of the set's own leaves it holding nothing
+	require.NoError(t, f.x.RecordPhysicalSizes(f.ctx, map[int64]uint64{}))
+
+	sets, err = f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.Zero(t, sets[0].PhysicalSize)
+}

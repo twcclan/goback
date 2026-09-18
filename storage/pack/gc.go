@@ -43,6 +43,9 @@ type CollectOptions struct {
 	TempDir string
 	// Now is the snapshot time (time.Now()).
 	Now time.Time
+	// Owner names the set a root belongs to, so the mark can attribute the
+	// objects it reaches; nil, or 0 for a root, attributes nothing.
+	Owner func(root []byte) int64
 }
 
 const (
@@ -98,6 +101,10 @@ type CollectReport struct {
 	// ErasedArchives counts the archives flagged for holding the objects of
 	// an erased commit.
 	ErasedArchives int
+	// SetBytes is what each set's live objects take up in the archives,
+	// keyed by the ids Owner returned. An object several sets reach counts
+	// once, for the first of them the mark walked.
+	SetBytes map[int64]uint64
 	// SweepSkipped names the reason when the run marked but did not sweep.
 	SweepSkipped     string
 	Swept            int
@@ -183,10 +190,18 @@ type gcRun struct {
 	runDir   string
 	resumed  int
 
-	roots      []refKey
+	roots      []gcRoot
 	tombstones []gcTombstone
 	// targets maps every tombstone target to whether the snapshot still holds it.
 	targets map[refKey]bool
+	// setBytes is what the mark attributed to each set.
+	setBytes map[int64]uint64
+}
+
+// gcRoot is a root with the set it belongs to, zero when nothing names it.
+type gcRoot struct {
+	key   refKey
+	owner int64
 }
 
 // Collect marks every object reachable from a live commit or pin, records
@@ -209,7 +224,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		return nil, errors.Wrap(err, "loading gc state")
 	}
 
-	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(), archives: make(map[string]*gcArchive), targets: make(map[refKey]bool)}
+	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(),
+		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool), setBytes: make(map[int64]uint64)}
 	if prev != nil {
 		run.gen = prev.Generation + 1
 	}
@@ -252,6 +268,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	gcMarkDuration.Record(ctx, time.Since(markStart).Seconds())
 
 	mergeStart := time.Now()
+	report.SetBytes = run.setBytes
 	report.Marked, err = run.merge(live)
 	if err != nil {
 		return nil, err
@@ -381,6 +398,35 @@ func (r *gcRun) takeSnapshot() error {
 
 // collectRoots finds the commits and pins of the snapshot that carry no
 // tombstone. Tombstones are remembered so the merge can decide their fate.
+// root pairs a root ref with the set Owner names it for.
+func (r *gcRun) root(hash []byte) gcRoot {
+	root := gcRoot{key: keyOf(hash)}
+	if r.opts.Owner != nil {
+		root.owner = r.opts.Owner(hash)
+	}
+
+	return root
+}
+
+// batches groups the roots into the units the mark checkpoints. A batch
+// holds the roots of one set only, so every run it spills belongs to that
+// set.
+func (r *gcRun) batches() [][]gcRoot {
+	var batches [][]gcRoot
+
+	for start := 0; start < len(r.roots); {
+		end := start
+		for end < len(r.roots) && end-start < rootBatch && r.roots[end].owner == r.roots[start].owner {
+			end++
+		}
+
+		batches = append(batches, r.roots[start:end])
+		start = end
+	}
+
+	return batches
+}
+
 func (r *gcRun) collectRoots(ctx context.Context) error {
 	tombstoned := make(map[refKey]bool)
 
@@ -421,7 +467,7 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	}
 
 	for _, ref := range leases {
-		r.roots = append(r.roots, keyOf(ref.Hash))
+		r.roots = append(r.roots, r.root(ref.Hash))
 	}
 
 	for _, ga := range r.order {
@@ -432,7 +478,7 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 			}
 
 			if key := keyOf(rec.Sum[:]); !tombstoned[key] {
-				r.roots = append(r.roots, key)
+				r.roots = append(r.roots, r.root(rec.Sum[:]))
 			}
 
 			return nil
@@ -489,7 +535,7 @@ func (r *gcRun) snapshotID() string {
 	}
 
 	for _, root := range r.roots {
-		h.Write(root[:])
+		h.Write(root.key[:])
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))
@@ -497,7 +543,7 @@ func (r *gcRun) snapshotID() string {
 
 // openRunDir prepares the run directory, keeping the runs of batches an
 // interrupted mark of the same snapshot completed.
-func (r *gcRun) openRunDir() (*liveRuns, map[int]bool, error) {
+func (r *gcRun) openRunDir(batches [][]gcRoot) (*liveRuns, map[int]bool, error) {
 	r.runDir = filepath.Join(r.opts.TempDir, "goback-gc", fmt.Sprintf("gen-%d", r.gen))
 	manifest := filepath.Join(r.runDir, "snapshot")
 
@@ -538,8 +584,8 @@ func (r *gcRun) openRunDir() (*liveRuns, map[int]bool, error) {
 		batch, _, _ := strings.Cut(strings.TrimPrefix(e.Name(), "batch-"), "-")
 		path := filepath.Join(r.runDir, e.Name())
 
-		if n, err := strconv.Atoi(batch); err == nil && done[n] {
-			live.files = append(live.files, path)
+		if n, err := strconv.Atoi(batch); err == nil && done[n] && n < len(batches) {
+			live.adopt(path, batches[n][0].owner)
 		} else {
 			_ = os.Remove(path)
 		}
@@ -552,9 +598,10 @@ func (r *gcRun) openRunDir() (*liveRuns, map[int]bool, error) {
 // returns the live refs. Blobs are marked from the File that names them
 // and never read.
 func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
-	sortKeys(r.roots)
+	sortRoots(r.roots)
+	batches := r.batches()
 
-	live, done, err := r.openRunDir()
+	live, done, err := r.openRunDir(batches)
 	if err != nil {
 		return nil, err
 	}
@@ -562,17 +609,15 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	visited := newVisitedSet()
 	r.visited = visited
 
-	for batch := 0; batch*rootBatch < len(r.roots); batch++ {
-		roots := r.roots[batch*rootBatch : min((batch+1)*rootBatch, len(r.roots))]
-
+	for batch, roots := range batches {
 		if done[batch] {
 			r.resumed++
 			continue
 		}
 
-		live.prefix = batchPrefix(batch)
+		live.begin(batchPrefix(batch), roots[0].owner)
 
-		err := r.markBatch(ctx, visited.claim(append([]refKey(nil), roots...)), visited, live)
+		err := r.markBatch(ctx, visited.claim(keysOf(roots)), visited, live)
 		if err != nil {
 			return nil, err
 		}
@@ -840,9 +885,13 @@ func (h *mergeHeap) Pop() interface{} {
 func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 	var marked uint64
 
-	err := r.scan(live, func(ga *gcArchive, pos int) {
+	err := r.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, owner int64) {
 		ga.cur.Set(uint(pos))
 		marked++
+
+		if owner != 0 {
+			r.setBytes[owner] += uint64(rec.Length)
+		}
 	}, func(sum refKey) {
 		if _, isTarget := r.targets[sum]; isTarget {
 			r.targets[sum] = true
@@ -863,8 +912,9 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 }
 
 // scan walks every index record of the snapshot in ref order alongside the
-// sorted runs; hit sees the records the runs name, each sees every record.
-func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int), each func(sum refKey)) error {
+// sorted runs; hit sees the records the runs name, with the set they were
+// reached from, and each sees every record.
+func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owner int64), each func(sum refKey)) error {
 	it, err := runs.iterator()
 	if err != nil {
 		return err
@@ -901,18 +951,18 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int), each func
 	}
 	heap.Init(&h)
 
-	cur, ok := it.next()
+	cur, owner, ok := it.next()
 
 	for h.Len() > 0 {
 		top := h[0]
 		sum := top.rec.Sum
 
 		for ok && bytes.Compare(cur[:], sum[:]) < 0 {
-			cur, ok = it.next()
+			cur, owner, ok = it.next()
 		}
 
 		if ok && cur == sum {
-			hit(top.ga, top.pos)
+			hit(top.ga, top.pos, top.rec, owner)
 		}
 
 		if each != nil {
@@ -956,14 +1006,14 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 	}
 
 	runs := newLiveRuns(r.runDir, liveRunLimit)
-	runs.prefix = "erased-"
+	runs.begin("erased-", 0)
 	defer runs.close()
 
 	if err := r.markBatch(ctx, r.visited.claim(roots), r.visited, runs); err != nil {
 		return err
 	}
 
-	return r.scan(runs, func(ga *gcArchive, _ int) { ga.erase = true }, nil)
+	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ int64) { ga.erase = true }, nil)
 }
 
 func (r *gcRun) writeResults() error {

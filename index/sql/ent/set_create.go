@@ -115,6 +115,20 @@ func (_c *SetCreate) SetNillableRescan(v *bool) *SetCreate {
 	return _c
 }
 
+// SetPhysicalSize sets the "physical_size" field.
+func (_c *SetCreate) SetPhysicalSize(v int64) *SetCreate {
+	_c.mutation.SetPhysicalSize(v)
+	return _c
+}
+
+// SetNillablePhysicalSize sets the "physical_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillablePhysicalSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetPhysicalSize(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SetCreate) SetID(v int64) *SetCreate {
 	_c.mutation.SetID(v)
@@ -316,6 +330,10 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Rescan(); ok {
 		_spec.SetField(set.FieldRescan, field.TypeBool, value)
 		_node.Rescan = value
+	}
+	if value, ok := _c.mutation.PhysicalSize(); ok {
+		_spec.SetField(set.FieldPhysicalSize, field.TypeInt64, value)
+		_node.PhysicalSize = &value
 	}
 	if nodes := _c.mutation.FilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -529,6 +547,30 @@ func (u *SetUpsert) UpdateRescan() *SetUpsert {
 	return u
 }
 
+// SetPhysicalSize sets the "physical_size" field.
+func (u *SetUpsert) SetPhysicalSize(v int64) *SetUpsert {
+	u.Set(set.FieldPhysicalSize, v)
+	return u
+}
+
+// UpdatePhysicalSize sets the "physical_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdatePhysicalSize() *SetUpsert {
+	u.SetExcluded(set.FieldPhysicalSize)
+	return u
+}
+
+// AddPhysicalSize adds v to the "physical_size" field.
+func (u *SetUpsert) AddPhysicalSize(v int64) *SetUpsert {
+	u.Add(set.FieldPhysicalSize, v)
+	return u
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (u *SetUpsert) ClearPhysicalSize() *SetUpsert {
+	u.SetNull(set.FieldPhysicalSize)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -686,6 +728,34 @@ func (u *SetUpsertOne) SetRescan(v bool) *SetUpsertOne {
 func (u *SetUpsertOne) UpdateRescan() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateRescan()
+	})
+}
+
+// SetPhysicalSize sets the "physical_size" field.
+func (u *SetUpsertOne) SetPhysicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetPhysicalSize(v)
+	})
+}
+
+// AddPhysicalSize adds v to the "physical_size" field.
+func (u *SetUpsertOne) AddPhysicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddPhysicalSize(v)
+	})
+}
+
+// UpdatePhysicalSize sets the "physical_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdatePhysicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdatePhysicalSize()
+	})
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (u *SetUpsertOne) ClearPhysicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearPhysicalSize()
 	})
 }
 
@@ -1012,6 +1082,34 @@ func (u *SetUpsertBulk) SetRescan(v bool) *SetUpsertBulk {
 func (u *SetUpsertBulk) UpdateRescan() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateRescan()
+	})
+}
+
+// SetPhysicalSize sets the "physical_size" field.
+func (u *SetUpsertBulk) SetPhysicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetPhysicalSize(v)
+	})
+}
+
+// AddPhysicalSize adds v to the "physical_size" field.
+func (u *SetUpsertBulk) AddPhysicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddPhysicalSize(v)
+	})
+}
+
+// UpdatePhysicalSize sets the "physical_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdatePhysicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdatePhysicalSize()
+	})
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (u *SetUpsertBulk) ClearPhysicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearPhysicalSize()
 	})
 }
 

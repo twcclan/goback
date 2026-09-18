@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/set"
 )
 
@@ -128,9 +129,63 @@ func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		out[i].PhysicalSize = deref(rows[i].PhysicalSize)
 	}
 
 	return out, nil
+}
+
+// RootOwner returns the lookup a garbage collection attributes with: it
+// answers a root, a commit or a pin holding one, with the set it belongs
+// to, and anything else with zero.
+func (x *Index) RootOwner(ctx context.Context) (func(root []byte) int64, error) {
+	commits, err := x.client.CommitRow.Query().Select(commitrow.FieldRef, commitrow.FieldSetID).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	owners := make(map[string]int64, len(commits))
+	for _, row := range commits {
+		owners[string(row.Ref)] = row.SetID
+	}
+
+	pins, err := x.client.Pin.Query().Select(pin.FieldRef, pin.FieldTarget).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range pins {
+		if owner, ok := owners[string(row.Target)]; ok {
+			owners[string(row.Ref)] = owner
+		}
+	}
+
+	return func(root []byte) int64 { return owners[string(root)] }, nil
+}
+
+// RecordPhysicalSizes records what a garbage collection attributed to each
+// set; a set it did not name holds nothing of its own.
+func (x *Index) RecordPhysicalSizes(ctx context.Context, sizes map[int64]uint64) error {
+	return x.tx(ctx, func(tx *ent.Tx) error {
+		err := tx.Set.Update().ClearPhysicalSize().Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		for id, size := range sizes {
+			err = tx.Set.UpdateOneID(id).SetPhysicalSize(int64(size)).Exec(ctx)
+			if ent.IsNotFound(err) {
+				continue
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (x *Index) latestSize(ctx context.Context, setID int64) (int64, error) {

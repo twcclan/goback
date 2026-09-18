@@ -141,6 +141,33 @@ func (_u *SetUpdate) SetNillableRescan(v *bool) *SetUpdate {
 	return _u
 }
 
+// SetPhysicalSize sets the "physical_size" field.
+func (_u *SetUpdate) SetPhysicalSize(v int64) *SetUpdate {
+	_u.mutation.ResetPhysicalSize()
+	_u.mutation.SetPhysicalSize(v)
+	return _u
+}
+
+// SetNillablePhysicalSize sets the "physical_size" field if the given value is not nil.
+func (_u *SetUpdate) SetNillablePhysicalSize(v *int64) *SetUpdate {
+	if v != nil {
+		_u.SetPhysicalSize(*v)
+	}
+	return _u
+}
+
+// AddPhysicalSize adds value to the "physical_size" field.
+func (_u *SetUpdate) AddPhysicalSize(v int64) *SetUpdate {
+	_u.mutation.AddPhysicalSize(v)
+	return _u
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (_u *SetUpdate) ClearPhysicalSize() *SetUpdate {
+	_u.mutation.ClearPhysicalSize()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdate) AddFileIDs(ids ...int) *SetUpdate {
 	_u.mutation.AddFileIDs(ids...)
@@ -365,6 +392,15 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Rescan(); ok {
 		_spec.SetField(set.FieldRescan, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PhysicalSize(); ok {
+		_spec.SetField(set.FieldPhysicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPhysicalSize(); ok {
+		_spec.AddField(set.FieldPhysicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.PhysicalSizeCleared() {
+		_spec.ClearField(set.FieldPhysicalSize, field.TypeInt64)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -676,6 +712,33 @@ func (_u *SetUpdateOne) SetNillableRescan(v *bool) *SetUpdateOne {
 	return _u
 }
 
+// SetPhysicalSize sets the "physical_size" field.
+func (_u *SetUpdateOne) SetPhysicalSize(v int64) *SetUpdateOne {
+	_u.mutation.ResetPhysicalSize()
+	_u.mutation.SetPhysicalSize(v)
+	return _u
+}
+
+// SetNillablePhysicalSize sets the "physical_size" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillablePhysicalSize(v *int64) *SetUpdateOne {
+	if v != nil {
+		_u.SetPhysicalSize(*v)
+	}
+	return _u
+}
+
+// AddPhysicalSize adds value to the "physical_size" field.
+func (_u *SetUpdateOne) AddPhysicalSize(v int64) *SetUpdateOne {
+	_u.mutation.AddPhysicalSize(v)
+	return _u
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (_u *SetUpdateOne) ClearPhysicalSize() *SetUpdateOne {
+	_u.mutation.ClearPhysicalSize()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdateOne) AddFileIDs(ids ...int) *SetUpdateOne {
 	_u.mutation.AddFileIDs(ids...)
@@ -930,6 +993,15 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 	}
 	if value, ok := _u.mutation.Rescan(); ok {
 		_spec.SetField(set.FieldRescan, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PhysicalSize(); ok {
+		_spec.SetField(set.FieldPhysicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPhysicalSize(); ok {
+		_spec.AddField(set.FieldPhysicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.PhysicalSizeCleared() {
+		_spec.ClearField(set.FieldPhysicalSize, field.TypeInt64)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{

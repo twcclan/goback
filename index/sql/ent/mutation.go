@@ -6274,6 +6274,8 @@ type SetMutation struct {
 	retention_paused *bool
 	erase            *bool
 	rescan           *bool
+	physical_size    *int64
+	addphysical_size *int64
 	clearedFields    map[string]struct{}
 	files            map[int]struct{}
 	removedfiles     map[int]struct{}
@@ -6674,6 +6676,76 @@ func (m *SetMutation) ResetRescan() {
 	m.rescan = nil
 }
 
+// SetPhysicalSize sets the "physical_size" field.
+func (m *SetMutation) SetPhysicalSize(i int64) {
+	m.physical_size = &i
+	m.addphysical_size = nil
+}
+
+// PhysicalSize returns the value of the "physical_size" field in the mutation.
+func (m *SetMutation) PhysicalSize() (r int64, exists bool) {
+	v := m.physical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPhysicalSize returns the old "physical_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldPhysicalSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPhysicalSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPhysicalSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPhysicalSize: %w", err)
+	}
+	return oldValue.PhysicalSize, nil
+}
+
+// AddPhysicalSize adds i to the "physical_size" field.
+func (m *SetMutation) AddPhysicalSize(i int64) {
+	if m.addphysical_size != nil {
+		*m.addphysical_size += i
+	} else {
+		m.addphysical_size = &i
+	}
+}
+
+// AddedPhysicalSize returns the value that was added to the "physical_size" field in this mutation.
+func (m *SetMutation) AddedPhysicalSize() (r int64, exists bool) {
+	v := m.addphysical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPhysicalSize clears the value of the "physical_size" field.
+func (m *SetMutation) ClearPhysicalSize() {
+	m.physical_size = nil
+	m.addphysical_size = nil
+	m.clearedFields[set.FieldPhysicalSize] = struct{}{}
+}
+
+// PhysicalSizeCleared returns if the "physical_size" field was cleared in this mutation.
+func (m *SetMutation) PhysicalSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldPhysicalSize]
+	return ok
+}
+
+// ResetPhysicalSize resets all changes to the "physical_size" field.
+func (m *SetMutation) ResetPhysicalSize() {
+	m.physical_size = nil
+	m.addphysical_size = nil
+	delete(m.clearedFields, set.FieldPhysicalSize)
+}
+
 // AddFileIDs adds the "files" edge to the File entity by ids.
 func (m *SetMutation) AddFileIDs(ids ...int) {
 	if m.files == nil {
@@ -6924,7 +6996,7 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
 	}
@@ -6945,6 +7017,9 @@ func (m *SetMutation) Fields() []string {
 	}
 	if m.rescan != nil {
 		fields = append(fields, set.FieldRescan)
+	}
+	if m.physical_size != nil {
+		fields = append(fields, set.FieldPhysicalSize)
 	}
 	return fields
 }
@@ -6968,6 +7043,8 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 		return m.Erase()
 	case set.FieldRescan:
 		return m.Rescan()
+	case set.FieldPhysicalSize:
+		return m.PhysicalSize()
 	}
 	return nil, false
 }
@@ -6991,6 +7068,8 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldErase(ctx)
 	case set.FieldRescan:
 		return m.OldRescan(ctx)
+	case set.FieldPhysicalSize:
+		return m.OldPhysicalSize(ctx)
 	}
 	return nil, fmt.Errorf("unknown Set field %s", name)
 }
@@ -7049,6 +7128,13 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRescan(v)
 		return nil
+	case set.FieldPhysicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPhysicalSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
 }
@@ -7056,13 +7142,21 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *SetMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addphysical_size != nil {
+		fields = append(fields, set.FieldPhysicalSize)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *SetMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case set.FieldPhysicalSize:
+		return m.AddedPhysicalSize()
+	}
 	return nil, false
 }
 
@@ -7071,6 +7165,13 @@ func (m *SetMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *SetMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case set.FieldPhysicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPhysicalSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set numeric field %s", name)
 }
@@ -7084,6 +7185,9 @@ func (m *SetMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(set.FieldRetentionPolicy) {
 		fields = append(fields, set.FieldRetentionPolicy)
+	}
+	if m.FieldCleared(set.FieldPhysicalSize) {
+		fields = append(fields, set.FieldPhysicalSize)
 	}
 	return fields
 }
@@ -7104,6 +7208,9 @@ func (m *SetMutation) ClearField(name string) error {
 		return nil
 	case set.FieldRetentionPolicy:
 		m.ClearRetentionPolicy()
+		return nil
+	case set.FieldPhysicalSize:
+		m.ClearPhysicalSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set nullable field %s", name)
@@ -7133,6 +7240,9 @@ func (m *SetMutation) ResetField(name string) error {
 		return nil
 	case set.FieldRescan:
 		m.ResetRescan()
+		return nil
+	case set.FieldPhysicalSize:
+		m.ResetPhysicalSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)

@@ -287,6 +287,7 @@ var (
 		{Name: "retention_paused", Type: field.TypeBool, Default: false},
 		{Name: "erase", Type: field.TypeBool, Default: false},
 		{Name: "rescan", Type: field.TypeBool, Default: false},
+		{Name: "physical_size", Type: field.TypeInt64, Nullable: true},
 	}
 	// SetsTable holds the schema information for the "sets" table.
 	SetsTable = &schema.Table{

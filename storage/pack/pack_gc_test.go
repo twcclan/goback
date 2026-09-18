@@ -700,7 +700,7 @@ func TestLiveRunsMergeSortedAndDistinct(t *testing.T) {
 
 	var got []refKey
 	for {
-		k, ok := it.next()
+		k, _, ok := it.next()
 		if !ok {
 			break
 		}
@@ -709,4 +709,87 @@ func TestLiveRunsMergeSortedAndDistinct(t *testing.T) {
 
 	require.Len(t, got, len(distinct))
 	require.True(t, sort.SliceIsSorted(got, func(i, j int) bool { return bytes.Compare(got[i][:], got[j][:]) < 0 }))
+}
+
+// storedBytes is what the archives spend on these objects.
+func storedBytes(t *testing.T, store *PackStorage, objects ...*proto.Object) uint64 {
+	t.Helper()
+
+	var total uint64
+	for _, obj := range objects {
+		loc, err := store.index.LocateObject(obj.Ref(), Scope{})
+		require.NoError(t, err)
+
+		total += uint64(loc.Record.Length)
+	}
+
+	return total
+}
+
+func TestCollectAttributesObjectsToTheSetThatReachesThemFirst(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	shared := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("s"), 512)})
+	mine := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("m"), 1024)})
+	yours := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("y"), 2048)})
+
+	myFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Ref: mine.Ref(), Length: 1024},
+		{Ref: shared.Ref(), Offset: 1024, Length: 512},
+	}})
+	yourFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Ref: shared.Ref(), Length: 512},
+		{Ref: yours.Ref(), Offset: 512, Length: 2048},
+	}})
+
+	myTree := treeOf([]*proto.Object{myFile})
+	yourTree := treeOf([]*proto.Object{yourFile})
+
+	myCommit := proto.NewObject(&proto.Commit{Tree: myTree.Ref(), Timestamp: 1, BackupSet: "mine"})
+	yourCommit := proto.NewObject(&proto.Commit{Tree: yourTree.Ref(), Timestamp: 2, BackupSet: "yours"})
+
+	putAll(t, store, []*proto.Object{shared, mine, yours, myFile, yourFile, myTree, yourTree, myCommit, yourCommit})
+
+	opts := gcOptions(t, 0)
+	opts.Owner = func(root []byte) int64 {
+		switch {
+		case bytes.Equal(root, myCommit.Ref().Hash):
+			return 7
+		case bytes.Equal(root, yourCommit.Ref().Hash):
+			return 9
+		}
+
+		return 0
+	}
+
+	report, err := store.Collect(ctx, opts)
+	require.NoError(t, err)
+
+	require.EqualValues(t, storedBytes(t, store, myCommit, myTree, myFile, mine, shared), report.SetBytes[7])
+	require.EqualValues(t, storedBytes(t, store, yourCommit, yourTree, yourFile, yours), report.SetBytes[9],
+		"the shared blob belongs to the set that reached it first")
+
+	var attributed uint64
+	for _, bytes := range report.SetBytes {
+		attributed += bytes
+	}
+	require.EqualValues(t, report.Marked, 9, "every object is live")
+	require.EqualValues(t, storedBytes(t, store, shared, mine, yours, myFile, yourFile, myTree, yourTree, myCommit, yourCommit), attributed,
+		"what the sets hold adds up to what the store holds")
+
+	require.NoError(t, store.Close())
+}
+
+func TestCollectAttributesNothingWithoutAnOwner(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+
+	reachable, unreachable := makeGCTestData(t)
+	putAll(t, store, append(append([]*proto.Object{}, reachable...), unreachable...))
+
+	report, err := store.Collect(context.Background(), gcOptions(t, 0))
+	require.NoError(t, err)
+	require.Empty(t, report.SetBytes)
+
+	require.NoError(t, store.Close())
 }

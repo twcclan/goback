@@ -266,6 +266,8 @@ func TestPostgres(t *testing.T) {
 		"LogicalSizeSkipsEmptyNodes":       TestLogicalSizeLeavesOutWhatHoldsNoContent,
 		"FillingSizesRepairsOldRows":       TestFillingSizesRepairsCommitsIndexedWithoutOne,
 		"FillingSizesSkipsTombstoned":      TestFillingSizesLeavesATombstonedCommitAlone,
+		"RootOwnerNamesTheSet":             TestRootOwnerNamesTheSetBehindACommitOrPin,
+		"RecordedPhysicalSizes":            TestRecordedPhysicalSizesReplaceTheLastRuns,
 		"BeginCommitGates":                 TestBeginCommitGates,
 		"SetRefsFollowCommits":             TestSetRefsFollowCommits,
 		"SameSecondCommitsAreKept":         TestSameSecondCommitsAreKept,

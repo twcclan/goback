@@ -29,7 +29,10 @@ type BackupSet struct {
 	// active, closing or deleted
 	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	// the logical size of the newest live commit
-	LogicalSize   int64 `protobuf:"varint,5,opt,name=logical_size,json=logicalSize,proto3" json:"logical_size,omitempty"`
+	LogicalSize int64 `protobuf:"varint,5,opt,name=logical_size,json=logicalSize,proto3" json:"logical_size,omitempty"`
+	// what the set's objects take up in the store, as of the last
+	// garbage collection
+	PhysicalSize  int64 `protobuf:"varint,6,opt,name=physical_size,json=physicalSize,proto3" json:"physical_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +91,13 @@ func (x *BackupSet) GetState() string {
 func (x *BackupSet) GetLogicalSize() int64 {
 	if x != nil {
 		return x.LogicalSize
+	}
+	return 0
+}
+
+func (x *BackupSet) GetPhysicalSize() int64 {
+	if x != nil {
+		return x.PhysicalSize
 	}
 	return 0
 }
@@ -1072,12 +1082,13 @@ var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"y\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
 	"\tBackupSet\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x19\n" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
-	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSizeJ\x04\b\x01\x10\x02\"\x11\n" +
+	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSize\x12#\n" +
+	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSizeJ\x04\b\x01\x10\x02\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
 	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"C\n" +

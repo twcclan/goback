@@ -41,6 +41,9 @@ message BackupSet {
     string state = 4;
     // the logical size of the newest live commit
     int64 logical_size = 5;
+    // what the set's objects take up in the store, as of the last
+    // garbage collection
+    int64 physical_size = 6;
 }
 
 message ListSetsRequest {}

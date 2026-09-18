@@ -31,6 +31,7 @@ func (Set) Fields() []ent.Field {
 		field.Bool("retention_paused").Default(false),
 		field.Bool("erase").Default(false),
 		field.Bool("rescan").Default(false),
+		field.Int64("physical_size").Optional().Nillable(),
 	}
 }
 

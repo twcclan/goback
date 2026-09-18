@@ -57,6 +57,7 @@ type Mapper interface {
 	Record(in *ent.Object) pack.IndexRecord
 
 	// field:LogicalSize from:"-"
+	// field:PhysicalSize from:"-"
 	Set(in *ent.Set) index.SetInfo
 }
 

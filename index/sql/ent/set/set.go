@@ -28,6 +28,8 @@ const (
 	FieldErase = "erase"
 	// FieldRescan holds the string denoting the rescan field in the database.
 	FieldRescan = "rescan"
+	// FieldPhysicalSize holds the string denoting the physical_size field in the database.
+	FieldPhysicalSize = "physical_size"
 	// EdgeFiles holds the string denoting the files edge name in mutations.
 	EdgeFiles = "files"
 	// EdgeTrees holds the string denoting the trees edge name in mutations.
@@ -78,6 +80,7 @@ var Columns = []string{
 	FieldRetentionPaused,
 	FieldErase,
 	FieldRescan,
+	FieldPhysicalSize,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -167,6 +170,11 @@ func ByErase(opts ...sql.OrderTermOption) OrderOption {
 // ByRescan orders the results by the rescan field.
 func ByRescan(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRescan, opts...).ToFunc()
+}
+
+// ByPhysicalSize orders the results by the physical_size field.
+func ByPhysicalSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPhysicalSize, opts...).ToFunc()
 }
 
 // ByFilesCount orders the results by files count.

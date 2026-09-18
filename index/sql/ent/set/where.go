@@ -83,6 +83,11 @@ func Rescan(v bool) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldRescan, v))
 }
 
+// PhysicalSize applies equality check predicate on the "physical_size" field. It's identical to PhysicalSizeEQ.
+func PhysicalSize(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldPhysicalSize, v))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldName, v))
@@ -346,6 +351,56 @@ func RescanEQ(v bool) predicate.Set {
 // RescanNEQ applies the NEQ predicate on the "rescan" field.
 func RescanNEQ(v bool) predicate.Set {
 	return predicate.Set(sql.FieldNEQ(FieldRescan, v))
+}
+
+// PhysicalSizeEQ applies the EQ predicate on the "physical_size" field.
+func PhysicalSizeEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeNEQ applies the NEQ predicate on the "physical_size" field.
+func PhysicalSizeNEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeIn applies the In predicate on the "physical_size" field.
+func PhysicalSizeIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldPhysicalSize, vs...))
+}
+
+// PhysicalSizeNotIn applies the NotIn predicate on the "physical_size" field.
+func PhysicalSizeNotIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldPhysicalSize, vs...))
+}
+
+// PhysicalSizeGT applies the GT predicate on the "physical_size" field.
+func PhysicalSizeGT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeGTE applies the GTE predicate on the "physical_size" field.
+func PhysicalSizeGTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeLT applies the LT predicate on the "physical_size" field.
+func PhysicalSizeLT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeLTE applies the LTE predicate on the "physical_size" field.
+func PhysicalSizeLTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldPhysicalSize, v))
+}
+
+// PhysicalSizeIsNil applies the IsNil predicate on the "physical_size" field.
+func PhysicalSizeIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldPhysicalSize))
+}
+
+// PhysicalSizeNotNil applies the NotNil predicate on the "physical_size" field.
+func PhysicalSizeNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldPhysicalSize))
 }
 
 // HasFiles applies the HasEdge predicate on the "files" edge.

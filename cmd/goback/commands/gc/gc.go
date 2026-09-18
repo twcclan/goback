@@ -51,7 +51,15 @@ var Command = cli.Command{
 	},
 }
 
+// attributer is an index that names the set behind a root, so a
+// collection can record what each set's objects take up.
+type attributer interface {
+	RootOwner(ctx context.Context) (func(root []byte) int64, error)
+	RecordPhysicalSizes(ctx context.Context, sizes map[int64]uint64) error
+}
+
 func gcAction(c *cli.Context) {
+	ctx := common.Context(c)
 	store := common.GetObjectStore(c)
 
 	collector, ok := common.Unwrap(store).(pack.Collector)
@@ -59,16 +67,38 @@ func gcAction(c *cli.Context) {
 		log.Fatalf("storage %s cannot be garbage collected", c.GlobalString("storage"))
 	}
 
-	report, err := collector.Collect(context.Background(), pack.CollectOptions{
+	index := common.OpenIndex(c, store)
+	defer index.Close()
+
+	sizes, _ := index.(attributer)
+
+	opts := pack.CollectOptions{
 		Readers:      c.Int("readers"),
 		DeadRatio:    c.Float64("dead-ratio"),
 		ErasureBound: c.Duration("erasure-bound"),
 		MinAge:       c.Duration("min-age"),
 		NoSweep:      c.Bool("no-sweep"),
 		TempDir:      c.String("temp-dir"),
-	})
+	}
+
+	if sizes != nil {
+		owner, err := sizes.RootOwner(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		opts.Owner = owner
+	}
+
+	report, err := collector.Collect(ctx, opts)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if sizes != nil {
+		if err := sizes.RecordPhysicalSizes(ctx, report.SetBytes); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	Log(report)
