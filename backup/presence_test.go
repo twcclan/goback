@@ -65,7 +65,7 @@ func (f *walkerFixture) filterOf(ref *proto.Ref) *presence.Filter {
 	obj, err := f.store.Get(context.Background(), ref)
 	require.NoError(f.t, err)
 
-	filter, _, err := CollectPresence(context.Background(), f.store, obj.GetCommit().Tree)
+	filter, err := CollectPresence(context.Background(), f.store, obj.GetCommit().Tree)
 	require.NoError(f.t, err)
 
 	return filter

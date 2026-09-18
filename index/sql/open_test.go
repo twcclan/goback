@@ -262,6 +262,8 @@ func TestPostgres(t *testing.T) {
 		"EnsureSetRecreatesUnderCarriedID": TestEnsureSetRecreatesUnderCarriedID,
 		"PresenceFollowsTheHead":           TestPresenceFollowsTheHead,
 		"LogicalSizeFollowsCommits":        TestLogicalSizeFollowsCommits,
+		"LogicalSizeBeforeMaintenance":     TestLogicalSizeIsKnownBeforeMaintenanceRuns,
+		"LogicalSizeSkipsEmptyNodes":       TestLogicalSizeLeavesOutWhatHoldsNoContent,
 		"BeginCommitGates":                 TestBeginCommitGates,
 		"SetRefsFollowCommits":             TestSetRefsFollowCommits,
 		"SameSecondCommitsAreKept":         TestSameSecondCommitsAreKept,

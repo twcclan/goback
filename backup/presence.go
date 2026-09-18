@@ -108,25 +108,22 @@ func Missing(ctx context.Context, store ObjectStore, refs []*proto.Ref) ([]*prot
 
 // CollectPresence walks a tree and returns a filter over every blob ref it
 // reaches.
-func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*presence.Filter, int64, error) {
+func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*presence.Filter, error) {
 	root, err := LoadTree(ctx, store, tree)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	var (
 		mtx  sync.Mutex
 		refs = map[string]struct{}{}
-		size int64
 	)
 
 	collect := func(file *proto.File) {
 		mtx.Lock()
 		for _, part := range file.GetParts() {
 			refs[string(part.GetRef().GetHash())] = struct{}{}
-			size += int64(part.GetLength())
 		}
-		size += int64(len(file.GetInline()))
 		mtx.Unlock()
 	}
 
@@ -159,7 +156,7 @@ func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*
 		return nil
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	filter := presence.New(uint64(len(refs)))
@@ -167,5 +164,5 @@ func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*
 		filter.Add([]byte(ref))
 	}
 
-	return filter, size, nil
+	return filter, nil
 }

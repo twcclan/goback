@@ -129,14 +129,9 @@ func (x *Index) BuildPendingPresence(ctx context.Context) (int, error) {
 func (x *Index) buildPresence(ctx context.Context, setID int64, name string, commit, tree *proto.Ref) error {
 	start := time.Now()
 
-	filter, size, err := backup.CollectPresence(ctx, x.ObjectStore, tree)
+	filter, err := backup.CollectPresence(ctx, x.ObjectStore, tree)
 	if err != nil {
 		return fmt.Errorf("building the filter of commit %x: %w", commit.Hash, err)
-	}
-
-	err = x.client.CommitRow.Update().Where(commitrow.Ref(commit.Hash)).SetLogicalSize(size).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("recording the size of commit %x: %w", commit.Hash, err)
 	}
 
 	filter.Commit = commit

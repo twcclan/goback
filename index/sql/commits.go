@@ -255,10 +255,15 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return nil
 		}
 
+		size, err := logicalSize(ctx, c, setID, at)
+		if err != nil {
+			return err
+		}
+
 		err = c.CommitRow.Create().SetRef(ref.Hash).SetTimestamp(time.Unix(commit.Timestamp, 0).UTC()).SetReceivedAt(at).
 			SetTree(commit.Tree.Hash).SetParent(commit.GetParent().GetHash()).SetAgentID(commit.GetAgentId()).
 			SetScanStartNs(commit.GetScanStartNs()).SetPolicyVersion(commit.GetPolicyVersion()).SetConsistent(commit.GetConsistent()).
-			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).Exec(ctx)
+			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -996,4 +1001,29 @@ func mapAll[S, T any](in []S, f func(S) T) []T {
 	}
 
 	return out
+}
+
+// logicalSize is what the set's files hold at a moment: the recorded size
+// of every file version open then. Directories and symlinks carry no
+// content and are left out.
+func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) (int64, error) {
+	var sums []struct {
+		Sum *int64 `sql:"sum"`
+	}
+
+	err := c.File.Query().Where(
+		file.SetID(setID),
+		file.TypeEQ(uint32(proto.NodeType_NODE_FILE)),
+		file.ValidFromLTE(at),
+		file.Or(file.ValidUntilIsNil(), file.ValidUntilGT(at)),
+	).Aggregate(ent.Sum(file.FieldSize)).Scan(ctx, &sums)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(sums) == 0 {
+		return 0, nil
+	}
+
+	return deref(sums[0].Sum), nil
 }

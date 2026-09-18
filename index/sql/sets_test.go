@@ -390,3 +390,49 @@ func TestSetRefsFollowCommits(t *testing.T) {
 	require.Zero(t, count)
 	require.False(t, f.references(f.ctx, commit))
 }
+
+func TestLogicalSizeIsKnownBeforeMaintenanceRuns(t *testing.T) {
+	f := newFixture(t)
+
+	// no presence job here: indexing alone must know the size
+	first := proto.NewObject(&proto.Commit{
+		Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", "one"), f.file("b.txt", "three")).Ref(),
+		BackupSet: "world", AgentId: "node-1",
+	})
+	require.NoError(t, f.x.Put(f.ctx, first))
+
+	row := f.commitRow(first.Ref())
+	require.NotNil(t, row.LogicalSize)
+	require.EqualValues(t, 8, *row.LogicalSize)
+	require.Empty(t, row.Presence, "the filter is still the maintenance job's work")
+
+	// a commit that drops a file and grows another is smaller by the
+	// difference, not by what it happened to upload
+	f.advance(time.Hour)
+	second := proto.NewObject(&proto.Commit{
+		Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", "one longer")).Ref(),
+		BackupSet: "world", AgentId: "node-1",
+	})
+	require.NoError(t, f.x.Put(f.ctx, second))
+
+	require.EqualValues(t, 10, *f.commitRow(second.Ref()).LogicalSize)
+	require.EqualValues(t, 8, *f.commitRow(first.Ref()).LogicalSize, "the older commit keeps its own size")
+}
+
+func TestLogicalSizeLeavesOutWhatHoldsNoContent(t *testing.T) {
+	f := newFixture(t)
+
+	root := f.tree(
+		f.file("a.txt", "one"),
+		f.symlink("link", "a.txt"),
+		f.dir("sub", f.file("b.txt", "two")),
+	)
+
+	commit := proto.NewObject(&proto.Commit{
+		Timestamp: f.clock.Unix(), Tree: root.Ref(), BackupSet: "world", AgentId: "node-1",
+	})
+	require.NoError(t, f.x.Put(f.ctx, commit))
+
+	require.EqualValues(t, 6, *f.commitRow(commit.Ref()).LogicalSize,
+		"two files of three bytes; the symlink and the directory hold none")
+}
