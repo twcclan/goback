@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -146,4 +148,48 @@ func TestCommitAndRestoreRoundTrip(t *testing.T) {
 	require.Equal(t, []byte("kept"), got["extra.txt"])
 	delete(got, "extra.txt")
 	require.Equal(t, want, got)
+}
+
+// TestRestoreOfManyFilesIsExact restores a tree wide enough that the
+// files go through the worker pool several at a time, and expects every
+// one of them, with directory times intact.
+func TestRestoreOfManyFilesIsExact(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the binary")
+	}
+
+	home := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(home, "store"), 0o755))
+	c := &tool{t: t, bin: buildCLI(t), home: home}
+
+	src := filepath.Join(home, "world")
+	for d := range 8 {
+		for f := range 50 {
+			write(t, filepath.Join(src, fmt.Sprintf("dir%d", d), fmt.Sprintf("file%02d.dat", f)),
+				[]byte(fmt.Sprintf("contents of %d/%d", d, f)))
+		}
+	}
+
+	want := snapshot(t, src)
+	require.Len(t, want, 8+8*50, "8 directories and their files")
+
+	c.run("commit", "new", src)
+
+	deep := filepath.Join(src, "dir3")
+	dirTime, err := os.Stat(deep)
+	require.NoError(t, err)
+
+	fresh := filepath.Join(home, "fresh")
+	c.run("commit", "restore", fresh)
+	require.Equal(t, want, snapshot(t, fresh), "every file comes back")
+
+	restoredDir, err := os.Stat(filepath.Join(fresh, "dir3"))
+	require.NoError(t, err)
+	require.WithinDuration(t, dirTime.ModTime(), restoredDir.ModTime(), time.Second,
+		"a directory keeps its time although its files are written out of order")
+
+	// one worker restores the same tree, so the pool is not what makes it right
+	single := filepath.Join(home, "single")
+	c.run("commit", "restore", "--workers", "1", single)
+	require.Equal(t, want, snapshot(t, single))
 }

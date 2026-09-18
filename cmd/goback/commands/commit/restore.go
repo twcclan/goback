@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -18,6 +19,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
+	"golang.org/x/sync/errgroup"
 )
 
 type restoredDir struct {
@@ -60,7 +62,15 @@ func (c *commit) restore() error {
 
 	restored := map[string]bool{}
 	var dirs []restoredDir
-	var unrestored int
+	var unrestored atomic.Int64
+
+	// a file costs a round trip to the store and an fsync, neither of
+	// which overlaps on its own, so files go several at a time while the
+	// walk itself stays in order: a directory is made before its contents
+	files, fctx := errgroup.WithContext(c.ctx)
+	if c.restorer.Workers > 0 {
+		files.SetLimit(c.restorer.Workers)
+	}
 
 	err = c.reader.WalkTree(c.ctx, tree, parent, func(path string, info os.FileInfo, ref *proto.Ref) error {
 		path = filepath.Join(c.base, path)
@@ -90,29 +100,40 @@ func (c *commit) restore() error {
 			return restoreSymlink(path, string(stat.LinkTarget))
 		}
 
-		outcome, err := c.restorer.RestoreFile(c.ctx, path, stat, ref)
-		if err != nil {
-			if lost[string(ref.GetHash())] {
-				err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)
+		files.Go(func() error {
+			outcome, err := c.restorer.RestoreFile(fctx, path, stat, ref)
+			if err != nil {
+				if lost[string(ref.GetHash())] {
+					err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)
+				}
+
+				// a salvage restores what it can and reports the rest
+				if !c.restorer.Salvage {
+					return err
+				}
+
+				unrestored.Add(1)
+				log.Printf("cannot restore %s: %v", path, err)
+
+				return nil
 			}
 
-			// a salvage restores what it can and reports the rest
-			if !c.restorer.Salvage {
-				return err
+			if outcome != backup.OutcomeUnchanged && outcome != backup.OutcomeSkipped {
+				log.Printf("%s: %s", outcome, path)
 			}
-
-			unrestored++
-			log.Printf("cannot restore %s: %v", path, err)
 
 			return nil
-		}
+		})
 
-		if outcome != backup.OutcomeUnchanged && outcome != backup.OutcomeSkipped {
-			log.Printf("%s: %s", outcome, path)
-		}
-
-		return nil
+		// the walk stops once a file has failed, rather than queueing the
+		// rest of the tree behind an error already on its way out
+		return fctx.Err()
 	})
+
+	if waited := files.Wait(); err == nil || errors.Is(err, context.Canceled) {
+		err = waited
+	}
+
 	if err != nil {
 		return err
 	}
@@ -135,8 +156,8 @@ func (c *commit) restore() error {
 
 	logStats(c.restorer.Stats())
 
-	if unrestored > 0 {
-		log.Printf("%d files could not be restored at all", unrestored)
+	if missed := unrestored.Load(); missed > 0 {
+		log.Printf("%d files could not be restored at all", missed)
 	}
 
 	return nil
