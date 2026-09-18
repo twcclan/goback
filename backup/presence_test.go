@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -138,7 +139,20 @@ func TestCollectPresenceListsEveryPart(t *testing.T) {
 	}
 
 	require.Equal(t, total, filter.Entries(), "blob refs only, no trees or files")
-	require.False(t, filter.Test(testRef("elsewhere").Hash))
+
+	// no single absent ref is guaranteed to test negative, so what is
+	// asserted is the rate the filter was sized for
+	const absent = 1000
+
+	positives := 0
+	for i := 0; i < absent; i++ {
+		if filter.Test(testRef("elsewhere-" + strconv.Itoa(i)).Hash) {
+			positives++
+		}
+	}
+
+	require.Less(t, positives, absent/10, "%d of %d unknown refs tested positive, far above the %v the filter is sized for",
+		positives, absent, presence.FalsePositiveRate)
 }
 
 func TestWalkerPresenceSkipsConfirmedChunks(t *testing.T) {
