@@ -94,3 +94,40 @@ func TestMarkReadsNeighboursTogether(t *testing.T) {
 	reads := storage.count() - before
 	require.Less(t, reads, files/2, "neighbouring records come back in one read, not one each")
 }
+
+func TestScanIndexYieldsTheStoredRecords(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+
+	options := []PackOption{WithArchiveStorage(newLocal(base)), WithArchiveIndex(NewInMemoryIndex())}
+
+	store, err := NewPackStorage(options...)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+
+	for i := range 20 {
+		require.NoError(t, store.Put(ctx, proto.NewObject(&proto.Blob{Data: []byte(fmt.Sprintf("blob %d", i))})))
+	}
+	require.NoError(t, store.Close())
+
+	store, err = NewPackStorage(options...)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.NotEmpty(t, store.archives)
+	archive := store.archives[0]
+
+	loaded, err := archive.getIndex()
+	require.NoError(t, err)
+	require.NotEmpty(t, loaded)
+
+	var streamed IndexFile
+	require.NoError(t, scanArchive(archive, func(_ int, rec *IndexRecord) error {
+		streamed = append(streamed, *rec)
+
+		return nil
+	}, nil, nil))
+
+	require.Equal(t, loaded, streamed, "streaming an index gives what loading it does")
+}

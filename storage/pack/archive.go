@@ -273,6 +273,27 @@ func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
 	return a.readSpan(int64(loc.Offset), int64(loc.Length))
 }
 
+// scanIndex streams the archive's index. An index file that cannot be
+// read is recovered into memory first, as any read of it would.
+func (a *archive) scanIndex() (indexScanner, error) {
+	file, err := a.storage.Open(a.indexName())
+	if err == nil {
+		scanner, err := newFileScanner(file)
+		if err == nil {
+			return scanner, nil
+		}
+
+		_ = file.Close()
+	}
+
+	idx, err := a.getIndex()
+	if err != nil {
+		return nil, err
+	}
+
+	return &sliceScanner{idx: idx}, nil
+}
+
 // readOnlyNow reports whether the archive is closed to writes, and so
 // whether its bytes can be read without finalizing it first.
 func (a *archive) readOnlyNow() bool {

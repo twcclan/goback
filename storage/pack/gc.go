@@ -116,17 +116,56 @@ var _ Collector = (*PackStorage)(nil)
 type gcArchive struct {
 	erase bool
 	a     *archive
-	idx   IndexFile
-	bytes uint64
-	prev  *gcFile
-	cur   *bitset.BitSet
-	next  *gcFile
+	// count is how many records the archive's index holds, and droppable
+	// how many bytes of it this generation may drop.
+	count     int
+	droppable uint64
+	lookup    *indexLookup
+	bytes     uint64
+	prev      *gcFile
+	cur       *bitset.BitSet
+	next      *gcFile
 }
 
 type gcTombstone struct {
 	ga     *gcArchive
 	pos    int
 	target refKey
+}
+
+// indexLookup answers the random lookups of a sweep. It loads the
+// archive's index the first time it is asked and drops it when the run
+// ends, so only the archives a sweep touches are ever held.
+type indexLookup struct {
+	a *archive
+
+	mu     sync.Mutex
+	idx    IndexFile
+	loaded bool
+}
+
+// position returns the index position of hash, or -1.
+func (l *indexLookup) position(hash []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if !l.loaded {
+		idx, err := l.a.getIndex()
+		if err != nil {
+			return -1, err
+		}
+
+		l.idx, l.loaded = idx, true
+	}
+
+	return l.idx.position(hash), nil
+}
+
+func (l *indexLookup) release() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.idx, l.loaded = nil, false
 }
 
 type gcRun struct {
@@ -186,9 +225,15 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		return nil, err
 	}
 
+	defer func() {
+		for _, ga := range run.order {
+			ga.lookup.release()
+		}
+	}()
+
 	report.Archives = len(run.order)
 	for _, ga := range run.order {
-		report.Objects += uint64(len(ga.idx))
+		report.Objects += uint64(ga.count)
 	}
 
 	if err := run.collectRoots(ctx); err != nil {
@@ -265,6 +310,39 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	return report, nil
 }
 
+// scanArchive walks an archive's index record by record, counting the
+// records and their bytes when asked.
+func scanArchive(a *archive, fn func(pos int, rec *IndexRecord) error, count *int, size *uint64) error {
+	scanner, err := a.scanIndex()
+	if err != nil {
+		return err
+	}
+	defer scanner.close()
+
+	for pos := 0; ; pos++ {
+		record, err := scanner.next()
+		if err != nil {
+			return err
+		}
+
+		if record == nil {
+			return nil
+		}
+
+		if count != nil {
+			*count++
+		}
+
+		if size != nil {
+			*size += uint64(record.Length)
+		}
+
+		if err := fn(pos, record); err != nil {
+			return err
+		}
+	}
+}
+
 // takeSnapshot fixes the set of committed archives this generation covers
 // and loads their indexes and previous mark results.
 func (r *gcRun) takeSnapshot() error {
@@ -284,15 +362,15 @@ func (r *gcRun) takeSnapshot() error {
 	sort.Slice(archives, func(i, j int) bool { return archives[i].name < archives[j].name })
 
 	for _, a := range archives {
-		idx, err := a.getIndex()
+		ga := &gcArchive{a: a, prev: a.gcResult()}
+
+		err := scanArchive(a, func(int, *IndexRecord) error { return nil }, &ga.count, &ga.bytes)
 		if err != nil {
-			return errors.Wrapf(err, "loading index of %s", a.name)
+			return errors.Wrapf(err, "reading index of %s", a.name)
 		}
 
-		ga := &gcArchive{a: a, idx: idx, prev: a.gcResult(), cur: bitset.New(uint(len(idx)))}
-		for _, rec := range idx {
-			ga.bytes += uint64(rec.Length)
-		}
+		ga.cur = bitset.New(uint(ga.count))
+		ga.lookup = &indexLookup{a: a}
 
 		r.archives[a.name] = ga
 		r.order = append(r.order, ga)
@@ -307,18 +385,18 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	tombstoned := make(map[refKey]bool)
 
 	for _, ga := range r.order {
-		for pos, rec := range ga.idx {
+		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
 			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
-				continue
+				return nil
 			}
 
-			hdr, err := ga.a.readHeader(&ga.idx[pos])
+			hdr, err := ga.a.readHeader(rec)
 			if err != nil {
 				return errors.Wrapf(err, "reading tombstone %x in %s", rec.Sum, ga.a.name)
 			}
 
 			if hdr.TombstoneFor == nil {
-				continue
+				return nil
 			}
 
 			target := keyOf(hdr.TombstoneFor.Hash)
@@ -329,6 +407,11 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 			if hdr.Erase {
 				r.erased = append(r.erased, target)
 			}
+
+			return nil
+		}, nil, nil)
+		if err != nil {
+			return errors.Wrapf(err, "reading index of %s", ga.a.name)
 		}
 	}
 
@@ -342,15 +425,20 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	}
 
 	for _, ga := range r.order {
-		for _, rec := range ga.idx {
+		err := scanArchive(ga.a, func(_ int, rec *IndexRecord) error {
 			t := proto.ObjectType(rec.Type)
 			if t != proto.ObjectType_COMMIT && t != proto.ObjectType_PIN {
-				continue
+				return nil
 			}
 
 			if key := keyOf(rec.Sum[:]); !tombstoned[key] {
 				r.roots = append(r.roots, key)
 			}
+
+			return nil
+		}, nil, nil)
+		if err != nil {
+			return errors.Wrapf(err, "reading index of %s", ga.a.name)
 		}
 	}
 
@@ -724,15 +812,17 @@ func appendChildren(children []refKey, live *[]refKey, obj *proto.Object) []refK
 }
 
 type mergeHead struct {
-	ga  *gcArchive
-	pos int
+	ga      *gcArchive
+	pos     int
+	rec     *IndexRecord
+	scanner indexScanner
 }
 
 type mergeHeap []mergeHead
 
 func (h mergeHeap) Len() int { return len(h) }
 func (h mergeHeap) Less(i, j int) bool {
-	return bytes.Compare(h[i].ga.idx[h[i].pos].Sum[:], h[j].ga.idx[h[j].pos].Sum[:]) < 0
+	return bytes.Compare(h[i].rec.Sum[:], h[j].rec.Sum[:]) < 0
 }
 func (h mergeHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *mergeHeap) Push(x interface{}) { *h = append(*h, x.(mergeHead)) }
@@ -782,10 +872,32 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int), each func
 	defer it.close()
 
 	var h mergeHeap
-	for _, ga := range r.order {
-		if len(ga.idx) > 0 {
-			h = append(h, mergeHead{ga: ga})
+	defer func() {
+		for _, head := range h {
+			_ = head.scanner.close()
 		}
+	}()
+
+	for _, ga := range r.order {
+		scanner, err := ga.a.scanIndex()
+		if err != nil {
+			return errors.Wrapf(err, "reading index of %s", ga.a.name)
+		}
+
+		record, err := scanner.next()
+		if err != nil {
+			_ = scanner.close()
+
+			return errors.Wrapf(err, "reading index of %s", ga.a.name)
+		}
+
+		if record == nil {
+			_ = scanner.close()
+
+			continue
+		}
+
+		h = append(h, mergeHead{ga: ga, rec: record, scanner: scanner})
 	}
 	heap.Init(&h)
 
@@ -793,7 +905,7 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int), each func
 
 	for h.Len() > 0 {
 		top := h[0]
-		sum := top.ga.idx[top.pos].Sum
+		sum := top.rec.Sum
 
 		for ok && bytes.Compare(cur[:], sum[:]) < 0 {
 			cur, ok = it.next()
@@ -807,13 +919,22 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int), each func
 			each(sum)
 		}
 
-		top.pos++
-		if top.pos < len(top.ga.idx) {
-			h[0] = top
-			heap.Fix(&h, 0)
-		} else {
-			heap.Pop(&h)
+		record, err := top.scanner.next()
+		if err != nil {
+			return errors.Wrapf(err, "reading index of %s", top.ga.a.name)
 		}
+
+		if record == nil {
+			_ = top.scanner.close()
+			heap.Pop(&h)
+
+			continue
+		}
+
+		top.pos++
+		top.rec = record
+		h[0] = top
+		heap.Fix(&h, 0)
 	}
 
 	return nil
@@ -853,14 +974,25 @@ func (r *gcRun) writeResults() error {
 			next.Previous = ga.prev.Current
 		}
 
-		for pos, rec := range ga.idx {
+		ga.droppable = 0
+
+		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+			if next.dead(pos) {
+				ga.droppable += uint64(rec.Length)
+			}
+
 			if ga.cur.Test(uint(pos)) {
-				continue
+				return nil
 			}
 
 			next.DeadObjects++
 			next.DeadBytes += uint64(rec.Length)
 			next.Dead = append(next.Dead, prefixOf(rec.Sum[:]))
+
+			return nil
+		}, nil, nil)
+		if err != nil {
+			return errors.Wrapf(err, "reading index of %s", ga.a.name)
 		}
 
 		sort.Slice(next.Dead, func(i, j int) bool { return next.Dead[i] < next.Dead[j] })
@@ -939,18 +1071,11 @@ func (r *gcRun) selected(ga *gcArchive) bool {
 		return false
 	}
 
-	var droppable uint64
-	for pos, rec := range ga.idx {
-		if ga.next.dead(pos) {
-			droppable += uint64(rec.Length)
-		}
-	}
-
-	if droppable == 0 {
+	if ga.droppable == 0 {
 		return false
 	}
 
-	if ga.next.Erase || float64(droppable)/float64(ga.bytes) >= r.opts.DeadRatio {
+	if ga.next.Erase || float64(ga.droppable)/float64(ga.bytes) >= r.opts.DeadRatio {
 		return true
 	}
 
@@ -964,7 +1089,13 @@ func (r *gcRun) keep(candidate *archive, hdr *proto.ObjectHeader) bool {
 		return true
 	}
 
-	pos := ga.idx.position(hdr.Ref.Hash)
+	pos, err := ga.lookup.position(hdr.Ref.Hash)
+	if err != nil {
+		r.ps.logger.Warn("looking an object up in its index failed, keeping it", "archive", candidate.name, "ref", fmt.Sprintf("%x", hdr.Ref.Hash), "err", err)
+
+		return true
+	}
+
 	if pos < 0 || !ga.next.dead(pos) {
 		return true
 	}
@@ -984,7 +1115,12 @@ func (r *gcRun) marked(loc *IndexLocation) bool {
 		return true
 	}
 
-	pos := ga.idx.position(loc.Record.Sum[:])
+	pos, err := ga.lookup.position(loc.Record.Sum[:])
+	if err != nil {
+		r.ps.logger.Warn("looking an object up in its index failed, treating it as reachable", "archive", loc.Archive, "err", err)
+
+		return true
+	}
 
 	return pos < 0 || ga.cur.Test(uint(pos))
 }

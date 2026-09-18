@@ -37,6 +37,79 @@ func (idx IndexFile) position(hash []byte) int {
 	return -1
 }
 
+// indexScanner yields an archive index's records in stored order, which is
+// by Sum. A scanner is used once and closed.
+type indexScanner interface {
+	// next returns the next record, or nil at the end.
+	next() (*IndexRecord, error)
+	close() error
+}
+
+// fileScanner streams an index straight off its file, so a caller that
+// only walks it never holds it.
+type fileScanner struct {
+	file File
+	buf  *bufio.Reader
+	left uint32
+}
+
+func newFileScanner(file File) (*fileScanner, error) {
+	buf := bufio.NewReader(file)
+
+	magic := make([]byte, len(indexFileMagicBytes))
+	if _, err := io.ReadFull(buf, magic); err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(magic, indexFileMagicBytes) {
+		return nil, errIndexHeaderMismatch
+	}
+
+	var count uint32
+	if err := binary.Read(buf, indexEndianness, &count); err != nil {
+		return nil, err
+	}
+
+	return &fileScanner{file: file, buf: buf, left: count}, nil
+}
+
+func (s *fileScanner) next() (*IndexRecord, error) {
+	if s.left == 0 {
+		return nil, nil
+	}
+
+	record := new(IndexRecord)
+	if err := binary.Read(s.buf, indexEndianness, record); err != nil {
+		return nil, err
+	}
+
+	s.left--
+
+	return record, nil
+}
+
+func (s *fileScanner) close() error { return s.file.Close() }
+
+// sliceScanner serves an index that is already in memory, which is what an
+// archive whose index had to be recovered has.
+type sliceScanner struct {
+	idx IndexFile
+	pos int
+}
+
+func (s *sliceScanner) next() (*IndexRecord, error) {
+	if s.pos >= len(s.idx) {
+		return nil, nil
+	}
+
+	record := &s.idx[s.pos]
+	s.pos++
+
+	return record, nil
+}
+
+func (s *sliceScanner) close() error { return nil }
+
 // ReadFrom implements io.ReaderFrom.
 func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)
