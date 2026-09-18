@@ -180,10 +180,12 @@ func (a *archive) open() (err error) {
 	defer a.mtx.Unlock()
 
 	if !a.readOnly {
-		a.writeFile, err = a.storage.Create(a.archiveName())
+		file, err := a.storage.Create(a.archiveName())
 		if err != nil {
 			return errors.Wrap(err, "Failed creating archive file")
 		}
+
+		a.writeFile = newHashedWriter(file)
 
 		_, err = a.writeFile.Write(archiveHeader())
 		if err != nil {
@@ -672,6 +674,11 @@ func (a *archive) CloseWriter() (IndexFile, error) {
 	a.readFile, err = a.storage.Open(a.archiveName())
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed reopening archive for reading")
+	}
+
+	err = a.verifyUpload()
+	if err != nil {
+		return nil, err
 	}
 
 	return a.storeIndex()

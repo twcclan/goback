@@ -231,6 +231,21 @@ func (c *BucketStore) Create(name string) (pack.File, error) {
 	return c.newWriteFile(c.key(name))
 }
 
+// Checksum implements pack.Checksummer with the MD5 the bucket reports,
+// empty when it has none.
+func (c *BucketStore) Checksum(name string) ([]byte, error) {
+	attrs, err := c.bucket.Attributes(context.Background(), c.key(name))
+	if err != nil {
+		if gcerrors.Code(err) == gcerrors.NotFound {
+			return nil, pack.ErrFileNotFound
+		}
+
+		return nil, err
+	}
+
+	return attrs.MD5, nil
+}
+
 // Delete implements pack.ArchiveStorage.
 func (c *BucketStore) Delete(name string) error {
 	return c.bucket.Delete(context.Background(), c.key(name))
