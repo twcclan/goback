@@ -155,6 +155,15 @@ func (m *memIndex) CommitInfo(context.Context, string, time.Time, int) ([]*proto
 	return nil, backup.ErrNotImplemented
 }
 
+// ReadDir implements backup.DirLister by echoing its arguments, so a test
+// can see what crossed the wire.
+func (m *memIndex) ReadDir(_ context.Context, set string, dir string, notAfter time.Time) ([]*proto.TreeNode, error) {
+	return []*proto.TreeNode{
+		{Stat: &proto.FileInfo{Name: []byte(set + ":" + dir), Type: proto.NodeType_NODE_DIRECTORY}},
+		{Stat: &proto.FileInfo{Name: []byte("link"), Type: proto.NodeType_NODE_SYMLINK, LinkTarget: []byte("elsewhere"), MtimeNs: notAfter.UnixNano()}},
+	}, nil
+}
+
 func (m *memIndex) LatestCommit(ctx context.Context, set string) (*proto.Ref, error) {
 	if _, err := auth.Require(ctx); err != nil {
 		return nil, err
@@ -607,4 +616,18 @@ func TestRemoteGetPresenceFollowsTheStorePolicy(t *testing.T) {
 	_, err = dial("node-1").Presence(ctx, "world")
 	require.NoError(t, err)
 	require.Equal(t, backup.PresenceStore, index.presenceScope, "no policy: the default policy")
+}
+
+func TestRemoteReadDirCrossesTheWire(t *testing.T) {
+	_, dial := startServer(t)
+	at := time.Unix(1700000000, 0).UTC()
+
+	entries, err := dial("node-1").ReadDir(context.Background(), "world", "world/region", at)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	require.Equal(t, "world:world/region", string(entries[0].Stat.Name), "the set and path reach the index")
+	require.Equal(t, proto.NodeType_NODE_DIRECTORY, entries[0].Stat.Type)
+	require.Equal(t, "elsewhere", string(entries[1].Stat.LinkTarget), "a symlink keeps its target")
+	require.Equal(t, at.UnixNano(), entries[1].Stat.MtimeNs, "the instant survives the round trip")
 }

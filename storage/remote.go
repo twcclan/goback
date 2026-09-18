@@ -66,6 +66,7 @@ var (
 	_ backup.Index      = (*Client)(nil)
 	_ backup.Retention  = (*Client)(nil)
 	_ backup.PartReader = (*Client)(nil)
+	_ backup.DirLister  = (*Client)(nil)
 	_ backup.CommitGate = (*Client)(nil)
 )
 
@@ -98,6 +99,23 @@ func (r *Client) FileInfo(ctx context.Context, set string, name string, notAfter
 	}
 
 	return response.Files, nil
+}
+
+// ReadDir implements backup.DirLister.
+func (r *Client) ReadDir(ctx context.Context, set string, dir string, notAfter time.Time) ([]*proto.TreeNode, error) {
+	ctx = r.outgoing(ctx)
+
+	response, err := r.store.ReadDir(ctx, &proto.ReadDirRequest{
+		BackupSet: set,
+		Path:      dir,
+		NotAfter:  timestamppb.New(notAfter),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Entries, nil
 }
 
 // CommitInfo implements backup.Index.
@@ -461,6 +479,21 @@ func (r *Server) FileInfo(ctx context.Context, request *proto.FileInfoRequest) (
 	}
 
 	return &proto.FileInfoResponse{Files: files}, nil
+}
+
+// ReadDir implements proto.StoreServer.
+func (r *Server) ReadDir(ctx context.Context, request *proto.ReadDirRequest) (*proto.ReadDirResponse, error) {
+	err := request.NotAfter.CheckValid()
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	entries, err := r.store.ReadDir(ctx, request.GetBackupSet(), request.GetPath(), request.NotAfter.AsTime())
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	return &proto.ReadDirResponse{Entries: entries}, nil
 }
 
 // CommitInfo implements proto.StoreServer.

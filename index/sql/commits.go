@@ -17,6 +17,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/tree"
+	"github.com/twcclan/goback/index/sql/mapping"
 	"github.com/twcclan/goback/index/sql/mapping/gen"
 	"github.com/twcclan/goback/proto"
 
@@ -845,8 +846,9 @@ func liveCommit() predicate.CommitRow {
 }
 
 // heldByCommit is the condition that a versions row's validity range holds
-// a commit of the set that passes filter.
-func heldByCommit(table string, filter func(t *entsql.SelectTable) *entsql.Predicate) func(s *entsql.Selector) {
+// a commit of the set that passes filter. The files and trees tables name
+// their validity columns alike, so it serves both.
+func heldByCommit(filter func(t *entsql.SelectTable) *entsql.Predicate) func(s *entsql.Selector) {
 	return func(s *entsql.Selector) {
 		c := entsql.Table(commitrow.Table)
 		s.Where(entsql.Exists(entsql.Select().From(c).Where(entsql.And(
@@ -875,13 +877,60 @@ func (x *Index) FileInfo(ctx context.Context, backupSet string, name string, not
 	}
 
 	rows, err := x.client.File.Query().
-		Where(file.SetID(setID), file.Path(name), file.ValidFromLTE(notAfter.UTC()), predicate.File(heldByCommit(file.Table, liveCommitColumns))).
+		Where(file.SetID(setID), file.Path(name), file.ValidFromLTE(notAfter.UTC()), predicate.File(heldByCommit(liveCommitColumns))).
 		Order(ent.Desc(file.FieldValidFrom)).Limit(count).All(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return mapAll(rows, m.TreeNode), nil
+}
+
+// ReadDir lists what a set held directly under dir at notAfter, sorted by
+// name. Directory entries carry a name and a ref only.
+func (x *Index) ReadDir(ctx context.Context, backupSet string, dir string, notAfter time.Time) ([]*proto.TreeNode, error) {
+	setID, err := findSet(ctx, x.client, backupSet)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	at := notAfter.UTC()
+
+	fileRows, err := x.client.File.Query().Where(
+		file.SetID(setID), file.Dir(dir), file.ValidFromLTE(at),
+		file.Or(file.ValidUntilIsNil(), file.ValidUntilGT(at)),
+		predicate.File(heldByCommit(liveCommitColumns)),
+	).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	treeRows, err := x.client.Tree.Query().Where(
+		tree.SetID(setID), tree.Dir(dir), tree.ValidFromLTE(at),
+		tree.Or(tree.ValidUntilIsNil(), tree.ValidUntilGT(at)),
+		predicate.Tree(heldByCommit(liveCommitColumns)),
+	).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := mapAll(fileRows, m.TreeNode)
+	for _, row := range treeRows {
+		entries = append(entries, &proto.TreeNode{
+			Stat: &proto.FileInfo{Name: mapping.Base(row.Path), Type: proto.NodeType_NODE_DIRECTORY},
+			Ref:  mapping.Ref(row.Ref),
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].GetStat().GetName(), entries[j].GetStat().GetName()) < 0
+	})
+
+	return entries, nil
 }
 
 // CommitInfo lists the live, complete commits of a set, newest first.

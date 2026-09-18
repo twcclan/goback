@@ -23,6 +23,7 @@ const (
 	Store_Get_FullMethodName            = "/proto.Store/Get"
 	Store_ReadFile_FullMethodName       = "/proto.Store/ReadFile"
 	Store_FileInfo_FullMethodName       = "/proto.Store/FileInfo"
+	Store_ReadDir_FullMethodName        = "/proto.Store/ReadDir"
 	Store_CommitInfo_FullMethodName     = "/proto.Store/CommitInfo"
 	Store_LatestCommit_FullMethodName   = "/proto.Store/LatestCommit"
 	Store_GetTree_FullMethodName        = "/proto.Store/GetTree"
@@ -48,6 +49,8 @@ type StoreClient interface {
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFileResponse], error)
 	FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error)
+	// ReadDir lists what a set held directly under a path, as of a time
+	ReadDir(ctx context.Context, in *ReadDirRequest, opts ...grpc.CallOption) (*ReadDirResponse, error)
 	CommitInfo(ctx context.Context, in *CommitInfoRequest, opts ...grpc.CallOption) (*CommitInfoResponse, error)
 	LatestCommit(ctx context.Context, in *LatestCommitRequest, opts ...grpc.CallOption) (*LatestCommitResponse, error)
 	// GetTree streams a subtree's tree objects breadth-first from the server
@@ -119,6 +122,16 @@ func (c *storeClient) FileInfo(ctx context.Context, in *FileInfoRequest, opts ..
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FileInfoResponse)
 	err := c.cc.Invoke(ctx, Store_FileInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *storeClient) ReadDir(ctx context.Context, in *ReadDirRequest, opts ...grpc.CallOption) (*ReadDirResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadDirResponse)
+	err := c.cc.Invoke(ctx, Store_ReadDir_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -283,6 +296,8 @@ type StoreServer interface {
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error
 	FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error)
+	// ReadDir lists what a set held directly under a path, as of a time
+	ReadDir(context.Context, *ReadDirRequest) (*ReadDirResponse, error)
 	CommitInfo(context.Context, *CommitInfoRequest) (*CommitInfoResponse, error)
 	LatestCommit(context.Context, *LatestCommitRequest) (*LatestCommitResponse, error)
 	// GetTree streams a subtree's tree objects breadth-first from the server
@@ -322,6 +337,9 @@ func (UnimplementedStoreServer) ReadFile(*ReadFileRequest, grpc.ServerStreamingS
 }
 func (UnimplementedStoreServer) FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FileInfo not implemented")
+}
+func (UnimplementedStoreServer) ReadDir(context.Context, *ReadDirRequest) (*ReadDirResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadDir not implemented")
 }
 func (UnimplementedStoreServer) CommitInfo(context.Context, *CommitInfoRequest) (*CommitInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CommitInfo not implemented")
@@ -444,6 +462,24 @@ func _Store_FileInfo_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StoreServer).FileInfo(ctx, req.(*FileInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Store_ReadDir_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadDirRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).ReadDir(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_ReadDir_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).ReadDir(ctx, req.(*ReadDirRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -686,6 +722,10 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FileInfo",
 			Handler:    _Store_FileInfo_Handler,
+		},
+		{
+			MethodName: "ReadDir",
+			Handler:    _Store_ReadDir_Handler,
 		},
 		{
 			MethodName: "CommitInfo",

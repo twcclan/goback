@@ -743,3 +743,59 @@ func TestASymlinkReplacedByAFileIsANewVersion(t *testing.T) {
 	require.Empty(t, versions[0].Stat.LinkTarget)
 	require.Equal(t, proto.NodeType_NODE_SYMLINK, versions[1].Stat.Type)
 }
+
+func TestReadDirListsWhatTheSetHeldThen(t *testing.T) {
+	f := newFixture(t)
+
+	t0 := f.clock
+	f.commit("world", f.tree(
+		f.file("a.txt", "one"),
+		f.symlink("current", "worlds/2026"),
+		f.dir("world", f.file("level.dat", "w1"), f.dir("region", f.file("r.0", "r"))),
+	), false)
+
+	f.advance(time.Hour)
+	t1 := f.clock
+	f.commit("world", f.tree(
+		f.file("b.txt", "two"),
+		f.dir("world", f.file("level.dat", "w2")),
+	), false)
+
+	x, ok := interface{}(f.x).(backup.DirLister)
+	require.True(t, ok)
+
+	names := func(entries []*proto.TreeNode) []string {
+		out := make([]string, len(entries))
+		for i, e := range entries {
+			out[i] = string(e.GetStat().GetName())
+		}
+		return out
+	}
+
+	entries, err := x.ReadDir(f.ctx, "world", "", t0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt", "current", "world"}, names(entries))
+	require.Equal(t, proto.NodeType_NODE_DIRECTORY, entries[2].Stat.Type)
+	require.NotNil(t, entries[2].Ref, "a directory entry can be descended into")
+
+	entries, err = x.ReadDir(f.ctx, "world", "", t1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b.txt", "world"}, names(entries), "the old root is gone at t1")
+
+	entries, err = x.ReadDir(f.ctx, "world", "world", t0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"level.dat", "region"}, names(entries))
+	require.EqualValues(t, 2, entries[0].Stat.Size)
+
+	entries, err = x.ReadDir(f.ctx, "world", "world", t1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"level.dat"}, names(entries), "region went away")
+
+	entries, err = x.ReadDir(f.ctx, "world", "nowhere", t1)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+
+	entries, err = x.ReadDir(f.ctx, "other", "", t1)
+	require.NoError(t, err)
+	require.Empty(t, entries, "an unknown set lists nothing")
+}

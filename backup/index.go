@@ -31,6 +31,15 @@ type Index interface {
 	ReIndex(ctx context.Context) error
 }
 
+// DirLister is implemented by indexes that can list a directory as it
+// stood, without walking the stored trees.
+type DirLister interface {
+	// ReadDir lists what the set held directly under dir at notAfter,
+	// sorted by name. Directory entries carry a name and a ref only, since
+	// the index keeps no stat for them. An unknown set lists nothing.
+	ReadDir(ctx context.Context, set string, dir string, notAfter time.Time) ([]*proto.TreeNode, error)
+}
+
 // HeaderWalker visits object headers without loading bodies. Tombstones
 // have no body and are only reachable this way.
 type HeaderWalker interface {

@@ -672,12 +672,12 @@ func (x *Index) dropDeadRows(ctx context.Context, setID int64) error {
 		return entsql.IsNull(c.C(commitrow.FieldTombstonedAt))
 	}
 
-	_, err := x.client.File.Delete().Where(file.SetID(setID), predicate.File(entsql.NotPredicates(heldByCommit(file.Table, untombstoned)))).Exec(ctx)
+	_, err := x.client.File.Delete().Where(file.SetID(setID), predicate.File(entsql.NotPredicates(heldByCommit(untombstoned)))).Exec(ctx)
 	if err != nil {
 		return err
 	}
 
-	_, err = x.client.Tree.Delete().Where(tree.SetID(setID), predicate.Tree(entsql.NotPredicates(heldByCommit(tree.Table, untombstoned)))).Exec(ctx)
+	_, err = x.client.Tree.Delete().Where(tree.SetID(setID), predicate.Tree(entsql.NotPredicates(heldByCommit(untombstoned)))).Exec(ctx)
 
 	return err
 }

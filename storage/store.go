@@ -341,6 +341,17 @@ func (s *Store) Retention() (backup.Retention, error) {
 	return ret, nil
 }
 
+// ReadDir lists what a set held directly under dir at notAfter, sorted by
+// name; backup.ErrNotImplemented for an index that cannot answer.
+func (s *Store) ReadDir(ctx context.Context, set string, dir string, notAfter time.Time) ([]*proto.TreeNode, error) {
+	lister, ok := s.Index.(backup.DirLister)
+	if !ok {
+		return nil, fmt.Errorf("%w: index %T lists no directories", backup.ErrNotImplemented, s.Index)
+	}
+
+	return lister.ReadDir(ctx, set, dir, notAfter)
+}
+
 // presenceScope is the store policy's scope; a store without a policy
 // has the default policy's.
 func (s *Store) presenceScope(ctx context.Context) (backup.PresenceScope, error) {

@@ -30,5 +30,6 @@ var Command = cli.Command{
 	Subcommands: []cli.Command{
 		restoreCmd,
 		showCmd,
+		lsCmd,
 	},
 }
