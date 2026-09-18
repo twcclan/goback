@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/presence"
+	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/proto"
@@ -435,4 +436,51 @@ func TestLogicalSizeLeavesOutWhatHoldsNoContent(t *testing.T) {
 
 	require.EqualValues(t, 6, *f.commitRow(commit.Ref()).LogicalSize,
 		"two files of three bytes; the symlink and the directory hold none")
+}
+
+func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
+	f := newFixture(t)
+
+	first := f.commit("world", f.tree(f.file("a.txt", "one"), f.file("b.txt", "three")), false)
+	f.advance(time.Hour)
+	second := f.commit("world", f.tree(f.file("a.txt", "one longer")), false)
+
+	// an index older than commit sizes left both rows without one
+	_, err := f.x.client.CommitRow.Update().ClearLogicalSize().Save(f.ctx)
+	require.NoError(t, err)
+
+	n, err := f.x.FillMissingSizes(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	require.EqualValues(t, 8, *f.commitRow(first).LogicalSize)
+	require.EqualValues(t, 10, *f.commitRow(second).LogicalSize, "each commit gets the size of the set as it stood then")
+
+	n, err = f.x.FillMissingSizes(f.ctx)
+	require.NoError(t, err)
+	require.Zero(t, n, "a run with nothing missing changes nothing")
+}
+
+func TestFillingSizesLeavesATombstonedCommitAlone(t *testing.T) {
+	f := newFixture(t)
+
+	first := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	second := f.commit("world", f.tree(f.file("a.txt", "two longer")), false)
+
+	retired, err := f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, retired)
+	require.NotNil(t, f.commitRow(first).TombstonedAt)
+
+	_, err = f.x.client.CommitRow.Update().ClearLogicalSize().Save(f.ctx)
+	require.NoError(t, err)
+
+	n, err := f.x.FillMissingSizes(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	require.EqualValues(t, 10, *f.commitRow(second).LogicalSize)
+	require.Nil(t, f.commitRow(first).LogicalSize, "the versions it held are gone, so there is nothing to sum")
 }

@@ -1027,3 +1027,31 @@ func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) 
 
 	return deref(sums[0].Sum), nil
 }
+
+// FillMissingSizes records the logical size of every commit that carries
+// none, and reports how many it filled. A tombstoned commit is skipped:
+// the file versions it held may already be pruned, so its size can no
+// longer be worked out.
+func (x *Index) FillMissingSizes(ctx context.Context) (int, error) {
+	rows, err := x.client.CommitRow.Query().Where(commitrow.LogicalSizeIsNil(), commitrow.TombstonedAtIsNil()).All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	filled := 0
+	for _, row := range rows {
+		size, err := logicalSize(ctx, x.client, row.SetID, row.ReceivedAt)
+		if err != nil {
+			return filled, err
+		}
+
+		err = x.client.CommitRow.UpdateOneID(row.ID).SetLogicalSize(size).Exec(ctx)
+		if err != nil {
+			return filled, err
+		}
+
+		filled++
+	}
+
+	return filled, nil
+}

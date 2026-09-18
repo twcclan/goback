@@ -2,6 +2,7 @@
 package maintain
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -65,7 +66,30 @@ var Command = cli.Command{
 				log.Printf("Built %d presence filters", n)
 			}),
 		},
+		{
+			Name:  "sizes",
+			Usage: "Record the logical size of every commit that carries none",
+			Action: action(func(m *members) {
+				sizer, ok := m.index.(sizeFiller)
+				if !ok {
+					log.Fatalf("Index %T keeps no commit sizes", m.index)
+				}
+
+				n, err := sizer.FillMissingSizes(common.Context(m.c))
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				log.Printf("Filled %d commit sizes", n)
+			}),
+		},
 	},
+}
+
+// sizeFiller is an index that can work out the size of a commit it
+// recorded without one.
+type sizeFiller interface {
+	FillMissingSizes(ctx context.Context) (int, error)
 }
 
 type members struct {
