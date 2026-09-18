@@ -309,6 +309,7 @@ func restoreAction(c *cli.Context) {
 	}
 
 	common.Salvage(c, restorer)
+	restorer.Rechunk = c.Bool("rechunk")
 
 	if seeds := c.StringSlice("seed"); len(seeds) > 0 {
 		restorer.Seeds = backup.NewSeedMap(key)

@@ -83,6 +83,7 @@ func restoreAction(c *cli.Context) {
 	}
 
 	common.Salvage(c, restorer)
+	restorer.Rechunk = c.Bool("rechunk")
 
 	if c.String("overwrite") == "if-changed" {
 		restorer.Overwrite = backup.OverwriteIfChanged
@@ -150,5 +151,6 @@ var restoreCmd = cli.Command{
 			Value: 32,
 		},
 		common.SalvageFlag,
+		common.RechunkFlag,
 	},
 }

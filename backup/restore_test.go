@@ -493,3 +493,42 @@ func TestAMissingPartFailsTheFileWithoutSalvage(t *testing.T) {
 	_, err = os.Stat(path)
 	require.True(t, os.IsNotExist(err), "nothing is left behind")
 }
+
+func TestRechunkTakesMovedPartsFromTheDestination(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newMemStore()
+
+			data := randomData(6*maxBlobSize+13, 21)
+			ref := putFile(t, store, key, data)
+
+			// the destination holds the same content a few bytes further
+			// along, so nothing matches at the recorded offsets
+			shifted := append(randomData(64, 22), data...)
+			path := filepath.Join(t.TempDir(), "world.dat")
+			require.NoError(t, os.WriteFile(path, shifted, 0o644))
+
+			counting := &getCountingStore{memStore: store}
+
+			restorer := &Restorer{Store: counting, Key: key, Rechunk: true}
+			outcome, err := restorer.RestoreFile(ctx, path, statFor(data), ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, statFor(data))
+
+			stats := restorer.Stats()
+			require.Greater(t, stats.BytesFromDestination, int64(0), "the moved parts come off the disk")
+			require.Less(t, stats.BytesFromStore, int64(len(data)/2), "most of the file is not downloaded")
+
+			// without it the same restore downloads the whole file
+			plain := filepath.Join(t.TempDir(), "world.dat")
+			require.NoError(t, os.WriteFile(plain, shifted, 0o644))
+
+			straight := &Restorer{Store: counting, Key: key}
+			_, err = straight.RestoreFile(ctx, plain, statFor(data), ref)
+			require.NoError(t, err)
+			require.Greater(t, straight.Stats().BytesFromStore, stats.BytesFromStore)
+		})
+	}
+}

@@ -138,6 +138,10 @@ type Restorer struct {
 	// Salvage writes a file whose parts cannot all be read, leaving the
 	// unreadable ranges as zeroes, instead of failing it.
 	Salvage bool
+	// Rechunk cuts a destination that does not match at the recorded
+	// offsets with the backup's chunker, so parts that only moved are
+	// taken from it instead of the network. It costs a read of the file.
+	Rechunk bool
 	// OnHole, when set, is called for every hole a salvaged file was left
 	// with, possibly from several goroutines at once.
 	OnHole func(Hole)
@@ -245,12 +249,14 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 		return OutcomeWouldWrite, nil
 	}
 
+	local := r.rechunked(path, hasFile, matched)
+
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".goback-*")
 	if err != nil {
 		return 0, err
 	}
 
-	missing, err := r.assemble(ctx, tmp, source, reader, matched, ref)
+	missing, err := r.assemble(ctx, tmp, source, reader, matched, local, ref)
 	if err == nil && len(missing) > 0 {
 		// a hole at the end would otherwise leave the file short
 		err = tmp.Truncate(reader.size())
@@ -460,10 +466,27 @@ func otherMode(mode proto.Encryption) proto.Encryption {
 	return proto.Encryption_STORE_KEYED
 }
 
+// rechunked cuts the destination with the backup's chunker when it did not
+// match at the recorded offsets, so parts that only moved are still found.
+// It returns nil when there is nothing to gain or Rechunk is off.
+func (r *Restorer) rechunked(path string, hasFile bool, matched []bool) *SeedMap {
+	if !r.Rechunk || !hasFile || allTrue(matched) {
+		return nil
+	}
+
+	local := NewSeedMap(r.Key)
+	if err := local.Add(path); err != nil {
+		return nil
+	}
+
+	return local
+}
+
 // assemble writes every part at its offset: matched parts are copied from
-// source, the rest come from the seeds, the cache or the store. It returns
-// the parts no source held, which is empty unless Salvage is set.
-func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched []bool, ref *proto.Ref) ([]int, error) {
+// source, the rest come from the re-cut destination, the seeds, the cache
+// or the store. It returns the parts no source held, which is empty unless
+// Salvage is set.
+func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched []bool, local *SeedMap, ref *proto.Ref) ([]int, error) {
 	var fromStore []int
 
 	for i, part := range reader.parts {
@@ -492,6 +515,18 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 			r.countBytes(ctx, &r.stats.BytesFromDestination, "destination", int64(part.Length))
 
 			continue
+		}
+
+		if local != nil {
+			if buf, ok := local.read(part); ok && r.matches(reader, i, buf) {
+				if _, err := dst.WriteAt(buf, offset); err != nil {
+					return nil, err
+				}
+
+				r.countBytes(ctx, &r.stats.BytesFromDestination, "destination", int64(part.Length))
+
+				continue
+			}
 		}
 
 		if r.Seeds != nil {

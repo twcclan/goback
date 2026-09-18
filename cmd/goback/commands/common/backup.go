@@ -262,6 +262,12 @@ func RestoreSession(ctx context.Context, store backup.ObjectStore, set string, r
 	}, nil
 }
 
+// RechunkFlag turns --rechunk on a restore command.
+var RechunkFlag = cli.BoolFlag{
+	Name:  "rechunk",
+	Usage: "cut an existing destination with the backup's chunker, so parts that only moved are not downloaded",
+}
+
 // SalvageFlag turns --salvage on a restore command.
 var SalvageFlag = cli.BoolFlag{
 	Name:  "salvage",
