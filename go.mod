@@ -2,9 +2,11 @@ module github.com/twcclan/goback
 
 require (
 	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1
+	cloud.google.com/go/storage v1.67.1
 	entgo.io/ent v0.14.6
 	github.com/bits-and-blooms/bitset v1.25.0
 	github.com/bmatcuk/doublestar v1.3.4
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/go-cmp v0.7.0
@@ -30,6 +32,7 @@ require (
 	go4.org v0.0.0-20260112195520-a5071408f32f
 	gocloud.dev v0.46.0
 	golang.org/x/crypto v0.57.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/grpc v1.83.2
@@ -45,7 +48,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.13.0 // indirect
 	cloud.google.com/go/monitoring v1.30.0 // indirect
-	cloud.google.com/go/storage v1.67.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.38.0 // indirect
@@ -159,7 +161,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
