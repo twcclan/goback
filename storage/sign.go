@@ -9,6 +9,8 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"gocloud.dev/blob"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -18,6 +20,26 @@ var _ pack.RangeSigner = (*BucketStore)(nil)
 // rangeHeader is the header a signed range is bound to, so a URL cannot
 // be turned on the rest of the archive.
 const rangeHeader = "Range"
+
+// bindRange puts the range among the headers the signature covers, for
+// each driver that can, and reports whether one did.
+func bindRange(as func(any) bool, value string) bool {
+	var gcsOptions *gcs.SignedURLOptions
+	if as(&gcsOptions) {
+		gcsOptions.Headers = append(gcsOptions.Headers, rangeHeader+":"+value)
+
+		return true
+	}
+
+	var s3Get *s3.GetObjectInput
+	if as(&s3Get) {
+		s3Get.Range = aws.String(value)
+
+		return true
+	}
+
+	return false
+}
 
 // SignRange implements pack.RangeSigner. The URL is bound to the range,
 // so the recipient can read those bytes and nothing else of the archive.
@@ -34,11 +56,7 @@ func (c *BucketStore) SignRange(ctx context.Context, name string, offset, length
 		Expiry: ttl,
 		Method: "GET",
 		BeforeSign: func(as func(any) bool) error {
-			var opts **gcs.SignedURLOptions
-			if as(&opts) {
-				(*opts).Headers = append((*opts).Headers, rangeHeader+":"+value)
-				bound = true
-			}
+			bound = bindRange(as, value)
 
 			return nil
 		},
