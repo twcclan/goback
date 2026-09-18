@@ -2,6 +2,7 @@ package pack
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/twcclan/goback/proto"
@@ -17,6 +18,10 @@ type ScrubReport struct {
 	// Corrupt lists the objects whose stored bytes do not hash to their
 	// header or whose header names the wrong predecessor.
 	Corrupt []ScrubFailure
+	// Sealed counts the objects per hex at-rest key id, the ones stored
+	// in the clear under the empty string. A rotation is over once no
+	// retired key id is left here.
+	Sealed map[string]uint64
 }
 
 // ScrubFailure names one object that failed verification.
@@ -38,7 +43,7 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 	archives := append([]*archive(nil), ps.archives...)
 	ps.mtx.RUnlock()
 
-	report := &ScrubReport{}
+	report := &ScrubReport{Sealed: make(map[string]uint64)}
 
 	for _, a := range archives {
 		if err := ctx.Err(); err != nil {
@@ -52,6 +57,7 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 		err := a.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			report.Objects++
 			report.Bytes += uint64(length)
+			report.Sealed[hex.EncodeToString(hdr.AtRestKeyId)]++
 
 			err := proto.VerifyStored(hdr, bytes)
 			if err != nil {

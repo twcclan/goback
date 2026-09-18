@@ -3,6 +3,7 @@ package pack
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"os"
 	"testing"
 
@@ -149,4 +150,71 @@ func TestAtRestCompactionResealsUnderTheKey(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, obj.GetBlob().Data, got.GetBlob().Data)
 	}
+}
+
+func TestRotationOpensTheRetiredKeyAndResealsOnRewrite(t *testing.T) {
+	base := t.TempDir()
+	old := atRestKey(t, "old")
+	current := atRestKey(t, "current")
+	ctx := context.Background()
+
+	store := newTestStore(t, base, WithAtRestKey(old))
+	objects := makeTestData(t, 20)
+	for _, obj := range objects {
+		require.NoError(t, store.Put(ctx, obj))
+		require.NoError(t, store.Flush())
+	}
+	require.NoError(t, store.Close())
+
+	// the retired key comes first: the order of the options must not matter
+	store = newTestStore(t, base,
+		WithRetiredAtRestKey(old),
+		WithAtRestKey(current),
+		WithCompaction(CompactionConfig{MinimumCandidates: 2}),
+	)
+	t.Cleanup(func() { _ = store.Close() })
+
+	for _, obj := range objects {
+		got, err := store.Get(ctx, obj.Ref())
+		require.NoError(t, err)
+		require.Equal(t, obj.GetBlob().Data, got.GetBlob().Data)
+	}
+
+	report, err := store.Scrub(ctx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(len(objects)), report.Sealed[hex.EncodeToString(old.ID())])
+
+	require.NoError(t, store.doCompaction())
+
+	report, err = store.Scrub(ctx)
+	require.NoError(t, err)
+	require.Empty(t, report.Corrupt)
+	require.Zero(t, report.Sealed[hex.EncodeToString(old.ID())], "nothing names the retired key once a rewrite is over")
+	require.Equal(t, uint64(len(objects)), report.Sealed[hex.EncodeToString(current.ID())])
+}
+
+func TestRotationWithoutTheRetiredKeyCannotRead(t *testing.T) {
+	base := t.TempDir()
+	old := atRestKey(t, "old")
+	ctx := context.Background()
+
+	store := newTestStore(t, base, WithAtRestKey(old))
+	blob := proto.NewObject(&proto.Blob{Data: []byte("sealed under the key that went")})
+	require.NoError(t, store.Put(ctx, blob))
+	require.NoError(t, store.Close())
+
+	store = newTestStore(t, base, WithAtRestKey(atRestKey(t, "current")))
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, err := store.Get(ctx, blob.Ref())
+	require.ErrorIs(t, err, ErrAtRestKeyMismatch)
+}
+
+func TestRetiredKeysNeedAKeyToSealWith(t *testing.T) {
+	_, err := NewPackStorage(
+		WithArchiveStorage(newLocal(t.TempDir())),
+		WithArchiveIndex(NewInMemoryIndex()),
+		WithRetiredAtRestKey(atRestKey(t, "old")),
+	)
+	require.Error(t, err)
 }

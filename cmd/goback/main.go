@@ -81,6 +81,10 @@ func main() {
 			Name:  "at-rest-key",
 			Usage: "key file a pack:// or gcs:// store seals its archives with; empty stores objects as received",
 		},
+		cli.StringSliceFlag{
+			Name:  "retired-at-rest-key",
+			Usage: "key file archives may still be sealed under, repeatable; a rewrite re-seals what it opens under --at-rest-key",
+		},
 		cli.BoolFlag{
 			Name:  "reset-index",
 			Usage: "drop the local archive index and rebuild it from the archives",

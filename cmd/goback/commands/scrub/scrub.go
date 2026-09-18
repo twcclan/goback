@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage/pack"
@@ -39,9 +40,29 @@ func scrubAction(c *cli.Context) {
 
 	log.Printf("Scrubbed %d objects (%s) in %d archives, %d corrupt", report.Objects, humanize.Bytes(report.Bytes), report.Archives, len(report.Corrupt))
 
+	for _, id := range sortedKeys(report.Sealed) {
+		if id == "" {
+			log.Printf("%d objects stored in the clear", report.Sealed[id])
+			continue
+		}
+
+		log.Printf("%d objects sealed under key %s", report.Sealed[id], id)
+	}
+
 	common.CloseStore(store)
 
 	if len(report.Corrupt) > 0 {
 		os.Exit(1)
 	}
+}
+
+func sortedKeys(counts map[string]uint64) []string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	return keys
 }

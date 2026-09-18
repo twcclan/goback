@@ -79,7 +79,7 @@ type archive struct {
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
-	atRest     *AtRestKey
+	atRest     *AtRestKeys
 	logger     *slog.Logger
 
 	// owner is the session writing this archive, nil once finalized or
@@ -91,7 +91,7 @@ type archive struct {
 
 // newArchive opens a writable archive named by a fresh uuid under dir,
 // sealing its payloads under atRest when that is set.
-func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
+func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKeys, logger *slog.Logger) (*archive, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -108,7 +108,7 @@ func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey, logger *s
 	return a, a.open()
 }
 
-func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
+func openArchive(storage ArchiveStorage, name string, atRest *AtRestKeys, logger *slog.Logger) (*archive, error) {
 	a := &archive{
 		storage:  storage,
 		name:     name,

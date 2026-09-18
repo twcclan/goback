@@ -18,7 +18,8 @@ type packOptions struct {
 	cache           backup.ObjectStore
 	idleFinalize    time.Duration
 	sessionLease    time.Duration
-	atRest          *AtRestKey
+	atRestKey       *storekey.Key
+	atRestRetired   []*storekey.Key
 	logger          *slog.Logger
 }
 
@@ -27,7 +28,16 @@ type packOptions struct {
 // readable. A key file made by goback key new serves.
 func WithAtRestKey(key *storekey.Key) PackOption {
 	return func(p *packOptions) {
-		p.atRest = NewAtRestKey(key)
+		p.atRestKey = key
+	}
+}
+
+// WithRetiredAtRestKey keeps a key records may still be sealed under. It
+// is only read with, and a rewrite re-seals what it opens under the
+// current key, so the retired key can go once no record names it.
+func WithRetiredAtRestKey(key *storekey.Key) PackOption {
+	return func(p *packOptions) {
+		p.atRestRetired = append(p.atRestRetired, key)
 	}
 }
 

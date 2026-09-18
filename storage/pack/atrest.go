@@ -77,15 +77,57 @@ func (k *AtRestKey) open(hdr *proto.ObjectHeader, stored []byte) ([]byte, error)
 	return payload, nil
 }
 
+// AtRestKeys is the keys a store seals and opens with: one writes, the
+// retired ones only read. A record names the key it was sealed under, so
+// rotation is finished once a rewrite has re-sealed the last record of a
+// retired key and nothing names it any more.
+type AtRestKeys struct {
+	current *AtRestKey
+	retired map[string]*AtRestKey
+}
+
+// NewAtRestKeys returns the keyring writing under current.
+func NewAtRestKeys(current *AtRestKey) *AtRestKeys {
+	return &AtRestKeys{current: current, retired: make(map[string]*AtRestKey)}
+}
+
+// Retire adds a key records may still be sealed under; it is never
+// written with again.
+func (k *AtRestKeys) Retire(key *AtRestKey) {
+	k.retired[string(key.id)] = key
+}
+
+// ID marks the records this keyring seals.
+func (k *AtRestKeys) ID() []byte { return k.current.ID() }
+
+// seal seals a payload under the key that writes.
+func (k *AtRestKeys) seal(hdr *proto.ObjectHeader, payload []byte) ([]byte, error) {
+	return k.current.seal(hdr, payload)
+}
+
+// key returns the key a record names, nil when the keyring has none.
+func (k *AtRestKeys) key(id []byte) *AtRestKey {
+	if string(id) == string(k.current.id) {
+		return k.current
+	}
+
+	return k.retired[string(id)]
+}
+
 // openAtRest returns a stored payload as the agent sent it: opened under
-// key when the header says it is sealed, as is otherwise.
-func openAtRest(key *AtRestKey, hdr *proto.ObjectHeader, stored []byte) ([]byte, error) {
-	switch {
-	case len(hdr.AtRestKeyId) == 0:
+// the key the record names when the header says it is sealed, as is
+// otherwise.
+func openAtRest(keys *AtRestKeys, hdr *proto.ObjectHeader, stored []byte) ([]byte, error) {
+	if len(hdr.AtRestKeyId) == 0 {
 		return stored, nil
-	case key == nil:
+	}
+
+	if keys == nil {
 		return nil, fmt.Errorf("%w: record %x", ErrAtRestKeyMissing, hdr.Ref.GetHash())
-	case string(hdr.AtRestKeyId) != string(key.id):
+	}
+
+	key := keys.key(hdr.AtRestKeyId)
+	if key == nil {
 		return nil, fmt.Errorf("%w: record %x under key %x", ErrAtRestKeyMismatch, hdr.Ref.GetHash(), hdr.AtRestKeyId)
 	}
 
