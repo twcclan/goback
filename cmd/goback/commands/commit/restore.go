@@ -1,6 +1,8 @@
 package commit
 
 import (
+	"context"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/dustin/go-humanize"
@@ -35,6 +38,8 @@ func (c *commit) restore() error {
 	commit := commits[0]
 	ref := proto.NewObject(commit).Ref()
 	log.Printf("Restoring commit %x from %v", ref.Hash, commit.Timestamp)
+
+	lost := c.lostHere(ref)
 
 	ctx, done, err := common.RestoreSession(c.ctx, c.store, c.set, ref)
 	if err != nil {
@@ -87,6 +92,10 @@ func (c *commit) restore() error {
 
 		outcome, err := c.restorer.RestoreFile(c.ctx, path, stat, ref)
 		if err != nil {
+			if lost[string(ref.GetHash())] {
+				err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)
+			}
+
 			// a salvage restores what it can and reports the rest
 			if !c.restorer.Salvage {
 				return err
@@ -392,4 +401,37 @@ var restoreCmd = cli.Command{
 			Usage: "restore even when a session.lock under the target is held by a running server",
 		},
 	}, restoreFlags...),
+}
+
+// lostLister is an index that knows which versions a repair could not
+// keep.
+type lostLister interface {
+	LostVersions(ctx context.Context, set string) ([]sql.LostVersion, error)
+}
+
+// lostHere are the file versions this commit holds that a repair recorded
+// as unrecoverable, by ref, so a failed restore can say why.
+func (c *commit) lostHere(commit *proto.Ref) map[string]bool {
+	lister, ok := c.index.(lostLister)
+	if !ok {
+		return nil
+	}
+
+	versions, err := lister.LostVersions(c.ctx, c.set)
+	if err != nil {
+		log.Printf("Reading the set's lost versions failed: %v", err)
+		return nil
+	}
+
+	lost := map[string]bool{}
+	for _, version := range versions {
+		for _, held := range version.Commits {
+			if held.Equal(commit) {
+				lost[string(version.Ref.GetHash())] = true
+				log.Printf("%s is unrecoverable in this commit: a repair could not keep its content", version.Path)
+			}
+		}
+	}
+
+	return lost
 }
