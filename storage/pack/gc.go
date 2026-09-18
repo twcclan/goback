@@ -517,18 +517,14 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 			grp.Go(func() error {
 				var children, found []refKey
 
-				for _, key := range chunk {
-					obj, err := r.ps.Get(gctx, &proto.Ref{Hash: key[:]})
-					if errors.Is(err, backup.ErrNotFound) {
-						r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
-						continue
-					}
-					if err != nil {
-						return errors.Wrapf(err, "reading %x", key)
-					}
+				reads, err := r.readChunk(gctx, chunk)
+				if err != nil {
+					return err
+				}
 
-					found = append(found, key)
-					children = appendChildren(children, &found, obj)
+				for _, read := range reads {
+					found = append(found, read.key)
+					children = appendChildren(children, &found, read.obj)
 				}
 
 				if err := live.add(found); err != nil {
@@ -554,6 +550,140 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 	}
 
 	return nil
+}
+
+const (
+	// markGap is how far apart two records may sit and still be worth
+	// fetching together; markSpan bounds what one such read covers.
+	markGap  = 64 << 10
+	markSpan = 8 << 20
+)
+
+// markRead is one object the mark read, with the key it was asked for.
+type markRead struct {
+	key refKey
+	obj *proto.Object
+}
+
+// placed is a record's position, kept so a run of them can be read at once.
+type placed struct {
+	key refKey
+	a   *archive
+	rec *IndexRecord
+}
+
+// readChunk reads the objects of the chunk, one ranged read per run of
+// records that sit close together in the same archive. An object that is
+// gone is skipped: a mark cannot mend it, and the sweep will not drop what
+// it never saw.
+func (r *gcRun) readChunk(ctx context.Context, keys []refKey) ([]markRead, error) {
+	byArchive := make(map[string][]placed)
+
+	for _, key := range keys {
+		ref := &proto.Ref{Hash: key[:]}
+
+		a, rec, err := r.ps.indexLocation(ctx, ref)
+		if err != nil {
+			return nil, errors.Wrapf(err, "locating %x", key)
+		}
+
+		if rec == nil {
+			r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
+			continue
+		}
+
+		byArchive[a.name] = append(byArchive[a.name], placed{key: key, a: a, rec: rec})
+	}
+
+	reads := make([]markRead, 0, len(keys))
+
+	for _, records := range byArchive {
+		sort.Slice(records, func(i, j int) bool { return records[i].rec.Offset < records[j].rec.Offset })
+
+		for start := 0; start < len(records); {
+			end, span := spanOf(records, start)
+
+			read, err := r.readSpan(ctx, records[start:end], span)
+			if err != nil {
+				return nil, err
+			}
+
+			reads = append(reads, read...)
+			start = end
+		}
+	}
+
+	return reads, nil
+}
+
+// spanOf extends the run starting at start for as long as the records stay
+// close together, and returns where it ends and how many bytes it covers.
+func spanOf(records []placed, start int) (int, int64) {
+	from := int64(records[start].rec.Offset)
+	span := int64(records[start].rec.Length)
+
+	end := start + 1
+	for end < len(records) {
+		previous := int64(records[end-1].rec.Offset) + int64(records[end-1].rec.Length)
+		grown := int64(records[end].rec.Offset) + int64(records[end].rec.Length) - from
+
+		if int64(records[end].rec.Offset)-previous > markGap || grown > markSpan {
+			break
+		}
+
+		span = grown
+		end++
+	}
+
+	return end, span
+}
+
+// readSpan reads one run of records in a single read and decodes each one.
+func (r *gcRun) readSpan(ctx context.Context, records []placed, span int64) ([]markRead, error) {
+	a := records[0].a
+	from := int64(records[0].rec.Offset)
+
+	// an archive still being written is read the ordinary way, which
+	// finalizes it first
+	if len(records) == 1 || !a.readOnlyNow() {
+		reads := make([]markRead, 0, len(records))
+
+		for _, record := range records {
+			obj, err := r.ps.Get(ctx, &proto.Ref{Hash: record.key[:]})
+			if errors.Is(err, backup.ErrNotFound) {
+				r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", record.key))
+				continue
+			}
+
+			if err != nil {
+				return nil, errors.Wrapf(err, "reading %x", record.key)
+			}
+
+			reads = append(reads, markRead{key: record.key, obj: obj})
+		}
+
+		return reads, nil
+	}
+
+	buf, _, err := a.readSpan(from, span)
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading %d bytes at %d of %s", span, from, a.name)
+	}
+
+	reads := make([]markRead, 0, len(records))
+
+	for _, record := range records {
+		at := int64(record.rec.Offset) - from
+
+		obj, err := a.objectFromRecord(ctx, &proto.Ref{Hash: record.key[:]}, record.rec, buf[at:at+int64(record.rec.Length)], 0)
+		if err != nil {
+			return nil, errors.Wrapf(err, "reading %x", record.key)
+		}
+
+		reads = append(reads, markRead{key: record.key, obj: obj})
+	}
+
+	return reads, nil
 }
 
 // appendChildren adds the object's metadata children to children and its

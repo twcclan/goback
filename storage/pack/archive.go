@@ -270,10 +270,25 @@ func (a *archive) indexName() string {
 
 // readRecord returns the raw bytes of one index record.
 func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
-	buf := make([]byte, loc.Length)
+	return a.readSpan(int64(loc.Offset), int64(loc.Length))
+}
+
+// readOnlyNow reports whether the archive is closed to writes, and so
+// whether its bytes can be read without finalizing it first.
+func (a *archive) readOnlyNow() bool {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	return a.readOnly
+}
+
+// readSpan reads length bytes at offset, which may cover several records.
+// The bool reports whether the read was lock-free.
+func (a *archive) readSpan(offset, length int64) ([]byte, bool, error) {
+	buf := make([]byte, length)
 
 	if readerAt, ok := a.readFile.(io.ReaderAt); ok {
-		_, err := readerAt.ReadAt(buf, int64(loc.Offset))
+		_, err := readerAt.ReadAt(buf, offset)
 		if err != nil {
 			return nil, true, errors.Wrap(err, "Failed filling buffer")
 		}
@@ -286,7 +301,7 @@ func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	_, err := a.readFile.Seek(int64(loc.Offset), io.SeekStart)
+	_, err := a.readFile.Seek(offset, io.SeekStart)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "Failed seeking in file")
 	}
@@ -322,8 +337,12 @@ func (a *archive) getRaw(ctx context.Context, ref *proto.Ref, loc *IndexRecord) 
 	}
 	span.SetAttributes(attribute.Bool("lock-free", lockFree))
 
-	readLatency := float64(time.Since(start)) / float64(time.Millisecond)
+	return a.objectFromRecord(ctx, ref, loc, buf, float64(time.Since(start))/float64(time.Millisecond))
+}
 
+// objectFromRecord decodes a record already read from the archive, which
+// is how a caller that fetched several records at once opens each one.
+func (a *archive) objectFromRecord(ctx context.Context, ref *proto.Ref, loc *IndexRecord, buf []byte, readLatency float64) (*proto.Object, error) {
 	hdrSize, consumed := proto.DecodeVarint(buf)
 
 	hdr, err := proto.NewObjectHeaderFromBytes(buf[consumed : consumed+int(hdrSize)])
