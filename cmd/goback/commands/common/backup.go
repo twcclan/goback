@@ -182,13 +182,19 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
 }
 
-func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+// remoteAddress is the address a goback:// URL dials, defaulting to the
+// store server's port.
+func remoteAddress(u *url.URL) string {
 	port := u.Port()
 	if port == "" {
 		port = "6060"
 	}
 
-	addr := net.JoinHostPort(u.Host, port)
+	return net.JoinHostPort(u.Hostname(), port)
+}
+
+func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	addr := remoteAddress(u)
 
 	tlsConfig, err := storage.ClientTLS(c.GlobalString("ca-cert"))
 	if err != nil {
