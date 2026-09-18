@@ -296,6 +296,19 @@ func (x *Index) WalkHeaders(ctx context.Context, t proto.ObjectType, fn func(*pr
 	return hw.WalkHeaders(ctx, t, fn)
 }
 
+// Read implements backup.Locator when the store does, and otherwise
+// reads the object.
+func (x *Index) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
+	locator, ok := storeAs[backup.Locator](x.ObjectStore)
+	if !ok {
+		object, err := x.ObjectStore.Get(ctx, ref)
+
+		return object, nil, err
+	}
+
+	return locator.Read(ctx, ref)
+}
+
 func (x *Index) flush() error {
 	if f, ok := x.ObjectStore.(interface{ Flush() error }); ok {
 		return f.Flush()
