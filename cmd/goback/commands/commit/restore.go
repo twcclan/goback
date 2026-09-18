@@ -398,8 +398,8 @@ var restoreFlags = []cli.Flag{
 	},
 	cli.IntFlag{
 		Name:  "workers",
-		Usage: "parts fetched at once",
-		Value: 32,
+		Usage: "files and parts fetched at once",
+		Value: backup.DefaultRestoreWorkers(),
 	},
 	common.SalvageFlag,
 }

@@ -99,7 +99,10 @@ type RestoreStats struct {
 	BytesFromStore       int64
 }
 
-const defaultRestoreWorkers = 32
+// DefaultRestoreWorkers is how much of a restore runs at once when nothing
+// says otherwise: twice the cpu count, since a file spends most of its
+// time waiting on the store or on the disk rather than on a core.
+func DefaultRestoreWorkers() int { return 2 * runtime.NumCPU() }
 
 var (
 	restoreMeter = otel.Meter("goback.io/backup")
@@ -128,7 +131,8 @@ type Restorer struct {
 	Seeds *SeedMap
 	Cache *blobcache.Cache
 
-	// Workers bounds the parts fetched at once; 0 means 32.
+	// Workers bounds how much of a restore runs at once, files and the
+	// parts of one; 0 means DefaultRestoreWorkers.
 	Workers   int
 	Overwrite OverwriteMode
 	// Verify rehashes every written file before it is renamed into place.
@@ -190,7 +194,7 @@ func (r *Restorer) workers() int {
 		return r.Workers
 	}
 
-	return defaultRestoreWorkers
+	return DefaultRestoreWorkers()
 }
 
 // RestoreFile puts the file ref describes at path with the recorded mode

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -72,4 +73,12 @@ func BenchmarkRestoreSmallFiles(b *testing.B) {
 	}
 
 	b.ReportMetric(float64(count), "files/op")
+}
+
+func TestWorkersFallBackToTheDefault(t *testing.T) {
+	require.Equal(t, 2*runtime.NumCPU(), DefaultRestoreWorkers(), "twice the cpu count")
+
+	require.Equal(t, DefaultRestoreWorkers(), (&Restorer{}).workers(), "nothing set means the default")
+	require.Equal(t, DefaultRestoreWorkers(), (&Restorer{Workers: -1}).workers(), "so does a nonsense count")
+	require.Equal(t, 3, (&Restorer{Workers: 3}).workers())
 }
