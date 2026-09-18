@@ -130,12 +130,14 @@ var (
 		{Name: "dir", Type: field.TypeString},
 		{Name: "valid_from", Type: field.TypeTime},
 		{Name: "valid_until", Type: field.TypeTime, Nullable: true},
-		{Name: "ref", Type: field.TypeBytes},
+		{Name: "ref", Type: field.TypeBytes, Nullable: true},
 		{Name: "mtime_ns", Type: field.TypeInt64},
 		{Name: "mode", Type: field.TypeUint32},
 		{Name: "user", Type: field.TypeString},
 		{Name: "group", Type: field.TypeString},
 		{Name: "size", Type: field.TypeInt64},
+		{Name: "type", Type: field.TypeUint32, Default: 0},
+		{Name: "link_target", Type: field.TypeBytes, Nullable: true},
 		{Name: "set_id", Type: field.TypeInt64},
 	}
 	// FilesTable holds the schema information for the "files" table.
@@ -146,7 +148,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "files_sets_files",
-				Columns:    []*schema.Column{FilesColumns[11]},
+				Columns:    []*schema.Column{FilesColumns[13]},
 				RefColumns: []*schema.Column{SetsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -155,12 +157,12 @@ var (
 			{
 				Name:    "file_set_id_path_valid_from",
 				Unique:  true,
-				Columns: []*schema.Column{FilesColumns[11], FilesColumns[1], FilesColumns[3]},
+				Columns: []*schema.Column{FilesColumns[13], FilesColumns[1], FilesColumns[3]},
 			},
 			{
 				Name:    "files_open",
 				Unique:  false,
-				Columns: []*schema.Column{FilesColumns[11], FilesColumns[2]},
+				Columns: []*schema.Column{FilesColumns[13], FilesColumns[2]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "valid_until IS NULL",
 				},

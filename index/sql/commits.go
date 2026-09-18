@@ -360,6 +360,17 @@ func (d *treeDiff) refFile(ctx context.Context, node *proto.TreeNode) error {
 	return nil
 }
 
+// sameFile reports whether an open row still describes the node, so its
+// version can stay open. A symlink has no ref, so its target decides.
+func sameFile(row *ent.File, node *proto.TreeNode) bool {
+	info := node.GetStat()
+
+	return bytes.Equal(row.Ref, node.GetRef().GetHash()) &&
+		row.MtimeNs == info.GetMtimeNs() &&
+		row.Type == uint32(info.GetType()) &&
+		bytes.Equal(row.LinkTarget, info.GetLinkTarget())
+}
+
 func (d *treeDiff) openTrees(ctx context.Context, dir string) (map[string][]byte, error) {
 	rows, err := d.c.Tree.Query().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).All(ctx)
 	if err != nil {
@@ -438,9 +449,6 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 
 	for _, node := range t.GetNodes() {
 		info := node.GetStat()
-		if info.GetType() == proto.NodeType_NODE_SYMLINK {
-			continue
-		}
 
 		child := proto.JoinPath(dir, info.GetName())
 		seen[child] = true
@@ -467,7 +475,7 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		}
 
 		cur, open := files[child]
-		if open && bytes.Equal(cur.Ref, node.GetRef().GetHash()) && cur.MtimeNs == info.GetMtimeNs() {
+		if open && sameFile(cur, node) {
 			continue
 		}
 
@@ -478,9 +486,14 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		}
 
 		err = d.c.File.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(node.GetRef().GetHash()).
-			SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(string(info.GetUser())).SetGroup(string(info.GetGroup())).SetSize(info.GetSize()).Exec(ctx)
+			SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(string(info.GetUser())).SetGroup(string(info.GetGroup())).SetSize(info.GetSize()).
+			SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget()).Exec(ctx)
 		if err != nil {
 			return err
+		}
+
+		if info.GetType() == proto.NodeType_NODE_SYMLINK {
+			continue
 		}
 
 		err = d.refFile(ctx, node)

@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -207,6 +208,18 @@ func (f *fixture) file(name, content string) *proto.TreeNode {
 	return &proto.TreeNode{
 		Stat: &proto.FileInfo{Name: []byte(name), Type: proto.NodeType_NODE_FILE, MtimeNs: f.epoch.UnixNano(), Size: int64(len(content)), Mode: 0644},
 		Ref:  obj.Ref(),
+	}
+}
+
+func (f *fixture) symlink(name, target string) *proto.TreeNode {
+	return &proto.TreeNode{
+		Stat: &proto.FileInfo{
+			Name:       []byte(name),
+			Type:       proto.NodeType_NODE_SYMLINK,
+			LinkTarget: []byte(target),
+			MtimeNs:    f.epoch.UnixNano(),
+			Mode:       uint32(os.ModeSymlink | 0777),
+		},
 	}
 }
 

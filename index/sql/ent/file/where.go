@@ -110,6 +110,16 @@ func Size(v int64) predicate.File {
 	return predicate.File(sql.FieldEQ(FieldSize, v))
 }
 
+// Type applies equality check predicate on the "type" field. It's identical to TypeEQ.
+func Type(v uint32) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldType, v))
+}
+
+// LinkTarget applies equality check predicate on the "link_target" field. It's identical to LinkTargetEQ.
+func LinkTarget(v []byte) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldLinkTarget, v))
+}
+
 // SetIDEQ applies the EQ predicate on the "set_id" field.
 func SetIDEQ(v int64) predicate.File {
 	return predicate.File(sql.FieldEQ(FieldSetID, v))
@@ -390,6 +400,16 @@ func RefLTE(v []byte) predicate.File {
 	return predicate.File(sql.FieldLTE(FieldRef, v))
 }
 
+// RefIsNil applies the IsNil predicate on the "ref" field.
+func RefIsNil() predicate.File {
+	return predicate.File(sql.FieldIsNull(FieldRef))
+}
+
+// RefNotNil applies the NotNil predicate on the "ref" field.
+func RefNotNil() predicate.File {
+	return predicate.File(sql.FieldNotNull(FieldRef))
+}
+
 // MtimeNsEQ applies the EQ predicate on the "mtime_ns" field.
 func MtimeNsEQ(v int64) predicate.File {
 	return predicate.File(sql.FieldEQ(FieldMtimeNs, v))
@@ -638,6 +658,96 @@ func SizeLT(v int64) predicate.File {
 // SizeLTE applies the LTE predicate on the "size" field.
 func SizeLTE(v int64) predicate.File {
 	return predicate.File(sql.FieldLTE(FieldSize, v))
+}
+
+// TypeEQ applies the EQ predicate on the "type" field.
+func TypeEQ(v uint32) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldType, v))
+}
+
+// TypeNEQ applies the NEQ predicate on the "type" field.
+func TypeNEQ(v uint32) predicate.File {
+	return predicate.File(sql.FieldNEQ(FieldType, v))
+}
+
+// TypeIn applies the In predicate on the "type" field.
+func TypeIn(vs ...uint32) predicate.File {
+	return predicate.File(sql.FieldIn(FieldType, vs...))
+}
+
+// TypeNotIn applies the NotIn predicate on the "type" field.
+func TypeNotIn(vs ...uint32) predicate.File {
+	return predicate.File(sql.FieldNotIn(FieldType, vs...))
+}
+
+// TypeGT applies the GT predicate on the "type" field.
+func TypeGT(v uint32) predicate.File {
+	return predicate.File(sql.FieldGT(FieldType, v))
+}
+
+// TypeGTE applies the GTE predicate on the "type" field.
+func TypeGTE(v uint32) predicate.File {
+	return predicate.File(sql.FieldGTE(FieldType, v))
+}
+
+// TypeLT applies the LT predicate on the "type" field.
+func TypeLT(v uint32) predicate.File {
+	return predicate.File(sql.FieldLT(FieldType, v))
+}
+
+// TypeLTE applies the LTE predicate on the "type" field.
+func TypeLTE(v uint32) predicate.File {
+	return predicate.File(sql.FieldLTE(FieldType, v))
+}
+
+// LinkTargetEQ applies the EQ predicate on the "link_target" field.
+func LinkTargetEQ(v []byte) predicate.File {
+	return predicate.File(sql.FieldEQ(FieldLinkTarget, v))
+}
+
+// LinkTargetNEQ applies the NEQ predicate on the "link_target" field.
+func LinkTargetNEQ(v []byte) predicate.File {
+	return predicate.File(sql.FieldNEQ(FieldLinkTarget, v))
+}
+
+// LinkTargetIn applies the In predicate on the "link_target" field.
+func LinkTargetIn(vs ...[]byte) predicate.File {
+	return predicate.File(sql.FieldIn(FieldLinkTarget, vs...))
+}
+
+// LinkTargetNotIn applies the NotIn predicate on the "link_target" field.
+func LinkTargetNotIn(vs ...[]byte) predicate.File {
+	return predicate.File(sql.FieldNotIn(FieldLinkTarget, vs...))
+}
+
+// LinkTargetGT applies the GT predicate on the "link_target" field.
+func LinkTargetGT(v []byte) predicate.File {
+	return predicate.File(sql.FieldGT(FieldLinkTarget, v))
+}
+
+// LinkTargetGTE applies the GTE predicate on the "link_target" field.
+func LinkTargetGTE(v []byte) predicate.File {
+	return predicate.File(sql.FieldGTE(FieldLinkTarget, v))
+}
+
+// LinkTargetLT applies the LT predicate on the "link_target" field.
+func LinkTargetLT(v []byte) predicate.File {
+	return predicate.File(sql.FieldLT(FieldLinkTarget, v))
+}
+
+// LinkTargetLTE applies the LTE predicate on the "link_target" field.
+func LinkTargetLTE(v []byte) predicate.File {
+	return predicate.File(sql.FieldLTE(FieldLinkTarget, v))
+}
+
+// LinkTargetIsNil applies the IsNil predicate on the "link_target" field.
+func LinkTargetIsNil() predicate.File {
+	return predicate.File(sql.FieldIsNull(FieldLinkTarget))
+}
+
+// LinkTargetNotNil applies the NotNil predicate on the "link_target" field.
+func LinkTargetNotNil() predicate.File {
+	return predicate.File(sql.FieldNotNull(FieldLinkTarget))
 }
 
 // HasSet applies the HasEdge predicate on the "set" edge.

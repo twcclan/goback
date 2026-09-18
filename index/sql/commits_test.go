@@ -680,3 +680,66 @@ func TestPinsFollowTheirSet(t *testing.T) {
 	require.Empty(t, pins)
 	require.ErrorIs(t, f.x.Unpin(f.ctx, p), backup.ErrNotFound)
 }
+
+func TestSymlinksAreIndexed(t *testing.T) {
+	f := newFixture(t)
+
+	t0 := f.clock
+	rootA := f.tree(f.file("a.txt", "one"), f.symlink("current", "worlds/2026"))
+	f.commit("world", rootA, false)
+
+	versions, err := f.x.FileInfo(f.ctx, "world", "current", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	require.Equal(t, proto.NodeType_NODE_SYMLINK, versions[0].Stat.Type)
+	require.Equal(t, "worlds/2026", string(versions[0].Stat.LinkTarget))
+	require.Nil(t, versions[0].Ref, "a symlink has no object of its own")
+
+	// a symlink that still points at the same place is one version
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "one"), f.symlink("current", "worlds/2026")), false)
+
+	versions, err = f.x.FileInfo(f.ctx, "world", "current", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+
+	// repointing it closes the old version and opens a new one
+	f.advance(time.Hour)
+	t2 := f.clock
+	f.commit("world", f.tree(f.file("a.txt", "one"), f.symlink("current", "worlds/2027")), false)
+
+	versions, err = f.x.FileInfo(f.ctx, "world", "current", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 2)
+	require.Equal(t, "worlds/2027", string(versions[0].Stat.LinkTarget))
+	require.Equal(t, "worlds/2026", string(versions[1].Stat.LinkTarget))
+
+	var links []rangeRow
+	for _, row := range f.ranges(f.x, "files") {
+		if row.path == "current" {
+			links = append(links, row)
+		}
+	}
+
+	require.Len(t, links, 2)
+	require.True(t, links[0].validFrom.Equal(t0))
+	closedAt(t, links[0], t2)
+	require.Nil(t, links[1].validUntil)
+}
+
+func TestASymlinkReplacedByAFileIsANewVersion(t *testing.T) {
+	f := newFixture(t)
+
+	f.commit("world", f.tree(f.symlink("current", "worlds/2026")), false)
+
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("current", "no longer a link")), false)
+
+	versions, err := f.x.FileInfo(f.ctx, "world", "current", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 2)
+	require.Equal(t, proto.NodeType_NODE_FILE, versions[0].Stat.Type)
+	require.NotNil(t, versions[0].Ref)
+	require.Empty(t, versions[0].Stat.LinkTarget)
+	require.Equal(t, proto.NodeType_NODE_SYMLINK, versions[1].Stat.Type)
+}

@@ -5,6 +5,7 @@ package ent
 import (
 	"github.com/twcclan/goback/index/sql/ent/archive"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/schema"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/settings"
@@ -46,6 +47,12 @@ func init() {
 	commitrowDescRetainedBy := commitrowFields[12].Descriptor()
 	// commitrow.DefaultRetainedBy holds the default value on creation for the retained_by field.
 	commitrow.DefaultRetainedBy = commitrowDescRetainedBy.Default.(string)
+	fileFields := schema.File{}.Fields()
+	_ = fileFields
+	// fileDescType is the schema descriptor for type field.
+	fileDescType := fileFields[11].Descriptor()
+	// file.DefaultType holds the default value on creation for the type field.
+	file.DefaultType = fileDescType.Default.(uint32)
 	setFields := schema.Set{}.Fields()
 	_ = setFields
 	// setDescRetentionPaused is the schema descriptor for retention_paused field.

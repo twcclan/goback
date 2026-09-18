@@ -111,6 +111,12 @@ func (_u *FileUpdate) SetRef(v []byte) *FileUpdate {
 	return _u
 }
 
+// ClearRef clears the value of the "ref" field.
+func (_u *FileUpdate) ClearRef() *FileUpdate {
+	_u.mutation.ClearRef()
+	return _u
+}
+
 // SetMtimeNs sets the "mtime_ns" field.
 func (_u *FileUpdate) SetMtimeNs(v int64) *FileUpdate {
 	_u.mutation.ResetMtimeNs()
@@ -202,6 +208,39 @@ func (_u *FileUpdate) AddSize(v int64) *FileUpdate {
 	return _u
 }
 
+// SetType sets the "type" field.
+func (_u *FileUpdate) SetType(v uint32) *FileUpdate {
+	_u.mutation.ResetType()
+	_u.mutation.SetType(v)
+	return _u
+}
+
+// SetNillableType sets the "type" field if the given value is not nil.
+func (_u *FileUpdate) SetNillableType(v *uint32) *FileUpdate {
+	if v != nil {
+		_u.SetType(*v)
+	}
+	return _u
+}
+
+// AddType adds value to the "type" field.
+func (_u *FileUpdate) AddType(v int32) *FileUpdate {
+	_u.mutation.AddType(v)
+	return _u
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (_u *FileUpdate) SetLinkTarget(v []byte) *FileUpdate {
+	_u.mutation.SetLinkTarget(v)
+	return _u
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (_u *FileUpdate) ClearLinkTarget() *FileUpdate {
+	_u.mutation.ClearLinkTarget()
+	return _u
+}
+
 // SetSet sets the "set" edge to the Set entity.
 func (_u *FileUpdate) SetSet(v *Set) *FileUpdate {
 	return _u.SetSetID(v.ID)
@@ -283,6 +322,9 @@ func (_u *FileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Ref(); ok {
 		_spec.SetField(file.FieldRef, field.TypeBytes, value)
 	}
+	if _u.mutation.RefCleared() {
+		_spec.ClearField(file.FieldRef, field.TypeBytes)
+	}
 	if value, ok := _u.mutation.MtimeNs(); ok {
 		_spec.SetField(file.FieldMtimeNs, field.TypeInt64, value)
 	}
@@ -306,6 +348,18 @@ func (_u *FileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedSize(); ok {
 		_spec.AddField(file.FieldSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GetType(); ok {
+		_spec.SetField(file.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.AddedType(); ok {
+		_spec.AddField(file.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.LinkTarget(); ok {
+		_spec.SetField(file.FieldLinkTarget, field.TypeBytes, value)
+	}
+	if _u.mutation.LinkTargetCleared() {
+		_spec.ClearField(file.FieldLinkTarget, field.TypeBytes)
 	}
 	if _u.mutation.SetCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -438,6 +492,12 @@ func (_u *FileUpdateOne) SetRef(v []byte) *FileUpdateOne {
 	return _u
 }
 
+// ClearRef clears the value of the "ref" field.
+func (_u *FileUpdateOne) ClearRef() *FileUpdateOne {
+	_u.mutation.ClearRef()
+	return _u
+}
+
 // SetMtimeNs sets the "mtime_ns" field.
 func (_u *FileUpdateOne) SetMtimeNs(v int64) *FileUpdateOne {
 	_u.mutation.ResetMtimeNs()
@@ -526,6 +586,39 @@ func (_u *FileUpdateOne) SetNillableSize(v *int64) *FileUpdateOne {
 // AddSize adds value to the "size" field.
 func (_u *FileUpdateOne) AddSize(v int64) *FileUpdateOne {
 	_u.mutation.AddSize(v)
+	return _u
+}
+
+// SetType sets the "type" field.
+func (_u *FileUpdateOne) SetType(v uint32) *FileUpdateOne {
+	_u.mutation.ResetType()
+	_u.mutation.SetType(v)
+	return _u
+}
+
+// SetNillableType sets the "type" field if the given value is not nil.
+func (_u *FileUpdateOne) SetNillableType(v *uint32) *FileUpdateOne {
+	if v != nil {
+		_u.SetType(*v)
+	}
+	return _u
+}
+
+// AddType adds value to the "type" field.
+func (_u *FileUpdateOne) AddType(v int32) *FileUpdateOne {
+	_u.mutation.AddType(v)
+	return _u
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (_u *FileUpdateOne) SetLinkTarget(v []byte) *FileUpdateOne {
+	_u.mutation.SetLinkTarget(v)
+	return _u
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (_u *FileUpdateOne) ClearLinkTarget() *FileUpdateOne {
+	_u.mutation.ClearLinkTarget()
 	return _u
 }
 
@@ -640,6 +733,9 @@ func (_u *FileUpdateOne) sqlSave(ctx context.Context) (_node *File, err error) {
 	if value, ok := _u.mutation.Ref(); ok {
 		_spec.SetField(file.FieldRef, field.TypeBytes, value)
 	}
+	if _u.mutation.RefCleared() {
+		_spec.ClearField(file.FieldRef, field.TypeBytes)
+	}
 	if value, ok := _u.mutation.MtimeNs(); ok {
 		_spec.SetField(file.FieldMtimeNs, field.TypeInt64, value)
 	}
@@ -663,6 +759,18 @@ func (_u *FileUpdateOne) sqlSave(ctx context.Context) (_node *File, err error) {
 	}
 	if value, ok := _u.mutation.AddedSize(); ok {
 		_spec.AddField(file.FieldSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GetType(); ok {
+		_spec.SetField(file.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.AddedType(); ok {
+		_spec.AddField(file.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.LinkTarget(); ok {
+		_spec.SetField(file.FieldLinkTarget, field.TypeBytes, value)
+	}
+	if _u.mutation.LinkTargetCleared() {
+		_spec.ClearField(file.FieldLinkTarget, field.TypeBytes)
 	}
 	if _u.mutation.SetCleared() {
 		edge := &sqlgraph.EdgeSpec{

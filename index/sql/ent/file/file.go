@@ -34,6 +34,10 @@ const (
 	FieldGroup = "group"
 	// FieldSize holds the string denoting the size field in the database.
 	FieldSize = "size"
+	// FieldType holds the string denoting the type field in the database.
+	FieldType = "type"
+	// FieldLinkTarget holds the string denoting the link_target field in the database.
+	FieldLinkTarget = "link_target"
 	// EdgeSet holds the string denoting the set edge name in mutations.
 	EdgeSet = "set"
 	// Table holds the table name of the file in the database.
@@ -61,6 +65,8 @@ var Columns = []string{
 	FieldUser,
 	FieldGroup,
 	FieldSize,
+	FieldType,
+	FieldLinkTarget,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -72,6 +78,11 @@ func ValidColumn(column string) bool {
 	}
 	return false
 }
+
+var (
+	// DefaultType holds the default value on creation for the "type" field.
+	DefaultType uint32
+)
 
 // OrderOption defines the ordering options for the File queries.
 type OrderOption func(*sql.Selector)
@@ -129,6 +140,11 @@ func ByGroup(opts ...sql.OrderTermOption) OrderOption {
 // BySize orders the results by the size field.
 func BySize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSize, opts...).ToFunc()
+}
+
+// ByType orders the results by the type field.
+func ByType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldType, opts...).ToFunc()
 }
 
 // BySetField orders the results by set field.

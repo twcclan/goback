@@ -40,6 +40,10 @@ type File struct {
 	Group string `json:"group,omitempty"`
 	// Size holds the value of the "size" field.
 	Size int64 `json:"size,omitempty"`
+	// Type holds the value of the "type" field.
+	Type uint32 `json:"type,omitempty"`
+	// LinkTarget holds the value of the "link_target" field.
+	LinkTarget []byte `json:"link_target,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the FileQuery when eager-loading is set.
 	Edges        FileEdges `json:"edges"`
@@ -71,9 +75,9 @@ func (*File) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case file.FieldRef:
+		case file.FieldRef, file.FieldLinkTarget:
 			values[i] = new([]byte)
-		case file.FieldID, file.FieldSetID, file.FieldMtimeNs, file.FieldMode, file.FieldSize:
+		case file.FieldID, file.FieldSetID, file.FieldMtimeNs, file.FieldMode, file.FieldSize, file.FieldType:
 			values[i] = new(sql.NullInt64)
 		case file.FieldPath, file.FieldDir, file.FieldUser, file.FieldGroup:
 			values[i] = new(sql.NullString)
@@ -167,6 +171,18 @@ func (_m *File) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Size = value.Int64
 			}
+		case file.FieldType:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field type", values[i])
+			} else if value.Valid {
+				_m.Type = uint32(value.Int64)
+			}
+		case file.FieldLinkTarget:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field link_target", values[i])
+			} else if value != nil {
+				_m.LinkTarget = *value
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -242,6 +258,12 @@ func (_m *File) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("size=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Size))
+	builder.WriteString(", ")
+	builder.WriteString("type=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Type))
+	builder.WriteString(", ")
+	builder.WriteString("link_target=")
+	builder.WriteString(fmt.Sprintf("%v", _m.LinkTarget))
 	builder.WriteByte(')')
 	return builder.String()
 }

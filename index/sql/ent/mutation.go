@@ -2639,6 +2639,9 @@ type FileMutation struct {
 	group         *string
 	size          *int64
 	addsize       *int64
+	_type         *uint32
+	add_type      *int32
+	link_target   *[]byte
 	clearedFields map[string]struct{}
 	set           *int64
 	clearedset    bool
@@ -2969,9 +2972,22 @@ func (m *FileMutation) OldRef(ctx context.Context) (v []byte, err error) {
 	return oldValue.Ref, nil
 }
 
+// ClearRef clears the value of the "ref" field.
+func (m *FileMutation) ClearRef() {
+	m.ref = nil
+	m.clearedFields[file.FieldRef] = struct{}{}
+}
+
+// RefCleared returns if the "ref" field was cleared in this mutation.
+func (m *FileMutation) RefCleared() bool {
+	_, ok := m.clearedFields[file.FieldRef]
+	return ok
+}
+
 // ResetRef resets all changes to the "ref" field.
 func (m *FileMutation) ResetRef() {
 	m.ref = nil
+	delete(m.clearedFields, file.FieldRef)
 }
 
 // SetMtimeNs sets the "mtime_ns" field.
@@ -3214,6 +3230,111 @@ func (m *FileMutation) ResetSize() {
 	m.addsize = nil
 }
 
+// SetType sets the "type" field.
+func (m *FileMutation) SetType(u uint32) {
+	m._type = &u
+	m.add_type = nil
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *FileMutation) GetType() (r uint32, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the File entity.
+// If the File object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FileMutation) OldType(ctx context.Context) (v uint32, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// AddType adds u to the "type" field.
+func (m *FileMutation) AddType(u int32) {
+	if m.add_type != nil {
+		*m.add_type += u
+	} else {
+		m.add_type = &u
+	}
+}
+
+// AddedType returns the value that was added to the "type" field in this mutation.
+func (m *FileMutation) AddedType() (r int32, exists bool) {
+	v := m.add_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *FileMutation) ResetType() {
+	m._type = nil
+	m.add_type = nil
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (m *FileMutation) SetLinkTarget(b []byte) {
+	m.link_target = &b
+}
+
+// LinkTarget returns the value of the "link_target" field in the mutation.
+func (m *FileMutation) LinkTarget() (r []byte, exists bool) {
+	v := m.link_target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLinkTarget returns the old "link_target" field's value of the File entity.
+// If the File object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FileMutation) OldLinkTarget(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLinkTarget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLinkTarget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLinkTarget: %w", err)
+	}
+	return oldValue.LinkTarget, nil
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (m *FileMutation) ClearLinkTarget() {
+	m.link_target = nil
+	m.clearedFields[file.FieldLinkTarget] = struct{}{}
+}
+
+// LinkTargetCleared returns if the "link_target" field was cleared in this mutation.
+func (m *FileMutation) LinkTargetCleared() bool {
+	_, ok := m.clearedFields[file.FieldLinkTarget]
+	return ok
+}
+
+// ResetLinkTarget resets all changes to the "link_target" field.
+func (m *FileMutation) ResetLinkTarget() {
+	m.link_target = nil
+	delete(m.clearedFields, file.FieldLinkTarget)
+}
+
 // ClearSet clears the "set" edge to the Set entity.
 func (m *FileMutation) ClearSet() {
 	m.clearedset = true
@@ -3275,7 +3396,7 @@ func (m *FileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *FileMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 13)
 	if m.set != nil {
 		fields = append(fields, file.FieldSetID)
 	}
@@ -3309,6 +3430,12 @@ func (m *FileMutation) Fields() []string {
 	if m.size != nil {
 		fields = append(fields, file.FieldSize)
 	}
+	if m._type != nil {
+		fields = append(fields, file.FieldType)
+	}
+	if m.link_target != nil {
+		fields = append(fields, file.FieldLinkTarget)
+	}
 	return fields
 }
 
@@ -3339,6 +3466,10 @@ func (m *FileMutation) Field(name string) (ent.Value, bool) {
 		return m.Group()
 	case file.FieldSize:
 		return m.Size()
+	case file.FieldType:
+		return m.GetType()
+	case file.FieldLinkTarget:
+		return m.LinkTarget()
 	}
 	return nil, false
 }
@@ -3370,6 +3501,10 @@ func (m *FileMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldGroup(ctx)
 	case file.FieldSize:
 		return m.OldSize(ctx)
+	case file.FieldType:
+		return m.OldType(ctx)
+	case file.FieldLinkTarget:
+		return m.OldLinkTarget(ctx)
 	}
 	return nil, fmt.Errorf("unknown File field %s", name)
 }
@@ -3456,6 +3591,20 @@ func (m *FileMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSize(v)
 		return nil
+	case file.FieldType:
+		v, ok := value.(uint32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case file.FieldLinkTarget:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLinkTarget(v)
+		return nil
 	}
 	return fmt.Errorf("unknown File field %s", name)
 }
@@ -3473,6 +3622,9 @@ func (m *FileMutation) AddedFields() []string {
 	if m.addsize != nil {
 		fields = append(fields, file.FieldSize)
 	}
+	if m.add_type != nil {
+		fields = append(fields, file.FieldType)
+	}
 	return fields
 }
 
@@ -3487,6 +3639,8 @@ func (m *FileMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedMode()
 	case file.FieldSize:
 		return m.AddedSize()
+	case file.FieldType:
+		return m.AddedType()
 	}
 	return nil, false
 }
@@ -3517,6 +3671,13 @@ func (m *FileMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddSize(v)
 		return nil
+	case file.FieldType:
+		v, ok := value.(int32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddType(v)
+		return nil
 	}
 	return fmt.Errorf("unknown File numeric field %s", name)
 }
@@ -3527,6 +3688,12 @@ func (m *FileMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(file.FieldValidUntil) {
 		fields = append(fields, file.FieldValidUntil)
+	}
+	if m.FieldCleared(file.FieldRef) {
+		fields = append(fields, file.FieldRef)
+	}
+	if m.FieldCleared(file.FieldLinkTarget) {
+		fields = append(fields, file.FieldLinkTarget)
 	}
 	return fields
 }
@@ -3544,6 +3711,12 @@ func (m *FileMutation) ClearField(name string) error {
 	switch name {
 	case file.FieldValidUntil:
 		m.ClearValidUntil()
+		return nil
+	case file.FieldRef:
+		m.ClearRef()
+		return nil
+	case file.FieldLinkTarget:
+		m.ClearLinkTarget()
 		return nil
 	}
 	return fmt.Errorf("unknown File nullable field %s", name)
@@ -3585,6 +3758,12 @@ func (m *FileMutation) ResetField(name string) error {
 		return nil
 	case file.FieldSize:
 		m.ResetSize()
+		return nil
+	case file.FieldType:
+		m.ResetType()
+		return nil
+	case file.FieldLinkTarget:
+		m.ResetLinkTarget()
 		return nil
 	}
 	return fmt.Errorf("unknown File field %s", name)

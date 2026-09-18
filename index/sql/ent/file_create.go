@@ -97,6 +97,26 @@ func (_c *FileCreate) SetSize(v int64) *FileCreate {
 	return _c
 }
 
+// SetType sets the "type" field.
+func (_c *FileCreate) SetType(v uint32) *FileCreate {
+	_c.mutation.SetType(v)
+	return _c
+}
+
+// SetNillableType sets the "type" field if the given value is not nil.
+func (_c *FileCreate) SetNillableType(v *uint32) *FileCreate {
+	if v != nil {
+		_c.SetType(*v)
+	}
+	return _c
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (_c *FileCreate) SetLinkTarget(v []byte) *FileCreate {
+	_c.mutation.SetLinkTarget(v)
+	return _c
+}
+
 // SetSet sets the "set" edge to the Set entity.
 func (_c *FileCreate) SetSet(v *Set) *FileCreate {
 	return _c.SetSetID(v.ID)
@@ -109,6 +129,7 @@ func (_c *FileCreate) Mutation() *FileMutation {
 
 // Save creates the File in the database.
 func (_c *FileCreate) Save(ctx context.Context) (*File, error) {
+	_c.defaults()
 	return withHooks(ctx, _c.sqlSave, _c.mutation, _c.hooks)
 }
 
@@ -134,6 +155,14 @@ func (_c *FileCreate) ExecX(ctx context.Context) {
 	}
 }
 
+// defaults sets the default values of the builder before save.
+func (_c *FileCreate) defaults() {
+	if _, ok := _c.mutation.GetType(); !ok {
+		v := file.DefaultType
+		_c.mutation.SetType(v)
+	}
+}
+
 // check runs all checks and user-defined validators on the builder.
 func (_c *FileCreate) check() error {
 	if _, ok := _c.mutation.SetID(); !ok {
@@ -147,9 +176,6 @@ func (_c *FileCreate) check() error {
 	}
 	if _, ok := _c.mutation.ValidFrom(); !ok {
 		return &ValidationError{Name: "valid_from", err: errors.New(`ent: missing required field "File.valid_from"`)}
-	}
-	if _, ok := _c.mutation.Ref(); !ok {
-		return &ValidationError{Name: "ref", err: errors.New(`ent: missing required field "File.ref"`)}
 	}
 	if _, ok := _c.mutation.MtimeNs(); !ok {
 		return &ValidationError{Name: "mtime_ns", err: errors.New(`ent: missing required field "File.mtime_ns"`)}
@@ -165,6 +191,9 @@ func (_c *FileCreate) check() error {
 	}
 	if _, ok := _c.mutation.Size(); !ok {
 		return &ValidationError{Name: "size", err: errors.New(`ent: missing required field "File.size"`)}
+	}
+	if _, ok := _c.mutation.GetType(); !ok {
+		return &ValidationError{Name: "type", err: errors.New(`ent: missing required field "File.type"`)}
 	}
 	if len(_c.mutation.SetIDs()) == 0 {
 		return &ValidationError{Name: "set", err: errors.New(`ent: missing required edge "File.set"`)}
@@ -235,6 +264,14 @@ func (_c *FileCreate) createSpec() (*File, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Size(); ok {
 		_spec.SetField(file.FieldSize, field.TypeInt64, value)
 		_node.Size = value
+	}
+	if value, ok := _c.mutation.GetType(); ok {
+		_spec.SetField(file.FieldType, field.TypeUint32, value)
+		_node.Type = value
+	}
+	if value, ok := _c.mutation.LinkTarget(); ok {
+		_spec.SetField(file.FieldLinkTarget, field.TypeBytes, value)
+		_node.LinkTarget = value
 	}
 	if nodes := _c.mutation.SetIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -383,6 +420,12 @@ func (u *FileUpsert) UpdateRef() *FileUpsert {
 	return u
 }
 
+// ClearRef clears the value of the "ref" field.
+func (u *FileUpsert) ClearRef() *FileUpsert {
+	u.SetNull(file.FieldRef)
+	return u
+}
+
 // SetMtimeNs sets the "mtime_ns" field.
 func (u *FileUpsert) SetMtimeNs(v int64) *FileUpsert {
 	u.Set(file.FieldMtimeNs, v)
@@ -458,6 +501,42 @@ func (u *FileUpsert) UpdateSize() *FileUpsert {
 // AddSize adds v to the "size" field.
 func (u *FileUpsert) AddSize(v int64) *FileUpsert {
 	u.Add(file.FieldSize, v)
+	return u
+}
+
+// SetType sets the "type" field.
+func (u *FileUpsert) SetType(v uint32) *FileUpsert {
+	u.Set(file.FieldType, v)
+	return u
+}
+
+// UpdateType sets the "type" field to the value that was provided on create.
+func (u *FileUpsert) UpdateType() *FileUpsert {
+	u.SetExcluded(file.FieldType)
+	return u
+}
+
+// AddType adds v to the "type" field.
+func (u *FileUpsert) AddType(v uint32) *FileUpsert {
+	u.Add(file.FieldType, v)
+	return u
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (u *FileUpsert) SetLinkTarget(v []byte) *FileUpsert {
+	u.Set(file.FieldLinkTarget, v)
+	return u
+}
+
+// UpdateLinkTarget sets the "link_target" field to the value that was provided on create.
+func (u *FileUpsert) UpdateLinkTarget() *FileUpsert {
+	u.SetExcluded(file.FieldLinkTarget)
+	return u
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (u *FileUpsert) ClearLinkTarget() *FileUpsert {
+	u.SetNull(file.FieldLinkTarget)
 	return u
 }
 
@@ -592,6 +671,13 @@ func (u *FileUpsertOne) UpdateRef() *FileUpsertOne {
 	})
 }
 
+// ClearRef clears the value of the "ref" field.
+func (u *FileUpsertOne) ClearRef() *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.ClearRef()
+	})
+}
+
 // SetMtimeNs sets the "mtime_ns" field.
 func (u *FileUpsertOne) SetMtimeNs(v int64) *FileUpsertOne {
 	return u.Update(func(s *FileUpsert) {
@@ -683,6 +769,48 @@ func (u *FileUpsertOne) UpdateSize() *FileUpsertOne {
 	})
 }
 
+// SetType sets the "type" field.
+func (u *FileUpsertOne) SetType(v uint32) *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.SetType(v)
+	})
+}
+
+// AddType adds v to the "type" field.
+func (u *FileUpsertOne) AddType(v uint32) *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.AddType(v)
+	})
+}
+
+// UpdateType sets the "type" field to the value that was provided on create.
+func (u *FileUpsertOne) UpdateType() *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateType()
+	})
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (u *FileUpsertOne) SetLinkTarget(v []byte) *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.SetLinkTarget(v)
+	})
+}
+
+// UpdateLinkTarget sets the "link_target" field to the value that was provided on create.
+func (u *FileUpsertOne) UpdateLinkTarget() *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateLinkTarget()
+	})
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (u *FileUpsertOne) ClearLinkTarget() *FileUpsertOne {
+	return u.Update(func(s *FileUpsert) {
+		s.ClearLinkTarget()
+	})
+}
+
 // Exec executes the query.
 func (u *FileUpsertOne) Exec(ctx context.Context) error {
 	if len(u.create.conflict) == 0 {
@@ -735,6 +863,7 @@ func (_c *FileCreateBulk) Save(ctx context.Context) ([]*File, error) {
 	for i := range _c.builders {
 		func(i int, root context.Context) {
 			builder := _c.builders[i]
+			builder.defaults()
 			var mut Mutator = MutateFunc(func(ctx context.Context, m Mutation) (Value, error) {
 				mutation, ok := m.(*FileMutation)
 				if !ok {
@@ -977,6 +1106,13 @@ func (u *FileUpsertBulk) UpdateRef() *FileUpsertBulk {
 	})
 }
 
+// ClearRef clears the value of the "ref" field.
+func (u *FileUpsertBulk) ClearRef() *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.ClearRef()
+	})
+}
+
 // SetMtimeNs sets the "mtime_ns" field.
 func (u *FileUpsertBulk) SetMtimeNs(v int64) *FileUpsertBulk {
 	return u.Update(func(s *FileUpsert) {
@@ -1065,6 +1201,48 @@ func (u *FileUpsertBulk) AddSize(v int64) *FileUpsertBulk {
 func (u *FileUpsertBulk) UpdateSize() *FileUpsertBulk {
 	return u.Update(func(s *FileUpsert) {
 		s.UpdateSize()
+	})
+}
+
+// SetType sets the "type" field.
+func (u *FileUpsertBulk) SetType(v uint32) *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.SetType(v)
+	})
+}
+
+// AddType adds v to the "type" field.
+func (u *FileUpsertBulk) AddType(v uint32) *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.AddType(v)
+	})
+}
+
+// UpdateType sets the "type" field to the value that was provided on create.
+func (u *FileUpsertBulk) UpdateType() *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateType()
+	})
+}
+
+// SetLinkTarget sets the "link_target" field.
+func (u *FileUpsertBulk) SetLinkTarget(v []byte) *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.SetLinkTarget(v)
+	})
+}
+
+// UpdateLinkTarget sets the "link_target" field to the value that was provided on create.
+func (u *FileUpsertBulk) UpdateLinkTarget() *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.UpdateLinkTarget()
+	})
+}
+
+// ClearLinkTarget clears the value of the "link_target" field.
+func (u *FileUpsertBulk) ClearLinkTarget() *FileUpsertBulk {
+	return u.Update(func(s *FileUpsert) {
+		s.ClearLinkTarget()
 	})
 }
 

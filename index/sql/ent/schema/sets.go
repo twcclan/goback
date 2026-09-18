@@ -4,6 +4,8 @@
 package schema
 
 import (
+	"github.com/twcclan/goback/proto"
+
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -109,7 +111,7 @@ func (CommitRow) Annotations() []schema.Annotation {
 }
 
 // File is one version of a path in a set, valid over the range of commits
-// that contain it.
+// that contain it. A symlink has a link target and no ref.
 type File struct {
 	ent.Schema
 }
@@ -122,12 +124,14 @@ func (File) Fields() []ent.Field {
 		field.String("dir"),
 		field.Time("valid_from"),
 		field.Time("valid_until").Optional().Nillable(),
-		field.Bytes("ref"),
+		field.Bytes("ref").Optional(),
 		field.Int64("mtime_ns"),
 		field.Uint32("mode"),
 		field.String("user"),
 		field.String("group"),
 		field.Int64("size"),
+		field.Uint32("type").Default(uint32(proto.NodeType_NODE_FILE)),
+		field.Bytes("link_target").Optional(),
 	}
 }
 
