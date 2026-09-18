@@ -156,41 +156,88 @@ func clearStamp(object *proto.Object) {
 	}
 }
 
-// Get fetches a commit, tree or file object the caller references.
-// Anything else, and anything absent, is backup.ErrNotFound.
-func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+func notFound(ref *proto.Ref) error {
+	return fmt.Errorf("object %x: %w", ref.GetHash(), backup.ErrNotFound)
+}
+
+// readable refuses a malformed ref, and one no set of the store
+// references, before anything is read.
+func (s *Store) readable(ctx context.Context, ref *proto.Ref) error {
 	if !ref.Valid() {
-		return nil, fmt.Errorf("%w: malformed ref", ErrInvalidRequest)
+		return fmt.Errorf("%w: malformed ref", ErrInvalidRequest)
 	}
 
-	notFound := fmt.Errorf("object %x: %w", ref.GetHash(), backup.ErrNotFound)
-
-	if scope, ok := s.Index.(backup.RefScope); ok {
-		referenced, err := scope.References(ctx, ref)
-		if err != nil {
-			return nil, err
-		}
-
-		if !referenced {
-			return nil, notFound
-		}
+	scope, ok := s.Index.(backup.RefScope)
+	if !ok {
+		return nil
 	}
 
-	obj, err := s.Index.Get(ctx, ref)
+	referenced, err := scope.References(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	if !referenced {
+		return notFound(ref)
+	}
+
+	return nil
+}
+
+// offered passes on the object types the store serves and hides the rest.
+func offered(ref *proto.Ref, object *proto.Object, err error) (*proto.Object, error) {
 	if errors.Is(err, backup.ErrNotFound) {
-		return nil, notFound
+		return nil, notFound(ref)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	switch obj.Type() {
+	switch object.Type() {
 	case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
-		return obj, nil
+		return object, nil
 	}
 
-	return nil, notFound
+	return nil, notFound(ref)
+}
+
+// Get fetches a commit, tree or file object the caller references.
+// Anything else, and anything absent, is backup.ErrNotFound.
+func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	if err := s.readable(ctx, ref); err != nil {
+		return nil, err
+	}
+
+	object, err := s.Index.Get(ctx, ref)
+
+	return offered(ref, object, err)
+}
+
+// Read answers like Get, except that a store able to address its bytes
+// says where they are instead of serving them. Exactly one of the object
+// and the location is set.
+func (s *Store) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
+	if err := s.readable(ctx, ref); err != nil {
+		return nil, nil, err
+	}
+
+	locator, ok := s.Index.(backup.Locator)
+	if !ok {
+		object, err := s.Index.Get(ctx, ref)
+		object, err = offered(ref, object, err)
+
+		return object, nil, err
+	}
+
+	object, location, err := locator.Read(ctx, ref)
+	if err == nil && location != nil {
+		return nil, location, nil
+	}
+
+	object, err = offered(ref, object, err)
+
+	return object, nil, err
 }
 
 // Tree walks the tree at ref breadth-first, its splits, and the trees of

@@ -37,7 +37,22 @@ message GetRequest {
 }
 
 message GetResponse {
-    Object object = 1;
+    // a store that can address its bytes answers where they are, and one
+    // that cannot serves them
+    oneof body {
+        Object object = 1;
+        Location location = 2;
+    }
+}
+
+// Location is a plain GET whose body is one object's stored record. It is
+// minted to be used at once and expires quickly.
+message Location {
+    string url = 1;
+    // header must be sent with the request, verbatim
+    map<string, string> header = 2;
+    int64 length = 3;
+    google.protobuf.Timestamp expires = 4;
 }
 
 // ReadFileRequest names a file object the store references; the

@@ -9,10 +9,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -30,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const testSecret = "shared-secret"
@@ -630,4 +634,90 @@ func TestRemoteReadDirCrossesTheWire(t *testing.T) {
 	require.Equal(t, proto.NodeType_NODE_DIRECTORY, entries[0].Stat.Type)
 	require.Equal(t, "elsewhere", string(entries[1].Stat.LinkTarget), "a symlink keeps its target")
 	require.Equal(t, at.UnixNano(), entries[1].Stat.MtimeNs, "the instant survives the round trip")
+}
+
+// located answers a read with a location into an HTTP server serving
+// stored records, the way a store whose archives sit in a bucket does.
+type located struct {
+	*memIndex
+	url     string
+	records map[string][]byte
+}
+
+func locating(t *testing.T) *located {
+	t.Helper()
+
+	index := &located{memIndex: newMemIndex(), records: map[string][]byte{}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		record, ok := index.records[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+
+			return
+		}
+
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(record)
+	}))
+	t.Cleanup(server.Close)
+
+	index.url = server.URL
+
+	return index
+}
+
+// offer publishes object's record where ref's location points, so a test
+// can also point one at the wrong bytes.
+func (l *located) offer(t *testing.T, ref *proto.Ref, object *proto.Object) {
+	t.Helper()
+
+	hdr, stored, err := proto.HeaderFor(object)
+	require.NoError(t, err)
+
+	header := proto.Bytes(hdr)
+	record := append(proto.EncodeVarint(nil, uint64(len(header))), header...)
+
+	l.records[locationPath(ref)] = append(record, stored...)
+}
+
+func locationPath(ref *proto.Ref) string { return "/" + hex.EncodeToString(ref.GetHash()) }
+
+// Read implements backup.Locator.
+func (l *located) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
+	record, ok := l.records[locationPath(ref)]
+	if !ok {
+		object, err := l.memIndex.Get(ctx, ref)
+
+		return object, nil, err
+	}
+
+	return nil, &proto.Location{
+		Url:     l.url + locationPath(ref),
+		Header:  map[string]string{"Range": fmt.Sprintf("bytes=0-%d", len(record)-1)},
+		Length:  int64(len(record)),
+		Expires: timestamppb.New(time.Now().Add(time.Minute)),
+	}, nil
+}
+
+func TestRemoteGetFollowsALocation(t *testing.T) {
+	index := locating(t)
+	ctx := context.Background()
+	client := startServerWith(t, index, nil)("node-1")
+
+	blob := proto.NewObject(&proto.Blob{Data: []byte("save data")})
+	require.NoError(t, client.Put(ctx, blob))
+	file := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Length: 9, Ref: blob.Ref()}}})
+	require.NoError(t, client.Put(ctx, file))
+
+	index.offer(t, file.Ref(), file)
+
+	object, err := client.Get(ctx, file.Ref())
+	require.NoError(t, err)
+	require.True(t, object.Ref().Equal(file.Ref()), "the location yields the object asked for")
+	require.EqualValues(t, 9, object.GetFile().GetParts()[0].GetLength())
+
+	index.offer(t, file.Ref(), proto.NewObject(&proto.File{Inline: []byte("someone else")}))
+	_, err = client.Get(ctx, file.Ref())
+	require.ErrorIs(t, err, proto.ErrRefMismatch, "a location pointing at other bytes is refused")
 }

@@ -104,6 +104,15 @@ type ObjectStore interface {
 	Has(context.Context, *proto.Ref) (bool, error)
 }
 
+// A Locator is a store that may answer a read with where the bytes are
+// rather than the bytes, for a caller that can fetch them itself.
+type Locator interface {
+	// Read returns the object at ref, or, in its place, where to fetch the
+	// object's stored record. Exactly one of the two is set, and a
+	// location is good for moments rather than minutes.
+	Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error)
+}
+
 // Eraser deletes as an erasure: the tombstone asks garbage collection to
 // rewrite the archives holding the target's objects as soon as its rules
 // allow, instead of waiting for the dead ratio or the erasure bound.

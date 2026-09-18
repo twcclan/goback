@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/twcclan/goback/backup/presence"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -73,6 +75,10 @@ var (
 // Client is a backup.Index over a store server's gRPC API.
 type Client struct {
 	store proto.StoreClient
+
+	// HTTP fetches the locations a server answers with; nil uses the
+	// default client.
+	HTTP *http.Client
 }
 
 // Open is a no-op; the connection is dialed by NewClient.
@@ -290,11 +296,10 @@ func (r *Client) Presence(ctx context.Context, set string) (presence.Set, error)
 	return result, nil
 }
 
-// Get implements backup.ObjectStore.
+// Get implements backup.ObjectStore. A server that answers with a
+// location is followed, so where the bytes came from stays its business.
 func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	ctx = r.outgoing(ctx)
-
-	resp, err := r.store.Get(ctx, &proto.GetRequest{Ref: ref})
+	resp, err := r.store.Get(r.outgoing(ctx), &proto.GetRequest{Ref: ref})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, backup.ErrNotFound
@@ -303,11 +308,59 @@ func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 		return nil, err
 	}
 
-	if resp.Object == nil {
+	if location := resp.GetLocation(); location != nil {
+		return r.fetch(ctx, ref, location)
+	}
+
+	if resp.GetObject() == nil {
 		return nil, backup.ErrNotFound
 	}
 
-	return resp.Object, nil
+	return resp.GetObject(), nil
+}
+
+// fetch follows a location and decodes the record it yields, refusing an
+// object that is not the one asked for.
+func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Location) (*proto.Object, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, location.GetUrl(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for name, value := range location.GetHeader() {
+		request.Header.Set(name, value)
+	}
+
+	client := r.HTTP
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		return nil, fmt.Errorf("fetching object %x from its location: %s", ref.GetHash(), response.Status)
+	}
+
+	record, err := io.ReadAll(io.LimitReader(response.Body, location.GetLength()))
+	if err != nil {
+		return nil, err
+	}
+
+	object, err := pack.DecodeRecord(record)
+	if err != nil {
+		return nil, fmt.Errorf("decoding object %x from its location: %w", ref.GetHash(), err)
+	}
+
+	if !object.Ref().Equal(ref) {
+		return nil, fmt.Errorf("%w: location for %x yielded %x", proto.ErrRefMismatch, ref.GetHash(), object.Ref().GetHash())
+	}
+
+	return object, nil
 }
 
 // Delete is not offered by the server; retention deletes commits and sets.
@@ -544,12 +597,16 @@ func (r *Server) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTr
 
 // Get implements proto.StoreServer.
 func (r *Server) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
-	obj, err := r.store.Get(ctx, request.Ref)
+	object, location, err := r.store.Read(ctx, request.Ref)
 	if err != nil {
 		return nil, ToStatus(err)
 	}
 
-	return &proto.GetResponse{Object: obj}, nil
+	if location != nil {
+		return &proto.GetResponse{Body: &proto.GetResponse_Location{Location: location}}, nil
+	}
+
+	return &proto.GetResponse{Body: &proto.GetResponse_Object{Object: object}}, nil
 }
 
 // ReadFile streams the stored objects of a file's parts in order, running
