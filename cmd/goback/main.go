@@ -75,6 +75,10 @@ func main() {
 			Name:  "ca-cert",
 			Usage: "PEM certificate authority a goback:// store server must present; the system roots are trusted without it",
 		},
+		cli.BoolFlag{
+			Name:  "plaintext",
+			Usage: "talk to a goback:// store server without TLS, putting the api key and every object in the clear; for a store on this machine only",
+		},
 		cli.StringFlag{
 			Name:  "store-key",
 			Usage: "store key file; names and contents are encrypted with it before upload",

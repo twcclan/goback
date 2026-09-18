@@ -196,17 +196,26 @@ func remoteAddress(u *url.URL) string {
 func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	addr := remoteAddress(u)
 
-	tlsConfig, err := storage.ClientTLS(c.GlobalString("ca-cert"))
-	if err != nil {
-		return nil, err
-	}
-
 	key, err := APIKey(c)
 	if err != nil {
 		return nil, err
 	}
 
-	return storage.NewClient(addr, auth.Credentials{Secret: key, AgentID: AgentID(c)}, tlsConfig)
+	creds := auth.Credentials{Secret: key, AgentID: AgentID(c)}
+
+	if c.GlobalBool("plaintext") {
+		log.Printf("Talking to %s without TLS; the api key and everything uploaded is readable on the way", addr)
+		creds.Plaintext = true
+
+		return storage.NewPlaintextClient(addr, creds)
+	}
+
+	tlsConfig, err := storage.ClientTLS(c.GlobalString("ca-cert"))
+	if err != nil {
+		return nil, err
+	}
+
+	return storage.NewClient(addr, creds, tlsConfig)
 }
 
 // initSQL opens the index at the --index location: a directory (with or

@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	pb "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,8 +32,24 @@ import (
 // on every call. A nil tlsConfig trusts the system roots; see ClientTLS
 // for a pinned certificate authority.
 func NewClient(addr string, creds auth.Credentials, tlsConfig *tls.Config) (*Client, error) {
+	return dialStore(addr, creds, credentials.NewTLS(tlsConfig))
+}
+
+// NewPlaintextClient connects to a store server without TLS, putting the
+// credentials and every object on the wire in the clear. It is for a
+// store on the same machine as the agent; anywhere else, use NewClient.
+// The credentials must allow it.
+func NewPlaintextClient(addr string, creds auth.Credentials) (*Client, error) {
+	if !creds.Plaintext {
+		return nil, errors.New("plaintext credentials are required to dial a store without TLS")
+	}
+
+	return dialStore(addr, creds, insecure.NewCredentials())
+}
+
+func dialStore(addr string, creds auth.Credentials, transport credentials.TransportCredentials) (*Client, error) {
 	con, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithTransportCredentials(transport),
 		grpc.WithPerRPCCredentials(creds),
 	)
 	if err != nil {

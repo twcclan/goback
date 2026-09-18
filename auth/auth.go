@@ -117,10 +117,15 @@ func SharedSecret(secret string) Authenticator {
 }
 
 // Credentials sends the shared secret and the agent id with every call and
-// refuses to do so over a plaintext connection.
+// refuses to do so over a plaintext connection unless Plaintext says
+// otherwise.
 type Credentials struct {
 	Secret  string
 	AgentID string
+	// Plaintext allows the secret onto a connection nothing encrypts,
+	// where anyone on the path can read it and everything it uploads.
+	// It is for a store on the same machine, nothing further.
+	Plaintext bool
 }
 
 // GetRequestMetadata implements credentials.PerRPCCredentials.
@@ -129,7 +134,7 @@ func (c Credentials) GetRequestMetadata(context.Context, ...string) (map[string]
 }
 
 // RequireTransportSecurity implements credentials.PerRPCCredentials.
-func (Credentials) RequireTransportSecurity() bool { return true }
+func (c Credentials) RequireTransportSecurity() bool { return !c.Plaintext }
 
 func equalSecrets(a, b string) bool {
 	x, y := sha256.Sum256([]byte(a)), sha256.Sum256([]byte(b))
