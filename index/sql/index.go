@@ -174,6 +174,12 @@ func openPostgres(dsn string) (*sql.DB, string, error) {
 	}
 
 	db.SetMaxOpenConns(100)
+	// the pool keeps what it opens: closing a connection between
+	// statements costs a socket in TIME_WAIT, which an index under a
+	// backup runs through the ephemeral ports with in minutes
+	db.SetMaxIdleConns(100)
+	db.SetConnMaxIdleTime(5 * time.Minute)
+	db.SetConnMaxLifetime(time.Hour)
 
 	return db, dialect.Postgres, nil
 }
