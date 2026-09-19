@@ -132,6 +132,7 @@ func runNew(c *cli.Context) error {
 		ReadRetries:        c.Int("read-retries"),
 		PrefetchDepth:      2,
 		ProgressInterval:   c.Duration("progress-interval"),
+		ScanWorkers:        c.Int("scan-workers"),
 	}
 
 	if walker.ProgressInterval >= 0 {
@@ -234,6 +235,11 @@ var newCmd = cli.Command{
 			Name:  "checkpoint-interval",
 			Usage: "write a partial commit this often so an interrupted run keeps its progress; 0 disables",
 			Value: 30 * time.Minute,
+		},
+		cli.IntFlag{
+			Name:  "scan-workers",
+			Usage: "how many directories to list ahead of the walk; negative lists every directory on the walk itself",
+			Value: backup.DefaultScanWorkers,
 		},
 		cli.IntFlag{
 			Name:  "read-retries",

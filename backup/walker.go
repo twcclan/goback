@@ -81,6 +81,15 @@ type Walker struct {
 	ForceHashPercent   int
 	CheckpointInterval time.Duration
 	ReadRetries        int
+
+	// ScanWorkers is how many directories are listed ahead of the walk at
+	// once; zero means DefaultScanWorkers and a negative number lists every
+	// directory on the walk itself.
+	ScanWorkers int
+	// ScanWindow bounds the entries held for directories the walk has not
+	// reached yet; zero means DefaultScanWindow.
+	ScanWindow int
+
 	// Quiesced records that a pre hook paused the application before the
 	// walk; a clean run then commits as consistent.
 	Quiesced      bool
@@ -102,6 +111,7 @@ type Walker struct {
 	damaged map[string]bool
 	window    *chunkWindow
 	gate      *syncutil.Gate
+	scan      *scanner
 	trees     *treeSource
 	scanStart int64
 	// policyVersion is what the commit records, kept apart from Key
@@ -246,6 +256,14 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	w.scanStart = w.started.UnixNano()
 	w.result = WalkResult{}
 	w.sent = newSentSet()
+
+	workers := w.ScanWorkers
+	if workers == 0 {
+		workers = DefaultScanWorkers
+	}
+
+	w.scan = newScanner(ctx, w, max(workers, 0), w.ScanWindow)
+	defer w.scan.close()
 
 	stopProgress := w.reportProgress()
 	defer stopProgress()
@@ -479,8 +497,8 @@ func (w *Walker) included(rel string) bool {
 // node list and whether it differs from the base. parent is the token of
 // the directory, nil for the root and in a plaintext store.
 func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, base []*proto.TreeNode, root bool) ([]*proto.TreeNode, bool, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	found := w.scan.take(scanJob{dir: dir, rel: rel})
+	if err := found.err; err != nil {
 		if base != nil && IsPermissionError(err) {
 			w.logger().Warn("listing failed, keeping the previous version", "dir", dir, "err", err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
@@ -495,6 +513,8 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 
 		return nil, false, fmt.Errorf("listing %s: %w", dir, err)
 	}
+
+	entries := found.entries
 
 	baseByName := make(map[string]*proto.TreeNode, len(base))
 	for _, node := range base {
@@ -517,7 +537,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 			return nil, false, err
 		}
 
-		name := entry.Name()
+		name := entry.name
 		childRel := path.Join(rel, name)
 		childPath := filepath.Join(dir, name)
 		baseNode := baseByName[name]
@@ -529,13 +549,14 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 			continue
 		}
 
-		info, err := entryInfo(entry, childPath)
-		if err != nil {
-			w.logger().Warn("stat failed, skipping", "path", childPath, "err", err)
+		if entry.err != nil {
+			w.logger().Warn("stat failed, skipping", "path", childPath, "err", entry.err)
 			atomic.AddInt64(&w.result.Unreadable, 1)
 			markChanged()
 			continue
 		}
+
+		info := entry.info
 
 		switch {
 		case info.IsDir():
@@ -612,7 +633,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 		if root && w.checkpointDue() {
 			// drain the files in flight so every finished entry has a node;
 			// Wait cancels the group's context, so start a fresh group after
-			err = group.Wait()
+			err := group.Wait()
 			if err != nil {
 				return nil, false, err
 			}
@@ -626,7 +647,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 		}
 	}
 
-	err = group.Wait()
+	err := group.Wait()
 	if err != nil {
 		return nil, false, err
 	}
