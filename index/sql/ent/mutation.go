@@ -5098,6 +5098,7 @@ type PinMutation struct {
 	target        *[]byte
 	received_at   *time.Time
 	deleted_at    *time.Time
+	metadata      *map[string]string
 	clearedFields map[string]struct{}
 	done          bool
 	oldValue      func(context.Context) (*Pin, error)
@@ -5359,6 +5360,55 @@ func (m *PinMutation) ResetDeletedAt() {
 	delete(m.clearedFields, pin.FieldDeletedAt)
 }
 
+// SetMetadata sets the "metadata" field.
+func (m *PinMutation) SetMetadata(value map[string]string) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *PinMutation) Metadata() (r map[string]string, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the Pin entity.
+// If the Pin object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PinMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *PinMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[pin.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *PinMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[pin.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *PinMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, pin.FieldMetadata)
+}
+
 // Where appends a list predicates to the PinMutation builder.
 func (m *PinMutation) Where(ps ...predicate.Pin) {
 	m.predicates = append(m.predicates, ps...)
@@ -5393,7 +5443,7 @@ func (m *PinMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PinMutation) Fields() []string {
-	fields := make([]string, 0, 4)
+	fields := make([]string, 0, 5)
 	if m.ref != nil {
 		fields = append(fields, pin.FieldRef)
 	}
@@ -5405,6 +5455,9 @@ func (m *PinMutation) Fields() []string {
 	}
 	if m.deleted_at != nil {
 		fields = append(fields, pin.FieldDeletedAt)
+	}
+	if m.metadata != nil {
+		fields = append(fields, pin.FieldMetadata)
 	}
 	return fields
 }
@@ -5422,6 +5475,8 @@ func (m *PinMutation) Field(name string) (ent.Value, bool) {
 		return m.ReceivedAt()
 	case pin.FieldDeletedAt:
 		return m.DeletedAt()
+	case pin.FieldMetadata:
+		return m.Metadata()
 	}
 	return nil, false
 }
@@ -5439,6 +5494,8 @@ func (m *PinMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldReceivedAt(ctx)
 	case pin.FieldDeletedAt:
 		return m.OldDeletedAt(ctx)
+	case pin.FieldMetadata:
+		return m.OldMetadata(ctx)
 	}
 	return nil, fmt.Errorf("unknown Pin field %s", name)
 }
@@ -5476,6 +5533,13 @@ func (m *PinMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDeletedAt(v)
 		return nil
+	case pin.FieldMetadata:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Pin field %s", name)
 }
@@ -5509,6 +5573,9 @@ func (m *PinMutation) ClearedFields() []string {
 	if m.FieldCleared(pin.FieldDeletedAt) {
 		fields = append(fields, pin.FieldDeletedAt)
 	}
+	if m.FieldCleared(pin.FieldMetadata) {
+		fields = append(fields, pin.FieldMetadata)
+	}
 	return fields
 }
 
@@ -5525,6 +5592,9 @@ func (m *PinMutation) ClearField(name string) error {
 	switch name {
 	case pin.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case pin.FieldMetadata:
+		m.ClearMetadata()
 		return nil
 	}
 	return fmt.Errorf("unknown Pin nullable field %s", name)
@@ -5545,6 +5615,9 @@ func (m *PinMutation) ResetField(name string) error {
 		return nil
 	case pin.FieldDeletedAt:
 		m.ResetDeletedAt()
+		return nil
+	case pin.FieldMetadata:
+		m.ResetMetadata()
 		return nil
 	}
 	return fmt.Errorf("unknown Pin field %s", name)

@@ -219,6 +219,9 @@ message PinInfo {
     Ref ref = 1;
     Ref target = 2;
     int64 received_at_ns = 3;
+    // the labels the pin carries; the store keeps them and never
+    // interprets them
+    map<string, string> metadata = 4;
 }
 
 message ListPinsResponse {

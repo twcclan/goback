@@ -54,6 +54,12 @@ func (_c *PinCreate) SetNillableDeletedAt(v *time.Time) *PinCreate {
 	return _c
 }
 
+// SetMetadata sets the "metadata" field.
+func (_c *PinCreate) SetMetadata(v map[string]string) *PinCreate {
+	_c.mutation.SetMetadata(v)
+	return _c
+}
+
 // Mutation returns the PinMutation object of the builder.
 func (_c *PinCreate) Mutation() *PinMutation {
 	return _c.mutation
@@ -139,6 +145,10 @@ func (_c *PinCreate) createSpec() (*Pin, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DeletedAt(); ok {
 		_spec.SetField(pin.FieldDeletedAt, field.TypeTime, value)
 		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.Metadata(); ok {
+		_spec.SetField(pin.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
 	}
 	return _node, _spec
 }
@@ -234,6 +244,24 @@ func (u *PinUpsert) ClearDeletedAt() *PinUpsert {
 	return u
 }
 
+// SetMetadata sets the "metadata" field.
+func (u *PinUpsert) SetMetadata(v map[string]string) *PinUpsert {
+	u.Set(pin.FieldMetadata, v)
+	return u
+}
+
+// UpdateMetadata sets the "metadata" field to the value that was provided on create.
+func (u *PinUpsert) UpdateMetadata() *PinUpsert {
+	u.SetExcluded(pin.FieldMetadata)
+	return u
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (u *PinUpsert) ClearMetadata() *PinUpsert {
+	u.SetNull(pin.FieldMetadata)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -325,6 +353,27 @@ func (u *PinUpsertOne) UpdateDeletedAt() *PinUpsertOne {
 func (u *PinUpsertOne) ClearDeletedAt() *PinUpsertOne {
 	return u.Update(func(s *PinUpsert) {
 		s.ClearDeletedAt()
+	})
+}
+
+// SetMetadata sets the "metadata" field.
+func (u *PinUpsertOne) SetMetadata(v map[string]string) *PinUpsertOne {
+	return u.Update(func(s *PinUpsert) {
+		s.SetMetadata(v)
+	})
+}
+
+// UpdateMetadata sets the "metadata" field to the value that was provided on create.
+func (u *PinUpsertOne) UpdateMetadata() *PinUpsertOne {
+	return u.Update(func(s *PinUpsert) {
+		s.UpdateMetadata()
+	})
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (u *PinUpsertOne) ClearMetadata() *PinUpsertOne {
+	return u.Update(func(s *PinUpsert) {
+		s.ClearMetadata()
 	})
 }
 
@@ -584,6 +633,27 @@ func (u *PinUpsertBulk) UpdateDeletedAt() *PinUpsertBulk {
 func (u *PinUpsertBulk) ClearDeletedAt() *PinUpsertBulk {
 	return u.Update(func(s *PinUpsert) {
 		s.ClearDeletedAt()
+	})
+}
+
+// SetMetadata sets the "metadata" field.
+func (u *PinUpsertBulk) SetMetadata(v map[string]string) *PinUpsertBulk {
+	return u.Update(func(s *PinUpsert) {
+		s.SetMetadata(v)
+	})
+}
+
+// UpdateMetadata sets the "metadata" field to the value that was provided on create.
+func (u *PinUpsertBulk) UpdateMetadata() *PinUpsertBulk {
+	return u.Update(func(s *PinUpsert) {
+		s.UpdateMetadata()
+	})
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (u *PinUpsertBulk) ClearMetadata() *PinUpsertBulk {
+	return u.Update(func(s *PinUpsert) {
+		s.ClearMetadata()
 	})
 }
 

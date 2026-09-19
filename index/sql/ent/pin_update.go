@@ -68,6 +68,18 @@ func (_u *PinUpdate) ClearDeletedAt() *PinUpdate {
 	return _u
 }
 
+// SetMetadata sets the "metadata" field.
+func (_u *PinUpdate) SetMetadata(v map[string]string) *PinUpdate {
+	_u.mutation.SetMetadata(v)
+	return _u
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (_u *PinUpdate) ClearMetadata() *PinUpdate {
+	_u.mutation.ClearMetadata()
+	return _u
+}
+
 // Mutation returns the PinMutation object of the builder.
 func (_u *PinUpdate) Mutation() *PinMutation {
 	return _u.mutation
@@ -120,6 +132,12 @@ func (_u *PinUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(pin.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Metadata(); ok {
+		_spec.SetField(pin.FieldMetadata, field.TypeJSON, value)
+	}
+	if _u.mutation.MetadataCleared() {
+		_spec.ClearField(pin.FieldMetadata, field.TypeJSON)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -178,6 +196,18 @@ func (_u *PinUpdateOne) SetNillableDeletedAt(v *time.Time) *PinUpdateOne {
 // ClearDeletedAt clears the value of the "deleted_at" field.
 func (_u *PinUpdateOne) ClearDeletedAt() *PinUpdateOne {
 	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
+// SetMetadata sets the "metadata" field.
+func (_u *PinUpdateOne) SetMetadata(v map[string]string) *PinUpdateOne {
+	_u.mutation.SetMetadata(v)
+	return _u
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (_u *PinUpdateOne) ClearMetadata() *PinUpdateOne {
+	_u.mutation.ClearMetadata()
 	return _u
 }
 
@@ -263,6 +293,12 @@ func (_u *PinUpdateOne) sqlSave(ctx context.Context) (_node *Pin, err error) {
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(pin.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Metadata(); ok {
+		_spec.SetField(pin.FieldMetadata, field.TypeJSON, value)
+	}
+	if _u.mutation.MetadataCleared() {
+		_spec.ClearField(pin.FieldMetadata, field.TypeJSON)
 	}
 	_node = &Pin{config: _u.config}
 	_spec.Assign = _node.assignValues

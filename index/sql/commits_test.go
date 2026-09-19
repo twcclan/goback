@@ -832,3 +832,29 @@ func TestCommitDetailsCarryTheSizeAndWhyEachCommitIsKept(t *testing.T) {
 	require.Len(t, held, 1)
 	require.NotEqual(t, a.String(), held[0].Commit.GetTree().String())
 }
+
+func TestAPinKeepsTheLabelItWasWrittenWith(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.Put(f.ctx, proto.NewObject(&proto.Pin{
+		Target: a, Metadata: map[string]string{"label": "before-migration"},
+	})))
+
+	pins, err := f.x.Pins(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+	require.True(t, pins[0].GetTarget().Equal(a))
+	require.Equal(t, "before-migration", pins[0].GetMetadata()["label"],
+		"the store keeps the pin's labels and hands them back")
+
+	// a pin written without any is not a pin with an empty label
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	require.NoError(t, f.x.Put(f.ctx, proto.NewObject(&proto.Pin{Target: b})))
+
+	pins, err = f.x.Pins(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, pins, 2)
+	require.Empty(t, pins[1].GetMetadata())
+}

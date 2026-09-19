@@ -605,7 +605,7 @@ func (x *Index) indexPin(ctx context.Context, p *proto.Pin, ref *proto.Ref, stri
 		}
 
 		err = ignoreNoRows(c.Pin.Create().SetRef(ref.Hash).SetTarget(target).SetReceivedAt(time.Unix(0, p.GetReceivedAtNs()).UTC()).
-			OnConflict().DoNothing().Exec(ctx))
+			SetMetadata(p.GetMetadata()).OnConflict().DoNothing().Exec(ctx))
 		if err != nil {
 			return err
 		}
@@ -969,6 +969,9 @@ func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 // which retention rule is keeping it.
 type CommitDetail struct {
 	Commit *proto.Commit
+	// Ref is the commit object's own ref, which names it to a caller that
+	// wants to pin or read it.
+	Ref *proto.Ref
 	// LogicalSize is what the set's files held at this commit; nil when
 	// nothing measured it, which is every commit written before the index
 	// started recording it.
@@ -1001,7 +1004,12 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 	}
 
 	return mapAll(rows, func(row *ent.CommitRow) CommitDetail {
-		return CommitDetail{Commit: m.Commit(row), LogicalSize: row.LogicalSize, RetainedBy: row.RetainedBy}
+		return CommitDetail{
+			Commit:      m.Commit(row),
+			Ref:         &proto.Ref{Hash: row.Ref},
+			LogicalSize: row.LogicalSize,
+			RetainedBy:  row.RetainedBy,
+		}
 	}), nil
 }
 

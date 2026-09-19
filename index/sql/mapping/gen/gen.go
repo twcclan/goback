@@ -85,6 +85,7 @@ func (m MapperImpl) Pin(in *ent.Pin) *proto.PinInfo {
 		Ref:          mapping.Ref(in.Ref),
 		Target:       mapping.Ref(in.Target),
 		ReceivedAtNs: in.ReceivedAt.UnixNano(),
+		Metadata:     in.Metadata,
 	}
 }
 

@@ -19,6 +19,8 @@ const (
 	FieldReceivedAt = "received_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
 	FieldDeletedAt = "deleted_at"
+	// FieldMetadata holds the string denoting the metadata field in the database.
+	FieldMetadata = "metadata"
 	// Table holds the table name of the pin in the database.
 	Table = "pins"
 )
@@ -30,6 +32,7 @@ var Columns = []string{
 	FieldTarget,
 	FieldReceivedAt,
 	FieldDeletedAt,
+	FieldMetadata,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).

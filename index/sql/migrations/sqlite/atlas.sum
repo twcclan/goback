@@ -1,6 +1,7 @@
-h1:XTy7gOoOxggFfMZo88/FOI4YdmCrU+rIXZpUsW18j+A=
+h1:BzWqYO+GWruzCFfjVWqsZoSEsoLvXabpP5anlXAV+cg=
 20260917165456_init.sql h1:PTj+mf/QIWqV1eD4e34Lg9KU2/gc8MDUkRH30aYka2w=
 20260918005534_index_symlinks.sql h1:Ii6fcjAqohSRVtgo7pUvC5MDq0hhdL60hjllMoYfnXY=
 20260918073700_damaged_paths.sql h1:7qTzF/skZ3Uk+BNq11aR2FS1z8RmeiUxft50nLUS1e0=
 20260918074900_lost_file_versions.sql h1:Gd57Yqg0BB/+4LZfx7ywyVZcxBLv0q5DPrIDNTyOb94=
 20260918211003_physical_size.sql h1:3d4FywmiW4wmgkLje6Nczn5t9PoQQFXrGO2rwkYqeIo=
+20260919130711_pin_metadata.sql h1:GHukZwA+AOFtQdTVBhydw/hoOeZurzFP0LB4QYCv5Fw=

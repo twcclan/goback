@@ -240,6 +240,7 @@ var (
 		{Name: "target", Type: field.TypeBytes},
 		{Name: "received_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 	}
 	// PinsTable holds the schema information for the "pins" table.
 	PinsTable = &schema.Table{

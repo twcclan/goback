@@ -244,6 +244,16 @@ func DeletedAtNotNil() predicate.Pin {
 	return predicate.Pin(sql.FieldNotNull(FieldDeletedAt))
 }
 
+// MetadataIsNil applies the IsNil predicate on the "metadata" field.
+func MetadataIsNil() predicate.Pin {
+	return predicate.Pin(sql.FieldIsNull(FieldMetadata))
+}
+
+// MetadataNotNil applies the NotNil predicate on the "metadata" field.
+func MetadataNotNil() predicate.Pin {
+	return predicate.Pin(sql.FieldNotNull(FieldMetadata))
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Pin) predicate.Pin {
 	return predicate.Pin(sql.AndPredicates(predicates...))

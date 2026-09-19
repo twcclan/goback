@@ -39,6 +39,9 @@ func (Pin) Fields() []ent.Field {
 		field.Bytes("target"),
 		field.Time("received_at"),
 		field.Time("deleted_at").Optional().Nillable(),
+		// the labels the pin object carries; the store keeps them and
+		// never interprets them
+		field.JSON("metadata", map[string]string{}).Optional(),
 	}
 }
 
