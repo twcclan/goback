@@ -799,3 +799,36 @@ func TestReadDirListsWhatTheSetHeldThen(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, entries, "an unknown set lists nothing")
 }
+
+func TestCommitDetailsCarryTheSizeAndWhyEachCommitIsKept(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 2}))
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "two"), f.file("b.txt", "three")), false)
+
+	held, err := f.x.CommitDetails(f.ctx, "world", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, held, 2)
+
+	require.Equal(t, "latest,last", held[0].RetainedBy, "the newest commit, and within keep_last")
+	require.Equal(t, "last", held[1].RetainedBy)
+	require.NotNil(t, held[0].LogicalSize)
+	require.EqualValues(t, 8, *held[0].LogicalSize, "both files of the newest commit")
+	require.EqualValues(t, 3, *held[1].LogicalSize, "only a.txt was there then")
+
+	// the commit itself is the same one CommitInfo returns
+	commits, err := f.x.CommitInfo(f.ctx, "world", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, commits, 2)
+	require.Equal(t, commits[0].GetReceivedAtNs(), held[0].Commit.GetReceivedAtNs())
+
+	// a commit retention has retired is not offered, as with CommitInfo
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+
+	held, err = f.x.CommitDetails(f.ctx, "world", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	require.NotEqual(t, a.String(), held[0].Commit.GetTree().String())
+}

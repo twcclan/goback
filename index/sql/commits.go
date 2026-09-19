@@ -964,6 +964,47 @@ func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 	return mapAll(rows, m.Commit), nil
 }
 
+// CommitDetail is a commit together with what the index knows about it
+// beyond the stored object: how big the set was when it was taken, and
+// which retention rule is keeping it.
+type CommitDetail struct {
+	Commit *proto.Commit
+	// LogicalSize is what the set's files held at this commit; nil when
+	// nothing measured it, which is every commit written before the index
+	// started recording it.
+	LogicalSize *int64
+	// RetainedBy names the retention rules keeping this commit, comma
+	// separated: "last", "within", "pinned", "hourly", "daily", "weekly",
+	// "monthly". It is empty for a commit retention has not evaluated yet
+	// or has retired.
+	RetainedBy string
+}
+
+// CommitDetails is CommitInfo with what the index knows about each commit
+// beyond the object, for a caller reporting on a set rather than reading
+// it back.
+func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]CommitDetail, error) {
+	setID, err := findSet(ctx, x.client, backupSet)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := x.client.CommitRow.Query().
+		Where(commitrow.SetID(setID), commitrow.TimestampLTE(notAfter.UTC()), commitrow.Partial(false), liveCommit()).
+		WithSet().Order(ent.Desc(commitrow.FieldReceivedAt)).Limit(count).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapAll(rows, func(row *ent.CommitRow) CommitDetail {
+		return CommitDetail{Commit: m.Commit(row), LogicalSize: row.LogicalSize, RetainedBy: row.RetainedBy}
+	}), nil
+}
+
 // LatestCommit returns the set's newest commit without a tombstone,
 // partial or not, or backup.ErrNotFound.
 func (x *Index) LatestCommit(ctx context.Context, backupSet string) (*proto.Ref, error) {
