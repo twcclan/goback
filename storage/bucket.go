@@ -16,6 +16,7 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/attribute"
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 )
@@ -60,14 +61,19 @@ func (s *bucketFile) ReadAt(buf []byte, offset int64) (int, error) {
 		length = s.attrs.Size - offset
 	}
 
-	reader, err := s.bucket.NewRangeReader(context.Background(), s.key, offset, length, nil)
+	reader, err := s.store.bucket.NewRangeReader(context.Background(), s.key, offset, length, nil)
 	if err != nil {
+		s.store.count(OpGet, 0)
+
 		return 0, err
 	}
 
 	defer reader.Close()
 
-	return io.ReadFull(reader, buf[:length])
+	n, err := io.ReadFull(reader, buf[:length])
+	s.store.count(OpGet, int64(n))
+
+	return n, err
 }
 
 func (s *bucketFile) WriteTo(w io.Writer) (int64, error) {
@@ -75,15 +81,20 @@ func (s *bucketFile) WriteTo(w io.Writer) (int64, error) {
 		return -1, errors.New("WriteTo only supported for readonly files")
 	}
 
-	reader, err := s.bucket.NewReader(context.Background(), s.key, nil)
+	reader, err := s.store.bucket.NewReader(context.Background(), s.key, nil)
 
 	if err != nil {
+		s.store.count(OpGet, 0)
+
 		return 0, err
 	}
 
 	defer reader.Close()
 
-	return io.Copy(w, reader)
+	n, err := io.Copy(w, reader)
+	s.store.count(OpGet, n)
+
+	return n, err
 }
 
 func (s *bucketFile) Seek(offset int64, whence int) (int64, error) {
@@ -109,11 +120,12 @@ func (s *bucketFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 type bucketFile struct {
-	bucket  *blob.Bucket
+	store   *BucketStore
 	key     string
 	onClose func()
 
-	writer *blob.Writer
+	writer  *blob.Writer
+	written int64
 
 	readOnly bool
 	offset   int64
@@ -130,6 +142,8 @@ func (s *bucketFile) Close() error {
 	}
 
 	err := s.writer.Close()
+	s.store.count(OpPut, s.written)
+
 	if err != nil {
 		return err
 	}
@@ -149,7 +163,10 @@ func (s *bucketFile) Write(buf []byte) (int, error) {
 		return 0, errors.New("Cannot write to read only file")
 	}
 
-	return s.writer.Write(buf)
+	n, err := s.writer.Write(buf)
+	s.written += int64(n)
+
+	return n, err
 }
 
 func (s *bucketFile) Stat() (os.FileInfo, error) {
@@ -162,9 +179,22 @@ var _ pack.File = (*bucketFile)(nil)
 // pack/<extension>/<name>.
 type BucketStore struct {
 	bucket *blob.Bucket
+	attrs  []attribute.KeyValue
 
 	openFilesMtx sync.Mutex
 	openFiles    map[string]*bucketFile
+}
+
+// A BucketOption adjusts a BucketStore.
+type BucketOption func(*BucketStore)
+
+// WithStoreName labels what this store sends to the object store, so the
+// cost of one store can be told from another's in a process holding
+// several of them.
+func WithStoreName(name string) BucketOption {
+	return func(c *BucketStore) {
+		c.attrs = append(c.attrs, keyStore.String(name))
+	}
 }
 
 func (c *BucketStore) openFile(key string) (pack.File, error) {
@@ -178,6 +208,8 @@ func (c *BucketStore) openFile(key string) (pack.File, error) {
 	}
 
 	attrs, err := c.bucket.Attributes(context.Background(), key)
+	c.count(OpHead, 0)
+
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return nil, pack.ErrFileNotFound
@@ -188,7 +220,7 @@ func (c *BucketStore) openFile(key string) (pack.File, error) {
 	return &bucketFile{
 		key:      key,
 		attrs:    attrs,
-		bucket:   c.bucket,
+		store:    c,
 		readOnly: true,
 	}, nil
 }
@@ -196,12 +228,14 @@ func (c *BucketStore) openFile(key string) (pack.File, error) {
 func (c *BucketStore) newWriteFile(key string) (pack.File, error) {
 	writer, err := c.bucket.NewWriter(context.Background(), key, nil)
 	if err != nil {
+		c.count(OpPut, 0)
+
 		return nil, err
 	}
 
 	file := &bucketFile{
 		writer: writer,
-		bucket: c.bucket,
+		store:  c,
 		key:    key,
 		onClose: func() {
 			c.openFilesMtx.Lock()
@@ -235,6 +269,8 @@ func (c *BucketStore) Create(name string) (pack.File, error) {
 // empty when it has none.
 func (c *BucketStore) Checksum(name string) ([]byte, error) {
 	attrs, err := c.bucket.Attributes(context.Background(), c.key(name))
+	c.count(OpHead, 0)
+
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			return nil, pack.ErrFileNotFound
@@ -248,34 +284,54 @@ func (c *BucketStore) Checksum(name string) ([]byte, error) {
 
 // Delete implements pack.ArchiveStorage.
 func (c *BucketStore) Delete(name string) error {
+	c.count(OpDelete, 0)
+
 	return c.bucket.Delete(context.Background(), c.key(name))
+}
+
+// listPageSize is how many keys one listing request asks for, which is
+// the most either S3 or Cloud Storage answers with.
+const listPageSize = 1000
+
+// pages walks a prefix a page at a time, because a listing is billed by
+// the page rather than by the walk.
+func (c *BucketStore) pages(prefix string, each func(*blob.ListObject) error) error {
+	options := &blob.ListOptions{Prefix: prefix}
+
+	for token := blob.FirstPageToken; ; {
+		page, next, err := c.bucket.ListPage(context.Background(), token, listPageSize, options)
+		c.count(OpList, 0)
+
+		if err != nil {
+			return err
+		}
+
+		for _, object := range page {
+			if object.IsDir {
+				continue
+			}
+
+			err = each(object)
+			if err != nil {
+				return err
+			}
+		}
+
+		if len(next) == 0 {
+			return nil
+		}
+
+		token = next
+	}
 }
 
 // DeleteAll implements pack.ArchiveStorage.
 func (c *BucketStore) DeleteAll() error {
-	iter := c.bucket.List(&blob.ListOptions{
-		Prefix: blobObjectPrefix,
+	return c.pages(blobObjectPrefix, func(object *blob.ListObject) error {
+		c.count(OpDelete, 0)
+
+		return c.bucket.Delete(context.Background(), object.Key)
 	})
-
-	for {
-		attrs, err := iter.Next(context.Background())
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-
-			return err
-		}
-
-		if attrs.IsDir {
-			continue
-		}
-
-		err = c.bucket.Delete(context.Background(), attrs.Key)
-		if err != nil {
-			return err
-		}
-	}
 }
 
 // List implements pack.ArchiveStorage.
@@ -289,38 +345,23 @@ func (c *BucketStore) List(extension string) ([]string, error) {
 		prefix = fmt.Sprintf(blobObjectKey, extension, "")
 	}
 
-	iter := c.bucket.List(&blob.ListOptions{
-		Prefix: prefix,
-	})
-
 	var names []string
 
-	for {
-		attrs, err := iter.Next(context.Background())
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return names, err
-		}
-
-		if attrs.IsDir {
-			continue
-		}
-
+	err := c.pages(prefix, func(object *blob.ListObject) error {
 		// keys are pack/<extension>/<name>; the name may hold slashes
-		name := strings.TrimPrefix(attrs.Key, blobObjectPrefix)
+		name := strings.TrimPrefix(object.Key, blobObjectPrefix)
 		if _, rest, ok := strings.Cut(name, "/"); ok && extension == "" {
 			name = rest
 		} else if extension != "" {
-			name = strings.TrimPrefix(attrs.Key, prefix)
+			name = strings.TrimPrefix(object.Key, prefix)
 		}
 
 		names = append(names, name)
-	}
 
-	return names, nil
+		return nil
+	})
+
+	return names, err
 }
 
 type bucketFileInfo struct {
@@ -353,10 +394,14 @@ func (s *bucketFileInfo) IsDir() bool {
 }
 
 // NewBucketStore returns an archive storage over bucket.
-func NewBucketStore(bucket *blob.Bucket) *BucketStore {
+func NewBucketStore(bucket *blob.Bucket, options ...BucketOption) *BucketStore {
 	storage := &BucketStore{
 		bucket:    bucket,
 		openFiles: make(map[string]*bucketFile),
+	}
+
+	for _, option := range options {
+		option(storage)
 	}
 
 	return storage
