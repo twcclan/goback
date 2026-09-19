@@ -4,41 +4,48 @@
 package storekey
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 
+	"github.com/twcclan/goback/backup/storekey/crypt"
 	"github.com/twcclan/goback/proto"
-
-	"golang.org/x/crypto/argon2"
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/hkdf"
 )
 
 const (
 	// KeySize is the width of the store master key and of every blob key.
-	KeySize = 32
+	KeySize = crypt.KeySize
 	// IDSize is the width of a key id.
-	IDSize = 8
+	IDSize = crypt.IDSize
 
-	nonceSize = chacha20poly1305.NonceSizeX
-	tagSize   = chacha20poly1305.Overhead
+	nonceSize = crypt.NonceSize
 )
 
 var (
 	// ErrWrongKey is returned when a token or sealed blob does not open
 	// under the given key.
-	ErrWrongKey = errors.New("wrong store key or corrupt ciphertext")
+	ErrWrongKey = crypt.ErrWrongKey
 	// ErrNoKey is returned when an encrypted object is met without a key.
 	ErrNoKey = errors.New("object is encrypted and no store key is loaded")
+)
+
+// Field names the FileInfo fields that are sealed.
+type Field = crypt.Field
+
+const (
+	// FieldName is the entry name.
+	FieldName = crypt.FieldName
+	// FieldUser is the owning user.
+	FieldUser = crypt.FieldUser
+	// FieldGroup is the owning group.
+	FieldGroup = crypt.FieldGroup
+	// FieldTarget is a symlink's target.
+	FieldTarget = crypt.FieldTarget
 )
 
 // Mode is the store policy's encryption mode for new writes.
@@ -106,6 +113,7 @@ type keyFile struct {
 // Generate makes a fresh key named after its store.
 func Generate(name string) (*Key, error) {
 	raw := make([]byte, KeySize)
+
 	_, err := rand.Read(raw)
 	if err != nil {
 		return nil, err
@@ -120,29 +128,19 @@ func FromBytes(name string, raw []byte, policy Policy) (*Key, error) {
 		return nil, fmt.Errorf("store key has %d bytes, want %d", len(raw), KeySize)
 	}
 
-	mac := hmac.New(sha256.New, raw)
-	mac.Write([]byte("goback store key id"))
-
 	return &Key{
 		Name:   name,
 		Policy: policy,
-		id:     mac.Sum(nil)[:IDSize],
+		id:     crypt.ID(raw),
 		key:    append([]byte(nil), raw...),
 	}, nil
 }
-
-const deriveInfo = "goback store key derive v1"
 
 // Derive returns the key of the named store under this key as a master:
 // the same master and name always give the same key, and no derived key
 // reveals the master or another store's key.
 func (k *Key) Derive(name string) (*Key, error) {
-	if name == "" {
-		return nil, errors.New("a derived key needs a name")
-	}
-
-	raw := make([]byte, KeySize)
-	_, err := io.ReadFull(hkdf.New(sha256.New, k.key, []byte(deriveInfo), []byte(name)), raw)
+	raw, err := crypt.Derive(k.key, name)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +156,7 @@ func Load(path string) (*Key, error) {
 	}
 
 	var f keyFile
+
 	err = json.Unmarshal(data, &f)
 	if err != nil {
 		return nil, fmt.Errorf("parsing store key %s: %w", path, err)
@@ -204,18 +203,11 @@ func (k *Key) IDString() string { return fmt.Sprintf("%x", k.id) }
 // Bytes returns the raw key, for escrow.
 func (k *Key) Bytes() []byte { return append([]byte(nil), k.key...) }
 
-func (k *Key) cipher() *aeadKey {
-	return newAEAD(k.key)
-}
-
 // BlobKey derives the key a chunk is sealed under.
 func (k *Key) BlobKey(mode proto.Encryption, plaintext []byte) []byte {
 	switch mode {
 	case proto.Encryption_STORE_KEYED:
-		mac := hmac.New(sha256.New, k.key)
-		mac.Write([]byte("blob"))
-		mac.Write(plaintext)
-		return mac.Sum(nil)
+		return crypt.BlobKey(k.key, plaintext)
 	case proto.Encryption_CONVERGENT:
 		return ConvergentKey(plaintext)
 	default:
@@ -228,6 +220,7 @@ func ConvergentKey(plaintext []byte) []byte {
 	h := sha256.New()
 	h.Write([]byte("blob"))
 	h.Write(plaintext)
+
 	return h.Sum(nil)
 }
 
@@ -283,6 +276,7 @@ func Entropy(chunk []byte) float64 {
 
 	n := float64(len(chunk))
 	bits := 0.0
+
 	for _, c := range counts {
 		if c == 0 {
 			continue
@@ -305,12 +299,11 @@ func (k *Key) SealBlob(mode proto.Encryption, plaintext []byte) (*proto.Sealed, 
 	compressed, compression := proto.Encode(plaintext)
 
 	var nonce [nonceSize]byte
-	data := newAEAD(blobKey).Seal(nil, nonce[:], compressed, blobAD(ref))
 
 	sealed := &proto.Sealed{
 		Ref:         ref,
 		Type:        proto.ObjectType_BLOB,
-		Data:        data,
+		Data:        crypt.Seal(blobKey, nil, nonce[:], compressed, blobAD(ref)),
 		Compression: compression,
 		Encryption:  mode,
 	}
@@ -329,7 +322,8 @@ func OpenBlob(blobKey []byte, sealed *proto.Sealed) ([]byte, error) {
 	}
 
 	var nonce [nonceSize]byte
-	compressed, err := newAEAD(blobKey).Open(nil, nonce[:], sealed.Data, blobAD(sealed.Ref))
+
+	compressed, err := crypt.Open(blobKey, nil, nonce[:], sealed.Data, blobAD(sealed.Ref))
 	if err != nil {
 		return nil, ErrWrongKey
 	}
@@ -349,221 +343,55 @@ func blobAD(ref *proto.Ref) []byte {
 // key and returns the ciphertext with the key, which the File's keys
 // field carries.
 func (k *Key) SealInline(plaintext []byte) ([]byte, []byte) {
-	blobKey := k.BlobKey(proto.Encryption_STORE_KEYED, plaintext)
-
-	var nonce [nonceSize]byte
-
-	return newAEAD(blobKey).Seal(nil, nonce[:], plaintext, []byte("inline")), blobKey
+	return crypt.SealInline(k.key, plaintext)
 }
 
 // OpenInline reverses SealInline.
 func OpenInline(blobKey, ciphertext []byte) ([]byte, error) {
-	if len(blobKey) != KeySize {
-		return nil, ErrWrongKey
-	}
-
-	var nonce [nonceSize]byte
-	plaintext, err := newAEAD(blobKey).Open(nil, nonce[:], ciphertext, []byte("inline"))
-	if err != nil {
-		return nil, ErrWrongKey
-	}
-
-	return plaintext, nil
+	return crypt.OpenInline(blobKey, ciphertext)
 }
 
-// Field names the FileInfo fields that are sealed.
-type Field string
-
-const (
-	// FieldName is the entry name.
-	FieldName Field = "name"
-	// FieldUser is the owning user.
-	FieldUser Field = "user"
-	// FieldGroup is the owning group.
-	FieldGroup Field = "group"
-	// FieldTarget is a symlink's target.
-	FieldTarget Field = "link_target"
-)
-
 // SealField makes the deterministic token of a name-like field within its
-// parent directory: a synthetic nonce from the key, parent token, field
-// and plaintext, then the AEAD under that nonce with the parent bound as
-// associated data. Equal names in one directory give equal tokens; the
+// parent directory. Equal names in one directory give equal tokens; the
 // same name elsewhere gives a different one. An empty value stays empty.
 func (k *Key) SealField(parent []byte, field Field, plaintext []byte) []byte {
-	if len(plaintext) == 0 {
-		return nil
-	}
-
-	mac := hmac.New(sha256.New, k.key)
-	mac.Write([]byte("field nonce"))
-	mac.Write([]byte(field))
-	mac.Write(lengthPrefixed(parent))
-	mac.Write(plaintext)
-	nonce := mac.Sum(nil)[:nonceSize]
-
-	token := make([]byte, nonceSize, nonceSize+len(plaintext)+tagSize)
-	copy(token, nonce)
-
-	return k.cipher().Seal(token, nonce, plaintext, fieldAD(parent, field))
+	return crypt.SealField(k.key, parent, field, plaintext)
 }
 
 // OpenField reverses SealField.
 func (k *Key) OpenField(parent []byte, field Field, token []byte) ([]byte, error) {
-	if len(token) == 0 {
-		return nil, nil
-	}
-
-	if len(token) < nonceSize+tagSize {
-		return nil, ErrWrongKey
-	}
-
-	plaintext, err := k.cipher().Open(nil, token[:nonceSize], token[nonceSize:], fieldAD(parent, field))
-	if err != nil {
-		return nil, ErrWrongKey
-	}
-
-	return plaintext, nil
-}
-
-func fieldAD(parent []byte, field Field) []byte {
-	return append(lengthPrefixed(parent), field...)
-}
-
-func lengthPrefixed(b []byte) []byte {
-	out := binary.BigEndian.AppendUint32(nil, uint32(len(b)))
-	return append(out, b...)
+	return crypt.OpenField(k.key, parent, field, token)
 }
 
 // SealKeys encrypts a File's part keys under the store key. The nonce is
 // derived from the part refs, so the same parts always give the same
 // field and the File ref stays deterministic.
 func (k *Key) SealKeys(refs []*proto.Ref, keys [][]byte) ([]byte, error) {
-	if len(refs) != len(keys) {
-		return nil, fmt.Errorf("%d refs for %d keys", len(refs), len(keys))
+	hashes := make([][]byte, len(refs))
+	for i, ref := range refs {
+		hashes[i] = ref.GetHash()
 	}
 
-	if len(keys) == 0 {
-		return nil, nil
-	}
-
-	mac := hmac.New(sha256.New, k.key)
-	mac.Write([]byte("keys nonce"))
-	plaintext := make([]byte, 0, len(keys)*KeySize)
-	for i, key := range keys {
-		if len(key) != KeySize {
-			return nil, fmt.Errorf("part key %d has %d bytes", i, len(key))
-		}
-
-		mac.Write(refs[i].GetHash())
-		plaintext = append(plaintext, key...)
-	}
-	nonce := mac.Sum(nil)[:nonceSize]
-
-	out := make([]byte, nonceSize, nonceSize+len(plaintext)+tagSize)
-	copy(out, nonce)
-
-	return k.cipher().Seal(out, nonce, plaintext, []byte("keys")), nil
+	return crypt.SealKeys(k.key, hashes, keys)
 }
 
 // OpenKeys decrypts a File's part keys and returns one key per part.
 func (k *Key) OpenKeys(sealed []byte) ([][]byte, error) {
-	if len(sealed) == 0 {
-		return nil, nil
-	}
-
-	if len(sealed) < nonceSize+tagSize {
-		return nil, ErrWrongKey
-	}
-
-	plaintext, err := k.cipher().Open(nil, sealed[:nonceSize], sealed[nonceSize:], []byte("keys"))
-	if err != nil {
-		return nil, ErrWrongKey
-	}
-
-	if len(plaintext)%KeySize != 0 {
-		return nil, ErrWrongKey
-	}
-
-	keys := make([][]byte, len(plaintext)/KeySize)
-	for i := range keys {
-		keys[i] = plaintext[i*KeySize : (i+1)*KeySize]
-	}
-
-	return keys, nil
+	return crypt.OpenKeys(k.key, sealed)
 }
-
-const (
-	escrowMagic  = "goback-escrow-v1"
-	escrowTime   = 3
-	escrowMemory = 64 << 10
-	escrowSalt   = 16
-)
 
 // Escrow wraps the key under a passphrase with a memory-hard KDF, so the
 // key's owner can keep it where the server cannot open it.
 func (k *Key) Escrow(passphrase string) ([]byte, error) {
-	salt := make([]byte, escrowSalt)
-	_, err := rand.Read(salt)
-	if err != nil {
-		return nil, err
-	}
-
-	wrapping := argon2.IDKey([]byte(passphrase), salt, escrowTime, escrowMemory, 1, KeySize)
-
-	nonce := make([]byte, nonceSize)
-	_, err = rand.Read(nonce)
-	if err != nil {
-		return nil, err
-	}
-
-	out := append([]byte(escrowMagic), salt...)
-	out = append(out, nonce...)
-
-	return newAEAD(wrapping).Seal(out, nonce, k.key, []byte(escrowMagic+k.Name)), nil
+	return crypt.Escrow(k.key, k.Name, passphrase)
 }
 
 // Recover unwraps an escrowed key with its passphrase.
 func Recover(name string, escrowed []byte, passphrase string, policy Policy) (*Key, error) {
-	header := len(escrowMagic) + escrowSalt + nonceSize
-	if len(escrowed) < header+KeySize+tagSize || string(escrowed[:len(escrowMagic)]) != escrowMagic {
-		return nil, errors.New("not an escrowed store key")
-	}
-
-	salt := escrowed[len(escrowMagic) : len(escrowMagic)+escrowSalt]
-	nonce := escrowed[len(escrowMagic)+escrowSalt : header]
-	wrapping := argon2.IDKey([]byte(passphrase), salt, escrowTime, escrowMemory, 1, KeySize)
-
-	raw, err := newAEAD(wrapping).Open(nil, nonce, escrowed[header:], []byte(escrowMagic+name))
-	if err != nil {
-		return nil, errors.New("wrong passphrase or name")
-	}
-
-	return FromBytes(name, raw, policy)
-}
-
-type aeadKey struct {
-	key []byte
-}
-
-func newAEAD(key []byte) *aeadKey {
-	return &aeadKey{key: key}
-}
-
-func (a *aeadKey) Seal(dst, nonce, plaintext, ad []byte) []byte {
-	c, err := chacha20poly1305.NewX(a.key)
-	if err != nil {
-		panic(err)
-	}
-
-	return c.Seal(dst, nonce, plaintext, ad)
-}
-
-func (a *aeadKey) Open(dst, nonce, ciphertext, ad []byte) ([]byte, error) {
-	c, err := chacha20poly1305.NewX(a.key)
+	raw, err := crypt.Recover(name, escrowed, passphrase)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.Open(dst, nonce, ciphertext, ad)
+	return FromBytes(name, raw, policy)
 }
