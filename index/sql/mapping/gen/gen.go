@@ -31,11 +31,15 @@ func (m MapperImpl) Commit(in *ent.CommitRow) *proto.Commit {
 	if in == nil {
 		return nil
 	}
+	var tmp0 string
+	if in.Edges.Set != nil {
+		tmp0 = in.Edges.Set.Name
+	}
 
 	return &proto.Commit{
 		Timestamp:     in.Timestamp.Unix(),
 		Tree:          mapping.Ref(in.Tree),
-		BackupSet:     in.Edges.Set.Name,
+		BackupSet:     tmp0,
 		Parent:        mapping.Ref(in.Parent),
 		AgentId:       in.AgentID,
 		ScanStartNs:   in.ScanStartNs,
