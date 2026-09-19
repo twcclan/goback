@@ -6,18 +6,24 @@ import (
 	mapping "github.com/twcclan/goback/admin/mapping"
 	index "github.com/twcclan/goback/index"
 	admin "github.com/twcclan/goback/proto/admin"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
+	var tmp0 *timestamppb.Timestamp
+	if tmp1 := in.KeyAcknowledgedAt; tmp1 != nil {
+		tmp2 := *tmp1
+		tmp0 = timestamppb.New(tmp2)
+	}
 
 	return &admin.StorePolicy{
 		Version:           in.Policy.Version,
-		Mode:              mapping.Mode(in.Policy.Mode),
+		Mode:              string(in.Policy.Mode),
 		SizeThreshold:     in.Policy.SizeThreshold,
 		EntropyEstimator:  in.Policy.EntropyEstimator,
 		EntropyThreshold:  in.Policy.EntropyThreshold,
 		PresenceScope:     in.Policy.PresenceScope,
-		KeyAcknowledgedAt: mapping.Stamp(in.KeyAcknowledgedAt),
+		KeyAcknowledgedAt: tmp0,
 	}
 }
 

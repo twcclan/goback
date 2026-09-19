@@ -20,10 +20,8 @@ type Mapper interface {
 	// field:Timestamp method:"Unix"
 	// field:ReceivedAtNs from:"ReceivedAt" method:"UnixNano"
 	// field:Tree using:"Ref"
-	// field:SetId from:"SetID"
 	// field:BackupSet from:"Edges.Set.Name"
 	// field:Parent using:"Ref"
-	// field:AgentId from:"AgentID"
 	Commit(in *ent.CommitRow) *proto.Commit
 
 	// field:Stat from:"."
