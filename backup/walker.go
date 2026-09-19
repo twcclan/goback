@@ -65,6 +65,14 @@ type Walker struct {
 	// Logger is where the walk reports; nil means slog.Default.
 	Logger *slog.Logger
 
+	// Progress, when set, is handed the counters every ProgressInterval
+	// while the walk runs, and once more when it ends. It is called from
+	// a goroutine of its own and must not block for long.
+	Progress func(WalkResult)
+	// ProgressInterval is how often Progress hears; zero means
+	// DefaultProgressInterval.
+	ProgressInterval time.Duration
+
 	// Sessions, when set, wraps the run in a session, so nothing it uploads
 	// is visible to others before its commit.
 	Sessions SessionStore
@@ -121,10 +129,14 @@ func (w *Walker) now() time.Time {
 
 // WalkResult summarises one run.
 type WalkResult struct {
-	Ref         *proto.Ref
-	Commit      *proto.Commit
-	Base        *proto.Ref
-	Files       int64
+	Ref    *proto.Ref
+	Commit *proto.Commit
+	Base   *proto.Ref
+	Files  int64
+	// Bytes is what those files hold on disk, whether or not the walk
+	// had to read them; Uploaded is the chunk bytes actually sent.
+	Bytes       int64
+	Uploaded    int64
 	Reused      int64
 	Read        int64
 	Torn        int64
@@ -144,6 +156,70 @@ func (r *WalkResult) Dirty() bool {
 }
 
 var errUnreadable = errors.New("file could not be read")
+
+// DefaultProgressInterval is how often a walk reports when the caller
+// wants progress but names no interval.
+const DefaultProgressInterval = 15 * time.Second
+
+// snapshot is what the counters say right now. The refs a finished run
+// reports are left out, because they are only written once it is over.
+func (w *Walker) snapshot() WalkResult {
+	return WalkResult{
+		Files:       atomic.LoadInt64(&w.result.Files),
+		Bytes:       atomic.LoadInt64(&w.result.Bytes),
+		Uploaded:    atomic.LoadInt64(&w.result.Uploaded),
+		Reused:      atomic.LoadInt64(&w.result.Reused),
+		Read:        atomic.LoadInt64(&w.result.Read),
+		Torn:        atomic.LoadInt64(&w.result.Torn),
+		Unreadable:  atomic.LoadInt64(&w.result.Unreadable),
+		Skipped:     atomic.LoadInt64(&w.result.Skipped),
+		Checkpoints: atomic.LoadInt64(&w.result.Checkpoints),
+		Assumed:     atomic.LoadInt64(&w.result.Assumed),
+		Repaired:    atomic.LoadInt64(&w.result.Repaired),
+	}
+}
+
+// reportProgress calls Progress until the returned stop does, which the
+// caller runs before it reads the counters itself. Stopping twice is
+// harmless.
+func (w *Walker) reportProgress() func() {
+	if w.Progress == nil {
+		return func() {}
+	}
+
+	interval := w.ProgressInterval
+	if interval <= 0 {
+		interval = DefaultProgressInterval
+	}
+
+	var (
+		done = make(chan struct{})
+		gone = make(chan struct{})
+		once sync.Once
+	)
+
+	go func() {
+		defer close(gone)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				w.Progress(w.snapshot())
+				return
+			case <-ticker.C:
+				w.Progress(w.snapshot())
+			}
+		}
+	}()
+
+	return func() {
+		once.Do(func() { close(done) })
+		<-gone
+	}
+}
 
 // PreviousVersions is how many live versions of a changed file the walker
 // diffs its chunks against.
@@ -170,6 +246,9 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	w.scanStart = w.started.UnixNano()
 	w.result = WalkResult{}
 	w.sent = newSentSet()
+
+	stopProgress := w.reportProgress()
+	defer stopProgress()
 
 	if gate, ok := w.Index.(CommitGate); ok {
 		grant, err := gate.BeginCommit(ctx, w.Set)
@@ -240,6 +319,10 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// the counters are read plainly from here on, so nobody else may be
+	// looking at them
+	stopProgress()
 
 	w.result.Ref = ref
 	w.result.Commit = commit
@@ -483,6 +566,7 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 
 		case info.Mode().IsRegular():
 			atomic.AddInt64(&w.result.Files, 1)
+			atomic.AddInt64(&w.result.Bytes, info.Size())
 			index := i
 			stat := w.stat(info, "")
 
@@ -732,6 +816,7 @@ func (w *Walker) readFile(ctx context.Context, path string, known map[string]str
 	writer.sent = w.sent
 	writer.source = file
 	writer.cache = w.BlobCache
+	writer.uploaded = &w.result.Uploaded
 
 	if forced != nil {
 		writer.known = known
@@ -845,7 +930,7 @@ func (w *Walker) checkpoint(ctx context.Context, done []*proto.TreeNode, base []
 	}
 
 	w.logger().Info("wrote checkpoint commit", "ref", fmt.Sprintf("%x", ref.Hash))
-	w.result.Checkpoints++
+	atomic.AddInt64(&w.result.Checkpoints, 1)
 	w.last = w.now()
 
 	return nil

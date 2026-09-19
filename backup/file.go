@@ -99,6 +99,9 @@ type fileWriter struct {
 	// cache, when set, receives every blob this file uploads
 	cache *blobcache.Cache
 
+	// uploaded, when set, counts the chunk bytes this file sends
+	uploaded *int64
+
 	pending int32
 }
 
@@ -205,7 +208,7 @@ func (bfw *fileWriter) split(length int) {
 		}
 	}
 
-	bfw.upload(ref, blob)
+	bfw.upload(ref, blob, length)
 }
 
 // seal turns a chunk into the blob object that is stored for it, plain or
@@ -223,7 +226,7 @@ func (bfw *fileWriter) seal(chunk []byte) (*proto.Object, *proto.Ref, []byte) {
 
 // upload stores a blob in the background unless another file of the run
 // is already uploading it, in which case that upload is awaited at Close.
-func (bfw *fileWriter) upload(ref *proto.Ref, blob *proto.Object) {
+func (bfw *fileWriter) upload(ref *proto.Ref, blob *proto.Object, length int) {
 	entry, mine := bfw.sent.claim(ref)
 	if !mine {
 		bfw.waits = append(bfw.waits, entry)
@@ -239,6 +242,10 @@ func (bfw *fileWriter) upload(ref *proto.Ref, blob *proto.Object) {
 
 		err := bfw.store.Put(bfw.ctx, blob)
 		bfw.sent.finish(ref, err)
+
+		if err == nil && bfw.uploaded != nil {
+			atomic.AddInt64(bfw.uploaded, int64(length))
+		}
 
 		if err == nil && bfw.cache != nil {
 			_ = bfw.cache.Put(ref, blob)
@@ -327,10 +334,10 @@ func (bfw *fileWriter) repair(missing []*proto.Ref) error {
 
 	for _, ref := range missing {
 		key := string(ref.Hash)
+		part := bfw.assumed[key]
 
 		blob := bfw.window.take(key)
 		if blob == nil {
-			part := bfw.assumed[key]
 			if part == nil || bfw.source == nil {
 				changed = append(changed, ref)
 				continue
@@ -351,7 +358,7 @@ func (bfw *fileWriter) repair(missing []*proto.Ref) error {
 			}
 		}
 
-		bfw.upload(ref, blob)
+		bfw.upload(ref, blob, int(part.GetLength()))
 		bfw.repaired++
 	}
 
@@ -455,7 +462,12 @@ func (bfw *fileWriter) Close() (err error) {
 		obj := bfw.object(file)
 		bfw.ref = obj.Ref()
 
-		return bfw.store.Put(bfw.ctx, obj)
+		err = bfw.store.Put(bfw.ctx, obj)
+		if err == nil && bfw.uploaded != nil {
+			atomic.AddInt64(bfw.uploaded, int64(len(inline)))
+		}
+
+		return err
 	}
 
 	if bfw.blobSize > 0 {

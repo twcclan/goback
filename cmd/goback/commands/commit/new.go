@@ -17,6 +17,7 @@ import (
 	"github.com/twcclan/goback/storage/cache"
 
 	"github.com/bmatcuk/doublestar"
+	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"
 )
 
@@ -51,6 +52,17 @@ func includeFilter(includes, excludes []string) func(string) bool {
 
 // errDirty marks a run that committed but recorded torn or unreadable files.
 var errDirty = errors.New("some files were torn or unreadable")
+
+// logProgress reports what a walk has covered so far. The files it has
+// covered are not a share of anything yet, because the walk only learns
+// what a directory holds once it reads it.
+func logProgress(started time.Time) func(backup.WalkResult) {
+	return func(r backup.WalkResult) {
+		log.Printf("%s elapsed: %d files (%s) covered, %d read, %d reused, %s uploaded",
+			time.Since(started).Round(time.Second), r.Files, humanize.Bytes(uint64(r.Bytes)),
+			r.Read, r.Reused, humanize.Bytes(uint64(r.Uploaded)))
+	}
+}
 
 func newAction(c *cli.Context) {
 	err := runNew(c)
@@ -119,6 +131,11 @@ func runNew(c *cli.Context) error {
 		CheckpointInterval: c.Duration("checkpoint-interval"),
 		ReadRetries:        c.Int("read-retries"),
 		PrefetchDepth:      2,
+		ProgressInterval:   c.Duration("progress-interval"),
+	}
+
+	if walker.ProgressInterval >= 0 {
+		walker.Progress = logProgress(time.Now())
 	}
 
 	if stats != nil {
@@ -222,6 +239,11 @@ var newCmd = cli.Command{
 			Name:  "read-retries",
 			Usage: "how often to re-read a file that changes while it is being read",
 			Value: 3,
+		},
+		cli.DurationFlag{
+			Name:  "progress-interval",
+			Usage: "how often to report what the walk has covered so far; negative disables",
+			Value: backup.DefaultProgressInterval,
 		},
 		cli.StringFlag{
 			Name:  "state-dir",
