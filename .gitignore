@@ -6,3 +6,5 @@
 test/
 .idea
 vendor
+# credentials handed over for a one-off check; never committed
+cloudflare.txt
