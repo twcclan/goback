@@ -39,10 +39,7 @@ var Command = cli.Command{
 			ArgsUsage:   "[<name>]",
 			Flags: []cli.Flag{
 				cli.IntFlag{Name: "keep-last"},
-				cli.IntFlag{Name: "keep-hourly"},
-				cli.IntFlag{Name: "keep-daily"},
-				cli.IntFlag{Name: "keep-weekly"},
-				cli.IntFlag{Name: "keep-monthly"},
+				cli.StringSliceFlag{Name: "keep", Usage: "a bracket as <period>=<length>, newest first, repeated; the last may drop its length to keep forever (--keep hourly=14d --keep daily=60d --keep weekly=12w --keep monthly)"},
 				cli.DurationFlag{Name: "keep-within"},
 				cli.BoolFlag{Name: "inherit", Usage: "drop the policy: a set inherits the store's, the store uses the built-in"},
 				cli.IntFlag{Name: "hold-days", Value: -1, Usage: "store only: days a commit retired by policy waits for its tombstone"},
@@ -53,7 +50,7 @@ var Command = cli.Command{
 	},
 }
 
-var keepFlags = []string{"keep-last", "keep-hourly", "keep-daily", "keep-weekly", "keep-monthly", "keep-within"}
+var keepFlags = []string{"keep-last", "keep", "keep-within"}
 
 func retentionAction(c *cli.Context) {
 	if c.NArg() > 1 {
@@ -76,12 +73,9 @@ func retentionAction(c *cli.Context) {
 	for _, flag := range keepFlags {
 		if c.IsSet(flag) {
 			policy = &retention.Policy{
-				KeepLast:    c.Int("keep-last"),
-				KeepHourly:  c.Int("keep-hourly"),
-				KeepDaily:   c.Int("keep-daily"),
-				KeepWeekly:  c.Int("keep-weekly"),
-				KeepMonthly: c.Int("keep-monthly"),
-				KeepWithin:  c.Duration("keep-within"),
+				KeepLast:   c.Int("keep-last"),
+				KeepWithin: c.Duration("keep-within"),
+				Brackets:   brackets(c.StringSlice("keep")),
 			}
 			break
 		}
@@ -163,19 +157,45 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 	}
 }
 
+// brackets reads the --keep flags as the stretches of a set's past,
+// newest first. A bracket without a length keeps its period forever.
+func brackets(flags []string) []retention.Bracket {
+	var read []retention.Bracket
+
+	for _, flag := range flags {
+		period, length, hasLength := strings.Cut(flag, "=")
+
+		bracket := retention.Bracket{Period: retention.Period(period)}
+		if hasLength {
+			var err error
+
+			bracket.For, err = retention.ParseFor(length)
+			if err != nil {
+				log.Fatalf("--keep %s: %v", flag, err)
+			}
+		}
+
+		read = append(read, bracket)
+	}
+
+	return read
+}
+
 // describe prints a policy as its keep flags.
 func describe(p retention.Policy) string {
 	var parts []string
-	for _, f := range []struct {
-		name  string
-		count int
-	}{
-		{"keep-last", p.KeepLast}, {"keep-hourly", p.KeepHourly}, {"keep-daily", p.KeepDaily},
-		{"keep-weekly", p.KeepWeekly}, {"keep-monthly", p.KeepMonthly},
-	} {
-		if f.count > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", f.name, f.count))
+	if p.KeepLast > 0 {
+		parts = append(parts, fmt.Sprintf("keep-last=%d", p.KeepLast))
+	}
+
+	for _, b := range p.Brackets {
+		if b.For == 0 {
+			parts = append(parts, fmt.Sprintf("keep=%s", b.Period))
+
+			continue
 		}
+
+		parts = append(parts, fmt.Sprintf("keep=%s=%s", b.Period, b.For))
 	}
 
 	if p.KeepWithin > 0 {

@@ -96,16 +96,24 @@ message SetStorePolicyRequest {
     bool acknowledge_key = 7;
 }
 
-// RetentionPolicy is restic-style: a commit stays while one of the
-// counters keeps it or it is younger than keep_within.
+// RetentionBracket keeps one commit per period over a stretch of a set's
+// past. Brackets run consecutively, each starting where the one before
+// it ended, so "for" is how long this bracket lasts rather than how old
+// its commits may be.
+message RetentionBracket {
+    // hourly, daily, weekly or monthly
+    string period = 1;
+    // seconds; zero is the tail, which lasts forever and so must be last
+    int64 for_seconds = 2;
+}
+
+// RetentionPolicy keeps a commit while a bracket holds it, it is one of
+// the last keep_last, or it is younger than keep_within.
 message RetentionPolicy {
     int32 keep_last = 1;
-    int32 keep_hourly = 2;
-    int32 keep_daily = 3;
-    int32 keep_weekly = 4;
-    int32 keep_monthly = 5;
     // seconds
     int64 keep_within = 6;
+    repeated RetentionBracket brackets = 7;
 }
 
 message Retention {

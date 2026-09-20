@@ -258,29 +258,35 @@ func (s *Server) retention(ctx context.Context, set string) (*pb.Retention, erro
 }
 
 func toPolicy(p retention.Policy) *pb.RetentionPolicy {
-	out := &pb.RetentionPolicy{
-		KeepLast:    int32(p.KeepLast),
-		KeepHourly:  int32(p.KeepHourly),
-		KeepDaily:   int32(p.KeepDaily),
-		KeepWeekly:  int32(p.KeepWeekly),
-		KeepMonthly: int32(p.KeepMonthly),
-	}
+	out := &pb.RetentionPolicy{KeepLast: int32(p.KeepLast)}
 	if p.KeepWithin > 0 {
 		out.KeepWithin = int64(p.KeepWithin / time.Second)
+	}
+
+	for _, b := range p.Brackets {
+		out.Brackets = append(out.Brackets, &pb.RetentionBracket{
+			Period:     string(b.Period),
+			ForSeconds: int64(b.For / time.Second),
+		})
 	}
 
 	return out
 }
 
 func fromPolicy(p *pb.RetentionPolicy) retention.Policy {
-	return retention.Policy{
-		KeepLast:    int(p.KeepLast),
-		KeepHourly:  int(p.KeepHourly),
-		KeepDaily:   int(p.KeepDaily),
-		KeepWeekly:  int(p.KeepWeekly),
-		KeepMonthly: int(p.KeepMonthly),
-		KeepWithin:  time.Duration(p.KeepWithin) * time.Second,
+	out := retention.Policy{
+		KeepLast:   int(p.KeepLast),
+		KeepWithin: time.Duration(p.KeepWithin) * time.Second,
 	}
+
+	for _, b := range p.Brackets {
+		out.Brackets = append(out.Brackets, retention.Bracket{
+			Period: retention.Period(b.Period),
+			For:    time.Duration(b.ForSeconds) * time.Second,
+		})
+	}
+
+	return out
 }
 
 // Retire implements pb.AdminServer.

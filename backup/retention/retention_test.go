@@ -32,16 +32,20 @@ func TestEvaluateThinsDailiesToWeekliesToMonthlies(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	commits := daily(now, 120)
 
-	got := Evaluate(commits, Policy{KeepLast: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 3}, now)
+	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Daily, For: 7 * 24 * time.Hour},
+		{Period: Weekly, For: 4 * 7 * 24 * time.Hour},
+		{Period: Monthly},
+	}}, now)
 
-	require.Equal(t, []string{"latest", "last", "daily", "weekly", "monthly"}, got[0].Reasons)
+	require.Equal(t, []string{"latest", "last", "daily"}, got[0].Reasons)
 
 	for i := 1; i < 7; i++ {
 		require.True(t, got[i].Keep, "day %d", i)
 		require.Contains(t, got[i].Reasons, "daily")
 	}
 
-	require.False(t, got[7].Keep, "the eighth daily is thinned")
+	require.False(t, got[8].Keep, "past the week, a daily that is not its week's newest is thinned")
 
 	weeklies, monthlies := 0, 0
 	for _, d := range got {
@@ -55,19 +59,27 @@ func TestEvaluateThinsDailiesToWeekliesToMonthlies(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, 4, weeklies)
-	require.Equal(t, 3, monthlies)
-	require.Less(t, kept(got), 14)
+	require.InDelta(t, 4, weeklies, 1)
+	require.InDelta(t, 3, monthlies, 1)
+	require.Less(t, kept(got), 20, "120 daily commits thinned to a fortnight of detail and a tail")
 }
 
-func TestEvaluateCountsOnlyPeriodsWithCommits(t *testing.T) {
+// Brackets go by a commit's age, not by how many periods happen to hold
+// commits, so a set nobody has backed up in months is thinned to what
+// its age deserves rather than keeping the last few it managed.
+func TestASetThatStoppedIsThinnedByItsAgeAndNotByWhatItHas(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 
 	// an agent that stopped six months ago
 	commits := daily(now.AddDate(0, -6, 0), 3)
 
-	got := Evaluate(commits, Policy{KeepLast: 1, KeepDaily: 3}, now)
-	require.Equal(t, 3, kept(got), "old dailies are still the last three daily periods")
+	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Daily, For: 7 * 24 * time.Hour},
+		{Period: Monthly},
+	}}, now)
+
+	require.Equal(t, 1, kept(got), "three dailies of one old month are one monthly")
+	require.Equal(t, []string{"latest", "last", "monthly"}, got[0].Reasons)
 }
 
 func TestEvaluateKeepsTheNewestAndPinned(t *testing.T) {
@@ -143,16 +155,16 @@ func TestEvaluateInputOrderIsPreserved(t *testing.T) {
 
 func TestPolicyValidate(t *testing.T) {
 	require.ErrorIs(t, Policy{}.Validate(), ErrInvalidPolicy, "keep-all by zeros is rejected")
-	require.ErrorIs(t, Policy{KeepLast: 1, KeepDaily: -1}.Validate(), ErrInvalidPolicy)
+	require.ErrorIs(t, Policy{KeepLast: 1, Brackets: []Bracket{{Period: Daily, For: -time.Hour}}}.Validate(), ErrInvalidPolicy)
 	require.NoError(t, Policy{KeepLast: 1}.Validate())
 }
 
 func TestPolicyJSON(t *testing.T) {
-	p := Policy{KeepLast: 2, KeepDaily: 7, KeepWithin: 36 * time.Hour}
+	p := Policy{KeepLast: 2, KeepWithin: 36 * time.Hour, Brackets: []Bracket{{Period: Daily, For: 7 * 24 * time.Hour}}}
 
 	data, err := json.Marshal(p)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keep_last":2,"keep_daily":7,"keep_within":"36h0m0s"}`, string(data))
+	require.JSONEq(t, `{"keep_last":2,"keep_within":"36h0m0s","brackets":[{"period":"daily","for":"168h0m0s"}]}`, string(data))
 
 	back, err := Parse(data)
 	require.NoError(t, err)
@@ -319,4 +331,13 @@ func TestABracketKeepingByNothingRecognisedIsRefused(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrInvalidPolicy)
 	require.ErrorContains(t, err, "fortnightly")
+}
+
+// A stored policy from when periods were counted has no brackets, and
+// reading it as one would retire everything its counts were holding.
+func TestAPolicyWrittenWhenPeriodsWereCountedIsRefused(t *testing.T) {
+	_, err := Parse([]byte(`{"keep_last":1,"keep_daily":14,"keep_weekly":8}`))
+
+	require.ErrorIs(t, err, ErrInvalidPolicy)
+	require.ErrorContains(t, err, "keep_daily")
 }
