@@ -11,9 +11,35 @@ import (
 	"time"
 )
 
-// Policy is a restic-style count policy: the rules are ORed, and a period
-// rule counts only periods that have commits. KeepLast is never below 1.
+// Period is how finely a bracket keeps: one commit per hour, day, week
+// or month of the stretch it covers.
+type Period string
+
+// The periods a bracket may keep by.
+const (
+	Hourly  Period = "hourly"
+	Daily   Period = "daily"
+	Weekly  Period = "weekly"
+	Monthly Period = "monthly"
+)
+
+// A Bracket keeps one commit per Period over a stretch of a set's past.
+// Brackets run consecutively, each starting where the one before it
+// ended, so For is how long this one lasts rather than how old its
+// commits may be. A For of zero is the tail: everything older than the
+// brackets before it, kept forever.
+type Bracket struct {
+	Period Period
+	For    time.Duration
+}
+
+// Policy is what a set keeps. Brackets divide its past into consecutive
+// stretches, each kept at its own granularity. The count rules beside
+// them are restic-style: ORed with the brackets and with each other, and
+// a period rule counts only periods that have commits. KeepLast is never
+// below 1.
 type Policy struct {
+	Brackets    []Bracket
 	KeepLast    int
 	KeepHourly  int
 	KeepDaily   int
@@ -48,29 +74,93 @@ func (p Policy) Validate() error {
 		return fmt.Errorf("%w: keep_within is negative", ErrInvalidPolicy)
 	}
 
+	for i, b := range p.Brackets {
+		if _, ok := periods[b.Period]; !ok {
+			return fmt.Errorf("%w: bracket %d keeps by %q, not one of hourly, daily, weekly or monthly",
+				ErrInvalidPolicy, i, b.Period)
+		}
+
+		if b.For < 0 {
+			return fmt.Errorf("%w: bracket %d lasts a negative time", ErrInvalidPolicy, i)
+		}
+
+		if b.For == 0 && i != len(p.Brackets)-1 {
+			return fmt.Errorf("%w: bracket %d keeps %s forever, so the brackets after it never begin",
+				ErrInvalidPolicy, i, b.Period)
+		}
+	}
+
 	return nil
 }
 
-type policyJSON struct {
-	KeepLast    int    `json:"keep_last"`
-	KeepHourly  int    `json:"keep_hourly,omitempty"`
-	KeepDaily   int    `json:"keep_daily,omitempty"`
-	KeepWeekly  int    `json:"keep_weekly,omitempty"`
-	KeepMonthly int    `json:"keep_monthly,omitempty"`
-	KeepWithin  string `json:"keep_within,omitempty"`
+// periods is how a commit's place in each period is named, so that two
+// commits of one period compare equal.
+var periods = map[Period]func(time.Time) string{
+	Hourly: func(t time.Time) string { return t.UTC().Format("2006-01-02T15") },
+	Daily:  func(t time.Time) string { return t.UTC().Format("2006-01-02") },
+	Weekly: func(t time.Time) string {
+		y, w := t.UTC().ISOWeek()
+
+		return fmt.Sprintf("%04d-W%02d", y, w)
+	},
+	Monthly: func(t time.Time) string { return t.UTC().Format("2006-01") },
 }
 
-// MarshalJSON writes keep_within as a duration string.
+// bracketAt is the bracket a commit of this age falls in, and whether
+// the brackets reach that far back at all.
+func (p Policy) bracketAt(age time.Duration) (int, bool) {
+	var until time.Duration
+
+	for i, b := range p.Brackets {
+		if b.For == 0 {
+			return i, true
+		}
+
+		until += b.For
+		if age < until {
+			return i, true
+		}
+	}
+
+	return 0, false
+}
+
+type bracketJSON struct {
+	Period Period `json:"period"`
+	// absent for the tail, which lasts forever
+	For string `json:"for,omitempty"`
+}
+
+type policyJSON struct {
+	Brackets    []bracketJSON `json:"brackets,omitempty"`
+	KeepLast    int           `json:"keep_last"`
+	KeepHourly  int           `json:"keep_hourly,omitempty"`
+	KeepDaily   int           `json:"keep_daily,omitempty"`
+	KeepWeekly  int           `json:"keep_weekly,omitempty"`
+	KeepMonthly int           `json:"keep_monthly,omitempty"`
+	KeepWithin  string        `json:"keep_within,omitempty"`
+}
+
+// MarshalJSON writes every duration as a duration string.
 func (p Policy) MarshalJSON() ([]byte, error) {
 	out := policyJSON{KeepLast: p.KeepLast, KeepHourly: p.KeepHourly, KeepDaily: p.KeepDaily, KeepWeekly: p.KeepWeekly, KeepMonthly: p.KeepMonthly}
 	if p.KeepWithin > 0 {
 		out.KeepWithin = p.KeepWithin.String()
 	}
 
+	for _, b := range p.Brackets {
+		written := bracketJSON{Period: b.Period}
+		if b.For > 0 {
+			written.For = b.For.String()
+		}
+
+		out.Brackets = append(out.Brackets, written)
+	}
+
 	return json.Marshal(out)
 }
 
-// UnmarshalJSON reads keep_within as a duration string.
+// UnmarshalJSON reads every duration as a duration string.
 func (p *Policy) UnmarshalJSON(data []byte) error {
 	var in policyJSON
 	err := json.Unmarshal(data, &in)
@@ -85,6 +175,19 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("%w: keep_within: %v", ErrInvalidPolicy, err)
 		}
+	}
+
+	for i, read := range in.Brackets {
+		bracket := Bracket{Period: read.Period}
+
+		if read.For != "" {
+			bracket.For, err = time.ParseDuration(read.For)
+			if err != nil {
+				return fmt.Errorf("%w: bracket %d: %v", ErrInvalidPolicy, i, err)
+			}
+		}
+
+		p.Brackets = append(p.Brackets, bracket)
 	}
 
 	return nil
@@ -148,13 +251,10 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 	}
 
 	rules := []rule{
-		{"hourly", p.KeepHourly, func(t time.Time) string { return t.UTC().Format("2006-01-02T15") }},
-		{"daily", p.KeepDaily, func(t time.Time) string { return t.UTC().Format("2006-01-02") }},
-		{"weekly", p.KeepWeekly, func(t time.Time) string {
-			y, w := t.UTC().ISOWeek()
-			return fmt.Sprintf("%04d-W%02d", y, w)
-		}},
-		{"monthly", p.KeepMonthly, func(t time.Time) string { return t.UTC().Format("2006-01") }},
+		{string(Hourly), p.KeepHourly, periods[Hourly]},
+		{string(Daily), p.KeepDaily, periods[Daily]},
+		{string(Weekly), p.KeepWeekly, periods[Weekly]},
+		{string(Monthly), p.KeepMonthly, periods[Monthly]},
 	}
 
 	last := p.KeepLast
@@ -167,6 +267,10 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 	for i, r := range rules {
 		remaining[i] = r.count
 	}
+
+	// one per bracket, because a commit is only ever weighed against the
+	// bracket its own age falls in
+	lastBracket := make([]string, len(p.Brackets))
 
 	for n, i := range order {
 		c := commits[i]
@@ -203,6 +307,14 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 			if remaining[r] > 0 {
 				keep(i, rules[r].name)
 				remaining[r]--
+			}
+		}
+
+		if b, ok := p.bracketAt(now.Sub(c.ReceivedAt)); ok {
+			period := periods[p.Brackets[b].Period](c.ReceivedAt)
+			if period != lastBracket[b] {
+				lastBracket[b] = period
+				keep(i, string(p.Brackets[b].Period))
 			}
 		}
 	}

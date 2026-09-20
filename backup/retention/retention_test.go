@@ -164,3 +164,159 @@ func TestPolicyJSON(t *testing.T) {
 	_, err = Parse([]byte(`{"keep_last":1,"keep_within":"soon"}`))
 	require.ErrorIs(t, err, ErrInvalidPolicy)
 }
+
+// hourlyCommits is one commit an hour, newest first.
+func hourlyCommits(from time.Time, hours int) []Commit {
+	commits := make([]Commit, hours)
+	for i := range commits {
+		commits[i] = Commit{ReceivedAt: from.Add(-time.Duration(i) * time.Hour)}
+	}
+
+	return commits
+}
+
+// The brackets the user asked for: hourly for a fortnight, then daily
+// for two months, then weekly for a quarter, then monthly forever.
+func theirPolicy() Policy {
+	return Policy{
+		KeepLast: 1,
+		Brackets: []Bracket{
+			{Period: Hourly, For: 14 * 24 * time.Hour},
+			{Period: Daily, For: 60 * 24 * time.Hour},
+			{Period: Weekly, For: 12 * 7 * 24 * time.Hour},
+			{Period: Monthly},
+		},
+	}
+}
+
+func TestEachBracketKeepsTheCommitsFallingInItAtItsOwnGranularity(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+
+	// two years of hourly commits, which every bracket has to thin
+	commits := hourlyCommits(now, 2*365*24)
+	got := Evaluate(commits, theirPolicy(), now)
+
+	days := func(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
+
+	// why the commits of an age range were kept, and how many for each
+	// reason, which is what says a bracket covers that range alone
+	over := func(from, to time.Duration) map[string]int {
+		found := map[string]int{}
+
+		for i, d := range got {
+			age := time.Duration(i) * time.Hour
+			if age < from || age >= to {
+				continue
+			}
+
+			for _, reason := range d.Reasons {
+				found[reason]++
+			}
+		}
+
+		return found
+	}
+
+	fortnight, twoMonths := over(0, days(14)), over(days(14), days(74))
+	quarter, tail := over(days(74), days(158)), over(days(158), days(730))
+
+	require.Equal(t, 14*24, fortnight["hourly"], "every hour of the fortnight")
+	require.Zero(t, fortnight["daily"]+fortnight["weekly"]+fortnight["monthly"],
+		"no coarser bracket reaches into the fortnight")
+
+	require.InDelta(t, 60, twoMonths["daily"], 1, "one a day for the sixty days after it")
+	require.Zero(t, twoMonths["hourly"], "and the hourly bracket ended at the fortnight")
+
+	require.InDelta(t, 12, quarter["weekly"], 1, "one a week for the twelve weeks after that")
+	require.Zero(t, quarter["daily"])
+
+	require.InDelta(t, 19, tail["monthly"], 1, "and one a month for the rest of the two years")
+	require.Zero(t, tail["weekly"])
+}
+
+// Inside a bracket only the newest commit of each of its periods is
+// kept, which is what thins an hourly set down to one a day.
+func TestABracketKeepsOnePerPeriodAndTheNewestOfThem(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+
+	commits := hourlyCommits(now, 40*24)
+	got := Evaluate(commits, theirPolicy(), now)
+
+	kept, hours := 0, map[int]int{}
+	for i, d := range got {
+		if time.Duration(i)*time.Hour < 14*24*time.Hour || !d.Keep {
+			continue
+		}
+
+		kept++
+		hours[commits[i].ReceivedAt.UTC().Hour()]++
+	}
+
+	require.Equal(t, 27, kept, "one a day over the 26 days between a fortnight old and forty days old, plus the day the fortnight ended partway through")
+
+	// the last hour of a day is its newest commit, and so the one the
+	// bracket reaches first walking back; the odd one out is the day the
+	// fortnight ended partway through
+	require.Equal(t, 26, hours[23])
+	require.Equal(t, 1, hours[12])
+}
+
+func TestTheTailKeepsEverythingOlderThanTheBracketsBeforeIt(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+
+	// ten years of monthly commits, all of them in the tail
+	commits := make([]Commit, 120)
+	for i := range commits {
+		commits[i] = Commit{ReceivedAt: now.AddDate(0, -i, 0)}
+	}
+
+	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Daily, For: 30 * 24 * time.Hour},
+		{Period: Monthly},
+	}}, now)
+
+	require.Equal(t, 120, kept(got), "a tail that keeps monthly keeps every month there has ever been")
+}
+
+// Without a tail the brackets stop, and what falls off the end of the
+// last one is retired rather than kept by default.
+func TestCommitsOlderThanTheLastBracketAreNotKept(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+
+	commits := daily(now, 60)
+	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Daily, For: 30 * 24 * time.Hour},
+	}}, now)
+
+	require.True(t, got[29].Keep)
+	require.False(t, got[31].Keep, "a month and a day old, with nothing to keep it")
+}
+
+func TestABracketPolicyRoundTrips(t *testing.T) {
+	encoded, err := json.Marshal(theirPolicy())
+	require.NoError(t, err)
+
+	require.Contains(t, string(encoded), `"period":"hourly","for":"336h0m0s"`)
+	require.Contains(t, string(encoded), `{"period":"monthly"}`, "the tail carries no duration")
+
+	read, err := Parse(encoded)
+	require.NoError(t, err)
+	require.Equal(t, theirPolicy(), read)
+}
+
+func TestAPolicyThatKeepsForeverBeforeItsLastBracketIsRefused(t *testing.T) {
+	err := Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Monthly},
+		{Period: Daily, For: time.Hour},
+	}}.Validate()
+
+	require.ErrorIs(t, err, ErrInvalidPolicy)
+	require.ErrorContains(t, err, "never begin")
+}
+
+func TestABracketKeepingByNothingRecognisedIsRefused(t *testing.T) {
+	err := Policy{KeepLast: 1, Brackets: []Bracket{{Period: "fortnightly", For: time.Hour}}}.Validate()
+
+	require.ErrorIs(t, err, ErrInvalidPolicy)
+	require.ErrorContains(t, err, "fortnightly")
+}
