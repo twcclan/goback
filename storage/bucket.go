@@ -286,7 +286,12 @@ func (c *BucketStore) Checksum(name string) ([]byte, error) {
 func (c *BucketStore) Delete(name string) error {
 	c.count(OpDelete, 0)
 
-	return c.bucket.Delete(context.Background(), c.key(name))
+	err := c.bucket.Delete(context.Background(), c.key(name))
+	if gcerrors.Code(err) == gcerrors.NotFound {
+		return pack.ErrFileNotFound
+	}
+
+	return err
 }
 
 // listPageSize is how many keys one listing request asks for, which is

@@ -79,6 +79,10 @@ func testMissingFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
 	if file != nil {
 		t.Fatal("expected file to be nil")
 	}
+
+	if err := store.Delete("this file probably does not exist"); err != pack.ErrFileNotFound {
+		t.Fatalf("expected delete to return %v, got %v", pack.ErrFileNotFound, err)
+	}
 }
 
 func testReadFiles(t *testing.T, store pack.ArchiveStorage, files []file) {

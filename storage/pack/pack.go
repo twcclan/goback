@@ -804,12 +804,12 @@ func (ps *PackStorage) archiveStored(a *archive, bytes int64) {
 
 func (ps *PackStorage) deleteArchiveFiles(name string) {
 	err := ps.storage.Delete(name + IndexExt)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil && !notExist(err) {
 		ps.logger.Warn("deleting index failed", "archive", name, "err", err)
 	}
 
 	err = ps.storage.Delete(name + ArchiveSuffix)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil && !notExist(err) {
 		ps.logger.Warn("deleting archive failed", "archive", name, "err", err)
 	}
 
