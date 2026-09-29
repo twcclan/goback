@@ -10,8 +10,12 @@ import (
 )
 
 const (
-	defaultClaimOpen  = 10 * time.Second
-	defaultClaimGrace = 2 * time.Minute
+	// DefaultClaimOpen is how long an archive stays open unless WithClaims
+	// says otherwise.
+	DefaultClaimOpen = 10 * time.Second
+	// DefaultClaimGrace is how much longer a claim holds while its archive
+	// is closed, unless WithClaims says otherwise.
+	DefaultClaimGrace = 2 * time.Minute
 	// claimPoll is how often a commit looks again at archives another
 	// process holds open.
 	claimPoll = 100 * time.Millisecond

@@ -74,11 +74,11 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 	}
 
 	if opts.claimOpen <= 0 {
-		opts.claimOpen = defaultClaimOpen
+		opts.claimOpen = DefaultClaimOpen
 	}
 
 	if opts.claimGrace <= 0 {
-		opts.claimGrace = defaultClaimGrace
+		opts.claimGrace = DefaultClaimGrace
 	}
 
 	claims, _ := opts.index.(ClaimIndex)
