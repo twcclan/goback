@@ -3,61 +3,92 @@ package telemetry
 
 import (
 	"context"
-	"net/http"
+	"errors"
+	"os"
+	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/exporters/autoexport"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-const serviceName = "goback"
-
-func serviceResource() *resource.Resource {
-	return resource.NewSchemaless(attribute.String("service.name", serviceName))
-}
-
-// Metrics installs a meter provider backed by a private Prometheus registry
-// and returns the handler that serves it.
-func Metrics() (http.Handler, error) {
-	registry := prometheus.NewRegistry()
-
-	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
-	if err != nil {
-		return nil, err
-	}
-
-	otel.SetMeterProvider(sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(exporter),
-		sdkmetric.WithResource(serviceResource()),
-	))
-
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{}), nil
-}
-
-// Traces installs a tracer provider that batches spans to an OTLP/HTTP
-// endpoint, sampling the given ratio of new traces. The returned function
-// flushes and stops it.
-func Traces(ctx context.Context, endpoint string, ratio float64) (func(context.Context) error, error) {
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
-	if err != nil {
-		return nil, err
-	}
-
-	provider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))),
-		sdktrace.WithResource(serviceResource()),
-	)
-
-	otel.SetTracerProvider(provider)
+// Setup installs tracing and metrics as the standard OTEL_* environment
+// variables describe them, naming the process service unless
+// OTEL_SERVICE_NAME does. A signal is exported only once its exporter or
+// an OTLP endpoint is configured; setting OTEL_EXPORTER_OTLP_ENDPOINT
+// alone exports both, and OTEL_TRACES_SAMPLER picks what is sampled.
+// The returned function flushes and stops what was installed.
+func Setup(ctx context.Context, service string) (func(context.Context) error, error) {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
-	return provider.Shutdown, nil
+	res, err := resource.New(ctx,
+		resource.WithAttributes(attribute.String("service.name", service)),
+		resource.WithFromEnv(),
+		resource.WithTelemetrySDK(),
+		resource.WithHost(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var stops []func(context.Context) error
+
+	stop := func(ctx context.Context) error {
+		var errs []error
+		for _, s := range stops {
+			errs = append(errs, s(ctx))
+		}
+
+		return errors.Join(errs...)
+	}
+
+	if configured("TRACES") {
+		exporter, err := autoexport.NewSpanExporter(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter), sdktrace.WithResource(res))
+		otel.SetTracerProvider(provider)
+		stops = append(stops, provider.Shutdown)
+	}
+
+	if configured("METRICS") {
+		reader, err := autoexport.NewMetricReader(ctx)
+		if err != nil {
+			return nil, errors.Join(err, stop(ctx))
+		}
+
+		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithResource(res))
+		otel.SetMeterProvider(provider)
+		stops = append(stops, provider.Shutdown)
+
+		if err := runtime.Start(); err != nil {
+			return nil, errors.Join(err, stop(ctx))
+		}
+	}
+
+	return stop, nil
+}
+
+// configured reports whether the environment asks for a signal to be
+// exported, so that a process nobody configured does not try to reach a
+// collector that is not there.
+func configured(signal string) bool {
+	for _, key := range []string{
+		"OTEL_" + signal + "_EXPORTER",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_" + signal + "_ENDPOINT",
+	} {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			return true
+		}
+	}
+
+	return false
 }

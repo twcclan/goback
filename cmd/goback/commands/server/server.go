@@ -40,10 +40,6 @@ var Command = cli.Command{
 			Value: ":6060",
 		},
 		cli.StringFlag{
-			Name:  "otlp-traces-endpoint",
-			Usage: "OTLP/HTTP endpoint that receives one percent of the server's traces, e.g. http://localhost:4318/v1/traces",
-		},
-		cli.StringFlag{
 			Name:  "secret",
 			Usage: "the secret every agent of this server presents",
 		},
@@ -99,13 +95,6 @@ var Command = cli.Command{
 	},
 }
 
-func enableTracing(endpoint string) {
-	_, err := telemetry.Traces(context.Background(), endpoint, 1e-2)
-	if err != nil {
-		log.Fatalf("failed setting up tracing: %s", err)
-	}
-}
-
 func serverAction(ctx *cli.Context) {
 	secret, err := sharedSecret(ctx)
 	if err != nil {
@@ -125,8 +114,8 @@ func serverAction(ctx *cli.Context) {
 		log.Fatal(err)
 	}
 
-	if endpoint := ctx.String("otlp-traces-endpoint"); endpoint != "" {
-		enableTracing(endpoint)
+	if _, err := telemetry.Setup(context.Background(), "goback"); err != nil {
+		log.Fatalf("failed setting up telemetry: %s", err)
 	}
 
 	sessions, _ := s.(backup.SessionStore)
