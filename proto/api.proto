@@ -213,6 +213,19 @@ message UnpinRequest {
 
 message UnpinResponse {}
 
+// EscrowedKey is the store key escrowed under a passphrase, as goback key
+// escrow prints it; the store keeps it without being able to open it.
+message EscrowedKey {
+    string key_id = 1;
+    bytes escrowed = 2;
+}
+
+message EscrowedKeysRequest {}
+
+message EscrowedKeysResponse {
+    repeated EscrowedKey keys = 1;
+}
+
 message ListPinsRequest {}
 
 message PinInfo {
@@ -267,4 +280,7 @@ service Store {
     rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
     rpc Unpin(UnpinRequest) returns (UnpinResponse) {}
     rpc ListPins(ListPinsRequest) returns (ListPinsResponse) {}
+    // EscrowedKeys returns every escrowed copy of the store key the store
+    // keeps, for an agent that holds only the passphrase
+    rpc EscrowedKeys(EscrowedKeysRequest) returns (EscrowedKeysResponse) {}
 }

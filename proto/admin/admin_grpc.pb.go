@@ -29,6 +29,7 @@ const (
 	Admin_SetRetention_FullMethodName   = "/admin.Admin/SetRetention"
 	Admin_Retire_FullMethodName         = "/admin.Admin/Retire"
 	Admin_CollectGarbage_FullMethodName = "/admin.Admin/CollectGarbage"
+	Admin_PutEscrowedKey_FullMethodName = "/admin.Admin/PutEscrowedKey"
 )
 
 // AdminClient is the client API for Admin service.
@@ -57,6 +58,9 @@ type AdminClient interface {
 	// Retire tombstones every commit whose window has passed
 	Retire(ctx context.Context, in *RetireRequest, opts ...grpc.CallOption) (*RetireResponse, error)
 	CollectGarbage(ctx context.Context, in *CollectGarbageRequest, opts ...grpc.CallOption) (*CollectGarbageResponse, error)
+	// PutEscrowedKey keeps an escrowed copy of the store key in the
+	// store's own storage, never replacing one kept before
+	PutEscrowedKey(ctx context.Context, in *PutEscrowedKeyRequest, opts ...grpc.CallOption) (*PutEscrowedKeyResponse, error)
 }
 
 type adminClient struct {
@@ -167,6 +171,16 @@ func (c *adminClient) CollectGarbage(ctx context.Context, in *CollectGarbageRequ
 	return out, nil
 }
 
+func (c *adminClient) PutEscrowedKey(ctx context.Context, in *PutEscrowedKeyRequest, opts ...grpc.CallOption) (*PutEscrowedKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutEscrowedKeyResponse)
+	err := c.cc.Invoke(ctx, Admin_PutEscrowedKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServer is the server API for Admin service.
 // All implementations must embed UnimplementedAdminServer
 // for forward compatibility.
@@ -193,6 +207,9 @@ type AdminServer interface {
 	// Retire tombstones every commit whose window has passed
 	Retire(context.Context, *RetireRequest) (*RetireResponse, error)
 	CollectGarbage(context.Context, *CollectGarbageRequest) (*CollectGarbageResponse, error)
+	// PutEscrowedKey keeps an escrowed copy of the store key in the
+	// store's own storage, never replacing one kept before
+	PutEscrowedKey(context.Context, *PutEscrowedKeyRequest) (*PutEscrowedKeyResponse, error)
 	mustEmbedUnimplementedAdminServer()
 }
 
@@ -232,6 +249,9 @@ func (UnimplementedAdminServer) Retire(context.Context, *RetireRequest) (*Retire
 }
 func (UnimplementedAdminServer) CollectGarbage(context.Context, *CollectGarbageRequest) (*CollectGarbageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CollectGarbage not implemented")
+}
+func (UnimplementedAdminServer) PutEscrowedKey(context.Context, *PutEscrowedKeyRequest) (*PutEscrowedKeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutEscrowedKey not implemented")
 }
 func (UnimplementedAdminServer) mustEmbedUnimplementedAdminServer() {}
 func (UnimplementedAdminServer) testEmbeddedByValue()               {}
@@ -434,6 +454,24 @@ func _Admin_CollectGarbage_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Admin_PutEscrowedKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutEscrowedKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).PutEscrowedKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_PutEscrowedKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).PutEscrowedKey(ctx, req.(*PutEscrowedKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Admin_ServiceDesc is the grpc.ServiceDesc for Admin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -480,6 +518,10 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CollectGarbage",
 			Handler:    _Admin_CollectGarbage_Handler,
+		},
+		{
+			MethodName: "PutEscrowedKey",
+			Handler:    _Admin_PutEscrowedKey_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

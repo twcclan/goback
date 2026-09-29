@@ -387,6 +387,22 @@ func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Loca
 	return object, nil
 }
 
+// EscrowedKeys returns every escrowed copy of the store key the server
+// keeps.
+func (r *Client) EscrowedKeys(ctx context.Context) ([]backup.EscrowedKey, error) {
+	response, err := r.store.EscrowedKeys(r.outgoing(ctx), &proto.EscrowedKeysRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	kept := make([]backup.EscrowedKey, 0, len(response.GetKeys()))
+	for _, k := range response.GetKeys() {
+		kept = append(kept, backup.EscrowedKey{KeyID: k.GetKeyId(), Escrowed: k.GetEscrowed()})
+	}
+
+	return kept, nil
+}
+
 // Delete is not offered by the server; retention deletes commits and sets.
 func (r *Client) Delete(context.Context, *proto.Ref) error { return backup.ErrNotImplemented }
 
@@ -654,11 +670,13 @@ func ToStatus(err error) error {
 		return status.Error(codes.Unauthenticated, err.Error())
 	case errors.Is(err, auth.ErrForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject):
+	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject),
+		errors.Is(err, backup.ErrInvalidEscrow):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetOwned), errors.Is(err, backup.ErrSetClosed),
 		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit),
-		errors.Is(err, backup.ErrPinned), errors.Is(err, backup.ErrNoSession), errors.Is(err, backup.ErrCommitDenied):
+		errors.Is(err, backup.ErrPinned), errors.Is(err, backup.ErrNoSession), errors.Is(err, backup.ErrCommitDenied),
+		errors.Is(err, backup.ErrOtherKeyEscrowed):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, backup.ErrNotImplemented):
 		return status.Error(codes.Unimplemented, err.Error())
@@ -732,6 +750,26 @@ func (r *Server) ListPins(ctx context.Context, _ *proto.ListPinsRequest) (*proto
 	}
 
 	return &proto.ListPinsResponse{Pins: pins}, nil
+}
+
+// EscrowedKeys implements proto.StoreServer.
+func (r *Server) EscrowedKeys(ctx context.Context, _ *proto.EscrowedKeysRequest) (*proto.EscrowedKeysResponse, error) {
+	escrow, err := r.store.Escrow()
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	kept, err := escrow.EscrowedKeys(ctx)
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	response := &proto.EscrowedKeysResponse{}
+	for _, k := range kept {
+		response.Keys = append(response.Keys, &proto.EscrowedKey{KeyId: k.KeyID, Escrowed: k.Escrowed})
+	}
+
+	return response, nil
 }
 
 // presencePiece is the largest data slice one GetPresence message carries.

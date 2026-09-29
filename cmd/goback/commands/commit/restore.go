@@ -326,7 +326,7 @@ func restoreAction(c *cli.Context) {
 
 	store := common.GetObjectStore(c)
 	index := common.OpenIndex(c, store)
-	key := common.StoreKey(c)
+	key := common.StoreKey(c, store)
 
 	restorer := &backup.Restorer{
 		Store:     store,

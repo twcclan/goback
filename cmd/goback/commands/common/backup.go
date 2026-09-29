@@ -55,20 +55,58 @@ func CloseStore(store backup.ObjectStore) {
 	}
 }
 
-// StoreKey loads the key file named by the global --store-key flag, or
-// returns nil when the store is written in the clear.
-func StoreKey(c *cli.Context) *storekey.Key {
+// StoreKey loads the key file named by the global --store-key flag. Without
+// one, a --passphrase opens the escrowed copy the store keeps. It returns
+// nil when the store is written in the clear.
+func StoreKey(c *cli.Context, store backup.ObjectStore) *storekey.Key {
 	path := c.GlobalString("store-key")
-	if path == "" {
+	if path != "" {
+		key, err := storekey.Load(path)
+		if err != nil {
+			log.Fatalf("Could not load store key: %v", err)
+		}
+
+		return key
+	}
+
+	passphrase := c.GlobalString("passphrase")
+	if passphrase == "" {
 		return nil
 	}
 
-	key, err := storekey.Load(path)
+	key, err := escrowedKey(context.Background(), Unwrap(store), passphrase)
 	if err != nil {
-		log.Fatalf("Could not load store key: %v", err)
+		log.Fatalf("Could not open the escrowed store key: %v", err)
 	}
 
 	return key
+}
+
+func escrowedKey(ctx context.Context, store any, passphrase string) (*storekey.Key, error) {
+	escrow, ok := store.(interface {
+		EscrowedKeys(context.Context) ([]backup.EscrowedKey, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("store %T keeps no escrowed key", store)
+	}
+
+	kept, err := escrow.EscrowedKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(kept) == 0 {
+		return nil, errors.New("the store keeps no escrowed key; upload one with goback key escrow --upload")
+	}
+
+	for _, k := range kept {
+		key, err := storekey.Recover(k.Escrowed, passphrase)
+		if err == nil {
+			return key, nil
+		}
+	}
+
+	return nil, fmt.Errorf("the passphrase opens none of the %d escrowed copies the store keeps", len(kept))
 }
 
 // Unwrap peels caching and wrapping stores off until the innermost store.

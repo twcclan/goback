@@ -388,6 +388,16 @@ func (s *Store) Retention() (backup.Retention, error) {
 	return ret, nil
 }
 
+// Escrow returns where the store keeps its escrowed key.
+func (s *Store) Escrow() (backup.KeyEscrow, error) {
+	escrow, ok := s.Index.(backup.KeyEscrow)
+	if !ok {
+		return nil, fmt.Errorf("%w: index %T keeps no escrowed key", backup.ErrNotImplemented, s.Index)
+	}
+
+	return escrow, nil
+}
+
 // ReadDir lists what a set held directly under dir at notAfter, sorted by
 // name; backup.ErrNotImplemented for an index that cannot answer.
 func (s *Store) ReadDir(ctx context.Context, set string, dir string, notAfter time.Time) ([]*proto.TreeNode, error) {

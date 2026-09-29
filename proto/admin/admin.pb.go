@@ -1064,6 +1064,95 @@ func (x *CollectGarbageResponse) GetReport() string {
 	return ""
 }
 
+type PutEscrowedKeyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	KeyId string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// the armored age file goback key escrow prints
+	Escrowed      string `protobuf:"bytes,2,opt,name=escrowed,proto3" json:"escrowed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutEscrowedKeyRequest) Reset() {
+	*x = PutEscrowedKeyRequest{}
+	mi := &file_admin_admin_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEscrowedKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEscrowedKeyRequest) ProtoMessage() {}
+
+func (x *PutEscrowedKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEscrowedKeyRequest.ProtoReflect.Descriptor instead.
+func (*PutEscrowedKeyRequest) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PutEscrowedKeyRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *PutEscrowedKeyRequest) GetEscrowed() string {
+	if x != nil {
+		return x.Escrowed
+	}
+	return ""
+}
+
+type PutEscrowedKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutEscrowedKeyResponse) Reset() {
+	*x = PutEscrowedKeyResponse{}
+	mi := &file_admin_admin_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEscrowedKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEscrowedKeyResponse) ProtoMessage() {}
+
+func (x *PutEscrowedKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_admin_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEscrowedKeyResponse.ProtoReflect.Descriptor instead.
+func (*PutEscrowedKeyResponse) Descriptor() ([]byte, []int) {
+	return file_admin_admin_proto_rawDescGZIP(), []int{21}
+}
+
 var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
@@ -1132,7 +1221,11 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\aretired\x18\x01 \x01(\x03R\aretired\"\x17\n" +
 	"\x15CollectGarbageRequest\"0\n" +
 	"\x16CollectGarbageResponse\x12\x16\n" +
-	"\x06report\x18\x01 \x01(\tR\x06report2\xa4\x05\n" +
+	"\x06report\x18\x01 \x01(\tR\x06report\"J\n" +
+	"\x15PutEscrowedKeyRequest\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1a\n" +
+	"\bescrowed\x18\x02 \x01(\tR\bescrowed\"\x18\n" +
+	"\x16PutEscrowedKeyResponse2\xf5\x05\n" +
 	"\x05Admin\x12=\n" +
 	"\bListSets\x12\x16.admin.ListSetsRequest\x1a\x17.admin.ListSetsResponse\"\x00\x12<\n" +
 	"\vTransferSet\x12\x19.admin.TransferSetRequest\x1a\x10.admin.BackupSet\"\x00\x12@\n" +
@@ -1143,7 +1236,8 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\fGetRetention\x12\x1a.admin.GetRetentionRequest\x1a\x10.admin.Retention\"\x00\x12>\n" +
 	"\fSetRetention\x12\x1a.admin.SetRetentionRequest\x1a\x10.admin.Retention\"\x00\x127\n" +
 	"\x06Retire\x12\x14.admin.RetireRequest\x1a\x15.admin.RetireResponse\"\x00\x12O\n" +
-	"\x0eCollectGarbage\x12\x1c.admin.CollectGarbageRequest\x1a\x1d.admin.CollectGarbageResponse\"\x00B'Z%github.com/twcclan/goback/proto/adminb\x06proto3"
+	"\x0eCollectGarbage\x12\x1c.admin.CollectGarbageRequest\x1a\x1d.admin.CollectGarbageResponse\"\x00\x12O\n" +
+	"\x0ePutEscrowedKey\x12\x1c.admin.PutEscrowedKeyRequest\x1a\x1d.admin.PutEscrowedKeyResponse\"\x00B'Z%github.com/twcclan/goback/proto/adminb\x06proto3"
 
 var (
 	file_admin_admin_proto_rawDescOnce sync.Once
@@ -1157,7 +1251,7 @@ func file_admin_admin_proto_rawDescGZIP() []byte {
 	return file_admin_admin_proto_rawDescData
 }
 
-var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_admin_admin_proto_goTypes = []any{
 	(*BackupSet)(nil),              // 0: admin.BackupSet
 	(*ListSetsRequest)(nil),        // 1: admin.ListSetsRequest
@@ -1179,11 +1273,13 @@ var file_admin_admin_proto_goTypes = []any{
 	(*RetireResponse)(nil),         // 17: admin.RetireResponse
 	(*CollectGarbageRequest)(nil),  // 18: admin.CollectGarbageRequest
 	(*CollectGarbageResponse)(nil), // 19: admin.CollectGarbageResponse
-	(*timestamppb.Timestamp)(nil),  // 20: google.protobuf.Timestamp
+	(*PutEscrowedKeyRequest)(nil),  // 20: admin.PutEscrowedKeyRequest
+	(*PutEscrowedKeyResponse)(nil), // 21: admin.PutEscrowedKeyResponse
+	(*timestamppb.Timestamp)(nil),  // 22: google.protobuf.Timestamp
 }
 var file_admin_admin_proto_depIdxs = []int32{
 	0,  // 0: admin.ListSetsResponse.sets:type_name -> admin.BackupSet
-	20, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
+	22, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
 	11, // 2: admin.RetentionPolicy.brackets:type_name -> admin.RetentionBracket
 	12, // 3: admin.Retention.policy:type_name -> admin.RetentionPolicy
 	12, // 4: admin.Retention.effective:type_name -> admin.RetentionPolicy
@@ -1198,18 +1294,20 @@ var file_admin_admin_proto_depIdxs = []int32{
 	15, // 13: admin.Admin.SetRetention:input_type -> admin.SetRetentionRequest
 	16, // 14: admin.Admin.Retire:input_type -> admin.RetireRequest
 	18, // 15: admin.Admin.CollectGarbage:input_type -> admin.CollectGarbageRequest
-	2,  // 16: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
-	0,  // 17: admin.Admin.TransferSet:output_type -> admin.BackupSet
-	5,  // 18: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
-	7,  // 19: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
-	8,  // 20: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
-	8,  // 21: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
-	13, // 22: admin.Admin.GetRetention:output_type -> admin.Retention
-	13, // 23: admin.Admin.SetRetention:output_type -> admin.Retention
-	17, // 24: admin.Admin.Retire:output_type -> admin.RetireResponse
-	19, // 25: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
-	16, // [16:26] is the sub-list for method output_type
-	6,  // [6:16] is the sub-list for method input_type
+	20, // 16: admin.Admin.PutEscrowedKey:input_type -> admin.PutEscrowedKeyRequest
+	2,  // 17: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
+	0,  // 18: admin.Admin.TransferSet:output_type -> admin.BackupSet
+	5,  // 19: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
+	7,  // 20: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
+	8,  // 21: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
+	8,  // 22: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
+	13, // 23: admin.Admin.GetRetention:output_type -> admin.Retention
+	13, // 24: admin.Admin.SetRetention:output_type -> admin.Retention
+	17, // 25: admin.Admin.Retire:output_type -> admin.RetireResponse
+	19, // 26: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
+	21, // 27: admin.Admin.PutEscrowedKey:output_type -> admin.PutEscrowedKeyResponse
+	17, // [17:28] is the sub-list for method output_type
+	6,  // [6:17] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1227,7 +1325,7 @@ func file_admin_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_admin_proto_rawDesc), len(file_admin_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

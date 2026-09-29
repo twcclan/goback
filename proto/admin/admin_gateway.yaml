@@ -30,3 +30,6 @@ http:
       post: /v1/jobs/retire
     - selector: admin.Admin.CollectGarbage
       post: /v1/jobs/gc
+    - selector: admin.Admin.PutEscrowedKey
+      put: /v1/escrow
+      body: "*"

@@ -37,6 +37,7 @@ const (
 	Store_UndeleteSet_FullMethodName    = "/proto.Store/UndeleteSet"
 	Store_Unpin_FullMethodName          = "/proto.Store/Unpin"
 	Store_ListPins_FullMethodName       = "/proto.Store/ListPins"
+	Store_EscrowedKeys_FullMethodName   = "/proto.Store/EscrowedKeys"
 )
 
 // StoreClient is the client API for Store service.
@@ -69,6 +70,9 @@ type StoreClient interface {
 	UndeleteSet(ctx context.Context, in *UndeleteSetRequest, opts ...grpc.CallOption) (*UndeleteSetResponse, error)
 	Unpin(ctx context.Context, in *UnpinRequest, opts ...grpc.CallOption) (*UnpinResponse, error)
 	ListPins(ctx context.Context, in *ListPinsRequest, opts ...grpc.CallOption) (*ListPinsResponse, error)
+	// EscrowedKeys returns every escrowed copy of the store key the store
+	// keeps, for an agent that holds only the passphrase
+	EscrowedKeys(ctx context.Context, in *EscrowedKeysRequest, opts ...grpc.CallOption) (*EscrowedKeysResponse, error)
 }
 
 type storeClient struct {
@@ -286,6 +290,16 @@ func (c *storeClient) ListPins(ctx context.Context, in *ListPinsRequest, opts ..
 	return out, nil
 }
 
+func (c *storeClient) EscrowedKeys(ctx context.Context, in *EscrowedKeysRequest, opts ...grpc.CallOption) (*EscrowedKeysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EscrowedKeysResponse)
+	err := c.cc.Invoke(ctx, Store_EscrowedKeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StoreServer is the server API for Store service.
 // All implementations must embed UnimplementedStoreServer
 // for forward compatibility.
@@ -316,6 +330,9 @@ type StoreServer interface {
 	UndeleteSet(context.Context, *UndeleteSetRequest) (*UndeleteSetResponse, error)
 	Unpin(context.Context, *UnpinRequest) (*UnpinResponse, error)
 	ListPins(context.Context, *ListPinsRequest) (*ListPinsResponse, error)
+	// EscrowedKeys returns every escrowed copy of the store key the store
+	// keeps, for an agent that holds only the passphrase
+	EscrowedKeys(context.Context, *EscrowedKeysRequest) (*EscrowedKeysResponse, error)
 	mustEmbedUnimplementedStoreServer()
 }
 
@@ -379,6 +396,9 @@ func (UnimplementedStoreServer) Unpin(context.Context, *UnpinRequest) (*UnpinRes
 }
 func (UnimplementedStoreServer) ListPins(context.Context, *ListPinsRequest) (*ListPinsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPins not implemented")
+}
+func (UnimplementedStoreServer) EscrowedKeys(context.Context, *EscrowedKeysRequest) (*EscrowedKeysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EscrowedKeys not implemented")
 }
 func (UnimplementedStoreServer) mustEmbedUnimplementedStoreServer() {}
 func (UnimplementedStoreServer) testEmbeddedByValue()               {}
@@ -704,6 +724,24 @@ func _Store_ListPins_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Store_EscrowedKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EscrowedKeysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).EscrowedKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_EscrowedKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).EscrowedKeys(ctx, req.(*EscrowedKeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Store_ServiceDesc is the grpc.ServiceDesc for Store service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -770,6 +808,10 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPins",
 			Handler:    _Store_ListPins_Handler,
+		},
+		{
+			MethodName: "EscrowedKeys",
+			Handler:    _Store_EscrowedKeys_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

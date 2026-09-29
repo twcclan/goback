@@ -123,7 +123,7 @@ func runNew(c *cli.Context) error {
 		Set:                c.GlobalString("set"),
 		AgentID:            common.AgentID(c),
 		Metadata:           common.Metadata(c),
-		Key:                common.StoreKey(c),
+		Key:                common.StoreKey(c, store),
 		Root:               root,
 		Include:            includeFilter(c.StringSlice("include"), c.StringSlice("exclude")),
 		Workers:            c.Int("workers"),

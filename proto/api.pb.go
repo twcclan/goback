@@ -1769,6 +1769,140 @@ func (*UnpinResponse) Descriptor() ([]byte, []int) {
 	return file_api_proto_rawDescGZIP(), []int{33}
 }
 
+// EscrowedKey is the store key escrowed under a passphrase, as goback key
+// escrow prints it; the store keeps it without being able to open it.
+type EscrowedKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Escrowed      []byte                 `protobuf:"bytes,2,opt,name=escrowed,proto3" json:"escrowed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EscrowedKey) Reset() {
+	*x = EscrowedKey{}
+	mi := &file_api_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EscrowedKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EscrowedKey) ProtoMessage() {}
+
+func (x *EscrowedKey) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EscrowedKey.ProtoReflect.Descriptor instead.
+func (*EscrowedKey) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *EscrowedKey) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *EscrowedKey) GetEscrowed() []byte {
+	if x != nil {
+		return x.Escrowed
+	}
+	return nil
+}
+
+type EscrowedKeysRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EscrowedKeysRequest) Reset() {
+	*x = EscrowedKeysRequest{}
+	mi := &file_api_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EscrowedKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EscrowedKeysRequest) ProtoMessage() {}
+
+func (x *EscrowedKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EscrowedKeysRequest.ProtoReflect.Descriptor instead.
+func (*EscrowedKeysRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{35}
+}
+
+type EscrowedKeysResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Keys          []*EscrowedKey         `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EscrowedKeysResponse) Reset() {
+	*x = EscrowedKeysResponse{}
+	mi := &file_api_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EscrowedKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EscrowedKeysResponse) ProtoMessage() {}
+
+func (x *EscrowedKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EscrowedKeysResponse.ProtoReflect.Descriptor instead.
+func (*EscrowedKeysResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *EscrowedKeysResponse) GetKeys() []*EscrowedKey {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
 type ListPinsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1777,7 +1911,7 @@ type ListPinsRequest struct {
 
 func (x *ListPinsRequest) Reset() {
 	*x = ListPinsRequest{}
-	mi := &file_api_proto_msgTypes[34]
+	mi := &file_api_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +1923,7 @@ func (x *ListPinsRequest) String() string {
 func (*ListPinsRequest) ProtoMessage() {}
 
 func (x *ListPinsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[34]
+	mi := &file_api_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +1936,7 @@ func (x *ListPinsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPinsRequest.ProtoReflect.Descriptor instead.
 func (*ListPinsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{34}
+	return file_api_proto_rawDescGZIP(), []int{37}
 }
 
 type PinInfo struct {
@@ -1819,7 +1953,7 @@ type PinInfo struct {
 
 func (x *PinInfo) Reset() {
 	*x = PinInfo{}
-	mi := &file_api_proto_msgTypes[35]
+	mi := &file_api_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1831,7 +1965,7 @@ func (x *PinInfo) String() string {
 func (*PinInfo) ProtoMessage() {}
 
 func (x *PinInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[35]
+	mi := &file_api_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1844,7 +1978,7 @@ func (x *PinInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinInfo.ProtoReflect.Descriptor instead.
 func (*PinInfo) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{35}
+	return file_api_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PinInfo) GetRef() *Ref {
@@ -1884,7 +2018,7 @@ type ListPinsResponse struct {
 
 func (x *ListPinsResponse) Reset() {
 	*x = ListPinsResponse{}
-	mi := &file_api_proto_msgTypes[36]
+	mi := &file_api_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1896,7 +2030,7 @@ func (x *ListPinsResponse) String() string {
 func (*ListPinsResponse) ProtoMessage() {}
 
 func (x *ListPinsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[36]
+	mi := &file_api_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1909,7 +2043,7 @@ func (x *ListPinsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPinsResponse.ProtoReflect.Descriptor instead.
 func (*ListPinsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{36}
+	return file_api_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListPinsResponse) GetPins() []*PinInfo {
@@ -1930,7 +2064,7 @@ type GetTreeRequest struct {
 
 func (x *GetTreeRequest) Reset() {
 	*x = GetTreeRequest{}
-	mi := &file_api_proto_msgTypes[37]
+	mi := &file_api_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2076,7 @@ func (x *GetTreeRequest) String() string {
 func (*GetTreeRequest) ProtoMessage() {}
 
 func (x *GetTreeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[37]
+	mi := &file_api_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2089,7 @@ func (x *GetTreeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTreeRequest.ProtoReflect.Descriptor instead.
 func (*GetTreeRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{37}
+	return file_api_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetTreeRequest) GetRef() *Ref {
@@ -1982,7 +2116,7 @@ type GetTreeResponse struct {
 
 func (x *GetTreeResponse) Reset() {
 	*x = GetTreeResponse{}
-	mi := &file_api_proto_msgTypes[38]
+	mi := &file_api_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1994,7 +2128,7 @@ func (x *GetTreeResponse) String() string {
 func (*GetTreeResponse) ProtoMessage() {}
 
 func (x *GetTreeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[38]
+	mi := &file_api_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2007,7 +2141,7 @@ func (x *GetTreeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTreeResponse.ProtoReflect.Descriptor instead.
 func (*GetTreeResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{38}
+	return file_api_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetTreeResponse) GetRef() *Ref {
@@ -2148,7 +2282,13 @@ const file_api_proto_rawDesc = "" +
 	"\fUnpinRequest\x12\x1c\n" +
 	"\x03pin\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03pin\"\x0f\n" +
-	"\rUnpinResponse\"\x11\n" +
+	"\rUnpinResponse\"@\n" +
+	"\vEscrowedKey\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1a\n" +
+	"\bescrowed\x18\x02 \x01(\fR\bescrowed\"\x15\n" +
+	"\x13EscrowedKeysRequest\">\n" +
+	"\x14EscrowedKeysResponse\x12&\n" +
+	"\x04keys\x18\x01 \x03(\v2\x12.proto.EscrowedKeyR\x04keys\"\x11\n" +
 	"\x0fListPinsRequest\"\xe8\x01\n" +
 	"\aPinInfo\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
@@ -2169,7 +2309,7 @@ const file_api_proto_rawDesc = "" +
 	"\x0fGetTreeResponse\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12%\n" +
-	"\x06object\x18\x02 \x01(\v2\r.proto.ObjectR\x06object2\xae\t\n" +
+	"\x06object\x18\x02 \x01(\v2\r.proto.ObjectR\x06object2\xf9\t\n" +
 	"\x05Store\x12.\n" +
 	"\x03Put\x12\x11.proto.PutRequest\x1a\x12.proto.PutResponse\"\x00\x12.\n" +
 	"\x03Get\x12\x11.proto.GetRequest\x1a\x12.proto.GetResponse\"\x00\x12?\n" +
@@ -2190,7 +2330,8 @@ const file_api_proto_rawDesc = "" +
 	"\tDeleteSet\x12\x17.proto.DeleteSetRequest\x1a\x18.proto.DeleteSetResponse\"\x00\x12F\n" +
 	"\vUndeleteSet\x12\x19.proto.UndeleteSetRequest\x1a\x1a.proto.UndeleteSetResponse\"\x00\x124\n" +
 	"\x05Unpin\x12\x13.proto.UnpinRequest\x1a\x14.proto.UnpinResponse\"\x00\x12=\n" +
-	"\bListPins\x12\x16.proto.ListPinsRequest\x1a\x17.proto.ListPinsResponse\"\x00B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\bListPins\x12\x16.proto.ListPinsRequest\x1a\x17.proto.ListPinsResponse\"\x00\x12I\n" +
+	"\fEscrowedKeys\x12\x1a.proto.EscrowedKeysRequest\x1a\x1b.proto.EscrowedKeysResponse\"\x00B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
 
 var (
 	file_api_proto_rawDescOnce sync.Once
@@ -2204,7 +2345,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_api_proto_goTypes = []any{
 	(*PutRequest)(nil),             // 0: proto.PutRequest
 	(*PutResponse)(nil),            // 1: proto.PutResponse
@@ -2240,95 +2381,101 @@ var file_api_proto_goTypes = []any{
 	(*UndeleteSetResponse)(nil),    // 31: proto.UndeleteSetResponse
 	(*UnpinRequest)(nil),           // 32: proto.UnpinRequest
 	(*UnpinResponse)(nil),          // 33: proto.UnpinResponse
-	(*ListPinsRequest)(nil),        // 34: proto.ListPinsRequest
-	(*PinInfo)(nil),                // 35: proto.PinInfo
-	(*ListPinsResponse)(nil),       // 36: proto.ListPinsResponse
-	(*GetTreeRequest)(nil),         // 37: proto.GetTreeRequest
-	(*GetTreeResponse)(nil),        // 38: proto.GetTreeResponse
-	nil,                            // 39: proto.Location.HeaderEntry
-	nil,                            // 40: proto.PinInfo.MetadataEntry
-	(*Object)(nil),                 // 41: proto.Object
-	(*Ref)(nil),                    // 42: proto.Ref
-	(*timestamppb.Timestamp)(nil),  // 43: google.protobuf.Timestamp
-	(*TreeNode)(nil),               // 44: proto.TreeNode
-	(*Commit)(nil),                 // 45: proto.Commit
-	(*PresenceFilter)(nil),         // 46: proto.PresenceFilter
+	(*EscrowedKey)(nil),            // 34: proto.EscrowedKey
+	(*EscrowedKeysRequest)(nil),    // 35: proto.EscrowedKeysRequest
+	(*EscrowedKeysResponse)(nil),   // 36: proto.EscrowedKeysResponse
+	(*ListPinsRequest)(nil),        // 37: proto.ListPinsRequest
+	(*PinInfo)(nil),                // 38: proto.PinInfo
+	(*ListPinsResponse)(nil),       // 39: proto.ListPinsResponse
+	(*GetTreeRequest)(nil),         // 40: proto.GetTreeRequest
+	(*GetTreeResponse)(nil),        // 41: proto.GetTreeResponse
+	nil,                            // 42: proto.Location.HeaderEntry
+	nil,                            // 43: proto.PinInfo.MetadataEntry
+	(*Object)(nil),                 // 44: proto.Object
+	(*Ref)(nil),                    // 45: proto.Ref
+	(*timestamppb.Timestamp)(nil),  // 46: google.protobuf.Timestamp
+	(*TreeNode)(nil),               // 47: proto.TreeNode
+	(*Commit)(nil),                 // 48: proto.Commit
+	(*PresenceFilter)(nil),         // 49: proto.PresenceFilter
 }
 var file_api_proto_depIdxs = []int32{
-	41, // 0: proto.PutRequest.object:type_name -> proto.Object
-	42, // 1: proto.PutRequest.ref:type_name -> proto.Ref
-	42, // 2: proto.PutRequest.assumed_refs:type_name -> proto.Ref
-	42, // 3: proto.PutResponse.ref:type_name -> proto.Ref
-	41, // 4: proto.PutResponse.object:type_name -> proto.Object
-	42, // 5: proto.PutResponse.missing:type_name -> proto.Ref
-	42, // 6: proto.GetRequest.ref:type_name -> proto.Ref
-	41, // 7: proto.GetResponse.object:type_name -> proto.Object
+	44, // 0: proto.PutRequest.object:type_name -> proto.Object
+	45, // 1: proto.PutRequest.ref:type_name -> proto.Ref
+	45, // 2: proto.PutRequest.assumed_refs:type_name -> proto.Ref
+	45, // 3: proto.PutResponse.ref:type_name -> proto.Ref
+	44, // 4: proto.PutResponse.object:type_name -> proto.Object
+	45, // 5: proto.PutResponse.missing:type_name -> proto.Ref
+	45, // 6: proto.GetRequest.ref:type_name -> proto.Ref
+	44, // 7: proto.GetResponse.object:type_name -> proto.Object
 	4,  // 8: proto.GetResponse.location:type_name -> proto.Location
-	39, // 9: proto.Location.header:type_name -> proto.Location.HeaderEntry
-	43, // 10: proto.Location.expires:type_name -> google.protobuf.Timestamp
-	42, // 11: proto.ReadFileRequest.ref:type_name -> proto.Ref
-	41, // 12: proto.ReadFileResponse.object:type_name -> proto.Object
-	43, // 13: proto.FileInfoRequest.notAfter:type_name -> google.protobuf.Timestamp
-	44, // 14: proto.FileInfoResponse.files:type_name -> proto.TreeNode
-	43, // 15: proto.ReadDirRequest.notAfter:type_name -> google.protobuf.Timestamp
-	44, // 16: proto.ReadDirResponse.entries:type_name -> proto.TreeNode
-	43, // 17: proto.CommitInfoRequest.notAfter:type_name -> google.protobuf.Timestamp
-	45, // 18: proto.CommitInfoResponse.commits:type_name -> proto.Commit
-	42, // 19: proto.LatestCommitResponse.ref:type_name -> proto.Ref
+	42, // 9: proto.Location.header:type_name -> proto.Location.HeaderEntry
+	46, // 10: proto.Location.expires:type_name -> google.protobuf.Timestamp
+	45, // 11: proto.ReadFileRequest.ref:type_name -> proto.Ref
+	44, // 12: proto.ReadFileResponse.object:type_name -> proto.Object
+	46, // 13: proto.FileInfoRequest.notAfter:type_name -> google.protobuf.Timestamp
+	47, // 14: proto.FileInfoResponse.files:type_name -> proto.TreeNode
+	46, // 15: proto.ReadDirRequest.notAfter:type_name -> google.protobuf.Timestamp
+	47, // 16: proto.ReadDirResponse.entries:type_name -> proto.TreeNode
+	46, // 17: proto.CommitInfoRequest.notAfter:type_name -> google.protobuf.Timestamp
+	48, // 18: proto.CommitInfoResponse.commits:type_name -> proto.Commit
+	45, // 19: proto.LatestCommitResponse.ref:type_name -> proto.Ref
 	17, // 20: proto.BeginCommitResponse.policy:type_name -> proto.StorePolicy
-	42, // 21: proto.BeginSessionRequest.restore:type_name -> proto.Ref
-	46, // 22: proto.GetPresenceResponse.filter:type_name -> proto.PresenceFilter
-	42, // 23: proto.DeleteCommitRequest.ref:type_name -> proto.Ref
-	42, // 24: proto.UndeleteCommitRequest.ref:type_name -> proto.Ref
-	42, // 25: proto.UnpinRequest.pin:type_name -> proto.Ref
-	42, // 26: proto.PinInfo.ref:type_name -> proto.Ref
-	42, // 27: proto.PinInfo.target:type_name -> proto.Ref
-	40, // 28: proto.PinInfo.metadata:type_name -> proto.PinInfo.MetadataEntry
-	35, // 29: proto.ListPinsResponse.pins:type_name -> proto.PinInfo
-	42, // 30: proto.GetTreeRequest.ref:type_name -> proto.Ref
-	42, // 31: proto.GetTreeResponse.ref:type_name -> proto.Ref
-	41, // 32: proto.GetTreeResponse.object:type_name -> proto.Object
-	0,  // 33: proto.Store.Put:input_type -> proto.PutRequest
-	2,  // 34: proto.Store.Get:input_type -> proto.GetRequest
-	5,  // 35: proto.Store.ReadFile:input_type -> proto.ReadFileRequest
-	7,  // 36: proto.Store.FileInfo:input_type -> proto.FileInfoRequest
-	9,  // 37: proto.Store.ReadDir:input_type -> proto.ReadDirRequest
-	11, // 38: proto.Store.CommitInfo:input_type -> proto.CommitInfoRequest
-	13, // 39: proto.Store.LatestCommit:input_type -> proto.LatestCommitRequest
-	37, // 40: proto.Store.GetTree:input_type -> proto.GetTreeRequest
-	15, // 41: proto.Store.BeginCommit:input_type -> proto.BeginCommitRequest
-	18, // 42: proto.Store.BeginSession:input_type -> proto.BeginSessionRequest
-	20, // 43: proto.Store.EndSession:input_type -> proto.EndSessionRequest
-	22, // 44: proto.Store.GetPresence:input_type -> proto.GetPresenceRequest
-	24, // 45: proto.Store.DeleteCommit:input_type -> proto.DeleteCommitRequest
-	26, // 46: proto.Store.UndeleteCommit:input_type -> proto.UndeleteCommitRequest
-	28, // 47: proto.Store.DeleteSet:input_type -> proto.DeleteSetRequest
-	30, // 48: proto.Store.UndeleteSet:input_type -> proto.UndeleteSetRequest
-	32, // 49: proto.Store.Unpin:input_type -> proto.UnpinRequest
-	34, // 50: proto.Store.ListPins:input_type -> proto.ListPinsRequest
-	1,  // 51: proto.Store.Put:output_type -> proto.PutResponse
-	3,  // 52: proto.Store.Get:output_type -> proto.GetResponse
-	6,  // 53: proto.Store.ReadFile:output_type -> proto.ReadFileResponse
-	8,  // 54: proto.Store.FileInfo:output_type -> proto.FileInfoResponse
-	10, // 55: proto.Store.ReadDir:output_type -> proto.ReadDirResponse
-	12, // 56: proto.Store.CommitInfo:output_type -> proto.CommitInfoResponse
-	14, // 57: proto.Store.LatestCommit:output_type -> proto.LatestCommitResponse
-	38, // 58: proto.Store.GetTree:output_type -> proto.GetTreeResponse
-	16, // 59: proto.Store.BeginCommit:output_type -> proto.BeginCommitResponse
-	19, // 60: proto.Store.BeginSession:output_type -> proto.BeginSessionResponse
-	21, // 61: proto.Store.EndSession:output_type -> proto.EndSessionResponse
-	23, // 62: proto.Store.GetPresence:output_type -> proto.GetPresenceResponse
-	25, // 63: proto.Store.DeleteCommit:output_type -> proto.DeleteCommitResponse
-	27, // 64: proto.Store.UndeleteCommit:output_type -> proto.UndeleteCommitResponse
-	29, // 65: proto.Store.DeleteSet:output_type -> proto.DeleteSetResponse
-	31, // 66: proto.Store.UndeleteSet:output_type -> proto.UndeleteSetResponse
-	33, // 67: proto.Store.Unpin:output_type -> proto.UnpinResponse
-	36, // 68: proto.Store.ListPins:output_type -> proto.ListPinsResponse
-	51, // [51:69] is the sub-list for method output_type
-	33, // [33:51] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	45, // 21: proto.BeginSessionRequest.restore:type_name -> proto.Ref
+	49, // 22: proto.GetPresenceResponse.filter:type_name -> proto.PresenceFilter
+	45, // 23: proto.DeleteCommitRequest.ref:type_name -> proto.Ref
+	45, // 24: proto.UndeleteCommitRequest.ref:type_name -> proto.Ref
+	45, // 25: proto.UnpinRequest.pin:type_name -> proto.Ref
+	34, // 26: proto.EscrowedKeysResponse.keys:type_name -> proto.EscrowedKey
+	45, // 27: proto.PinInfo.ref:type_name -> proto.Ref
+	45, // 28: proto.PinInfo.target:type_name -> proto.Ref
+	43, // 29: proto.PinInfo.metadata:type_name -> proto.PinInfo.MetadataEntry
+	38, // 30: proto.ListPinsResponse.pins:type_name -> proto.PinInfo
+	45, // 31: proto.GetTreeRequest.ref:type_name -> proto.Ref
+	45, // 32: proto.GetTreeResponse.ref:type_name -> proto.Ref
+	44, // 33: proto.GetTreeResponse.object:type_name -> proto.Object
+	0,  // 34: proto.Store.Put:input_type -> proto.PutRequest
+	2,  // 35: proto.Store.Get:input_type -> proto.GetRequest
+	5,  // 36: proto.Store.ReadFile:input_type -> proto.ReadFileRequest
+	7,  // 37: proto.Store.FileInfo:input_type -> proto.FileInfoRequest
+	9,  // 38: proto.Store.ReadDir:input_type -> proto.ReadDirRequest
+	11, // 39: proto.Store.CommitInfo:input_type -> proto.CommitInfoRequest
+	13, // 40: proto.Store.LatestCommit:input_type -> proto.LatestCommitRequest
+	40, // 41: proto.Store.GetTree:input_type -> proto.GetTreeRequest
+	15, // 42: proto.Store.BeginCommit:input_type -> proto.BeginCommitRequest
+	18, // 43: proto.Store.BeginSession:input_type -> proto.BeginSessionRequest
+	20, // 44: proto.Store.EndSession:input_type -> proto.EndSessionRequest
+	22, // 45: proto.Store.GetPresence:input_type -> proto.GetPresenceRequest
+	24, // 46: proto.Store.DeleteCommit:input_type -> proto.DeleteCommitRequest
+	26, // 47: proto.Store.UndeleteCommit:input_type -> proto.UndeleteCommitRequest
+	28, // 48: proto.Store.DeleteSet:input_type -> proto.DeleteSetRequest
+	30, // 49: proto.Store.UndeleteSet:input_type -> proto.UndeleteSetRequest
+	32, // 50: proto.Store.Unpin:input_type -> proto.UnpinRequest
+	37, // 51: proto.Store.ListPins:input_type -> proto.ListPinsRequest
+	35, // 52: proto.Store.EscrowedKeys:input_type -> proto.EscrowedKeysRequest
+	1,  // 53: proto.Store.Put:output_type -> proto.PutResponse
+	3,  // 54: proto.Store.Get:output_type -> proto.GetResponse
+	6,  // 55: proto.Store.ReadFile:output_type -> proto.ReadFileResponse
+	8,  // 56: proto.Store.FileInfo:output_type -> proto.FileInfoResponse
+	10, // 57: proto.Store.ReadDir:output_type -> proto.ReadDirResponse
+	12, // 58: proto.Store.CommitInfo:output_type -> proto.CommitInfoResponse
+	14, // 59: proto.Store.LatestCommit:output_type -> proto.LatestCommitResponse
+	41, // 60: proto.Store.GetTree:output_type -> proto.GetTreeResponse
+	16, // 61: proto.Store.BeginCommit:output_type -> proto.BeginCommitResponse
+	19, // 62: proto.Store.BeginSession:output_type -> proto.BeginSessionResponse
+	21, // 63: proto.Store.EndSession:output_type -> proto.EndSessionResponse
+	23, // 64: proto.Store.GetPresence:output_type -> proto.GetPresenceResponse
+	25, // 65: proto.Store.DeleteCommit:output_type -> proto.DeleteCommitResponse
+	27, // 66: proto.Store.UndeleteCommit:output_type -> proto.UndeleteCommitResponse
+	29, // 67: proto.Store.DeleteSet:output_type -> proto.DeleteSetResponse
+	31, // 68: proto.Store.UndeleteSet:output_type -> proto.UndeleteSetResponse
+	33, // 69: proto.Store.Unpin:output_type -> proto.UnpinResponse
+	39, // 70: proto.Store.ListPins:output_type -> proto.ListPinsResponse
+	36, // 71: proto.Store.EscrowedKeys:output_type -> proto.EscrowedKeysResponse
+	53, // [53:72] is the sub-list for method output_type
+	34, // [34:53] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -2351,7 +2498,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_rawDesc), len(file_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   41,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

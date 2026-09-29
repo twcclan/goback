@@ -69,6 +69,11 @@ func main() {
 			Usage: "store key file; names and contents are encrypted with it before upload",
 		},
 		cli.StringFlag{
+			Name:   "passphrase",
+			Usage:  "without --store-key, open the store key the store keeps escrowed under this passphrase",
+			EnvVar: "GOBACK_PASSPHRASE",
+		},
+		cli.StringFlag{
 			Name:  "at-rest-key",
 			Usage: "key file a pack:// or gcs:// store seals its archives with, from goback key at-rest; empty stores objects as received",
 		},

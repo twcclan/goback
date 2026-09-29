@@ -54,6 +54,8 @@ type Server struct {
 	// jobs; nil means the job is not available.
 	RetireJob  func(ctx context.Context) (int, error)
 	CollectJob func(ctx context.Context) (string, error)
+	// Escrow keeps the escrowed store key; nil means the store keeps none.
+	Escrow backup.KeyEscrow
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -170,6 +172,20 @@ func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyR
 	}
 
 	return m.Policy(p), nil
+}
+
+// PutEscrowedKey implements pb.AdminServer.
+func (s *Server) PutEscrowedKey(ctx context.Context, request *pb.PutEscrowedKeyRequest) (*pb.PutEscrowedKeyResponse, error) {
+	if s.Escrow == nil {
+		return nil, status.Error(codes.Unimplemented, "this store keeps no escrowed key")
+	}
+
+	err := s.Escrow.PutEscrowedKey(ctx, backup.EscrowedKey{KeyID: request.KeyId, Escrowed: []byte(request.Escrowed)})
+	if err != nil {
+		return nil, Status(err)
+	}
+
+	return &pb.PutEscrowedKeyResponse{}, nil
 }
 
 // GetRetention implements pb.AdminServer.
@@ -320,11 +336,14 @@ func Status(err error) error {
 	switch {
 	case errors.Is(err, backup.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrSetClosed), errors.Is(err, backup.ErrSetOwned):
+	case errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrSetClosed), errors.Is(err, backup.ErrSetOwned),
+		errors.Is(err, backup.ErrOtherKeyEscrowed):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, auth.ErrForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, retention.ErrInvalidPolicy):
+	case errors.Is(err, backup.ErrNotImplemented):
+		return status.Error(codes.Unimplemented, err.Error())
+	case errors.Is(err, retention.ErrInvalidPolicy), errors.Is(err, backup.ErrInvalidEscrow):
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 

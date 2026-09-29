@@ -241,7 +241,7 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, 
 		log.Fatalf("Index %T keeps no sets or policy; the admin surface needs one that does", idx)
 	}
 
-	server := &admin.Server{Index: x}
+	server := &admin.Server{Index: x, Escrow: x}
 
 	if retirer != nil {
 		server.RetireJob = func(ctx context.Context) (int, error) { return retirer.Retire(ctx, time.Now()) }

@@ -319,6 +319,26 @@ func (x *Index) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto
 	return locator.Read(ctx, ref)
 }
 
+// PutEscrowedKey implements backup.KeyEscrow when the store does.
+func (x *Index) PutEscrowedKey(ctx context.Context, key backup.EscrowedKey) error {
+	escrow, ok := storeAs[backup.KeyEscrow](x.ObjectStore)
+	if !ok {
+		return backup.ErrNotImplemented
+	}
+
+	return escrow.PutEscrowedKey(ctx, key)
+}
+
+// EscrowedKeys implements backup.KeyEscrow when the store does.
+func (x *Index) EscrowedKeys(ctx context.Context) ([]backup.EscrowedKey, error) {
+	escrow, ok := storeAs[backup.KeyEscrow](x.ObjectStore)
+	if !ok {
+		return nil, backup.ErrNotImplemented
+	}
+
+	return escrow.EscrowedKeys(ctx)
+}
+
 func (x *Index) flush() error {
 	if f, ok := x.ObjectStore.(interface{ Flush() error }); ok {
 		return f.Flush()

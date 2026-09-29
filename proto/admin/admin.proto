@@ -31,6 +31,10 @@ service Admin {
     // Retire tombstones every commit whose window has passed
     rpc Retire(RetireRequest) returns (RetireResponse) {}
     rpc CollectGarbage(CollectGarbageRequest) returns (CollectGarbageResponse) {}
+
+    // PutEscrowedKey keeps an escrowed copy of the store key in the
+    // store's own storage, never replacing one kept before
+    rpc PutEscrowedKey(PutEscrowedKeyRequest) returns (PutEscrowedKeyResponse) {}
 }
 
 message BackupSet {
@@ -152,3 +156,11 @@ message CollectGarbageRequest {}
 message CollectGarbageResponse {
     string report = 1;
 }
+
+message PutEscrowedKeyRequest {
+    string key_id = 1;
+    // the armored age file goback key escrow prints
+    string escrowed = 2;
+}
+
+message PutEscrowedKeyResponse {}

@@ -101,6 +101,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 // root archives and are visible at once.
 type PackStorage struct {
 	archiveSemaphore *semaphore.Weighted
+	escrowMtx        sync.Mutex
 	storage          ArchiveStorage
 	compaction       CompactionConfig
 	maxSize          uint64
