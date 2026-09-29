@@ -759,7 +759,7 @@ func (r *Server) EscrowedKeys(ctx context.Context, _ *proto.EscrowedKeysRequest)
 		return nil, ToStatus(err)
 	}
 
-	kept, err := escrow.EscrowedKeys(ctx)
+	kept, err := escrow.EscrowedKeys(ctx, "")
 	if err != nil {
 		return nil, ToStatus(err)
 	}

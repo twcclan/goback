@@ -180,7 +180,7 @@ func (s *Server) PutEscrowedKey(ctx context.Context, request *pb.PutEscrowedKeyR
 		return nil, status.Error(codes.Unimplemented, "this store keeps no escrowed key")
 	}
 
-	err := s.Escrow.PutEscrowedKey(ctx, backup.EscrowedKey{KeyID: request.KeyId, Escrowed: []byte(request.Escrowed)})
+	err := s.Escrow.PutEscrowedKey(ctx, "", backup.EscrowedKey{KeyID: request.KeyId, Escrowed: []byte(request.Escrowed)})
 	if err != nil {
 		return nil, Status(err)
 	}

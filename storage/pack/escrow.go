@@ -17,6 +17,8 @@ import (
 
 const (
 	escrowDir = "keys"
+	// soleOwner stands for the empty owner; it is no valid key id.
+	soleOwner = "store"
 	escrowExt = ".age"
 	// maxEscrow is far above what an escrowed key file takes up.
 	maxEscrow = 64 << 10
@@ -25,9 +27,14 @@ const (
 var _ backup.KeyEscrow = (*PackStorage)(nil)
 
 // PutEscrowedKey implements backup.KeyEscrow. Each copy is a file of its
-// own under keys/<key id>/, named by its content.
-func (ps *PackStorage) PutEscrowedKey(ctx context.Context, key backup.EscrowedKey) error {
-	err := validEscrow(key)
+// own under keys/<owner>/<key id>/, named by its content.
+func (ps *PackStorage) PutEscrowedKey(ctx context.Context, owner string, key backup.EscrowedKey) error {
+	dir, err := ownerDir(owner)
+	if err != nil {
+		return err
+	}
+
+	err = validEscrow(key)
 	if err != nil {
 		return err
 	}
@@ -35,7 +42,7 @@ func (ps *PackStorage) PutEscrowedKey(ctx context.Context, key backup.EscrowedKe
 	ps.escrowMtx.Lock()
 	defer ps.escrowMtx.Unlock()
 
-	kept, err := ps.EscrowedKeys(ctx)
+	kept, err := ps.EscrowedKeys(ctx, owner)
 	if err != nil {
 		return err
 	}
@@ -52,7 +59,7 @@ func (ps *PackStorage) PutEscrowedKey(ctx context.Context, key backup.EscrowedKe
 
 	sum := sha256.Sum256(key.Escrowed)
 
-	f, err := ps.storage.Create(path.Join(escrowDir, key.KeyID, hex.EncodeToString(sum[:8])+escrowExt))
+	f, err := ps.storage.Create(path.Join(dir, key.KeyID, hex.EncodeToString(sum[:8])+escrowExt))
 	if err != nil {
 		return err
 	}
@@ -64,6 +71,20 @@ func (ps *PackStorage) PutEscrowedKey(ctx context.Context, key backup.EscrowedKe
 	}
 
 	return f.Close()
+}
+
+func ownerDir(owner string) (string, error) {
+	if owner == "" {
+		owner = soleOwner
+	}
+
+	for _, r := range owner {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return "", fmt.Errorf("%w: owner %q", backup.ErrInvalidEscrow, owner)
+		}
+	}
+
+	return path.Join(escrowDir, owner), nil
 }
 
 func validEscrow(key backup.EscrowedKey) error {
@@ -79,7 +100,12 @@ func validEscrow(key backup.EscrowedKey) error {
 }
 
 // EscrowedKeys implements backup.KeyEscrow.
-func (ps *PackStorage) EscrowedKeys(context.Context) ([]backup.EscrowedKey, error) {
+func (ps *PackStorage) EscrowedKeys(_ context.Context, owner string) ([]backup.EscrowedKey, error) {
+	dir, err := ownerDir(owner)
+	if err != nil {
+		return nil, err
+	}
+
 	names, err := ps.storage.List(escrowExt)
 	if err != nil {
 		return nil, err
@@ -89,7 +115,7 @@ func (ps *PackStorage) EscrowedKeys(context.Context) ([]backup.EscrowedKey, erro
 
 	for _, name := range names {
 		name = path.Clean(strings.ReplaceAll(name, "\\", "/"))
-		if !strings.HasPrefix(name, escrowDir+"/") {
+		if path.Dir(path.Dir(name)) != dir {
 			continue
 		}
 
