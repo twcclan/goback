@@ -118,6 +118,29 @@ func (k *AtRestKey) Save(path string) error {
 	return os.WriteFile(path, buf.Bytes(), 0o600)
 }
 
+// Wrap returns the keyset sealed under kek, a key-encryption key such as
+// one held in a KMS, bound to ad; UnwrapAtRestKey reverses it.
+func (k *AtRestKey) Wrap(kek tink.AEAD, ad []byte) ([]byte, error) {
+	var buf bytes.Buffer
+
+	err := k.handle.WriteWithAssociatedData(keyset.NewBinaryWriter(&buf), kek, ad)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// UnwrapAtRestKey opens a keyset Wrap sealed under kek with ad.
+func UnwrapAtRestKey(wrapped []byte, kek tink.AEAD, ad []byte) (*AtRestKey, error) {
+	h, err := keyset.ReadWithAssociatedData(keyset.NewBinaryReader(bytes.NewReader(wrapped)), kek, ad)
+	if err != nil {
+		return nil, fmt.Errorf("unwrapping the at-rest key: %w", err)
+	}
+
+	return NewAtRestKey(h)
+}
+
 // Rotate returns the keyset with a fresh primary key; the keys it held
 // still open what they sealed.
 func (k *AtRestKey) Rotate() (*AtRestKey, error) {
