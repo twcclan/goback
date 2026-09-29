@@ -325,10 +325,28 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	ps.touchSession(ws)
 
 	if object.Type() == proto.ObjectType_COMMIT {
-		return ps.commit(ws)
+		err := ps.commit(ws)
+		if err != nil {
+			ps.refuse(ctx, ws, object.Ref(), err)
+		}
+
+		return err
 	}
 
 	return nil
+}
+
+// refuse tombstones a commit that failed after its record was written, so
+// the record stays dead even where a rebuild without the index would find
+// it in an archive. The tombstone goes beside the record, in the session's
+// own archive, so the two are kept or dropped together.
+func (ps *PackStorage) refuse(ctx context.Context, ws *writeSession, ref *proto.Ref, cause error) {
+	err := ps.withWritableArchive(ctx, ws, func(a *archive) error {
+		return a.putTombstone(ctx, ref, false)
+	})
+	if err != nil {
+		ps.logger.Warn("tombstoning a refused commit failed", "commit", fmt.Sprintf("%x", ref.GetHash()), "cause", cause, "err", err)
+	}
 }
 
 // commit makes everything the session wrote durable and visible: its open

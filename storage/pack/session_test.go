@@ -439,8 +439,9 @@ func (f *failingIndex) FinalizeArchive(name string, within time.Duration) error 
 // index an archive and expects the session's commit to fail rather than
 // acknowledge objects no index knows.
 func TestCommitRefusesASessionThatLostAnArchive(t *testing.T) {
+	base := t.TempDir()
 	index := &failingIndex{InMemoryIndex: NewInMemoryIndex()}
-	store := newTestStore(t, t.TempDir(), WithArchiveIndex(index), WithIdleFinalize(time.Hour))
+	store := newTestStore(t, base, WithArchiveIndex(index), WithIdleFinalize(time.Hour))
 
 	ctx, session := beginSession(t, store, "agent-a")
 	require.NoError(t, store.Put(ctx, makeTestData(t, 1)[0]))
@@ -451,10 +452,23 @@ func TestCommitRefusesASessionThatLostAnArchive(t *testing.T) {
 	ws := store.lookupWriteSession(session.ID)
 	require.Nil(t, ws.archive, "the sweep finalized the archive")
 
-	err := store.Put(ctx, commitObject())
+	commit := commitObject()
+	err := store.Put(ctx, commit)
 	require.ErrorContains(t, err, "lost an archive")
 
+	// the refused record is written already; its tombstone keeps a rebuild
+	// without the index from taking it for a commit
 	require.NoError(t, store.Close())
+
+	rebuilt := newTestStore(t, base, WithArchiveIndex(NewInMemoryIndex()))
+	t.Cleanup(func() { _ = rebuilt.Close() })
+
+	var dead bool
+	require.NoError(t, rebuilt.WalkHeaders(context.Background(), proto.ObjectType_TOMBSTONE, func(hdr *proto.ObjectHeader) error {
+		dead = dead || hdr.GetTombstoneFor().Equal(commit.Ref())
+		return nil
+	}))
+	require.True(t, dead)
 }
 
 func TestWritesToAnEndedSessionAreRefused(t *testing.T) {
