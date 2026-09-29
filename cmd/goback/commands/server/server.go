@@ -15,6 +15,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/cmd/goback/commands/gc"
+	"github.com/twcclan/goback/health"
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
@@ -138,11 +139,14 @@ func serverAction(ctx *cli.Context) {
 	srv := grpc.NewServer(
 		grpc.Creds(creds),
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithPublicEndpoint())),
-		grpc.ChainUnaryInterceptor(auth.UnaryInterceptor(secret), remote.UnaryInterceptor()),
-		grpc.ChainStreamInterceptor(auth.StreamInterceptor(secret), remote.StreamInterceptor()),
+		grpc.ChainUnaryInterceptor(health.Unary(auth.UnaryInterceptor(secret), remote.UnaryInterceptor())),
+		grpc.ChainStreamInterceptor(health.Stream(auth.StreamInterceptor(secret), remote.StreamInterceptor())),
 	)
 
 	proto.RegisterStoreServer(srv, remote)
+
+	probe := &health.Probe{}
+	probe.Register(srv)
 
 	base := common.Unwrap(s)
 	retirer, _ := idx.(backup.Retirer)
@@ -164,7 +168,7 @@ func serverAction(ctx *cli.Context) {
 	go runner.Run(context.Background())
 
 	if addr := ctx.String("admin-address"); addr != "" {
-		serveAdmin(addr, ctx.String("admin-token"), tlsConfig, idx, retirer, collector)
+		serveAdmin(addr, ctx.String("admin-token"), tlsConfig, probe, idx, retirer, collector)
 	}
 
 	log.Println("Listening on", listener.Addr().String())
@@ -227,7 +231,7 @@ func transportCredentials(ctx *cli.Context) (credentials.TransportCredentials, *
 
 // serveAdmin starts the operator surface on addr with the main listener's
 // TLS material.
-func serveAdmin(addr, token string, tlsConfig *tls.Config, idx backup.Index, retirer backup.Retirer, collector pack.Collector) {
+func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, idx backup.Index, retirer backup.Retirer, collector pack.Collector) {
 	if token == "" {
 		log.Fatal("--admin-token is required with --admin-address")
 	}
@@ -270,6 +274,6 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, idx backup.Index, ret
 	log.Println("Admin surface listening on", listener.Addr().String())
 
 	go func() {
-		log.Fatal(admin.NewHTTPServer(admin.Handler(token, server)).Serve(listener))
+		log.Fatal(admin.NewHTTPServer(probe.Handler(admin.Handler(token, server))).Serve(listener))
 	}()
 }
