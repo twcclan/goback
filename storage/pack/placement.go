@@ -96,6 +96,9 @@ type SessionIndex interface {
 	// EndSession drops the session and its uncommitted archives, returning
 	// the names of the archives dropped.
 	EndSession(id string) ([]string, error)
+	// PendingArchives names the session's archives that a commit would
+	// make committed.
+	PendingArchives(id string) ([]string, error)
 	// CommitSession flips the session's pending archives to committed and
 	// forgets its lost ones.
 	CommitSession(id string) error

@@ -70,6 +70,13 @@ func TestArchiveIndexSessions(t *testing.T, idx pack.ArchiveIndex) {
 	_, err = idx.LocateObject(committedRef, pack.Scope{})
 	require.NoError(t, err)
 
+	names, err := idx.PendingArchives(session.ID)
+	require.NoError(t, err)
+	require.Equal(t, []string{pendingName}, names, "a commit would make the pending archive committed")
+	names, err = idx.PendingArchives(other.ID)
+	require.NoError(t, err)
+	require.Empty(t, names)
+
 	require.ErrorIs(t, idx.CommitSession("nope"), backup.ErrNoSession, "a session the index does not hold cannot commit")
 	require.NoError(t, idx.CommitSession(session.ID))
 
@@ -79,6 +86,9 @@ func TestArchiveIndexSessions(t *testing.T, idx pack.ArchiveIndex) {
 	require.NoError(t, err)
 	require.Equal(t, pack.ArchiveCommitted, info.State)
 	require.Empty(t, info.Session)
+	names, err = idx.PendingArchives(session.ID)
+	require.NoError(t, err)
+	require.Empty(t, names, "nothing is pending once committed")
 
 	// a second pending archive of the same session, then abort
 	second := RandomArchive(20)

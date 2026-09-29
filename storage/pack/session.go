@@ -2,6 +2,7 @@ package pack
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -147,6 +148,15 @@ func (ps *PackStorage) endSession(id string) error {
 		}
 		ps.mtx.RUnlock()
 
+		// an index restored from before the commit still has the archive
+		// pending; the marker says otherwise, and the marker wins
+		if ps.markedCommitted(name) {
+			ps.logger.Warn("keeping an archive the index had pending, which a commit marked committed", "archive", name, "session", id)
+			ps.adoptArchive(name, loaded)
+
+			continue
+		}
+
 		if loaded != nil {
 			ps.dropArchive(loaded)
 		} else {
@@ -155,6 +165,22 @@ func (ps *PackStorage) endSession(id string) error {
 	}
 
 	return nil
+}
+
+// adoptArchive indexes an archive the index let go of as committed.
+func (ps *PackStorage) adoptArchive(name string, loaded *archive) {
+	if loaded != nil {
+		ps.mtx.Lock()
+		ps.archives = slices.DeleteFunc(ps.archives, func(a *archive) bool { return a == loaded })
+		ps.mtx.Unlock()
+
+		_ = loaded.Close()
+	}
+
+	_, err := ps.openArchive(name)
+	if err != nil {
+		ps.logger.Error("indexing an archive a commit marked committed failed; it stays in the storage", "archive", name, "err", err)
+	}
 }
 
 // writeSessionFor returns the session of the context, or the root session.

@@ -26,6 +26,10 @@ const (
 	indexOpenerThreads = 10
 	ArchiveSuffix      = ".goback"
 	IndexExt           = ".idx"
+	// CommittedExt marks an archive of a session that a commit made
+	// committed. It is written before the index is told, so the storage
+	// alone says which session archives are committed.
+	CommittedExt = ".committed"
 	varIntMaxSize      = 10
 )
 
@@ -350,6 +354,11 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 		if err := ps.settle(ws.id); err != nil {
 			return err
 		}
+	}
+
+	err = ps.markCommitted(ws.id)
+	if err != nil {
+		return err
 	}
 
 	err = ps.index.CommitSession(ws.id)
@@ -793,6 +802,47 @@ func (ps *PackStorage) archiveStored(a *archive, bytes int64) {
 	}
 }
 
+// markCommitted writes the committed marker of every archive the session
+// is about to commit.
+func (ps *PackStorage) markCommitted(session string) error {
+	pending, err := ps.index.PendingArchives(session)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range pending {
+		f, err := ps.storage.Create(name + CommittedExt)
+		if err != nil {
+			return fmt.Errorf("marking archive %s committed: %w", name, err)
+		}
+
+		_, err = f.Write([]byte(session))
+		if err == nil {
+			err = f.Close()
+		} else {
+			_ = f.Close()
+		}
+
+		if err != nil {
+			return fmt.Errorf("marking archive %s committed: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// markedCommitted reports whether a commit marked the archive committed.
+func (ps *PackStorage) markedCommitted(name string) bool {
+	file, err := ps.storage.Open(name + CommittedExt)
+	if err != nil {
+		return false
+	}
+
+	_ = file.Close()
+
+	return true
+}
+
 func (ps *PackStorage) deleteArchiveFiles(name string) {
 	err := ps.storage.Delete(name + IndexExt)
 	if err != nil && !notExist(err) {
@@ -812,6 +862,11 @@ func (ps *PackStorage) deleteArchiveFiles(name string) {
 	if err != nil && !notExist(err) {
 		ps.logger.Warn("deleting gc result failed", "archive", name, "err", err)
 	}
+
+	err = ps.storage.Delete(name + CommittedExt)
+	if err != nil && !notExist(err) {
+		ps.logger.Warn("deleting committed marker failed", "archive", name, "err", err)
+	}
 }
 
 // openArchive loads a finalized archive. One the index does not know is
@@ -823,7 +878,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		return nil, err
 	}
 
-	if !known && ParsePlacement(name).Session != "" && !ps.hasIndexFile(name) {
+	if !known && ParsePlacement(name).Session != "" && !ps.hasIndexFile(name) && !ps.markedCommitted(name) {
 		ps.logger.Info("deleting archive of an unfinished session", "archive", name)
 		ps.deleteArchiveFiles(name)
 

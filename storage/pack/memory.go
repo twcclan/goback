@@ -202,6 +202,21 @@ func (i *InMemoryIndex) EndSession(id string) ([]string, error) {
 	return dropped, nil
 }
 
+// PendingArchives implements SessionIndex.
+func (i *InMemoryIndex) PendingArchives(id string) ([]string, error) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	var names []string
+	for name, info := range i.archives {
+		if info.Session == id && info.State == ArchivePending {
+			names = append(names, name)
+		}
+	}
+
+	return names, nil
+}
+
 // CommitSession implements SessionIndex.
 func (i *InMemoryIndex) CommitSession(id string) error {
 	i.mtx.Lock()

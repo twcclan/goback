@@ -366,6 +366,10 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 		require.Empty(t, ParsePlacement(name).Session, "session archives are merged away: %s", name)
 	}
 
+	markers, err := store.storage.List(CommittedExt)
+	require.NoError(t, err)
+	require.Empty(t, markers, "the markers go with the archives they marked")
+
 	// a second run finds every object in place
 	require.NoError(t, store.doCompaction())
 	require.Equal(t, merged, inSession(t, store, all...))

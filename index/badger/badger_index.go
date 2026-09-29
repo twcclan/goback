@@ -643,6 +643,16 @@ func (b *BadgerIndex) EndSession(id string) ([]string, error) {
 	})
 }
 
+// PendingArchives implements pack.SessionIndex.
+func (b *BadgerIndex) PendingArchives(id string) ([]string, error) {
+	var names []string
+	for _, info := range b.pendingArchives(id) {
+		names = append(names, info.Name)
+	}
+
+	return names, nil
+}
+
 // CommitSession implements pack.SessionIndex: the session must still be
 // live, then its pending archives become committed.
 func (b *BadgerIndex) CommitSession(id string) error {

@@ -201,6 +201,11 @@ func (x *Index) EndSession(id string) ([]string, error) {
 	return dropped, err
 }
 
+// PendingArchives implements pack.SessionIndex.
+func (x *Index) PendingArchives(id string) ([]string, error) {
+	return x.client.Archive.Query().Where(archive.SessionID(id), archive.State(int(pack.ArchivePending))).IDs(context.Background())
+}
+
 // CommitSession implements pack.SessionIndex: the session must still be
 // live, then its pending archives become committed and its lost ones go.
 func (x *Index) CommitSession(id string) error {
