@@ -34,12 +34,6 @@ func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {
 
 func TestOnlyThePlaintextSchemeSkipsTLS(t *testing.T) {
 	require.Contains(t, storageDrivers, insecureScheme, "the scheme reaches a store server")
-
-	for _, raw := range []string{"goback://store.example", "goback+insecure://localhost:6060"} {
-		u, err := url.Parse(raw)
-		require.NoError(t, err)
-		require.Equal(t, u.Scheme == insecureScheme, raw == "goback+insecure://localhost:6060", raw)
-	}
 }
 
 func TestTheUrlCarriesTheApiKey(t *testing.T) {

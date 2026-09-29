@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"math/rand"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -37,10 +36,4 @@ func TestIndex(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, idx, newIdx)
-}
-
-func TestIndexSize(t *testing.T) {
-	rec := IndexRecord{}
-
-	t.Logf("index record size: %d", unsafe.Sizeof(rec))
 }

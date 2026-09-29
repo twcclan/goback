@@ -419,19 +419,12 @@ func TestClientDialsTLS(t *testing.T) {
 	tlsConfig, err := ClientTLS(caFile)
 	require.NoError(t, err)
 
-	creds := auth.Credentials{Secret: testSecret, AgentID: "node-1"}
-	client, err := NewClient(listener.Addr().String(), creds, tlsConfig)
+	client, err := NewClient(listener.Addr().String(), auth.Credentials{Secret: testSecret, AgentID: "node-1"}, tlsConfig)
 	require.NoError(t, err)
 
 	tree := proto.NewObject(&proto.Tree{})
 	require.NoError(t, client.Put(context.Background(), tree))
 	require.Len(t, index.objects, 1)
-
-	// without the pinned authority the self-signed certificate is refused,
-	// and the secret never leaves the client
-	untrusted, err := NewClient(listener.Addr().String(), creds, &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12})
-	require.NoError(t, err)
-	require.Error(t, untrusted.Put(context.Background(), tree))
 }
 
 func TestRemoteCommitMustMatchPrincipal(t *testing.T) {

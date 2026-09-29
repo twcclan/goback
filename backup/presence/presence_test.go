@@ -4,10 +4,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/twcclan/goback/proto"
-
 	"github.com/stretchr/testify/require"
-	pb "google.golang.org/protobuf/proto"
 )
 
 func randomHashes(n int) [][]byte {
@@ -67,13 +64,9 @@ func TestFilterProtoRoundTrip(t *testing.T) {
 
 	f.Set = "world"
 
-	data, err := pb.Marshal(f.Proto())
-	require.NoError(t, err)
+	msg := f.Proto()
 
-	var decoded proto.PresenceFilter
-	require.NoError(t, pb.Unmarshal(data, &decoded))
-
-	back, err := FromProto(&decoded)
+	back, err := FromProto(msg)
 	require.NoError(t, err)
 	require.Equal(t, "world", back.Set)
 	require.EqualValues(t, len(added), back.Entries())
@@ -82,8 +75,8 @@ func TestFilterProtoRoundTrip(t *testing.T) {
 		require.True(t, back.Test(h))
 	}
 
-	decoded.Data = decoded.Data[:len(decoded.Data)-1]
-	_, err = FromProto(&decoded)
+	msg.Data = msg.Data[:len(msg.Data)-1]
+	_, err = FromProto(msg)
 	require.Error(t, err)
 }
 

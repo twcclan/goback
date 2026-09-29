@@ -3,7 +3,6 @@ package hooks
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"os/exec"
 	"runtime"
@@ -83,5 +82,4 @@ func TestEmptyHooksAreNoOps(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, out)
 	require.NoError(t, r.RunPost(context.Background()))
-	require.False(t, errors.Is(err, context.Canceled))
 }
