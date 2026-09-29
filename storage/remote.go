@@ -32,7 +32,7 @@ import (
 // on every call. A nil tlsConfig trusts the system roots; see ClientTLS
 // for a pinned certificate authority.
 func NewClient(addr string, creds auth.Credentials, tlsConfig *tls.Config) (*Client, error) {
-	return dialStore(addr, creds, credentials.NewTLS(tlsConfig))
+	return dialStore(addr, creds, credentials.NewTLS(tlsConfig), true)
 }
 
 // NewPlaintextClient connects to a store server without TLS, putting the
@@ -44,13 +44,16 @@ func NewPlaintextClient(addr string, creds auth.Credentials) (*Client, error) {
 		return nil, errors.New("plaintext credentials are required to dial a store without TLS")
 	}
 
-	return dialStore(addr, creds, insecure.NewCredentials())
+	return dialStore(addr, creds, insecure.NewCredentials(), false)
 }
 
-func dialStore(addr string, creds auth.Credentials, transport credentials.TransportCredentials) (*Client, error) {
+func dialStore(addr string, creds auth.Credentials, transport credentials.TransportCredentials, secure bool) (*Client, error) {
+	jar := newCookies(addr, secure)
 	con, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(transport),
 		grpc.WithPerRPCCredentials(creds),
+		grpc.WithUnaryInterceptor(jar.unary()),
+		grpc.WithStreamInterceptor(jar.stream()),
 	)
 	if err != nil {
 		return nil, err
