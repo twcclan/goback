@@ -130,6 +130,7 @@ func runNew(c *cli.Context) error {
 		ForceHashPercent:   c.Int("force-hash"),
 		CheckpointInterval: c.Duration("checkpoint-interval"),
 		ReadRetries:        c.Int("read-retries"),
+		LostRetries:        c.Int("lost-retries"),
 		PrefetchDepth:      2,
 		ProgressInterval:   c.Duration("progress-interval"),
 		ScanWorkers:        c.Int("scan-workers"),
@@ -245,6 +246,11 @@ var newCmd = cli.Command{
 			Name:  "read-retries",
 			Usage: "how often to re-read a file that changes while it is being read",
 			Value: 3,
+		},
+		cli.IntFlag{
+			Name:  "lost-retries",
+			Usage: "how often to walk again when the store lost objects of the run before its commit; 0 fails the run instead",
+			Value: 1,
 		},
 		cli.DurationFlag{
 			Name:  "progress-interval",

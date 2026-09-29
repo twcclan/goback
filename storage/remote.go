@@ -257,6 +257,10 @@ func (r *Client) put(ctx context.Context, object *proto.Object, assumed []*proto
 		return nil, fmt.Errorf("%w: %s", backup.ErrDanglingRef, msg)
 	}
 
+	if status.Code(err) == codes.Aborted {
+		return nil, fmt.Errorf("%w: %s", backup.ErrSessionLost, status.Convert(err).Message())
+	}
+
 	if err != nil {
 		return nil, err
 	}

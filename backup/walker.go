@@ -82,6 +82,10 @@ type Walker struct {
 	CheckpointInterval time.Duration
 	ReadRetries        int
 
+	// LostRetries is how often a commit refused with ErrSessionLost is
+	// retried by walking again in the same session.
+	LostRetries int
+
 	// ScanWorkers is how many directories are listed ahead of the walk at
 	// once; zero means DefaultScanWorkers and a negative number lists every
 	// directory on the walk itself.
@@ -251,22 +255,6 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 
 	w.gate = syncutil.NewGate(w.Workers)
 	w.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-	w.started = w.now()
-	w.last = w.started
-	w.scanStart = w.started.UnixNano()
-	w.result = WalkResult{}
-	w.sent = newSentSet()
-
-	workers := w.ScanWorkers
-	if workers == 0 {
-		workers = DefaultScanWorkers
-	}
-
-	w.scan = newScanner(ctx, w, max(workers, 0), w.ScanWindow)
-	defer w.scan.close()
-
-	stopProgress := w.reportProgress()
-	defer stopProgress()
 
 	if gate, ok := w.Index.(CommitGate); ok {
 		grant, err := gate.BeginCommit(ctx, w.Set)
@@ -307,6 +295,37 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 			}
 		}()
 	}
+
+	for retry := 0; ; retry++ {
+		result, err := w.walk(ctx)
+		if !errors.Is(err, ErrSessionLost) || retry >= w.LostRetries {
+			return result, err
+		}
+
+		// the session's other uploads still count, so walking again in it
+		// uploads only what was lost
+		w.logger().Warn("the store lost objects of this run, walking again", "err", err, "retry", retry+1)
+	}
+}
+
+// walk is one attempt at the commit within the run's session.
+func (w *Walker) walk(ctx context.Context) (*WalkResult, error) {
+	w.started = w.now()
+	w.last = w.started
+	w.scanStart = w.started.UnixNano()
+	w.result = WalkResult{}
+	w.sent = newSentSet()
+
+	workers := w.ScanWorkers
+	if workers == 0 {
+		workers = DefaultScanWorkers
+	}
+
+	w.scan = newScanner(ctx, w, max(workers, 0), w.ScanWindow)
+	defer w.scan.close()
+
+	stopProgress := w.reportProgress()
+	defer stopProgress()
 
 	w.loadPresence(ctx)
 
