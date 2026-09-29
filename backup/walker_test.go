@@ -444,7 +444,7 @@ func TestWalkerUnchangedRunUploadsOnlyTheCommit(t *testing.T) {
 
 func TestWalkerChangedFileRewritesOnlyItsPath(t *testing.T) {
 	f := newWalkerFixture(t)
-	big := f.random(200 << 10)
+	big := f.random(2 << 20)
 	f.write("sub/b.bin", big)
 	f.write("sub/deep/c.txt", []byte("deep"))
 	f.write("other/d.txt", []byte("other"))
