@@ -395,7 +395,10 @@ func (x *Index) Lost(id string) ([]*proto.Ref, error) {
 	ctx := context.Background()
 
 	lostRows, err := x.client.Object.Query().
-		Where(object.HasArchiveWith(archive.SessionID(id), archive.State(int(pack.ArchiveLost)))).
+		Where(
+			object.HasArchiveWith(archive.SessionID(id), archive.State(int(pack.ArchiveLost))),
+			object.TypeNEQ(uint32(proto.ObjectType_COMMIT)),
+		).
 		All(ctx)
 	if err != nil {
 		return nil, err

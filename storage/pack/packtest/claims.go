@@ -79,7 +79,8 @@ func TestClaimIndex(t *testing.T, idx ClaimingIndex) {
 
 	stray := RandomArchive(5)
 	require.NoError(t, idx.OpenArchive(stray.name, session.ID))
-	require.NoError(t, idx.AddObjects(stray.name, append(stray.index, open.index[0])))
+	refused := pack.IndexRecord{Sum: RandomIndexFile(1)[0].Sum, Type: uint32(proto.ObjectType_COMMIT)}
+	require.NoError(t, idx.AddObjects(stray.name, append(stray.index, open.index[0], refused)))
 
 	abandoned, err := idx.Abandon(stray.name, time.Hour)
 	require.NoError(t, err)
@@ -104,7 +105,7 @@ func TestClaimIndex(t *testing.T, idx ClaimingIndex) {
 
 	lost, err := idx.Lost(session.ID)
 	require.NoError(t, err)
-	require.ElementsMatch(t, refs(stray.index), lost, "what the pending archive also has is not lost")
+	require.ElementsMatch(t, refs(stray.index), lost, "what the pending archive also has is not lost, nor the refused commit")
 
 	lost, err = idx.Lost(other.ID)
 	require.NoError(t, err)

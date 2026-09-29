@@ -121,6 +121,53 @@ func TestACommitRefusesWhatALapsedArchiveHeldUntilItIsStoredAgain(t *testing.T) 
 	require.Equal(t, blob.Bytes(), got.Bytes())
 }
 
+func TestACommitOnTheProcessWhoseOwnArchiveLapsedRefusesWhatItHeld(t *testing.T) {
+	a, _, at := twoProcesses(t, WithClaims(time.Hour, time.Minute))
+
+	ctx, _ := beginSession(t, a, "agent")
+	blob := makeTestData(t, 1)[0]
+	require.NoError(t, a.Put(ctx, blob))
+
+	at.add(2 * time.Hour)
+
+	require.ErrorIs(t, a.Put(ctx, commitObject()), backup.ErrSessionLost)
+
+	has, err := a.Has(ctx, blob.Ref())
+	require.NoError(t, err)
+	require.False(t, has, "the process forgets what its lapsed archive held")
+
+	require.NoError(t, a.Put(ctx, blob))
+	require.NoError(t, a.Put(ctx, commitObject()))
+}
+
+func TestAWriteToAnArchiveACommitElsewhereGaveUpIsRefusedAsLost(t *testing.T) {
+	a, b, at := twoProcesses(t, WithClaims(time.Hour, time.Minute))
+
+	ctx, _ := beginSession(t, a, "agent")
+	objects := makeTestData(t, 2)
+	require.NoError(t, a.Put(ctx, objects[0]))
+
+	at.add(2 * time.Hour)
+	require.ErrorIs(t, b.Put(ctx, commitObject()), backup.ErrSessionLost)
+
+	require.ErrorIs(t, a.Put(ctx, objects[1]), backup.ErrSessionLost, "a wakes up writing an archive that is gone")
+
+	has, err := a.Has(ctx, objects[0].Ref())
+	require.NoError(t, err)
+	require.False(t, has, "and forgets what it held")
+
+	for _, obj := range objects {
+		require.NoError(t, a.Put(ctx, obj))
+	}
+
+	require.NoError(t, a.Flush())
+	require.NoError(t, b.Put(ctx, commitObject()))
+
+	for _, obj := range objects {
+		requireVisible(t, b, t.Context(), obj, true)
+	}
+}
+
 func TestAnArchiveIsFinalizedOnceItHasBeenOpenForAsLongAsItMayBe(t *testing.T) {
 	a, b, _ := twoProcesses(t, WithClaims(100*time.Millisecond, time.Hour))
 

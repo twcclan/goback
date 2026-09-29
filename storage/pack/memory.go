@@ -395,8 +395,8 @@ func (i *InMemoryIndex) Lost(session string) ([]*proto.Ref, error) {
 			continue
 		}
 
-		for sum := range i.index[name] {
-			if seen[sum] || held(sum) {
+		for sum, record := range i.index[name] {
+			if record.Type == uint32(proto.ObjectType_COMMIT) || seen[sum] || held(sum) {
 				continue
 			}
 

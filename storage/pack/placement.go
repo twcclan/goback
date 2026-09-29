@@ -135,6 +135,7 @@ type ClaimIndex interface {
 	// within ago, and reports whether it did.
 	Abandon(name string, within time.Duration) (bool, error)
 	// Lost lists the objects the session's lost archives held that none of
-	// its pending archives and no committed archive holds.
+	// its pending archives and no committed archive holds, leaving out
+	// commits, which belong to the commit that was refused.
 	Lost(session string) ([]*proto.Ref, error)
 }

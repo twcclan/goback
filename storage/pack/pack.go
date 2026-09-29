@@ -281,7 +281,7 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	}
 
 	var (
-		rows    *rowWriter
+		claimed *archive
 		indexed chan error
 	)
 
@@ -297,7 +297,7 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 		// finds the row queued and writes it first
 		if a.rows != nil {
 			if record := a.indexLocation(object.Ref()); record != nil {
-				rows, indexed = a.rows, a.rows.enqueue(*record)
+				claimed, indexed = a, a.rows.enqueue(*record)
 			}
 		}
 
@@ -309,8 +309,17 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	}
 
 	// another process can only rely on the object once its row is in
-	if rows != nil {
-		if err := rows.wait(indexed); err != nil {
+	if claimed != nil {
+		err := claimed.rows.wait(indexed)
+		if lapsed(err) {
+			// a commit elsewhere gave the archive up while this process
+			// was still writing it
+			_ = ps.finalizeArchive(claimed)
+
+			return fmt.Errorf("%w: %w", backup.ErrSessionLost, err)
+		}
+
+		if err != nil {
 			return err
 		}
 	}
@@ -333,8 +342,9 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 		return fmt.Errorf("session %s lost an archive: %w", ws.id, err)
 	}
 
+	// an archive of ours that lapsed is lost now, which settle answers for
 	err := ps.flushSession(ws)
-	if err != nil {
+	if err != nil && !lapsed(err) {
 		return err
 	}
 
