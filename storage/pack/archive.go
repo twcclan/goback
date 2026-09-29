@@ -95,6 +95,10 @@ type archive struct {
 	rows    *rowWriter
 	opened  time.Time
 	closing *time.Timer
+
+	// stored, when set, is told the bytes the archive and its index take
+	// up in the storage once the writer has put both there
+	stored func(a *archive, bytes int64)
 }
 
 // newArchive opens a writable archive named by a fresh uuid under dir,
@@ -152,7 +156,9 @@ func (a *archive) recoverIndex(err error) (IndexFile, error) {
 
 	a.logger.Info("recovered index", "archive", a.name, "records", len(recoveredIndex))
 
-	return recoveredIndex, a.storeReadIndex(recoveredIndex)
+	_, err = a.storeReadIndex(recoveredIndex)
+
+	return recoveredIndex, err
 }
 
 func (a *archive) getIndex() (IndexFile, error) {
@@ -620,30 +626,34 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 	return a.foreachReader(file, load, callback)
 }
 
-func (a *archive) storeReadIndex(idx IndexFile) error {
+// storeReadIndex writes idx as the archive's index file and returns the
+// bytes it took.
+func (a *archive) storeReadIndex(idx IndexFile) (int64, error) {
 	sort.Sort(idx)
 
 	idxFile, err := a.storage.Create(a.indexName())
 	if err != nil {
-		return errors.Wrap(err, "Failed creating index file")
+		return 0, errors.Wrap(err, "Failed creating index file")
 	}
 
-	_, err = idx.WriteTo(idxFile)
+	n, err := idx.WriteTo(idxFile)
 	if err != nil {
-		return errors.Wrap(err, "Couldn't encode index file")
+		return 0, errors.Wrap(err, "Couldn't encode index file")
 	}
 
-	return errors.Wrap(idxFile.Close(), "Failed closing index file")
+	return n, errors.Wrap(idxFile.Close(), "Failed closing index file")
 }
 
-func (a *archive) storeIndex() (IndexFile, error) {
+func (a *archive) storeIndex() (IndexFile, int64, error) {
 	idx := make(IndexFile, 0, len(a.writeIndex))
 
 	for _, loc := range a.writeIndex {
 		idx = append(idx, *loc)
 	}
 
-	return idx, a.storeReadIndex(idx)
+	n, err := a.storeReadIndex(idx)
+
+	return idx, n, err
 }
 
 // Close finalizes a still-open writer, which reopens the reader, and then
@@ -662,16 +672,27 @@ func (a *archive) CloseReader() error {
 }
 
 func (a *archive) CloseWriter() (IndexFile, error) {
+	index, stored, err := a.closeWriter()
+	if err == nil && a.stored != nil {
+		a.stored(a, stored)
+	}
+
+	return index, err
+}
+
+// closeWriter closes the writer and stores the index, returning the bytes
+// both take up in the storage.
+func (a *archive) closeWriter() (IndexFile, int64, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
 	if a.readOnly {
-		return nil, errAlreadyClosed
+		return nil, 0, errAlreadyClosed
 	}
 
 	err := a.writeFile.Close()
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed closing file")
+		return nil, 0, errors.Wrap(err, "Failed closing file")
 	}
 
 	a.readOnly = true
@@ -681,13 +702,18 @@ func (a *archive) CloseWriter() (IndexFile, error) {
 	_ = a.readFile.Close()
 	a.readFile, err = a.storage.Open(a.archiveName())
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed reopening archive for reading")
+		return nil, 0, errors.Wrap(err, "Failed reopening archive for reading")
 	}
 
 	err = a.verifyUpload()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return a.storeIndex()
+	index, stored, err := a.storeIndex()
+	if written, ok := a.writeFile.(*hashedWriter); ok {
+		stored += written.written
+	}
+
+	return index, stored, err
 }

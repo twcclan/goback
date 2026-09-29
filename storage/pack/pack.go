@@ -100,6 +100,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		idleFinalize:     opts.idleFinalize,
 		sessionLease:     opts.sessionLease,
 		atRest:           atRest,
+		observer:         opts.observer,
 		logger:           opts.logger,
 	}, nil
 }
@@ -124,6 +125,8 @@ type PackStorage struct {
 	claims     ClaimIndex
 	claimOpen  time.Duration
 	claimGrace time.Duration
+
+	observer ArchiveObserver
 
 	// all of these are guarded by mtx
 	mtx      sync.RWMutex
@@ -792,6 +795,13 @@ func (ps *PackStorage) hasIndexFile(name string) bool {
 	return true
 }
 
+// archiveStored tells the observer an archive is in the storage.
+func (ps *PackStorage) archiveStored(a *archive, bytes int64) {
+	if ps.observer != nil {
+		ps.observer.ArchiveStored(a.name, bytes, a.session)
+	}
+}
+
 func (ps *PackStorage) deleteArchiveFiles(name string) {
 	err := ps.storage.Delete(name + IndexExt)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -801,6 +811,10 @@ func (ps *PackStorage) deleteArchiveFiles(name string) {
 	err = ps.storage.Delete(name + ArchiveSuffix)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		ps.logger.Warn("deleting archive failed", "archive", name, "err", err)
+	}
+
+	if err == nil && ps.observer != nil {
+		ps.observer.ArchiveDeleted(name)
 	}
 
 	err = ps.storage.Delete(name + GCExt)
@@ -915,6 +929,7 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 		a.owner = ws
 		a.session = ws.id
 		a.state = ws.state()
+		a.stored = ps.archiveStored
 
 		if ps.claims != nil && ws.session != nil {
 			if err := ps.claim(a); err != nil {

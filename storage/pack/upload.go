@@ -26,8 +26,9 @@ type Checksummer interface {
 // that is the checksum object stores answer with; it guards against a
 // damaged upload, not against an attacker.
 type hashedWriter struct {
-	to  writeFile
-	sum hash.Hash
+	to      writeFile
+	sum     hash.Hash
+	written int64
 }
 
 func newHashedWriter(to writeFile) *hashedWriter {
@@ -37,6 +38,7 @@ func newHashedWriter(to writeFile) *hashedWriter {
 func (h *hashedWriter) Write(p []byte) (int, error) {
 	n, err := h.to.Write(p)
 	_, _ = h.sum.Write(p[:n])
+	h.written += int64(n)
 
 	return n, err
 }

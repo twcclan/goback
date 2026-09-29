@@ -108,6 +108,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 				return nil, err
 			}
 
+			a.stored = ps.archiveStored
 			open = a
 		}
 

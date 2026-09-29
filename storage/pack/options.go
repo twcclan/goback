@@ -22,7 +22,29 @@ type packOptions struct {
 	claimGrace      time.Duration
 	atRestKey      *storekey.Key
 	atRestRetired   []*storekey.Key
+	observer        ArchiveObserver
 	logger          *slog.Logger
+}
+
+// ArchiveObserver is told about every archive the store puts into its
+// storage and every one it deletes from there, so a deployment can
+// account for what the storage holds. It is called on the path that
+// stored or deleted the archive, so it must be quick.
+type ArchiveObserver interface {
+	// ArchiveStored is told an archive and its index are in the storage,
+	// the bytes both take up and the session that wrote them; the session
+	// is empty for an archive the store rewrote itself.
+	ArchiveStored(name string, bytes int64, session string)
+	// ArchiveDeleted is told an archive's files are gone from the storage.
+	ArchiveDeleted(name string)
+}
+
+// WithArchiveObserver tells observer about every archive stored and
+// deleted.
+func WithArchiveObserver(observer ArchiveObserver) PackOption {
+	return func(p *packOptions) {
+		p.observer = observer
+	}
 }
 
 // WithAtRestKey seals every payload written from now on under the key
