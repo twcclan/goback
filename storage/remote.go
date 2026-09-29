@@ -375,7 +375,7 @@ func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Loca
 		return nil, err
 	}
 
-	object, err := pack.DecodeRecord(record)
+	object, err := pack.DecodeRecord(record, location.GetAtRestKey())
 	if err != nil {
 		return nil, fmt.Errorf("decoding object %x from its location: %w", ref.GetHash(), err)
 	}

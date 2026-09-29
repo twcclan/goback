@@ -53,6 +53,9 @@ message Location {
     map<string, string> header = 2;
     int64 length = 3;
     google.protobuf.Timestamp expires = 4;
+    // at_rest_key opens the record when it is sealed at rest: a Tink
+    // keyset for its archive alone
+    bytes at_rest_key = 5;
 }
 
 // ReadFileRequest names a file object the store references; the

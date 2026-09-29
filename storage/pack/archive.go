@@ -79,7 +79,7 @@ type archive struct {
 	last       *proto.Ref
 	storage    ArchiveStorage
 	name       string
-	atRest     *AtRestKey
+	atRest     *archiveKey
 	logger     *slog.Logger
 
 	// owner is the session writing this archive, nil once finalized or
@@ -113,11 +113,10 @@ func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey, logger *s
 		storage:  storage,
 		name:     path.Join(dir, id.String()),
 		readOnly: false,
-		atRest:   atRest,
 		logger:   logger,
 	}
 
-	return a, a.open()
+	return a, a.openWith(atRest)
 }
 
 func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
@@ -125,11 +124,25 @@ func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey, logger 
 		storage:  storage,
 		name:     name,
 		readOnly: true,
-		atRest:   atRest,
 		logger:   logger,
 	}
 
-	return a, a.open()
+	return a, a.openWith(atRest)
+}
+
+// openWith opens the archive sealing and opening under its own key,
+// derived from atRest when that is set.
+func (a *archive) openWith(atRest *AtRestKey) error {
+	if atRest != nil {
+		key, err := atRest.archive(a.name)
+		if err != nil {
+			return err
+		}
+
+		a.atRest = key
+	}
+
+	return a.open()
 }
 
 func (a *archive) recoverIndex(err error) (IndexFile, error) {
@@ -451,7 +464,7 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 			return err
 		}
 
-		bytes, hdr.AtRestKeyId = sealed, a.atRest.ID()
+		bytes, hdr.AtRestKeyId = sealed, a.atRest.id
 	}
 
 	hdr.Size = uint64(len(bytes))

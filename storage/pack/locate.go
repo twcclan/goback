@@ -29,8 +29,9 @@ type RangeSigner interface {
 var _ backup.Locator = (*PackStorage)(nil)
 
 // Read implements backup.Locator. An object sitting in an archive that
-// can be addressed is answered as a location; everything else, including
-// anything sealed at rest, is read and answered as the object.
+// can be addressed is answered as a location, carrying the archive's key
+// when it is sealed at rest; everything else is read and answered as the
+// object.
 func (ps *PackStorage) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
 	location, err := ps.locate(ctx, ref)
 	if err != nil || location != nil {
@@ -44,7 +45,7 @@ func (ps *PackStorage) Read(ctx context.Context, ref *proto.Ref) (*proto.Object,
 
 func (ps *PackStorage) locate(ctx context.Context, ref *proto.Ref) (*proto.Location, error) {
 	signer, ok := ps.storage.(RangeSigner)
-	if !ok || ps.atRest != nil {
+	if !ok {
 		return nil, nil
 	}
 
@@ -66,13 +67,20 @@ func (ps *PackStorage) locate(ctx context.Context, ref *proto.Ref) (*proto.Locat
 		return nil, nil
 	}
 
-	return location, err
+	if err != nil {
+		return nil, err
+	}
+
+	if a.atRest != nil {
+		location.AtRestKey = a.atRest.shared
+	}
+
+	return location, nil
 }
 
-// DecodeRecord turns the body a Location yields back into its object. A
-// record sealed at rest cannot be read this way, which is why one is
-// never handed out as a location.
-func DecodeRecord(record []byte) (*proto.Object, error) {
+// DecodeRecord turns the body a Location yields back into its object,
+// opening it with the location's at-rest key when it is sealed.
+func DecodeRecord(record []byte, atRestKey []byte) (*proto.Object, error) {
 	size, consumed := proto.DecodeVarint(record)
 	if consumed <= 0 || uint64(len(record)) < uint64(consumed)+size {
 		return nil, errors.New("record is truncated")
@@ -83,9 +91,18 @@ func DecodeRecord(record []byte) (*proto.Object, error) {
 		return nil, err
 	}
 
-	if len(header.AtRestKeyId) != 0 {
-		return nil, ErrAtRestKeyMissing
+	var key *archiveKey
+	if len(atRestKey) != 0 {
+		key, err = parseArchiveKey(atRestKey)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return proto.ObjectFromStored(header, record[uint64(consumed)+size:])
+	stored, err := openAtRest(key, header, record[uint64(consumed)+size:])
+	if err != nil {
+		return nil, err
+	}
+
+	return proto.ObjectFromStored(header, stored)
 }

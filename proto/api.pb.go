@@ -286,9 +286,12 @@ type Location struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Url   string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	// header must be sent with the request, verbatim
-	Header        map[string]string      `protobuf:"bytes,2,rep,name=header,proto3" json:"header,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Length        int64                  `protobuf:"varint,3,opt,name=length,proto3" json:"length,omitempty"`
-	Expires       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires,proto3" json:"expires,omitempty"`
+	Header  map[string]string      `protobuf:"bytes,2,rep,name=header,proto3" json:"header,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Length  int64                  `protobuf:"varint,3,opt,name=length,proto3" json:"length,omitempty"`
+	Expires *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires,proto3" json:"expires,omitempty"`
+	// at_rest_key opens the record when it is sealed at rest: a Tink
+	// keyset for its archive alone
+	AtRestKey     []byte `protobuf:"bytes,5,opt,name=at_rest_key,json=atRestKey,proto3" json:"at_rest_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -347,6 +350,13 @@ func (x *Location) GetLength() int64 {
 func (x *Location) GetExpires() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Expires
+	}
+	return nil
+}
+
+func (x *Location) GetAtRestKey() []byte {
+	if x != nil {
+		return x.AtRestKey
 	}
 	return nil
 }
@@ -2040,12 +2050,13 @@ const file_api_proto_rawDesc = "" +
 	"\vGetResponse\x12'\n" +
 	"\x06object\x18\x01 \x01(\v2\r.proto.ObjectH\x00R\x06object\x12-\n" +
 	"\blocation\x18\x02 \x01(\v2\x0f.proto.LocationH\x00R\blocationB\x06\n" +
-	"\x04body\"\xda\x01\n" +
+	"\x04body\"\xfa\x01\n" +
 	"\bLocation\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x123\n" +
 	"\x06header\x18\x02 \x03(\v2\x1b.proto.Location.HeaderEntryR\x06header\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x03R\x06length\x124\n" +
-	"\aexpires\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\aexpires\x1a9\n" +
+	"\aexpires\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\aexpires\x12\x1e\n" +
+	"\vat_rest_key\x18\x05 \x01(\fR\tatRestKey\x1a9\n" +
 	"\vHeaderEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"N\n" +

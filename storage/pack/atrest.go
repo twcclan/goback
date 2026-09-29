@@ -6,13 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/twcclan/goback/proto"
 
 	"github.com/tink-crypto/tink-go/v2/aead"
 	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
+	"github.com/tink-crypto/tink-go/v2/keyderivation"
 	"github.com/tink-crypto/tink-go/v2/keyset"
+	"github.com/tink-crypto/tink-go/v2/prf"
 	"github.com/tink-crypto/tink-go/v2/tink"
+	tinkpb "github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 )
 
 // ErrAtRestKeyMissing is returned when a record is sealed at rest and the
@@ -29,30 +33,43 @@ var ErrAtRestKeyMismatch = errors.New("record is sealed at rest under another ke
 // sealed once more, and what an agent sent in plaintext is plaintext
 // again for every reader with the key.
 //
-// It is a Tink AEAD keyset. Its primary key seals and every key in it
+// Each archive is sealed under its own key, derived from this one and the
+// archive's name, so a location can carry the key to one archive without
+// giving away the store's. Its primary key seals and every key in it
 // opens, so rotating is Rotate, and a key can leave the keyset once a
 // rewrite has re-sealed the last record naming it (Scrub counts them).
 type AtRestKey struct {
-	handle *keyset.Handle
-	aead   tink.AEAD
-	id     []byte
-	holds  map[string]bool
+	handle  *keyset.Handle
+	deriver keyderivation.KeysetDeriver
+	id      []byte
+	holds   map[string]bool
 }
 
-// NewAtRestKey wraps a keyset of AEAD keys.
+func atRestTemplate() (*tinkpb.KeyTemplate, error) {
+	return keyderivation.CreatePRFBasedKeyTemplate(prf.HKDFSHA256PRFKeyTemplate(), aead.XChaCha20Poly1305KeyTemplate())
+}
+
+// NewAtRestKey wraps a keyset of AEAD key derivers, as GenerateAtRestKey
+// makes them.
 func NewAtRestKey(h *keyset.Handle) (*AtRestKey, error) {
-	a, err := aead.New(h)
+	deriver, err := keyderivation.New(h)
 	if err != nil {
 		return nil, fmt.Errorf("at-rest key: %w", err)
 	}
 
+	info := h.KeysetInfo()
+
+	return &AtRestKey{handle: h, deriver: deriver, id: keyID(info.GetPrimaryKeyId()), holds: holding(h)}, nil
+}
+
+func holding(h *keyset.Handle) map[string]bool {
 	info := h.KeysetInfo()
 	holds := make(map[string]bool, len(info.GetKeyInfo()))
 	for _, key := range info.GetKeyInfo() {
 		holds[string(keyID(key.GetKeyId()))] = true
 	}
 
-	return &AtRestKey{handle: h, aead: a, id: keyID(info.GetPrimaryKeyId()), holds: holds}, nil
+	return holds
 }
 
 func keyID(id uint32) []byte {
@@ -61,7 +78,12 @@ func keyID(id uint32) []byte {
 
 // GenerateAtRestKey makes a keyset of one fresh key.
 func GenerateAtRestKey() (*AtRestKey, error) {
-	h, err := keyset.NewHandle(aead.XChaCha20Poly1305KeyTemplate())
+	template, err := atRestTemplate()
+	if err != nil {
+		return nil, err
+	}
+
+	h, err := keyset.NewHandle(template)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +121,14 @@ func (k *AtRestKey) Save(path string) error {
 // Rotate returns the keyset with a fresh primary key; the keys it held
 // still open what they sealed.
 func (k *AtRestKey) Rotate() (*AtRestKey, error) {
+	template, err := atRestTemplate()
+	if err != nil {
+		return nil, err
+	}
+
 	manager := keyset.NewManagerFromHandle(k.handle)
 
-	id, err := manager.Add(aead.XChaCha20Poly1305KeyTemplate())
+	id, err := manager.Add(template)
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +151,64 @@ func (k *AtRestKey) ID() []byte {
 	return k.id
 }
 
+// archive derives the key the named archive is sealed under, from the
+// last element of its name.
+func (k *AtRestKey) archive(name string) (*archiveKey, error) {
+	h, err := k.deriver.DeriveKeyset([]byte(path.Base(name)))
+	if err != nil {
+		return nil, fmt.Errorf("deriving the at-rest key of archive %s: %w", name, err)
+	}
+
+	return newArchiveKey(h)
+}
+
+// archiveKey seals and opens the records of one archive.
+type archiveKey struct {
+	aead   tink.AEAD
+	id     []byte
+	holds  map[string]bool
+	shared []byte
+}
+
+func newArchiveKey(h *keyset.Handle) (*archiveKey, error) {
+	a, err := aead.New(h)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+
+	err = insecurecleartextkeyset.Write(h, keyset.NewBinaryWriter(&buf))
+	if err != nil {
+		return nil, err
+	}
+
+	return &archiveKey{aead: a, id: keyID(h.KeysetInfo().GetPrimaryKeyId()), holds: holding(h), shared: buf.Bytes()}, nil
+}
+
+// parseArchiveKey reads the key a location carries.
+func parseArchiveKey(shared []byte) (*archiveKey, error) {
+	h, err := insecurecleartextkeyset.Read(keyset.NewBinaryReader(bytes.NewReader(shared)))
+	if err != nil {
+		return nil, fmt.Errorf("the location's at-rest key: %w", err)
+	}
+
+	return newArchiveKey(h)
+}
+
 func atRestAAD(hdr *proto.ObjectHeader) []byte {
 	return append(append([]byte(nil), hdr.Ref.GetHash()...), byte(hdr.Type))
 }
 
 // seal returns a payload sealed under the primary key, bound to the
 // record's ref and type.
-func (k *AtRestKey) seal(hdr *proto.ObjectHeader, payload []byte) ([]byte, error) {
+func (k *archiveKey) seal(hdr *proto.ObjectHeader, payload []byte) ([]byte, error) {
 	return k.aead.Encrypt(payload, atRestAAD(hdr))
 }
 
 // openAtRest returns a stored payload as the agent sent it: opened when the
 // header says it is sealed, as is otherwise.
-func openAtRest(key *AtRestKey, hdr *proto.ObjectHeader, stored []byte) ([]byte, error) {
+func openAtRest(key *archiveKey, hdr *proto.ObjectHeader, stored []byte) ([]byte, error) {
 	if len(hdr.AtRestKeyId) == 0 {
 		return stored, nil
 	}
