@@ -38,6 +38,10 @@ var (
 	// ErrCommitDenied is returned by BeginCommit when the store refuses the
 	// run, with the reason.
 	ErrCommitDenied = errors.New("commit refused")
+
+	// ErrSessionLost is returned for a commit whose session lost objects it
+	// had already been told were stored; backing up again stores them anew.
+	ErrSessionLost = errors.New("the session lost objects it had stored")
 )
 
 // References lists the refs an object points at directly: a commit's tree,

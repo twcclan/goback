@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -48,6 +49,20 @@ func (_c *ArchiveCreate) SetState(v int) *ArchiveCreate {
 func (_c *ArchiveCreate) SetNillableState(v *int) *ArchiveCreate {
 	if v != nil {
 		_c.SetState(*v)
+	}
+	return _c
+}
+
+// SetOpenedAt sets the "opened_at" field.
+func (_c *ArchiveCreate) SetOpenedAt(v time.Time) *ArchiveCreate {
+	_c.mutation.SetOpenedAt(v)
+	return _c
+}
+
+// SetNillableOpenedAt sets the "opened_at" field if the given value is not nil.
+func (_c *ArchiveCreate) SetNillableOpenedAt(v *time.Time) *ArchiveCreate {
+	if v != nil {
+		_c.SetOpenedAt(*v)
 	}
 	return _c
 }
@@ -163,6 +178,10 @@ func (_c *ArchiveCreate) createSpec() (*Archive, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.State(); ok {
 		_spec.SetField(archive.FieldState, field.TypeInt, value)
 		_node.State = value
+	}
+	if value, ok := _c.mutation.OpenedAt(); ok {
+		_spec.SetField(archive.FieldOpenedAt, field.TypeTime, value)
+		_node.OpenedAt = &value
 	}
 	if nodes := _c.mutation.SessionIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -285,6 +304,24 @@ func (u *ArchiveUpsert) AddState(v int) *ArchiveUpsert {
 	return u
 }
 
+// SetOpenedAt sets the "opened_at" field.
+func (u *ArchiveUpsert) SetOpenedAt(v time.Time) *ArchiveUpsert {
+	u.Set(archive.FieldOpenedAt, v)
+	return u
+}
+
+// UpdateOpenedAt sets the "opened_at" field to the value that was provided on create.
+func (u *ArchiveUpsert) UpdateOpenedAt() *ArchiveUpsert {
+	u.SetExcluded(archive.FieldOpenedAt)
+	return u
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (u *ArchiveUpsert) ClearOpenedAt() *ArchiveUpsert {
+	u.SetNull(archive.FieldOpenedAt)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -372,6 +409,27 @@ func (u *ArchiveUpsertOne) AddState(v int) *ArchiveUpsertOne {
 func (u *ArchiveUpsertOne) UpdateState() *ArchiveUpsertOne {
 	return u.Update(func(s *ArchiveUpsert) {
 		s.UpdateState()
+	})
+}
+
+// SetOpenedAt sets the "opened_at" field.
+func (u *ArchiveUpsertOne) SetOpenedAt(v time.Time) *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.SetOpenedAt(v)
+	})
+}
+
+// UpdateOpenedAt sets the "opened_at" field to the value that was provided on create.
+func (u *ArchiveUpsertOne) UpdateOpenedAt() *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.UpdateOpenedAt()
+	})
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (u *ArchiveUpsertOne) ClearOpenedAt() *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.ClearOpenedAt()
 	})
 }
 
@@ -629,6 +687,27 @@ func (u *ArchiveUpsertBulk) AddState(v int) *ArchiveUpsertBulk {
 func (u *ArchiveUpsertBulk) UpdateState() *ArchiveUpsertBulk {
 	return u.Update(func(s *ArchiveUpsert) {
 		s.UpdateState()
+	})
+}
+
+// SetOpenedAt sets the "opened_at" field.
+func (u *ArchiveUpsertBulk) SetOpenedAt(v time.Time) *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.SetOpenedAt(v)
+	})
+}
+
+// UpdateOpenedAt sets the "opened_at" field to the value that was provided on create.
+func (u *ArchiveUpsertBulk) UpdateOpenedAt() *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.UpdateOpenedAt()
+	})
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (u *ArchiveUpsertBulk) ClearOpenedAt() *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.ClearOpenedAt()
 	})
 }
 

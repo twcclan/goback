@@ -21,6 +21,9 @@ func (Archive) Fields() []ent.Field {
 		field.String("id"),
 		field.String("session_id").Optional().Nillable(),
 		field.Int("state").Default(0),
+		// opened_at is when an open archive was claimed, by the index's
+		// clock; it is cleared once the archive is finalized
+		field.Time("opened_at").Optional().Nillable(),
 	}
 }
 

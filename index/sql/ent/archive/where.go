@@ -3,6 +3,8 @@
 package archive
 
 import (
+	"time"
+
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
@@ -71,6 +73,11 @@ func SessionID(v string) predicate.Archive {
 // State applies equality check predicate on the "state" field. It's identical to StateEQ.
 func State(v int) predicate.Archive {
 	return predicate.Archive(sql.FieldEQ(FieldState, v))
+}
+
+// OpenedAt applies equality check predicate on the "opened_at" field. It's identical to OpenedAtEQ.
+func OpenedAt(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldEQ(FieldOpenedAt, v))
 }
 
 // SessionIDEQ applies the EQ predicate on the "session_id" field.
@@ -186,6 +193,56 @@ func StateLT(v int) predicate.Archive {
 // StateLTE applies the LTE predicate on the "state" field.
 func StateLTE(v int) predicate.Archive {
 	return predicate.Archive(sql.FieldLTE(FieldState, v))
+}
+
+// OpenedAtEQ applies the EQ predicate on the "opened_at" field.
+func OpenedAtEQ(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldEQ(FieldOpenedAt, v))
+}
+
+// OpenedAtNEQ applies the NEQ predicate on the "opened_at" field.
+func OpenedAtNEQ(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldNEQ(FieldOpenedAt, v))
+}
+
+// OpenedAtIn applies the In predicate on the "opened_at" field.
+func OpenedAtIn(vs ...time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldIn(FieldOpenedAt, vs...))
+}
+
+// OpenedAtNotIn applies the NotIn predicate on the "opened_at" field.
+func OpenedAtNotIn(vs ...time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldNotIn(FieldOpenedAt, vs...))
+}
+
+// OpenedAtGT applies the GT predicate on the "opened_at" field.
+func OpenedAtGT(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldGT(FieldOpenedAt, v))
+}
+
+// OpenedAtGTE applies the GTE predicate on the "opened_at" field.
+func OpenedAtGTE(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldGTE(FieldOpenedAt, v))
+}
+
+// OpenedAtLT applies the LT predicate on the "opened_at" field.
+func OpenedAtLT(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldLT(FieldOpenedAt, v))
+}
+
+// OpenedAtLTE applies the LTE predicate on the "opened_at" field.
+func OpenedAtLTE(v time.Time) predicate.Archive {
+	return predicate.Archive(sql.FieldLTE(FieldOpenedAt, v))
+}
+
+// OpenedAtIsNil applies the IsNil predicate on the "opened_at" field.
+func OpenedAtIsNil() predicate.Archive {
+	return predicate.Archive(sql.FieldIsNull(FieldOpenedAt))
+}
+
+// OpenedAtNotNil applies the NotNil predicate on the "opened_at" field.
+func OpenedAtNotNil() predicate.Archive {
+	return predicate.Archive(sql.FieldNotNull(FieldOpenedAt))
 }
 
 // HasSession applies the HasEdge predicate on the "session" edge.

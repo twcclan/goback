@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -67,6 +68,26 @@ func (_u *ArchiveUpdate) SetNillableState(v *int) *ArchiveUpdate {
 // AddState adds value to the "state" field.
 func (_u *ArchiveUpdate) AddState(v int) *ArchiveUpdate {
 	_u.mutation.AddState(v)
+	return _u
+}
+
+// SetOpenedAt sets the "opened_at" field.
+func (_u *ArchiveUpdate) SetOpenedAt(v time.Time) *ArchiveUpdate {
+	_u.mutation.SetOpenedAt(v)
+	return _u
+}
+
+// SetNillableOpenedAt sets the "opened_at" field if the given value is not nil.
+func (_u *ArchiveUpdate) SetNillableOpenedAt(v *time.Time) *ArchiveUpdate {
+	if v != nil {
+		_u.SetOpenedAt(*v)
+	}
+	return _u
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (_u *ArchiveUpdate) ClearOpenedAt() *ArchiveUpdate {
+	_u.mutation.ClearOpenedAt()
 	return _u
 }
 
@@ -163,6 +184,12 @@ func (_u *ArchiveUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedState(); ok {
 		_spec.AddField(archive.FieldState, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.OpenedAt(); ok {
+		_spec.SetField(archive.FieldOpenedAt, field.TypeTime, value)
+	}
+	if _u.mutation.OpenedAtCleared() {
+		_spec.ClearField(archive.FieldOpenedAt, field.TypeTime)
 	}
 	if _u.mutation.SessionCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -299,6 +326,26 @@ func (_u *ArchiveUpdateOne) AddState(v int) *ArchiveUpdateOne {
 	return _u
 }
 
+// SetOpenedAt sets the "opened_at" field.
+func (_u *ArchiveUpdateOne) SetOpenedAt(v time.Time) *ArchiveUpdateOne {
+	_u.mutation.SetOpenedAt(v)
+	return _u
+}
+
+// SetNillableOpenedAt sets the "opened_at" field if the given value is not nil.
+func (_u *ArchiveUpdateOne) SetNillableOpenedAt(v *time.Time) *ArchiveUpdateOne {
+	if v != nil {
+		_u.SetOpenedAt(*v)
+	}
+	return _u
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (_u *ArchiveUpdateOne) ClearOpenedAt() *ArchiveUpdateOne {
+	_u.mutation.ClearOpenedAt()
+	return _u
+}
+
 // SetSession sets the "session" edge to the Session entity.
 func (_u *ArchiveUpdateOne) SetSession(v *Session) *ArchiveUpdateOne {
 	return _u.SetSessionID(v.ID)
@@ -422,6 +469,12 @@ func (_u *ArchiveUpdateOne) sqlSave(ctx context.Context) (_node *Archive, err er
 	}
 	if value, ok := _u.mutation.AddedState(); ok {
 		_spec.AddField(archive.FieldState, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.OpenedAt(); ok {
+		_spec.SetField(archive.FieldOpenedAt, field.TypeTime, value)
+	}
+	if _u.mutation.OpenedAtCleared() {
+		_spec.ClearField(archive.FieldOpenedAt, field.TypeTime)
 	}
 	if _u.mutation.SessionCleared() {
 		edge := &sqlgraph.EdgeSpec{

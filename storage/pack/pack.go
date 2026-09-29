@@ -73,7 +73,20 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		}
 	}
 
+	if opts.claimOpen <= 0 {
+		opts.claimOpen = defaultClaimOpen
+	}
+
+	if opts.claimGrace <= 0 {
+		opts.claimGrace = defaultClaimGrace
+	}
+
+	claims, _ := opts.index.(ClaimIndex)
+
 	return &PackStorage{
+		claims:           claims,
+		claimOpen:        opts.claimOpen,
+		claimGrace:       opts.claimGrace,
 		archives:         make([]*archive, 0),
 		retired:          make(map[string]bool),
 		sessions:         make(map[string]*writeSession),
@@ -105,6 +118,12 @@ type PackStorage struct {
 	index            ArchiveIndex
 	idleFinalize     time.Duration
 	sessionLease     time.Duration
+
+	// claims is the index again when it lets several processes write one
+	// session, nil when this process is the only writer
+	claims     ClaimIndex
+	claimOpen  time.Duration
+	claimGrace time.Duration
 
 	// all of these are guarded by mtx
 	mtx      sync.RWMutex
@@ -149,16 +168,22 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 		return true, nil
 	}
 
-	ws := ps.lookupWriteSession(scope.Session)
-	if ws == nil {
-		return false, nil
+	if ws := ps.lookupWriteSession(scope.Session); ws != nil {
+		ws.pendingMtx.RLock()
+		_, pending := ws.pending[string(ref.Hash)]
+		ws.pendingMtx.RUnlock()
+
+		if pending {
+			return true, nil
+		}
 	}
 
-	ws.pendingMtx.RLock()
-	_, pending := ws.pending[string(ref.Hash)]
-	ws.pendingMtx.RUnlock()
+	// another process may hold it in an archive it has not finalized yet
+	if ps.claims != nil && scope.Session != "" {
+		return ps.claims.Holds(ref, scope.Session)
+	}
 
-	return pending, nil
+	return false, nil
 }
 
 // committedCopy finds a committed copy of ref the scope may read, passing
@@ -255,6 +280,11 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 		return err
 	}
 
+	var (
+		rows    *rowWriter
+		indexed chan error
+	)
+
 	err = ps.withWritableArchive(ctx, ws, func(a *archive) error {
 		err := a.putRaw(ctx, hdr, stored)
 		if err != nil {
@@ -263,11 +293,26 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 
 		ws.addPending(a, object.Ref())
 
+		// queued under the session lock, so a finalize that follows
+		// finds the row queued and writes it first
+		if a.rows != nil {
+			if record := a.indexLocation(object.Ref()); record != nil {
+				rows, indexed = a.rows, a.rows.enqueue(*record)
+			}
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		return err
+	}
+
+	// another process can only rely on the object once its row is in
+	if rows != nil {
+		if err := rows.wait(indexed); err != nil {
+			return err
+		}
 	}
 
 	ps.touchSession(ws)
@@ -295,6 +340,12 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 
 	if ws.session == nil {
 		return nil
+	}
+
+	if ps.claims != nil {
+		if err := ps.settle(ws.id); err != nil {
+			return err
+		}
 	}
 
 	err = ps.index.CommitSession(ws.id)
@@ -605,12 +656,24 @@ func (ps *PackStorage) finalizeLocked(ws *writeSession) error {
 
 	ws.archive = nil
 
+	if a.rows != nil {
+		a.closing.Stop()
+
+		if err := a.rows.drain(); err != nil && !lapsed(err) {
+			ws.fail(err)
+		}
+	}
+
 	index, err := a.CloseWriter()
 	ps.archiveSemaphore.Release(1)
 
 	if index == nil {
 		ws.fail(err)
 		return err
+	}
+
+	if a.rows != nil {
+		return ps.finalizeClaimed(ws, a, index, err)
 	}
 
 	indexErr := ps.index.IndexArchive(ws.archiveInfo(a.name), index)
@@ -631,6 +694,53 @@ func (ps *PackStorage) finalizeLocked(ws *writeSession) error {
 	ws.fail(indexErr)
 
 	return indexErr
+}
+
+// finalizeClaimed turns a claimed archive pending, its objects being
+// indexed already. One whose claim lapsed is turned lost and deleted: a
+// commit may have stopped waiting for it, so its objects count as gone.
+func (ps *PackStorage) finalizeClaimed(ws *writeSession, a *archive, index IndexFile, closeErr error) error {
+	if closeErr != nil {
+		ws.fail(closeErr)
+		ps.abandon(ws, a)
+
+		return closeErr
+	}
+
+	err := ps.claims.FinalizeArchive(a.name, ps.claimLimit())
+	if lapsed(err) {
+		ps.logger.Warn("finalizing an archive after its claim lapsed; its objects are lost", "archive", a.name)
+		ps.abandon(ws, a)
+
+		return fmt.Errorf("archive %s: %w", a.name, err)
+	}
+
+	if err != nil {
+		ws.fail(err)
+
+		return err
+	}
+
+	ps.releasePending(ws, a, index)
+
+	return nil
+}
+
+// abandon turns a claimed archive lost and deletes it.
+func (ps *PackStorage) abandon(ws *writeSession, a *archive) {
+	if _, err := ps.claims.Abandon(a.name, 0); err != nil {
+		ps.logger.Warn("abandoning archive failed", "archive", a.name, "err", err)
+	}
+
+	ws.pendingMtx.Lock()
+	for key, p := range ws.pending {
+		if p.archive == a {
+			delete(ws.pending, key)
+		}
+	}
+	ws.pendingMtx.Unlock()
+
+	ps.dropArchive(a)
 }
 
 // discardArchive closes a session's open archive without indexing it and
@@ -767,10 +877,14 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 		full := ws.archive.size >= ps.maxSize
 		ws.archive.mtx.RUnlock()
 
-		if full {
-			ps.logger.Debug("finalizing full archive", "archive", ws.archive.name)
+		// the timer finalizes an archive that has been open for as long
+		// as it may be, unless the process had no CPU to run it
+		expired := ws.archive.rows != nil && time.Since(ws.archive.opened) >= ps.claimOpen
+
+		if full || expired {
+			ps.logger.Debug("finalizing archive", "archive", ws.archive.name, "full", full)
 			err := ps.finalizeLocked(ws)
-			if err != nil {
+			if err != nil && !lapsed(err) {
 				return err
 			}
 		}
@@ -791,6 +905,16 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 		a.owner = ws
 		a.session = ws.id
 		a.state = ws.state()
+
+		if ps.claims != nil && ws.session != nil {
+			if err := ps.claim(a); err != nil {
+				_, _ = a.CloseWriter()
+				ps.archiveSemaphore.Release(1)
+				ps.deleteArchiveFiles(a.name)
+
+				return err
+			}
+		}
 
 		ps.mtx.Lock()
 		ps.archives = append(ps.archives, a)

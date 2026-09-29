@@ -2,10 +2,12 @@ package pack
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/proto"
 )
 
 // Placement is the decoded prefix of an archive name: the session that
@@ -37,11 +39,16 @@ func sessionPlacement(s *backup.Session) Placement {
 
 // ArchiveState is the visibility of an archive: committed archives are
 // served to everyone, pending ones only to the session that wrote them.
+// Open and lost archives are only ever held by a ClaimIndex: an open one is
+// still being written by some process, so its objects exist for the session
+// but cannot be read yet; a lost one was open when its claim lapsed.
 type ArchiveState uint8
 
 const (
 	ArchiveCommitted ArchiveState = iota
 	ArchivePending
+	ArchiveOpen
+	ArchiveLost
 )
 
 // ArchiveInfo is what the archive index records about an archive.
@@ -59,11 +66,14 @@ type Scope struct {
 
 // Visible reports whether an archive is served to this scope.
 func (s Scope) Visible(a ArchiveInfo) bool {
-	if a.State == ArchivePending {
+	switch a.State {
+	case ArchiveCommitted:
+		return true
+	case ArchivePending:
 		return s.Session != "" && a.Session == s.Session
 	}
 
-	return true
+	return false
 }
 
 // ScopeOf is the scope of a context: the session it carries, else the
@@ -83,9 +93,48 @@ type SessionIndex interface {
 	TouchSession(id string, at time.Time) error
 	GetSession(id string) (*backup.Session, error)
 	ListSessions() ([]*backup.Session, error)
-	// EndSession drops the session and its pending archives, returning
+	// EndSession drops the session and its uncommitted archives, returning
 	// the names of the archives dropped.
 	EndSession(id string) ([]string, error)
-	// CommitSession flips the session's pending archives to committed.
+	// CommitSession flips the session's pending archives to committed and
+	// forgets its lost ones.
 	CommitSession(id string) error
+}
+
+// ErrClaimLapsed is what a ClaimIndex answers for an open archive whose
+// claim ran out before it was finalized.
+var ErrClaimLapsed = errors.New("the claim on the archive lapsed")
+
+// A Claim is an open archive of a session and how long ago it was claimed,
+// by the index's clock.
+type Claim struct {
+	Archive string
+	Age     time.Duration
+}
+
+// A ClaimIndex lets several processes write one session. A process claims
+// each archive it opens and indexes the archive's objects as it writes
+// them, so every process sees them at once; the claim holds for a bounded
+// time, and one that lapsed can never be finalized. Ages are measured by
+// the index's own clock, the one every process shares.
+type ClaimIndex interface {
+	// OpenArchive claims a new archive for a live session.
+	OpenArchive(name, session string) error
+	// AddObjects indexes objects written to an open archive, or answers
+	// ErrClaimLapsed when the archive is no longer open.
+	AddObjects(archive string, records []IndexRecord) error
+	// FinalizeArchive turns an open archive pending when it was claimed
+	// less than within ago, and answers ErrClaimLapsed otherwise.
+	FinalizeArchive(name string, within time.Duration) error
+	// Holds reports whether a pending or open archive of the session holds
+	// the object.
+	Holds(ref *proto.Ref, session string) (bool, error)
+	// Claims lists the open archives of the session.
+	Claims(session string) ([]Claim, error)
+	// Abandon turns an open archive lost when it was claimed at least
+	// within ago, and reports whether it did.
+	Abandon(name string, within time.Duration) (bool, error)
+	// Lost lists the objects the session's lost archives held that none of
+	// its pending archives and no committed archive holds.
+	Lost(session string) ([]*proto.Ref, error)
 }

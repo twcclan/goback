@@ -283,6 +283,7 @@ func TestPostgres(t *testing.T) {
 		"ArchiveIndex":                     TestArchiveIndex,
 		"ArchiveIndexExclusion":            TestArchiveIndexExclusion,
 		"ArchiveIndexSessions":             TestArchiveIndexSessions,
+		"ClaimIndex":                       TestClaimIndex,
 		"ArchiveIndexCounts":               TestArchiveIndexCountsAndRestoreSessions,
 	} {
 		t.Run(name, test)

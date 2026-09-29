@@ -57,6 +57,7 @@ type ArchiveMutation struct {
 	id             *string
 	state          *int
 	addstate       *int
+	opened_at      *time.Time
 	clearedFields  map[string]struct{}
 	session        *string
 	clearedsession bool
@@ -277,6 +278,55 @@ func (m *ArchiveMutation) ResetState() {
 	m.addstate = nil
 }
 
+// SetOpenedAt sets the "opened_at" field.
+func (m *ArchiveMutation) SetOpenedAt(t time.Time) {
+	m.opened_at = &t
+}
+
+// OpenedAt returns the value of the "opened_at" field in the mutation.
+func (m *ArchiveMutation) OpenedAt() (r time.Time, exists bool) {
+	v := m.opened_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOpenedAt returns the old "opened_at" field's value of the Archive entity.
+// If the Archive object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ArchiveMutation) OldOpenedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOpenedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOpenedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOpenedAt: %w", err)
+	}
+	return oldValue.OpenedAt, nil
+}
+
+// ClearOpenedAt clears the value of the "opened_at" field.
+func (m *ArchiveMutation) ClearOpenedAt() {
+	m.opened_at = nil
+	m.clearedFields[archive.FieldOpenedAt] = struct{}{}
+}
+
+// OpenedAtCleared returns if the "opened_at" field was cleared in this mutation.
+func (m *ArchiveMutation) OpenedAtCleared() bool {
+	_, ok := m.clearedFields[archive.FieldOpenedAt]
+	return ok
+}
+
+// ResetOpenedAt resets all changes to the "opened_at" field.
+func (m *ArchiveMutation) ResetOpenedAt() {
+	m.opened_at = nil
+	delete(m.clearedFields, archive.FieldOpenedAt)
+}
+
 // ClearSession clears the "session" edge to the Session entity.
 func (m *ArchiveMutation) ClearSession() {
 	m.clearedsession = true
@@ -392,12 +442,15 @@ func (m *ArchiveMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ArchiveMutation) Fields() []string {
-	fields := make([]string, 0, 2)
+	fields := make([]string, 0, 3)
 	if m.session != nil {
 		fields = append(fields, archive.FieldSessionID)
 	}
 	if m.state != nil {
 		fields = append(fields, archive.FieldState)
+	}
+	if m.opened_at != nil {
+		fields = append(fields, archive.FieldOpenedAt)
 	}
 	return fields
 }
@@ -411,6 +464,8 @@ func (m *ArchiveMutation) Field(name string) (ent.Value, bool) {
 		return m.SessionID()
 	case archive.FieldState:
 		return m.State()
+	case archive.FieldOpenedAt:
+		return m.OpenedAt()
 	}
 	return nil, false
 }
@@ -424,6 +479,8 @@ func (m *ArchiveMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldSessionID(ctx)
 	case archive.FieldState:
 		return m.OldState(ctx)
+	case archive.FieldOpenedAt:
+		return m.OldOpenedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown Archive field %s", name)
 }
@@ -446,6 +503,13 @@ func (m *ArchiveMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetState(v)
+		return nil
+	case archive.FieldOpenedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOpenedAt(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Archive field %s", name)
@@ -495,6 +559,9 @@ func (m *ArchiveMutation) ClearedFields() []string {
 	if m.FieldCleared(archive.FieldSessionID) {
 		fields = append(fields, archive.FieldSessionID)
 	}
+	if m.FieldCleared(archive.FieldOpenedAt) {
+		fields = append(fields, archive.FieldOpenedAt)
+	}
 	return fields
 }
 
@@ -512,6 +579,9 @@ func (m *ArchiveMutation) ClearField(name string) error {
 	case archive.FieldSessionID:
 		m.ClearSessionID()
 		return nil
+	case archive.FieldOpenedAt:
+		m.ClearOpenedAt()
+		return nil
 	}
 	return fmt.Errorf("unknown Archive nullable field %s", name)
 }
@@ -525,6 +595,9 @@ func (m *ArchiveMutation) ResetField(name string) error {
 		return nil
 	case archive.FieldState:
 		m.ResetState()
+		return nil
+	case archive.FieldOpenedAt:
+		m.ResetOpenedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Archive field %s", name)

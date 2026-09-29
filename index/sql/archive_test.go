@@ -79,3 +79,7 @@ func BenchmarkIndex(b *testing.B) {
 		packtest.BenchmarkIndex(b, idx)
 	})
 }
+
+func TestClaimIndex(t *testing.T) {
+	packtest.TestClaimIndex(t, openIndex(t, newMemStore()))
+}

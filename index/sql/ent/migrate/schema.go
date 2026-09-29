@@ -13,6 +13,7 @@ var (
 	ArchivesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
 		{Name: "state", Type: field.TypeInt, Default: 0},
+		{Name: "opened_at", Type: field.TypeTime, Nullable: true},
 		{Name: "session_id", Type: field.TypeString, Nullable: true},
 	}
 	// ArchivesTable holds the schema information for the "archives" table.
@@ -23,7 +24,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "archives_sessions_archives",
-				Columns:    []*schema.Column{ArchivesColumns[2]},
+				Columns:    []*schema.Column{ArchivesColumns[3]},
 				RefColumns: []*schema.Column{SessionsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -32,7 +33,7 @@ var (
 			{
 				Name:    "archives_session",
 				Unique:  false,
-				Columns: []*schema.Column{ArchivesColumns[2]},
+				Columns: []*schema.Column{ArchivesColumns[3]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "session_id IS NOT NULL",
 				},

@@ -407,7 +407,7 @@ func TestOpenKeepsCommittedSessionArchivesWithoutTheIndex(t *testing.T) {
 	require.NoError(t, reopened.Close())
 }
 
-// failingIndex fails the next IndexArchive.
+// failingIndex fails the next IndexArchive or FinalizeArchive.
 type failingIndex struct {
 	*InMemoryIndex
 	failNext bool
@@ -420,6 +420,15 @@ func (f *failingIndex) IndexArchive(info ArchiveInfo, index IndexFile) error {
 	}
 
 	return f.InMemoryIndex.IndexArchive(info, index)
+}
+
+func (f *failingIndex) FinalizeArchive(name string, within time.Duration) error {
+	if f.failNext {
+		f.failNext = false
+		return errors.New("index unavailable")
+	}
+
+	return f.InMemoryIndex.FinalizeArchive(name, within)
 }
 
 // TestCommitRefusesASessionThatLostAnArchive lets the idle sweep fail to

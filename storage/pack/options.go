@@ -18,7 +18,9 @@ type packOptions struct {
 	cache           backup.ObjectStore
 	idleFinalize    time.Duration
 	sessionLease    time.Duration
-	atRestKey       *storekey.Key
+	claimOpen       time.Duration
+	claimGrace      time.Duration
+	atRestKey      *storekey.Key
 	atRestRetired   []*storekey.Key
 	logger          *slog.Logger
 }
@@ -61,6 +63,17 @@ func WithIdleFinalize(d time.Duration) PackOption {
 func WithSessionLease(d time.Duration) PackOption {
 	return func(p *packOptions) {
 		p.sessionLease = d
+	}
+}
+
+// WithClaims sets how long an archive of a session stays open, and how
+// much longer its claim holds while the archive is closed and verified,
+// when the index is a ClaimIndex. A commit waits up to their sum for an
+// archive another process holds open.
+func WithClaims(open, grace time.Duration) PackOption {
+	return func(p *packOptions) {
+		p.claimOpen = open
+		p.claimGrace = grace
 	}
 }
 

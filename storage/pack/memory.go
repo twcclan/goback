@@ -15,10 +15,14 @@ func NewInMemoryIndex() *InMemoryIndex {
 		index:    make(map[string]map[[proto.HashSize]byte]IndexRecord),
 		archives: make(map[string]ArchiveInfo),
 		sessions: make(map[string]*backup.Session),
+		claimed:  make(map[string]time.Time),
 	}
 }
 
-var _ ArchiveIndex = (*InMemoryIndex)(nil)
+var (
+	_ ArchiveIndex = (*InMemoryIndex)(nil)
+	_ ClaimIndex   = (*InMemoryIndex)(nil)
+)
 
 // InMemoryIndex is an ArchiveIndex kept entirely in memory, for tests and
 // short-lived tools.
@@ -27,6 +31,18 @@ type InMemoryIndex struct {
 	index    map[string]map[[proto.HashSize]byte]IndexRecord
 	archives map[string]ArchiveInfo
 	sessions map[string]*backup.Session
+	claimed  map[string]time.Time
+
+	// Now is the clock claims are aged by; nil means time.Now.
+	Now func() time.Time
+}
+
+func (i *InMemoryIndex) now() time.Time {
+	if i.Now != nil {
+		return i.Now()
+	}
+
+	return time.Now()
 }
 
 // LocateObject implements pack.ArchiveIndex.
@@ -173,10 +189,11 @@ func (i *InMemoryIndex) EndSession(id string) ([]string, error) {
 
 	var dropped []string
 	for name, info := range i.archives {
-		if info.State == ArchivePending && info.Session == id {
+		if info.State != ArchiveCommitted && info.Session == id {
 			dropped = append(dropped, name)
 			delete(i.archives, name)
 			delete(i.index, name)
+			delete(i.claimed, name)
 		}
 	}
 
@@ -195,10 +212,19 @@ func (i *InMemoryIndex) CommitSession(id string) error {
 	}
 
 	for name, info := range i.archives {
-		if info.State == ArchivePending && info.Session == id {
+		if info.Session != id {
+			continue
+		}
+
+		switch info.State {
+		case ArchivePending:
 			info.State = ArchiveCommitted
 			info.Session = ""
 			i.archives[name] = info
+		case ArchiveLost:
+			delete(i.archives, name)
+			delete(i.index, name)
+			delete(i.claimed, name)
 		}
 	}
 
@@ -211,6 +237,7 @@ func (i *InMemoryIndex) Close() error {
 	i.index = make(map[string]map[[proto.HashSize]byte]IndexRecord)
 	i.archives = make(map[string]ArchiveInfo)
 	i.sessions = make(map[string]*backup.Session)
+	i.claimed = make(map[string]time.Time)
 	i.mtx.Unlock()
 
 	return nil
@@ -218,5 +245,165 @@ func (i *InMemoryIndex) Close() error {
 
 // CountObjects reports the indexed and the distinct object count.
 func (i *InMemoryIndex) CountObjects() (uint64, uint64, error) {
-	return 0, 0, errors.New("not implemented")
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	var total uint64
+
+	distinct := make(map[[proto.HashSize]byte]bool)
+
+	for archive, records := range i.index {
+		if state := i.archives[archive].State; state != ArchiveCommitted && state != ArchivePending {
+			continue
+		}
+
+		total += uint64(len(records))
+
+		for sum := range records {
+			distinct[sum] = true
+		}
+	}
+
+	return total, uint64(len(distinct)), nil
+}
+
+// OpenArchive implements ClaimIndex.
+func (i *InMemoryIndex) OpenArchive(name, session string) error {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	if _, ok := i.sessions[session]; !ok {
+		return backup.ErrNoSession
+	}
+
+	i.archives[name] = ArchiveInfo{Name: name, Session: session, State: ArchiveOpen}
+	i.index[name] = make(map[[proto.HashSize]byte]IndexRecord)
+	i.claimed[name] = i.now()
+
+	return nil
+}
+
+// AddObjects implements ClaimIndex.
+func (i *InMemoryIndex) AddObjects(archive string, records []IndexRecord) error {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	if i.archives[archive].State != ArchiveOpen {
+		return ErrClaimLapsed
+	}
+
+	for _, record := range records {
+		i.index[archive][record.Sum] = record
+	}
+
+	return nil
+}
+
+// FinalizeArchive implements ClaimIndex.
+func (i *InMemoryIndex) FinalizeArchive(name string, within time.Duration) error {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	info := i.archives[name]
+	if info.State != ArchiveOpen || i.now().Sub(i.claimed[name]) >= within {
+		return ErrClaimLapsed
+	}
+
+	info.State = ArchivePending
+	i.archives[name] = info
+	delete(i.claimed, name)
+
+	return nil
+}
+
+// Holds implements ClaimIndex.
+func (i *InMemoryIndex) Holds(ref *proto.Ref, session string) (bool, error) {
+	var sum [proto.HashSize]byte
+	copy(sum[:], ref.Hash)
+
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	for name, info := range i.archives {
+		if info.Session != session || (info.State != ArchivePending && info.State != ArchiveOpen) {
+			continue
+		}
+
+		if _, ok := i.index[name][sum]; ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// Claims implements ClaimIndex.
+func (i *InMemoryIndex) Claims(session string) ([]Claim, error) {
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	now := i.now()
+
+	var claims []Claim
+	for name, info := range i.archives {
+		if info.Session == session && info.State == ArchiveOpen {
+			claims = append(claims, Claim{Archive: name, Age: now.Sub(i.claimed[name])})
+		}
+	}
+
+	return claims, nil
+}
+
+// Abandon implements ClaimIndex.
+func (i *InMemoryIndex) Abandon(name string, within time.Duration) (bool, error) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	info := i.archives[name]
+	if info.State != ArchiveOpen || i.now().Sub(i.claimed[name]) < within {
+		return false, nil
+	}
+
+	info.State = ArchiveLost
+	i.archives[name] = info
+	delete(i.claimed, name)
+
+	return true, nil
+}
+
+// Lost implements ClaimIndex.
+func (i *InMemoryIndex) Lost(session string) ([]*proto.Ref, error) {
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	held := func(sum [proto.HashSize]byte) bool {
+		for name, info := range i.archives {
+			kept := info.State == ArchiveCommitted || (info.State == ArchivePending && info.Session == session)
+			if _, ok := i.index[name][sum]; ok && kept {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	seen := make(map[[proto.HashSize]byte]bool)
+
+	var lost []*proto.Ref
+	for name, info := range i.archives {
+		if info.Session != session || info.State != ArchiveLost {
+			continue
+		}
+
+		for sum := range i.index[name] {
+			if seen[sum] || held(sum) {
+				continue
+			}
+
+			seen[sum] = true
+			lost = append(lost, &proto.Ref{Hash: append([]byte(nil), sum[:]...)})
+		}
+	}
+
+	return lost, nil
 }

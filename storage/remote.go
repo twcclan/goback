@@ -663,6 +663,8 @@ func ToStatus(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, backup.ErrNotImplemented):
 		return status.Error(codes.Unimplemented, err.Error())
+	case errors.Is(err, backup.ErrSessionLost):
+		return status.Error(codes.Aborted, err.Error())
 	}
 
 	return err

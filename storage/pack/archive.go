@@ -87,6 +87,14 @@ type archive struct {
 	owner   *writeSession
 	session string
 	state   ArchiveState
+
+	// rows indexes the objects of a claimed archive as they are written,
+	// nil for an archive no claim was taken on; opened is when the claim
+	// was taken, by this process's clock, and closing finalizes the archive
+	// once it has been open for as long as it may be
+	rows    *rowWriter
+	opened  time.Time
+	closing *time.Timer
 }
 
 // newArchive opens a writable archive named by a fresh uuid under dir,
