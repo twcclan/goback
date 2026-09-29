@@ -70,11 +70,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "at-rest-key",
-			Usage: "key file a pack:// or gcs:// store seals its archives with; empty stores objects as received",
-		},
-		cli.StringSliceFlag{
-			Name:  "retired-at-rest-key",
-			Usage: "key file archives may still be sealed under, repeatable; a rewrite re-seals what it opens under --at-rest-key",
+			Usage: "key file a pack:// or gcs:// store seals its archives with, from goback key at-rest; empty stores objects as received",
 		},
 		cli.BoolFlag{
 			Name:  "reset-index",
@@ -95,5 +91,9 @@ func main() {
 		},
 	}
 
-	app.Run(os.Args)
+	err := app.Run(os.Args)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
 }
