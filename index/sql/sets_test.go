@@ -254,7 +254,7 @@ func TestBeginCommitGates(t *testing.T) {
 
 	// the store's policy travels with the grant once the operator set one
 	wanted := storekey.DefaultPolicy()
-	wanted.Mode = storekey.ModeStoreKeyedAll
+	wanted.Mode = storekey.ModeNone
 	_, err = f.x.SetStorePolicy(ctx, wanted, false, f.clock)
 	require.NoError(t, err)
 	grant, err = f.x.BeginCommit(ctx, "world")

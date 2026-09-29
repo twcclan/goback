@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/twcclan/goback/proto";
+
+// Encryption says how a blob's stored bytes or a file's inline content
+// are sealed. Structure objects are never sealed as a whole.
+enum Encryption {
+  PLAINTEXT = 0;
+  // 1 was a blob key derived from the store key; 2 is kept for convergent
+  // encryption, a key derived from the content that dedupes across keys
+  reserved 1, 2;
+  reserved "STORE_KEYED", "CONVERGENT";
+  // deterministic AEAD under the store key
+  SEALED = 3;
+}

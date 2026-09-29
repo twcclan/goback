@@ -135,15 +135,12 @@ message BeginCommitResponse {
 }
 
 // StorePolicy is a store's write policy: the encryption mode of new
-// writes, the hybrid mode's thresholds and the presence scope.
+// writes and the presence scope.
 message StorePolicy {
     uint32 version = 1;
     string mode = 2;
-    int64 size_threshold = 3;
-    string entropy_estimator = 4;
-    double entropy_threshold = 5;
+    reserved 3, 4, 5, 7;
     string presence_scope = 6;
-    reserved 7;
 }
 
 message BeginSessionRequest {

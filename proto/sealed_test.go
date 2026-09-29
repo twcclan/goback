@@ -16,9 +16,9 @@ func TestCanonicalGoldenVectorsEncryption(t *testing.T) {
 		payload string
 	}{
 		{
-			name:    "inline file with keys",
-			object:  NewObject(&File{Inline: []byte("hi"), Keys: []byte("k")}),
-			payload: "220268692a016b",
+			name:    "sealed inline file",
+			object:  NewObject(&File{Inline: []byte("hi"), InlineEncryption: Encryption_SEALED}),
+			payload: "220268693003",
 		},
 		{
 			name:    "commit with policy",
@@ -56,7 +56,7 @@ func sealedFixture() *Sealed {
 		Type:        ObjectType_BLOB,
 		Data:        []byte("ciphertext"),
 		Compression: Compression_NONE,
-		Encryption:  Encryption_STORE_KEYED,
+		Encryption:  Encryption_SEALED,
 		KeyId:       []byte("keyid123"),
 	}
 }
@@ -88,7 +88,7 @@ func TestSealedStoredRoundTrip(t *testing.T) {
 	hdr, stored, err := HeaderFor(obj)
 	require.NoError(t, err)
 	require.Equal(t, obj.GetSealed().Data, stored, "sealed bytes are stored as they arrive")
-	require.Equal(t, Encryption_STORE_KEYED, hdr.Encryption)
+	require.Equal(t, Encryption_SEALED, hdr.Encryption)
 	require.Equal(t, []byte("keyid123"), hdr.KeyId)
 	require.Equal(t, StoredHash(stored), hdr.StoredHash)
 	require.True(t, hdr.Ref.Equal(obj.Ref()))
@@ -104,7 +104,7 @@ func TestSealedStoredRoundTrip(t *testing.T) {
 	require.NotNil(t, back.GetSealed())
 	require.True(t, back.Ref().Equal(obj.Ref()))
 	require.Equal(t, obj.GetSealed().Data, back.GetSealed().Data)
-	require.Equal(t, Encryption_STORE_KEYED, back.GetSealed().Encryption)
+	require.Equal(t, Encryption_SEALED, back.GetSealed().Encryption)
 	require.Equal(t, []byte("keyid123"), back.GetSealed().KeyId)
 	require.Equal(t, []byte("keyid123"), back.KeyId)
 
@@ -113,7 +113,7 @@ func TestSealedStoredRoundTrip(t *testing.T) {
 }
 
 func TestPlaintextStoredRoundTrip(t *testing.T) {
-	obj := NewObject(&File{Inline: []byte("hi"), Keys: []byte("k")})
+	obj := NewObject(&File{Inline: []byte("hi"), InlineEncryption: Encryption_SEALED})
 	obj.KeyId = []byte("keyid123")
 
 	hdr, stored, err := HeaderFor(obj)
@@ -125,7 +125,7 @@ func TestPlaintextStoredRoundTrip(t *testing.T) {
 	back, err := ObjectFromStored(hdr, stored)
 	require.NoError(t, err)
 	require.NotNil(t, back.GetFile())
-	require.Equal(t, []byte("k"), back.GetFile().Keys)
+	require.Equal(t, Encryption_SEALED, back.GetFile().InlineEncryption)
 	require.Equal(t, []byte("keyid123"), back.KeyId)
 	require.True(t, back.Ref().Equal(obj.Ref()))
 }

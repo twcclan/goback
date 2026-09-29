@@ -1,13 +1,15 @@
-// Package key manages the client-held store key.
+// Package key manages the client-held store key and a store's at-rest key.
 package key
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/backup/storekey/master"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
 )
@@ -22,7 +24,13 @@ var Command = cli.Command{
 			Description: "Generate a store key file",
 			ArgsUsage:   "<name>",
 			Action:      newAction,
-			Flags:       []cli.Flag{outFlag},
+			Flags:       []cli.Flag{outFlag("store.key")},
+		},
+		{
+			Name:        "master",
+			Description: "Generate a master key file that store keys can be derived from",
+			Action:      masterAction,
+			Flags:       []cli.Flag{outFlag("master.key")},
 		},
 		{
 			Name:        "derive",
@@ -30,13 +38,13 @@ var Command = cli.Command{
 			ArgsUsage:   "<name>",
 			Action:      deriveAction,
 			Flags: []cli.Flag{
-				cli.StringFlag{Name: "master", Usage: "key file to derive from", Value: "master.key"},
-				outFlag,
+				cli.StringFlag{Name: "master", Usage: "master key file to derive from", Value: "master.key"},
+				outFlag("store.key"),
 			},
 		},
 		{
 			Name:        "escrow",
-			Description: "Wrap a store key under a passphrase and print it as base64",
+			Description: "Wrap a store key under a passphrase and print it as an armored age file, which `age -d` also opens",
 			Action:      escrowAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "key", Usage: "key file to escrow", Value: "store.key"},
@@ -46,18 +54,28 @@ var Command = cli.Command{
 		{
 			Name:        "recover",
 			Description: "Rebuild a key file from an escrowed key and its passphrase",
-			ArgsUsage:   "<name>",
 			Action:      recoverAction,
 			Flags: []cli.Flag{
-				cli.StringFlag{Name: "escrow", Usage: "base64 escrowed key, as printed by escrow"},
-				outFlag,
+				cli.StringFlag{Name: "escrow", Usage: "escrowed key file, as printed by escrow; - reads standard input", Value: "-"},
+				outFlag("store.key"),
 				passphraseFlag,
+			},
+		},
+		{
+			Name:        "at-rest",
+			Description: "Generate the key a pack:// or gcs:// store seals its archives with, or rotate it",
+			Action:      atRestAction,
+			Flags: []cli.Flag{
+				outFlag("at-rest.key"),
+				cli.BoolFlag{Name: "rotate", Usage: "add a fresh primary key to the file; the keys it held still open what they sealed"},
 			},
 		},
 	},
 }
 
-var outFlag = cli.StringFlag{Name: "out", Usage: "key file to write", Value: "store.key"}
+func outFlag(value string) cli.StringFlag {
+	return cli.StringFlag{Name: "out", Usage: "key file to write", Value: value}
+}
 
 var passphraseFlag = cli.StringFlag{
 	Name:   "passphrase",
@@ -83,18 +101,28 @@ func storeName(c *cli.Context) (string, error) {
 	return c.Args().First(), nil
 }
 
-// write saves the key under --out, refusing to replace a file.
-func write(c *cli.Context, key *storekey.Key, verb string) error {
-	if _, err := os.Stat(c.String("out")); err == nil {
-		return fmt.Errorf("%s exists, refusing to overwrite a store key", c.String("out"))
+// fresh refuses to replace an existing key file.
+func fresh(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s exists, refusing to overwrite a key", path)
 	}
 
-	err := key.Save(c.String("out"))
+	return nil
+}
+
+// write saves the key under --out.
+func write(c *cli.Context, key *storekey.Key, verb string) error {
+	out := c.String("out")
+	if err := fresh(out); err != nil {
+		return err
+	}
+
+	err := key.Save(out)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%s key %s for store %s to %s\n", verb, key.IDString(), key.Name, c.String("out"))
+	fmt.Printf("%s key %s for store %s to %s\n", verb, key.IDString(), key.Name, out)
 
 	return nil
 }
@@ -113,18 +141,39 @@ func newAction(c *cli.Context) error {
 	return write(c, key, "wrote")
 }
 
+func masterAction(c *cli.Context) error {
+	out := c.String("out")
+	if err := fresh(out); err != nil {
+		return err
+	}
+
+	m, err := master.Generate()
+	if err != nil {
+		return err
+	}
+
+	err = m.Save(out)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("wrote master key to %s\n", out)
+
+	return nil
+}
+
 func deriveAction(c *cli.Context) error {
 	name, err := storeName(c)
 	if err != nil {
 		return err
 	}
 
-	master, err := storekey.Load(c.String("master"))
+	m, err := master.Load(c.String("master"))
 	if err != nil {
 		return err
 	}
 
-	key, err := master.Derive(name)
+	key, err := m.Derive(name)
 	if err != nil {
 		return err
 	}
@@ -148,31 +197,75 @@ func escrowAction(c *cli.Context) error {
 		return err
 	}
 
-	fmt.Println(base64.StdEncoding.EncodeToString(escrowed))
+	_, err = os.Stdout.Write(escrowed)
 
-	return nil
+	return err
 }
 
 func recoverAction(c *cli.Context) error {
-	name, err := storeName(c)
-	if err != nil {
-		return err
-	}
-
 	pass, err := passphrase(c)
 	if err != nil {
 		return err
 	}
 
-	escrowed, err := base64.StdEncoding.DecodeString(c.String("escrow"))
-	if err != nil {
-		return fmt.Errorf("decoding escrowed key: %w", err)
+	var escrowed []byte
+	if path := c.String("escrow"); path == "-" {
+		escrowed, err = io.ReadAll(os.Stdin)
+	} else {
+		escrowed, err = os.ReadFile(path)
 	}
 
-	key, err := storekey.Recover(name, escrowed, pass, storekey.DefaultPolicy())
+	if err != nil {
+		return fmt.Errorf("reading the escrowed key: %w", err)
+	}
+
+	key, err := storekey.Recover(escrowed, pass)
 	if err != nil {
 		return err
 	}
 
 	return write(c, key, "recovered")
+}
+
+func atRestAction(c *cli.Context) error {
+	out := c.String("out")
+
+	if !c.Bool("rotate") {
+		if err := fresh(out); err != nil {
+			return err
+		}
+
+		key, err := pack.GenerateAtRestKey()
+		if err != nil {
+			return err
+		}
+
+		err = key.Save(out)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("wrote at-rest key %x to %s\n", key.ID(), out)
+
+		return nil
+	}
+
+	key, err := pack.LoadAtRestKey(out)
+	if err != nil {
+		return err
+	}
+
+	rotated, err := key.Rotate()
+	if err != nil {
+		return err
+	}
+
+	err = rotated.Save(out)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("rotated %s: records are sealed under %x from now on; a compaction re-seals the older ones\n", out, rotated.ID())
+
+	return nil
 }

@@ -145,30 +145,20 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	)...)
 }
 
-// atRest is the pack options for the global --at-rest-key and
-// --retired-at-rest-key flags, none without them.
+// atRest is the pack options for the global --at-rest-key flag, none
+// without it.
 func atRest(c *cli.Context) ([]pack.PackOption, error) {
-	var options []pack.PackOption
-
-	if path := c.GlobalString("at-rest-key"); path != "" {
-		key, err := storekey.Load(path)
-		if err != nil {
-			return nil, fmt.Errorf("loading the at-rest key: %w", err)
-		}
-
-		options = append(options, pack.WithAtRestKey(key))
+	path := c.GlobalString("at-rest-key")
+	if path == "" {
+		return nil, nil
 	}
 
-	for _, path := range c.GlobalStringSlice("retired-at-rest-key") {
-		key, err := storekey.Load(path)
-		if err != nil {
-			return nil, fmt.Errorf("loading the retired at-rest key %s: %w", path, err)
-		}
-
-		options = append(options, pack.WithRetiredAtRestKey(key))
+	key, err := pack.LoadAtRestKey(path)
+	if err != nil {
+		return nil, fmt.Errorf("loading the at-rest key: %w", err)
 	}
 
-	return options, nil
+	return []pack.PackOption{pack.WithAtRestKey(key)}, nil
 }
 
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {

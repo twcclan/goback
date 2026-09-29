@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/storekey"
 )
 
 type packOptions struct {
@@ -20,8 +19,7 @@ type packOptions struct {
 	sessionLease    time.Duration
 	claimOpen       time.Duration
 	claimGrace      time.Duration
-	atRestKey      *storekey.Key
-	atRestRetired   []*storekey.Key
+	atRestKey       *AtRestKey
 	observer        ArchiveObserver
 	logger          *slog.Logger
 }
@@ -48,20 +46,12 @@ func WithArchiveObserver(observer ArchiveObserver) PackOption {
 }
 
 // WithAtRestKey seals every payload written from now on under the key
-// and opens the ones sealed under it; records written without a key stay
-// readable. A key file made by goback key new serves.
-func WithAtRestKey(key *storekey.Key) PackOption {
+// and opens the ones sealed under any key of its keyset; records written
+// without a key stay readable. A rewrite re-seals what it opens under the
+// primary key.
+func WithAtRestKey(key *AtRestKey) PackOption {
 	return func(p *packOptions) {
 		p.atRestKey = key
-	}
-}
-
-// WithRetiredAtRestKey keeps a key records may still be sealed under. It
-// is only read with, and a rewrite re-seals what it opens under the
-// current key, so the retired key can go once no record names it.
-func WithRetiredAtRestKey(key *storekey.Key) PackOption {
-	return func(p *packOptions) {
-		p.atRestRetired = append(p.atRestRetired, key)
 	}
 }
 

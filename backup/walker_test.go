@@ -337,14 +337,13 @@ func TestWalkerAdoptsTheStorePolicyFromTheGrant(t *testing.T) {
 	f.walker.Key = key
 
 	// a policy the operator never set leaves the key file in charge
-	f.index.policy = &storekey.Policy{Version: 0, Mode: storekey.ModeStoreKeyedAll}
+	f.index.policy = &storekey.Policy{Version: 0, Mode: storekey.ModeNone}
 	result := f.run()
 	require.EqualValues(t, 1, result.Commit.PolicyVersion)
-	require.Equal(t, storekey.ModeHybrid, key.Policy.Mode)
+	require.Equal(t, storekey.ModeSealed, key.Policy.Mode)
 
 	served := storekey.DefaultPolicy()
 	served.Version = 3
-	served.Mode = storekey.ModeStoreKeyedAll
 	f.index.policy = &served
 
 	f.write("a.txt", []byte("two"))

@@ -123,7 +123,7 @@ func TestReadServesTheBytesWhenItCannotAddressThem(t *testing.T) {
 
 	// sealed at rest, so the records are unreadable to anyone we could
 	// send to the bucket
-	store, settle := locatable(t, WithAtRestKey(atRestKey(t, "server")))
+	store, settle := locatable(t, WithAtRestKey(atRestKey(t)))
 
 	file := proto.NewObject(&proto.File{Inline: []byte("small enough")})
 	require.NoError(t, store.Put(ctx, file))

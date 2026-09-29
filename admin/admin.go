@@ -150,15 +150,12 @@ func (s *Server) GetStorePolicy(ctx context.Context, _ *pb.GetStorePolicyRequest
 // SetStorePolicy implements pb.AdminServer.
 func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyRequest) (*pb.StorePolicy, error) {
 	policy := storekey.Policy{
-		Mode:             storekey.Mode(request.Mode),
-		SizeThreshold:    request.SizeThreshold,
-		EntropyEstimator: request.EntropyEstimator,
-		EntropyThreshold: request.EntropyThreshold,
-		PresenceScope:    request.PresenceScope,
+		Mode:          storekey.Mode(request.Mode),
+		PresenceScope: request.PresenceScope,
 	}
 
 	switch policy.Mode {
-	case storekey.ModeHybrid, storekey.ModeConvergentAll, storekey.ModeStoreKeyedAll, storekey.ModeNone:
+	case storekey.ModeSealed, storekey.ModeNone:
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown policy mode %q", request.Mode)
 	}

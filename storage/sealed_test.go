@@ -22,7 +22,7 @@ func testSealedStore(t *testing.T, store backup.ObjectStore, read func(context.C
 	key, err := storekey.Generate("s1")
 	require.NoError(t, err)
 
-	sealed, blobKey := key.SealBlob(proto.Encryption_STORE_KEYED, []byte("secret save data"))
+	sealed := backup.SealBlob(key, []byte("secret save data"))
 	obj := proto.NewObject(sealed)
 	ctx := context.Background()
 
@@ -37,17 +37,17 @@ func testSealedStore(t *testing.T, store backup.ObjectStore, read func(context.C
 	require.Equal(t, sealed.Compression, got.GetSealed().Compression)
 	require.True(t, got.Ref().Equal(sealed.Ref))
 
-	opened, err := storekey.OpenBlob(blobKey, got.GetSealed())
+	opened, err := backup.OpenBlob(key, got.GetSealed())
 	require.NoError(t, err)
 	require.Equal(t, []byte("secret save data"), opened)
 
 	// a sealed object whose bytes do not match its ref is still stored as
 	// is: the server cannot check the ref, only the client can
-	forged := proto.NewObject(&proto.Sealed{Ref: proto.HashPayload(proto.ObjectType_BLOB, []byte("other")), Type: proto.ObjectType_BLOB, Data: []byte("junk"), Encryption: proto.Encryption_CONVERGENT})
+	forged := proto.NewObject(&proto.Sealed{Ref: proto.HashPayload(proto.ObjectType_BLOB, []byte("other")), Type: proto.ObjectType_BLOB, Data: []byte("junk"), Encryption: proto.Encryption_SEALED})
 	require.NoError(t, store.Put(ctx, forged))
 	back, err := read(ctx, forged.Ref())
 	require.NoError(t, err)
-	_, err = storekey.OpenBlob(blobKey, back.GetSealed())
+	_, err = backup.OpenBlob(key, back.GetSealed())
 	require.ErrorIs(t, err, storekey.ErrWrongKey)
 }
 

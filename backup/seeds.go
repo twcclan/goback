@@ -56,11 +56,6 @@ func (s *SeedMap) addFile(path string) error {
 	}
 	defer file.Close()
 
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
 	var cdc chunker.FastCDC
 	buf := make([]byte, chunker.MaxSize)
 	filled, scanned := 0, 0
@@ -96,7 +91,7 @@ func (s *SeedMap) addFile(path string) error {
 			cdc.Reset()
 		}
 
-		s.record(path, offset, buf[:cut], info.Size())
+		s.record(path, offset, buf[:cut])
 
 		offset += int64(cut)
 		copy(buf, buf[cut:filled])
@@ -105,16 +100,11 @@ func (s *SeedMap) addFile(path string) error {
 	}
 }
 
-func (s *SeedMap) record(path string, offset int64, chunk []byte, fileSize int64) {
+func (s *SeedMap) record(path string, offset int64, chunk []byte) {
 	var ref *proto.Ref
-
-	if s.key != nil {
-		if mode := s.key.Choose(fileSize, chunk); mode != proto.Encryption_PLAINTEXT {
-			ref = storekey.RefOf(s.key.BlobKey(mode, chunk))
-		}
-	}
-
-	if ref == nil {
+	if s.key != nil && s.key.Policy.Mode != storekey.ModeNone {
+		ref = BlobRef(s.key, chunk)
+	} else {
 		ref = proto.NewObject(&proto.Blob{Data: chunk}).Ref()
 	}
 

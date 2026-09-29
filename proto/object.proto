@@ -12,6 +12,7 @@ import "blob.proto";
 import "file.proto";
 import "pin.proto";
 import "ref.proto";
+import "encryption.proto";
 
 enum ObjectType {
   INVALID = 0;
@@ -27,16 +28,6 @@ enum Compression {
   NONE = 0;
   reserved 1;
   ZSTD = 2;
-}
-
-// Encryption says under which kind of key a blob's stored bytes are
-// sealed. Structure objects are never sealed as a whole.
-enum Encryption {
-  PLAINTEXT = 0;
-  // blob_key = HMAC(store_key, "blob" || plaintext); private to the store
-  STORE_KEYED = 1;
-  // blob_key = H("blob" || plaintext); dedupes across stores
-  CONVERGENT = 2;
 }
 
 message ObjectHeader {

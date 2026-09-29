@@ -129,59 +129,6 @@ func (Compression) EnumDescriptor() ([]byte, []int) {
 	return file_object_proto_rawDescGZIP(), []int{1}
 }
 
-// Encryption says under which kind of key a blob's stored bytes are
-// sealed. Structure objects are never sealed as a whole.
-type Encryption int32
-
-const (
-	Encryption_PLAINTEXT Encryption = 0
-	// blob_key = HMAC(store_key, "blob" || plaintext); private to the store
-	Encryption_STORE_KEYED Encryption = 1
-	// blob_key = H("blob" || plaintext); dedupes across stores
-	Encryption_CONVERGENT Encryption = 2
-)
-
-// Enum value maps for Encryption.
-var (
-	Encryption_name = map[int32]string{
-		0: "PLAINTEXT",
-		1: "STORE_KEYED",
-		2: "CONVERGENT",
-	}
-	Encryption_value = map[string]int32{
-		"PLAINTEXT":   0,
-		"STORE_KEYED": 1,
-		"CONVERGENT":  2,
-	}
-)
-
-func (x Encryption) Enum() *Encryption {
-	p := new(Encryption)
-	*p = x
-	return p
-}
-
-func (x Encryption) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Encryption) Descriptor() protoreflect.EnumDescriptor {
-	return file_object_proto_enumTypes[2].Descriptor()
-}
-
-func (Encryption) Type() protoreflect.EnumType {
-	return &file_object_proto_enumTypes[2]
-}
-
-func (x Encryption) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Encryption.Descriptor instead.
-func (Encryption) EnumDescriptor() ([]byte, []int) {
-	return file_object_proto_rawDescGZIP(), []int{2}
-}
-
 type ObjectHeader struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	Ref          *Ref                   `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
@@ -571,7 +518,7 @@ const file_object_proto_rawDesc = "" +
 	"\fobject.proto\x12\x05proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\n" +
 	"tree.proto\x1a\fcommit.proto\x1a\n" +
 	"blob.proto\x1a\n" +
-	"file.proto\x1a\tpin.proto\x1a\tref.proto\"\xdc\x03\n" +
+	"file.proto\x1a\tpin.proto\x1a\tref.proto\x1a\x10encryption.proto\"\xdc\x03\n" +
 	"\fObjectHeader\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12,\n" +
@@ -625,13 +572,7 @@ const file_object_proto_rawDesc = "" +
 	"\x03PIN\x10\x06*'\n" +
 	"\vCompression\x12\b\n" +
 	"\x04NONE\x10\x00\x12\b\n" +
-	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01*<\n" +
-	"\n" +
-	"Encryption\x12\r\n" +
-	"\tPLAINTEXT\x10\x00\x12\x0f\n" +
-	"\vSTORE_KEYED\x10\x01\x12\x0e\n" +
-	"\n" +
-	"CONVERGENT\x10\x02B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
 
 var (
 	file_object_proto_rawDescOnce sync.Once
@@ -645,17 +586,17 @@ func file_object_proto_rawDescGZIP() []byte {
 	return file_object_proto_rawDescData
 }
 
-var file_object_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_object_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_object_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_object_proto_goTypes = []any{
 	(ObjectType)(0),               // 0: proto.ObjectType
 	(Compression)(0),              // 1: proto.Compression
-	(Encryption)(0),               // 2: proto.Encryption
-	(*ObjectHeader)(nil),          // 3: proto.ObjectHeader
-	(*Sealed)(nil),                // 4: proto.Sealed
-	(*Object)(nil),                // 5: proto.Object
-	(*Ref)(nil),                   // 6: proto.Ref
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(*ObjectHeader)(nil),          // 2: proto.ObjectHeader
+	(*Sealed)(nil),                // 3: proto.Sealed
+	(*Object)(nil),                // 4: proto.Object
+	(*Ref)(nil),                   // 5: proto.Ref
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(Encryption)(0),               // 7: proto.Encryption
 	(*Commit)(nil),                // 8: proto.Commit
 	(*Tree)(nil),                  // 9: proto.Tree
 	(*File)(nil),                  // 10: proto.File
@@ -663,22 +604,22 @@ var file_object_proto_goTypes = []any{
 	(*Pin)(nil),                   // 12: proto.Pin
 }
 var file_object_proto_depIdxs = []int32{
-	6,  // 0: proto.ObjectHeader.ref:type_name -> proto.Ref
-	6,  // 1: proto.ObjectHeader.predecessor:type_name -> proto.Ref
+	5,  // 0: proto.ObjectHeader.ref:type_name -> proto.Ref
+	5,  // 1: proto.ObjectHeader.predecessor:type_name -> proto.Ref
 	1,  // 2: proto.ObjectHeader.compression:type_name -> proto.Compression
-	7,  // 3: proto.ObjectHeader.timestamp:type_name -> google.protobuf.Timestamp
+	6,  // 3: proto.ObjectHeader.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 4: proto.ObjectHeader.type:type_name -> proto.ObjectType
-	6,  // 5: proto.ObjectHeader.tombstone_for:type_name -> proto.Ref
-	2,  // 6: proto.ObjectHeader.encryption:type_name -> proto.Encryption
-	6,  // 7: proto.Sealed.ref:type_name -> proto.Ref
+	5,  // 5: proto.ObjectHeader.tombstone_for:type_name -> proto.Ref
+	7,  // 6: proto.ObjectHeader.encryption:type_name -> proto.Encryption
+	5,  // 7: proto.Sealed.ref:type_name -> proto.Ref
 	0,  // 8: proto.Sealed.type:type_name -> proto.ObjectType
 	1,  // 9: proto.Sealed.compression:type_name -> proto.Compression
-	2,  // 10: proto.Sealed.encryption:type_name -> proto.Encryption
+	7,  // 10: proto.Sealed.encryption:type_name -> proto.Encryption
 	8,  // 11: proto.Object.commit:type_name -> proto.Commit
 	9,  // 12: proto.Object.tree:type_name -> proto.Tree
 	10, // 13: proto.Object.file:type_name -> proto.File
 	11, // 14: proto.Object.blob:type_name -> proto.Blob
-	4,  // 15: proto.Object.sealed:type_name -> proto.Sealed
+	3,  // 15: proto.Object.sealed:type_name -> proto.Sealed
 	12, // 16: proto.Object.pin:type_name -> proto.Pin
 	17, // [17:17] is the sub-list for method output_type
 	17, // [17:17] is the sub-list for method input_type
@@ -698,6 +639,7 @@ func file_object_proto_init() {
 	file_file_proto_init()
 	file_pin_proto_init()
 	file_ref_proto_init()
+	file_encryption_proto_init()
 	file_object_proto_msgTypes[2].OneofWrappers = []any{
 		(*Object_Commit)(nil),
 		(*Object_Tree)(nil),
@@ -711,7 +653,7 @@ func file_object_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_object_proto_rawDesc), len(file_object_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      2,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,

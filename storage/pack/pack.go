@@ -61,17 +61,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		return nil, errors.New("No archive index provided")
 	}
 
-	if len(opts.atRestRetired) > 0 && opts.atRestKey == nil {
-		return nil, errors.New("retired at-rest keys without a key to seal with")
-	}
-
-	var atRest *AtRestKeys
-	if opts.atRestKey != nil {
-		atRest = NewAtRestKeys(NewAtRestKey(opts.atRestKey))
-		for _, retired := range opts.atRestRetired {
-			atRest.Retire(NewAtRestKey(retired))
-		}
-	}
+	atRest := opts.atRestKey
 
 	if opts.claimOpen <= 0 {
 		opts.claimOpen = DefaultClaimOpen
@@ -139,7 +129,7 @@ type PackStorage struct {
 	sessions    map[string]*writeSession
 
 	compactorMtx sync.Mutex
-	atRest       *AtRestKeys
+	atRest       *AtRestKey
 	logger       *slog.Logger
 }
 

@@ -655,7 +655,7 @@ func canonicalFile(f *File) ([]byte, error) {
 
 	b = appendVarint(b, 3, uint64(f.Chunker))
 	b = appendBytes(b, 4, f.Inline)
-	b = appendBytes(b, 5, f.Keys)
+	b = appendVarint(b, 6, uint64(f.InlineEncryption))
 
 	return b, nil
 }

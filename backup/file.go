@@ -36,7 +36,7 @@ const (
 )
 
 // newFileWriter cuts a file of the given size into blobs. With a key the
-// blobs are sealed under the store policy and the File carries their keys.
+// blobs and any inline content are sealed under it.
 func newFileWriter(ctx context.Context, store ObjectStore, key *storekey.Key, size int64) *fileWriter {
 	if key != nil && key.Policy.Mode == storekey.ModeNone {
 		key = nil
@@ -63,7 +63,6 @@ type fileWriter struct {
 	offset           int64
 	chunker          chunker.FastCDC
 	parts            []*proto.FilePart
-	keys             [][]byte
 	storageErr       *atomic.Value
 	storageGroup     syncutil.Group
 	storageSemaphore *syncutil.Gate
@@ -181,10 +180,7 @@ func (bfw *fileWriter) split(length int) {
 	chunkBytes := make([]byte, length)
 	copy(chunkBytes, bfw.buf[:length])
 
-	blob, ref, blobKey := bfw.seal(chunkBytes)
-	if blobKey != nil {
-		bfw.keys = append(bfw.keys, blobKey)
-	}
+	blob, ref := bfw.seal(chunkBytes)
 
 	part := &proto.FilePart{
 		Ref:    ref,
@@ -212,16 +208,16 @@ func (bfw *fileWriter) split(length int) {
 }
 
 // seal turns a chunk into the blob object that is stored for it, plain or
-// sealed under the store key, and returns its ref and blob key.
-func (bfw *fileWriter) seal(chunk []byte) (*proto.Object, *proto.Ref, []byte) {
+// sealed under the store key, and returns its ref.
+func (bfw *fileWriter) seal(chunk []byte) (*proto.Object, *proto.Ref) {
 	if bfw.key == nil {
 		blob := proto.NewObject(&proto.Blob{Data: chunk})
-		return blob, blob.Ref(), nil
+		return blob, blob.Ref()
 	}
 
-	sealed, blobKey := bfw.key.SealBlob(bfw.key.Choose(bfw.size, chunk), chunk)
+	sealed := SealBlob(bfw.key, chunk)
 
-	return proto.NewObject(sealed), sealed.Ref, blobKey
+	return proto.NewObject(sealed), sealed.Ref
 }
 
 // upload stores a blob in the background unless another file of the run
@@ -351,7 +347,7 @@ func (bfw *fileWriter) repair(missing []*proto.Ref) error {
 			}
 
 			var current *proto.Ref
-			blob, current, _ = bfw.seal(chunk)
+			blob, current = bfw.seal(chunk)
 			if !current.Equal(ref) {
 				changed = append(changed, ref)
 				continue
@@ -412,27 +408,6 @@ func (bfw *fileWriter) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// fileObject builds a File over parts, sealing the part keys when the
-// store is encrypted.
-func (bfw *fileWriter) fileObject(parts []*proto.FilePart, keys [][]byte) (*proto.Object, error) {
-	file := &proto.File{Parts: parts}
-
-	if bfw.key != nil {
-		refs := make([]*proto.Ref, len(parts))
-		for i, part := range parts {
-			refs[i] = part.Ref
-		}
-
-		sealed, err := bfw.key.SealKeys(refs, keys)
-		if err != nil {
-			return nil, err
-		}
-
-		file.Keys = sealed
-	}
-
-	return bfw.object(file), nil
-}
 
 func (bfw *fileWriter) object(file *proto.File) *proto.Object {
 	obj := proto.NewObject(file)
@@ -451,12 +426,8 @@ func (bfw *fileWriter) Close() (err error) {
 		file := &proto.File{Inline: inline}
 
 		if bfw.key != nil {
-			ciphertext, blobKey := bfw.key.SealInline(inline)
-			file.Inline = ciphertext
-			file.Keys, err = bfw.key.SealKeys([]*proto.Ref{storekey.RefOf(blobKey)}, [][]byte{blobKey})
-			if err != nil {
-				return err
-			}
+			file.Inline = bfw.key.SealInline(inline)
+			file.InlineEncryption = proto.Encryption_SEALED
 		}
 
 		obj := bfw.object(file)
@@ -491,16 +462,7 @@ func (bfw *fileWriter) Close() (err error) {
 				max = len(bfw.parts)
 			}
 
-			var keys [][]byte
-			if bfw.key != nil {
-				keys = bfw.keys[:max]
-				bfw.keys = bfw.keys[max:]
-			}
-
-			split, err := bfw.fileObject(bfw.parts[:max], keys)
-			if err != nil {
-				return err
-			}
+			split := bfw.object(&proto.File{Parts: bfw.parts[:max]})
 
 			err = bfw.storeFile(split, bfw.parts[:max])
 			if err != nil {
@@ -517,11 +479,7 @@ func (bfw *fileWriter) Close() (err error) {
 		return bfw.store.Put(bfw.ctx, file)
 	}
 
-	file, err = bfw.fileObject(bfw.parts, bfw.keys)
-	if err != nil {
-		return err
-	}
-
+	file = bfw.object(&proto.File{Parts: bfw.parts})
 	bfw.ref = file.Ref()
 
 	return bfw.storeFile(file, bfw.parts)
@@ -567,7 +525,6 @@ type fileReader struct {
 	file      *proto.File
 	key       *storekey.Key
 	parts     []*proto.FilePart
-	partKeys  [][]byte
 	inline    []byte
 	blob      *proto.Object
 	partIndex int
@@ -633,11 +590,11 @@ func (bfr *fileReader) openPart(index int, part *proto.FilePart, obj *proto.Obje
 
 	switch {
 	case obj.GetSealed() != nil:
-		if index >= len(bfr.partKeys) {
+		if bfr.key == nil {
 			return nil, errors.Wrapf(storekey.ErrNoKey, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
 		}
 
-		data, err = storekey.OpenBlob(bfr.partKeys[index], obj.GetSealed())
+		data, err = OpenBlob(bfr.key, obj.GetSealed())
 		if err != nil {
 			return nil, errors.Wrapf(err, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
 		}
@@ -658,20 +615,6 @@ func (bfr *fileReader) openPart(index int, part *proto.FilePart, obj *proto.Obje
 	return data, nil
 }
 
-// openKeys returns a file's part keys, which needs the store key whenever
-// the file carries any.
-func (bfr *fileReader) openKeys(file *proto.File) ([][]byte, error) {
-	if len(file.Keys) == 0 {
-		return nil, nil
-	}
-
-	if bfr.key == nil {
-		return nil, storekey.ErrNoKey
-	}
-
-	return bfr.key.OpenKeys(file.Keys)
-}
-
 func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, error) {
 	if bfr.parts != nil {
 		return bfr.parts, nil
@@ -679,17 +622,19 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 
 	switch {
 	case len(bfr.file.Inline) > 0:
-		keys, err := bfr.openKeys(bfr.file)
-		if err != nil {
-			return nil, err
-		}
-
 		bfr.inline = bfr.file.Inline
-		if len(keys) == 1 {
-			bfr.inline, err = storekey.OpenInline(keys[0], bfr.file.Inline)
+
+		if bfr.file.InlineEncryption == proto.Encryption_SEALED {
+			if bfr.key == nil {
+				return nil, errors.Wrapf(storekey.ErrNoKey, "inline content of file %x", bfr.fileRef())
+			}
+
+			inline, err := bfr.key.OpenInline(bfr.file.Inline)
 			if err != nil {
 				return nil, errors.Wrapf(err, "inline content of file %x", bfr.fileRef())
 			}
+
+			bfr.inline = inline
 		}
 
 		bfr.parts = []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.inline))}}
@@ -724,22 +669,10 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 
 		bfr.parts = make([]*proto.FilePart, 0)
 		for _, subFile := range subFiles {
-			keys, err := bfr.openKeys(subFile)
-			if err != nil {
-				return nil, err
-			}
-
 			bfr.parts = append(bfr.parts, subFile.GetParts()...)
-			bfr.partKeys = append(bfr.partKeys, keys...)
 		}
 	default:
-		keys, err := bfr.openKeys(bfr.file)
-		if err != nil {
-			return nil, err
-		}
-
 		bfr.parts = bfr.file.Parts
-		bfr.partKeys = keys
 		if bfr.parts == nil {
 			bfr.parts = []*proto.FilePart{}
 		}

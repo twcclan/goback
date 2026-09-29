@@ -1,151 +1,135 @@
-// Package storekey implements the client-held store key: per-blob keys and
-// refs, sealed blobs, deterministic name tokens, the encrypted per-part key
-// list of a File, and passphrase escrow. The server never sees the key.
+// Package storekey implements the client-held store key: its key file,
+// deterministic sealing of blobs, name tokens and inline content, the
+// digest blobs are named by, and passphrase escrow. The server never sees
+// the key. It carries none of the object format, so the console's
+// WebAssembly module can take it without the rest of goback.
 package storekey
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
+	"io"
 	"os"
+	"strings"
 
-	"github.com/twcclan/goback/backup/storekey/crypt"
-	"github.com/twcclan/goback/proto"
+	"filippo.io/age"
+	"filippo.io/age/armor"
+	"github.com/tink-crypto/tink-go/v2/daead"
+	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
+	"github.com/tink-crypto/tink-go/v2/keyset"
+	"github.com/tink-crypto/tink-go/v2/prf"
+	"github.com/tink-crypto/tink-go/v2/tink"
 )
 
-const (
-	// KeySize is the width of the store master key and of every blob key.
-	KeySize = crypt.KeySize
-	// IDSize is the width of a key id.
-	IDSize = crypt.IDSize
-
-	nonceSize = crypt.NonceSize
-)
+// IDSize is the width of a key id.
+const IDSize = 8
 
 var (
 	// ErrWrongKey is returned when a token or sealed blob does not open
 	// under the given key.
-	ErrWrongKey = crypt.ErrWrongKey
+	ErrWrongKey = errors.New("wrong store key or corrupt ciphertext")
 	// ErrNoKey is returned when an encrypted object is met without a key.
 	ErrNoKey = errors.New("object is encrypted and no store key is loaded")
 )
 
 // Field names the FileInfo fields that are sealed.
-type Field = crypt.Field
+type Field string
 
 const (
 	// FieldName is the entry name.
-	FieldName = crypt.FieldName
+	FieldName Field = "name"
 	// FieldUser is the owning user.
-	FieldUser = crypt.FieldUser
+	FieldUser Field = "user"
 	// FieldGroup is the owning group.
-	FieldGroup = crypt.FieldGroup
+	FieldGroup Field = "group"
 	// FieldTarget is a symlink's target.
-	FieldTarget = crypt.FieldTarget
+	FieldTarget Field = "link_target"
 )
 
 // Mode is the store policy's encryption mode for new writes.
 type Mode string
 
 const (
-	// ModeHybrid seals files under the size threshold and chunks under the
-	// entropy threshold with the store key, the rest convergently.
-	ModeHybrid Mode = "hybrid"
-	// ModeConvergentAll seals every chunk convergently.
-	ModeConvergentAll Mode = "convergent-all"
-	// ModeStoreKeyedAll seals every chunk with the store key.
-	ModeStoreKeyedAll Mode = "store-keyed-all"
+	// ModeSealed seals names and contents under the store key.
+	ModeSealed Mode = "sealed"
 	// ModeNone writes in the clear.
 	ModeNone Mode = "none"
-	// DefaultThreshold is the hybrid size threshold in bytes when the policy
-	// sets none.
-	DefaultThreshold = 128 << 10
-	// DefaultEntropyBits is the hybrid entropy threshold in bits per byte
-	// when the policy sets none.
-	DefaultEntropyBits = 7.0
-	// EntropyHistogramV1 names the estimator Entropy implements.
-	EntropyHistogramV1 = "histogram-v1"
 )
 
 // Policy is the store's write policy, as the agent holds it.
 type Policy struct {
-	Version          uint32  `json:"version"`
-	Mode             Mode    `json:"mode"`
-	SizeThreshold    int64   `json:"size_threshold"`
-	EntropyEstimator string  `json:"entropy_estimator"`
-	EntropyThreshold float64 `json:"entropy_threshold"`
-	PresenceScope    string  `json:"presence_scope"`
+	Version       uint32 `json:"version"`
+	Mode          Mode   `json:"mode"`
+	PresenceScope string `json:"presence_scope"`
 }
 
-// DefaultPolicy is the hybrid policy with the launch parameters.
+// DefaultPolicy seals everything and scopes presence to the store.
 func DefaultPolicy() Policy {
-	return Policy{
-		Version:          1,
-		Mode:             ModeHybrid,
-		SizeThreshold:    DefaultThreshold,
-		EntropyEstimator: EntropyHistogramV1,
-		EntropyThreshold: DefaultEntropyBits,
-		PresenceScope:    "store",
-	}
+	return Policy{Version: 1, Mode: ModeSealed, PresenceScope: "store"}
 }
 
-// Key is a store master key, named after its store, with the policy the
-// agent writes under.
+// Key is a store key, named after its store, with the policy the agent
+// writes under. It is a pair of Tink keysets: deterministic AEAD seals,
+// a PRF names blobs.
 type Key struct {
 	Name   string
 	Policy Policy
 
-	id  []byte
-	key []byte
+	seal, ref *keyset.Handle
+	sealer    tink.DeterministicAEAD
+	prf       *prf.Set
+	id        []byte
 }
 
+const keyKind = "goback store key"
+
 type keyFile struct {
-	Name   string `json:"name"`
-	KeyID  string `json:"key_id"`
-	Key    string `json:"key"`
-	Policy Policy `json:"policy"`
+	Kind   string          `json:"kind"`
+	Name   string          `json:"name"`
+	KeyID  string          `json:"key_id"`
+	Policy Policy          `json:"policy"`
+	Seal   json.RawMessage `json:"seal"`
+	Ref    json.RawMessage `json:"ref"`
 }
 
 // Generate makes a fresh key named after its store.
 func Generate(name string) (*Key, error) {
-	raw := make([]byte, KeySize)
-
-	_, err := rand.Read(raw)
+	seal, err := keyset.NewHandle(daead.AESSIVKeyTemplate())
 	if err != nil {
 		return nil, err
 	}
 
-	return FromBytes(name, raw, DefaultPolicy())
-}
-
-// FromBytes wraps raw key material.
-func FromBytes(name string, raw []byte, policy Policy) (*Key, error) {
-	if len(raw) != KeySize {
-		return nil, fmt.Errorf("store key has %d bytes, want %d", len(raw), KeySize)
-	}
-
-	return &Key{
-		Name:   name,
-		Policy: policy,
-		id:     crypt.ID(raw),
-		key:    append([]byte(nil), raw...),
-	}, nil
-}
-
-// Derive returns the key of the named store under this key as a master:
-// the same master and name always give the same key, and no derived key
-// reveals the master or another store's key.
-func (k *Key) Derive(name string) (*Key, error) {
-	raw, err := crypt.Derive(k.key, name)
+	ref, err := keyset.NewHandle(prf.HMACSHA256PRFKeyTemplate())
 	if err != nil {
 		return nil, err
 	}
 
-	return FromBytes(name, raw, DefaultPolicy())
+	return New(name, DefaultPolicy(), seal, ref)
+}
+
+// New makes a key from its keysets: deterministic AEAD to seal with and a
+// PRF to name blobs with.
+func New(name string, policy Policy, seal, ref *keyset.Handle) (*Key, error) {
+	sealer, err := daead.New(seal)
+	if err != nil {
+		return nil, fmt.Errorf("store key %s: %w", name, err)
+	}
+
+	set, err := prf.NewPRFSet(ref)
+	if err != nil {
+		return nil, fmt.Errorf("store key %s: %w", name, err)
+	}
+
+	id, err := set.ComputePrimaryPRF([]byte("goback store key id"), IDSize)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Key{Name: name, Policy: policy, seal: seal, ref: ref, sealer: sealer, prf: set, id: id}, nil
 }
 
 // Load reads a key file written by Save.
@@ -155,243 +139,255 @@ func Load(path string) (*Key, error) {
 		return nil, err
 	}
 
+	key, err := Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("store key %s: %w", path, err)
+	}
+
+	return key, nil
+}
+
+// Parse reads a key file's contents.
+func Parse(data []byte) (*Key, error) {
 	var f keyFile
 
-	err = json.Unmarshal(data, &f)
-	if err != nil {
-		return nil, fmt.Errorf("parsing store key %s: %w", path, err)
-	}
-
-	raw, err := base64.StdEncoding.DecodeString(f.Key)
-	if err != nil {
-		return nil, fmt.Errorf("parsing store key %s: %w", path, err)
-	}
-
-	k, err := FromBytes(f.Name, raw, f.Policy)
+	err := json.Unmarshal(data, &f)
 	if err != nil {
 		return nil, err
 	}
 
-	if f.KeyID != "" && f.KeyID != k.IDString() {
-		return nil, fmt.Errorf("store key %s: key id %s does not match the key", path, f.KeyID)
+	if f.Kind != keyKind {
+		return nil, fmt.Errorf("not a store key file (kind %q)", f.Kind)
 	}
 
-	return k, nil
+	seal, err := ReadKeyset(f.Seal)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := ReadKeyset(f.Ref)
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := New(f.Name, f.Policy, seal, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	if f.KeyID != "" && f.KeyID != key.IDString() {
+		return nil, fmt.Errorf("key id %s does not match the key", f.KeyID)
+	}
+
+	return key, nil
 }
 
 // Save writes the key file, readable by its owner only.
 func (k *Key) Save(path string) error {
-	data, err := json.MarshalIndent(keyFile{
-		Name:   k.Name,
-		KeyID:  k.IDString(),
-		Key:    base64.StdEncoding.EncodeToString(k.key),
-		Policy: k.Policy,
-	}, "", "  ")
+	data, err := k.Marshal()
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return os.WriteFile(path, data, 0o600)
+}
+
+// Marshal returns the key file's contents.
+func (k *Key) Marshal() ([]byte, error) {
+	seal, err := WriteKeyset(k.seal)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := WriteKeyset(k.ref)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := json.MarshalIndent(keyFile{
+		Kind: keyKind, Name: k.Name, KeyID: k.IDString(), Policy: k.Policy, Seal: seal, Ref: ref,
+	}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return append(data, '\n'), nil
+}
+
+// ReadKeyset reads a keyset as a key file holds it.
+func ReadKeyset(data json.RawMessage) (*keyset.Handle, error) {
+	if len(data) == 0 {
+		return nil, errors.New("the file holds no keyset")
+	}
+
+	return insecurecleartextkeyset.Read(keyset.NewJSONReader(bytes.NewReader(data)))
+}
+
+// WriteKeyset writes a keyset as a key file holds it.
+func WriteKeyset(h *keyset.Handle) (json.RawMessage, error) {
+	var buf bytes.Buffer
+
+	err := insecurecleartextkeyset.Write(h, keyset.NewJSONWriter(&buf))
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 // ID identifies the key in object headers.
 func (k *Key) ID() []byte { return k.id }
 
 // IDString is the hex form of ID.
-func (k *Key) IDString() string { return fmt.Sprintf("%x", k.id) }
+func (k *Key) IDString() string { return hex.EncodeToString(k.id) }
 
-// Bytes returns the raw key, for escrow.
-func (k *Key) Bytes() []byte { return append([]byte(nil), k.key...) }
-
-// BlobKey derives the key a chunk is sealed under.
-func (k *Key) BlobKey(mode proto.Encryption, plaintext []byte) []byte {
-	switch mode {
-	case proto.Encryption_STORE_KEYED:
-		return crypt.BlobKey(k.key, plaintext)
-	case proto.Encryption_CONVERGENT:
-		return ConvergentKey(plaintext)
-	default:
-		panic("no blob key for plaintext")
+// Digest is the PRF of a blob's plaintext, which its ref is made from:
+// equal under one key, unrelated under another.
+func (k *Key) Digest(plaintext []byte) []byte {
+	out, err := k.prf.ComputePrimaryPRF(plaintext, 32)
+	if err != nil {
+		panic(fmt.Sprintf("computing a digest under store key %s: %v", k.IDString(), err))
 	}
+
+	return out
 }
 
-// ConvergentKey is the content-derived key of a public chunk.
-func ConvergentKey(plaintext []byte) []byte {
-	h := sha256.New()
-	h.Write([]byte("blob"))
-	h.Write(plaintext)
-
-	return h.Sum(nil)
+// SealBlob seals a blob's stored bytes, bound to the blob's ref. Sealing
+// is deterministic, so a blob stored twice is stored once.
+func (k *Key) SealBlob(stored, ref []byte) []byte {
+	return k.encrypt(stored, blobAD(ref))
 }
 
-// RefOf is the ref of a sealed blob: the typed hash of its key.
-func RefOf(blobKey []byte) *proto.Ref {
-	return proto.HashPayload(proto.ObjectType_BLOB, blobKey)
-}
-
-// Choose applies the policy: which mode a chunk of a file of size gets.
-func (k *Key) Choose(fileSize int64, chunk []byte) proto.Encryption {
-	switch k.Policy.Mode {
-	case ModeConvergentAll:
-		return proto.Encryption_CONVERGENT
-	case ModeStoreKeyedAll:
-		return proto.Encryption_STORE_KEYED
-	case ModeNone:
-		return proto.Encryption_PLAINTEXT
-	}
-
-	threshold := k.Policy.SizeThreshold
-	if threshold == 0 {
-		threshold = DefaultThreshold
-	}
-
-	if fileSize < threshold {
-		return proto.Encryption_STORE_KEYED
-	}
-
-	bits := k.Policy.EntropyThreshold
-	if bits == 0 {
-		bits = DefaultEntropyBits
-	}
-
-	if Entropy(chunk) >= bits {
-		return proto.Encryption_CONVERGENT
-	}
-
-	return proto.Encryption_STORE_KEYED
-}
-
-// Entropy is the pinned estimator: Shannon entropy of the byte histogram
-// in bits per byte. It must never change; a different estimator gets a new
-// name in the policy.
-func Entropy(chunk []byte) float64 {
-	if len(chunk) == 0 {
-		return 0
-	}
-
-	var counts [256]int
-	for _, b := range chunk {
-		counts[b]++
-	}
-
-	n := float64(len(chunk))
-	bits := 0.0
-
-	for _, c := range counts {
-		if c == 0 {
-			continue
-		}
-
-		p := float64(c) / n
-		bits -= p * math.Log2(p)
-	}
-
-	return bits
-}
-
-// SealBlob compresses and encrypts a chunk under its blob key and returns
-// the sealed object to store. A blob key seals exactly one plaintext, so
-// the nonce is fixed; the ref and type are bound as associated data.
-func (k *Key) SealBlob(mode proto.Encryption, plaintext []byte) (*proto.Sealed, []byte) {
-	blobKey := k.BlobKey(mode, plaintext)
-	ref := RefOf(blobKey)
-
-	compressed, compression := proto.Encode(plaintext)
-
-	var nonce [nonceSize]byte
-
-	sealed := &proto.Sealed{
-		Ref:         ref,
-		Type:        proto.ObjectType_BLOB,
-		Data:        crypt.Seal(blobKey, nil, nonce[:], compressed, blobAD(ref)),
-		Compression: compression,
-		Encryption:  mode,
-	}
-
-	if mode == proto.Encryption_STORE_KEYED {
-		sealed.KeyId = k.id
-	}
-
-	return sealed, blobKey
-}
-
-// OpenBlob decrypts and decompresses a sealed blob with its key.
-func OpenBlob(blobKey []byte, sealed *proto.Sealed) ([]byte, error) {
-	if len(blobKey) != KeySize {
-		return nil, ErrWrongKey
-	}
-
-	var nonce [nonceSize]byte
-
-	compressed, err := crypt.Open(blobKey, nil, nonce[:], sealed.Data, blobAD(sealed.Ref))
+// OpenBlob reverses SealBlob.
+func (k *Key) OpenBlob(sealed, ref []byte) ([]byte, error) {
+	stored, err := k.sealer.DecryptDeterministically(sealed, blobAD(ref))
 	if err != nil {
 		return nil, ErrWrongKey
 	}
 
-	if !RefOf(blobKey).Equal(sealed.Ref) {
-		return nil, ErrWrongKey
-	}
-
-	return proto.Decode(compressed, sealed.Compression)
+	return stored, nil
 }
 
-func blobAD(ref *proto.Ref) []byte {
-	return append([]byte("blob"), ref.GetHash()...)
+func blobAD(ref []byte) []byte {
+	return append([]byte("blob"), ref...)
 }
 
-// SealInline seals a small file's whole content under a store-keyed blob
-// key and returns the ciphertext with the key, which the File's keys
-// field carries.
-func (k *Key) SealInline(plaintext []byte) ([]byte, []byte) {
-	return crypt.SealInline(k.key, plaintext)
+// SealInline seals a small file's whole content.
+func (k *Key) SealInline(plaintext []byte) []byte {
+	return k.encrypt(plaintext, []byte("inline"))
 }
 
 // OpenInline reverses SealInline.
-func OpenInline(blobKey, ciphertext []byte) ([]byte, error) {
-	return crypt.OpenInline(blobKey, ciphertext)
+func (k *Key) OpenInline(ciphertext []byte) ([]byte, error) {
+	plaintext, err := k.sealer.DecryptDeterministically(ciphertext, []byte("inline"))
+	if err != nil {
+		return nil, ErrWrongKey
+	}
+
+	return plaintext, nil
 }
 
 // SealField makes the deterministic token of a name-like field within its
 // parent directory. Equal names in one directory give equal tokens; the
 // same name elsewhere gives a different one. An empty value stays empty.
 func (k *Key) SealField(parent []byte, field Field, plaintext []byte) []byte {
-	return crypt.SealField(k.key, parent, field, plaintext)
+	if len(plaintext) == 0 {
+		return nil
+	}
+
+	return k.encrypt(plaintext, fieldAD(parent, field))
 }
 
 // OpenField reverses SealField.
 func (k *Key) OpenField(parent []byte, field Field, token []byte) ([]byte, error) {
-	return crypt.OpenField(k.key, parent, field, token)
-}
-
-// SealKeys encrypts a File's part keys under the store key. The nonce is
-// derived from the part refs, so the same parts always give the same
-// field and the File ref stays deterministic.
-func (k *Key) SealKeys(refs []*proto.Ref, keys [][]byte) ([]byte, error) {
-	hashes := make([][]byte, len(refs))
-	for i, ref := range refs {
-		hashes[i] = ref.GetHash()
+	if len(token) == 0 {
+		return nil, nil
 	}
 
-	return crypt.SealKeys(k.key, hashes, keys)
+	plaintext, err := k.sealer.DecryptDeterministically(token, fieldAD(parent, field))
+	if err != nil {
+		return nil, ErrWrongKey
+	}
+
+	return plaintext, nil
 }
 
-// OpenKeys decrypts a File's part keys and returns one key per part.
-func (k *Key) OpenKeys(sealed []byte) ([][]byte, error) {
-	return crypt.OpenKeys(k.key, sealed)
+func fieldAD(parent []byte, field Field) []byte {
+	ad := binary.BigEndian.AppendUint32([]byte("field"), uint32(len(parent)))
+	ad = append(ad, parent...)
+
+	return append(ad, field...)
 }
 
-// Escrow wraps the key under a passphrase with a memory-hard KDF, so the
-// key's owner can keep it where the server cannot open it.
+// encrypt seals under a loaded keyset, which only fails on a keyset Tink
+// itself refused to load.
+func (k *Key) encrypt(plaintext, ad []byte) []byte {
+	out, err := k.sealer.EncryptDeterministically(plaintext, ad)
+	if err != nil {
+		panic(fmt.Sprintf("sealing under store key %s: %v", k.IDString(), err))
+	}
+
+	return out
+}
+
+// Escrow wraps the key file under a passphrase with age, so the key's
+// owner can keep it where the server cannot open it. The result is an
+// armored age file; `age -d` opens it too.
 func (k *Key) Escrow(passphrase string) ([]byte, error) {
-	return crypt.Escrow(k.key, k.Name, passphrase)
-}
-
-// Recover unwraps an escrowed key with its passphrase.
-func Recover(name string, escrowed []byte, passphrase string, policy Policy) (*Key, error) {
-	raw, err := crypt.Recover(name, escrowed, passphrase)
+	data, err := k.Marshal()
 	if err != nil {
 		return nil, err
 	}
 
-	return FromBytes(name, raw, policy)
+	recipient, err := age.NewScryptRecipient(passphrase)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	armored := armor.NewWriter(&buf)
+
+	w, err := age.Encrypt(armored, recipient)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	if err := armored.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// Recover opens an escrowed key with its passphrase.
+func Recover(escrowed []byte, passphrase string) (*Key, error) {
+	identity, err := age.NewScryptIdentity(passphrase)
+	if err != nil {
+		return nil, err
+	}
+
+	var in io.Reader = bytes.NewReader(escrowed)
+	if strings.HasPrefix(strings.TrimSpace(string(escrowed)), armor.Header) {
+		in = armor.NewReader(bytes.NewReader(bytes.TrimSpace(escrowed)))
+	}
+
+	r, err := age.Decrypt(in, identity)
+	if err != nil {
+		return nil, fmt.Errorf("opening the escrowed key: %w", err)
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("opening the escrowed key: %w", err)
+	}
+
+	return Parse(data)
 }

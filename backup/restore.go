@@ -3,7 +3,6 @@ package backup
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -426,9 +425,8 @@ func (r *Restorer) verifyWritten(file *os.File, reader *fileReader, missing []in
 	return nil
 }
 
-// matches reports whether chunk is the content of part i: under the store
-// key it must derive the part's blob key, in the clear it must hash to the
-// part's ref.
+// matches reports whether chunk is the content of part i: its ref under
+// the store key or in the clear must be the part's.
 func (r *Restorer) matches(reader *fileReader, i int, chunk []byte) bool {
 	part := reader.parts[i]
 	if uint64(len(chunk)) != part.Length {
@@ -439,35 +437,11 @@ func (r *Restorer) matches(reader *fileReader, i int, chunk []byte) bool {
 		return bytes.Equal(chunk, reader.inline)
 	}
 
-	if i < len(reader.partKeys) && len(reader.partKeys[i]) > 0 {
-		if r.Key == nil {
-			return false
-		}
-
-		want := reader.partKeys[i]
-		first := r.Key.Choose(reader.size(), chunk)
-		if first == proto.Encryption_PLAINTEXT {
-			first = proto.Encryption_STORE_KEYED
-		}
-
-		for _, mode := range []proto.Encryption{first, otherMode(first)} {
-			if hmac.Equal(r.Key.BlobKey(mode, chunk), want) {
-				return true
-			}
-		}
-
-		return false
+	if r.Key != nil && BlobRef(r.Key, chunk).Equal(part.Ref) {
+		return true
 	}
 
 	return proto.NewObject(&proto.Blob{Data: chunk}).Ref().Equal(part.Ref)
-}
-
-func otherMode(mode proto.Encryption) proto.Encryption {
-	if mode == proto.Encryption_STORE_KEYED {
-		return proto.Encryption_CONVERGENT
-	}
-
-	return proto.Encryption_STORE_KEYED
 }
 
 // rechunked cuts the destination with the backup's chunker when it did not

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 
@@ -17,7 +18,7 @@ func TestPackSealedRoundTrip(t *testing.T) {
 	key, err := storekey.Generate("s1")
 	require.NoError(t, err)
 
-	sealed, blobKey := key.SealBlob(proto.Encryption_CONVERGENT, []byte("shared level data"))
+	sealed := backup.SealBlob(key, []byte("shared level data"))
 	ctx := context.Background()
 	require.NoError(t, store.Put(ctx, proto.NewObject(sealed)))
 
@@ -34,9 +35,9 @@ func TestPackSealedRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got.GetSealed())
 	require.Equal(t, sealed.Data, got.GetSealed().Data)
-	require.Equal(t, proto.Encryption_CONVERGENT, got.GetSealed().Encryption)
+	require.Equal(t, proto.Encryption_SEALED, got.GetSealed().Encryption)
 
-	opened, err := storekey.OpenBlob(blobKey, got.GetSealed())
+	opened, err := backup.OpenBlob(key, got.GetSealed())
 	require.NoError(t, err)
 	require.Equal(t, []byte("shared level data"), opened)
 

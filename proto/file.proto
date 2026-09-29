@@ -5,6 +5,7 @@ package proto;
 option go_package = "github.com/twcclan/goback/proto";
 
 import "ref.proto";
+import "encryption.proto";
 
 // NodeType says what kind of filesystem entry a tree node describes.
 enum NodeType {
@@ -51,12 +52,15 @@ message File {
 	Chunker chunker = 3;
 
 	// the whole content of a small file, stored without a blob; sealed
-	// under the key in keys when the store is encrypted
+	// under the store key when the store is encrypted
 	bytes inline = 4;
 
-	// the per-part blob keys (one 32-byte key per part, or one for inline
-	// content), encrypted under the store key; empty in a plaintext store
-	bytes keys = 5;
+	// kept for per-part keys, which convergent encryption needs
+	reserved 5;
+	reserved "keys";
+
+	// how inline is stored
+	Encryption inline_encryption = 6;
 }
 
 message FilePart {

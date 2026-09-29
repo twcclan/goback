@@ -405,12 +405,9 @@ func (*UndeleteSetResponse) Descriptor() ([]byte, []int) {
 type StorePolicy struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
-	// hybrid, convergent-all, store-keyed-all or none
-	Mode             string  `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	SizeThreshold    int64   `protobuf:"varint,3,opt,name=size_threshold,json=sizeThreshold,proto3" json:"size_threshold,omitempty"`
-	EntropyEstimator string  `protobuf:"bytes,4,opt,name=entropy_estimator,json=entropyEstimator,proto3" json:"entropy_estimator,omitempty"`
-	EntropyThreshold float64 `protobuf:"fixed64,5,opt,name=entropy_threshold,json=entropyThreshold,proto3" json:"entropy_threshold,omitempty"`
-	PresenceScope    string  `protobuf:"bytes,6,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
+	// sealed or none
+	Mode          string `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	PresenceScope string `protobuf:"bytes,6,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
 	// when the operator confirmed the store key is saved
 	KeyAcknowledgedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=key_acknowledged_at,json=keyAcknowledgedAt,proto3" json:"key_acknowledged_at,omitempty"`
 	unknownFields     protoimpl.UnknownFields
@@ -459,27 +456,6 @@ func (x *StorePolicy) GetMode() string {
 		return x.Mode
 	}
 	return ""
-}
-
-func (x *StorePolicy) GetSizeThreshold() int64 {
-	if x != nil {
-		return x.SizeThreshold
-	}
-	return 0
-}
-
-func (x *StorePolicy) GetEntropyEstimator() string {
-	if x != nil {
-		return x.EntropyEstimator
-	}
-	return ""
-}
-
-func (x *StorePolicy) GetEntropyThreshold() float64 {
-	if x != nil {
-		return x.EntropyThreshold
-	}
-	return 0
 }
 
 func (x *StorePolicy) GetPresenceScope() string {
@@ -533,12 +509,9 @@ func (*GetStorePolicyRequest) Descriptor() ([]byte, []int) {
 }
 
 type SetStorePolicyRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Mode             string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
-	SizeThreshold    int64                  `protobuf:"varint,2,opt,name=size_threshold,json=sizeThreshold,proto3" json:"size_threshold,omitempty"`
-	EntropyEstimator string                 `protobuf:"bytes,3,opt,name=entropy_estimator,json=entropyEstimator,proto3" json:"entropy_estimator,omitempty"`
-	EntropyThreshold float64                `protobuf:"fixed64,4,opt,name=entropy_threshold,json=entropyThreshold,proto3" json:"entropy_threshold,omitempty"`
-	PresenceScope    string                 `protobuf:"bytes,5,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	PresenceScope string                 `protobuf:"bytes,5,opt,name=presence_scope,json=presenceScope,proto3" json:"presence_scope,omitempty"`
 	// the operator confirms the store key is saved
 	AcknowledgeKey bool `protobuf:"varint,7,opt,name=acknowledge_key,json=acknowledgeKey,proto3" json:"acknowledge_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -580,27 +553,6 @@ func (x *SetStorePolicyRequest) GetMode() string {
 		return x.Mode
 	}
 	return ""
-}
-
-func (x *SetStorePolicyRequest) GetSizeThreshold() int64 {
-	if x != nil {
-		return x.SizeThreshold
-	}
-	return 0
-}
-
-func (x *SetStorePolicyRequest) GetEntropyEstimator() string {
-	if x != nil {
-		return x.EntropyEstimator
-	}
-	return ""
-}
-
-func (x *SetStorePolicyRequest) GetEntropyThreshold() float64 {
-	if x != nil {
-		return x.EntropyThreshold
-	}
-	return 0
 }
 
 func (x *SetStorePolicyRequest) GetPresenceScope() string {
@@ -1135,23 +1087,17 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x11DeleteSetResponse\"(\n" +
 	"\x12UndeleteSetRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x15\n" +
-	"\x13UndeleteSetResponse\"\xb5\x02\n" +
+	"\x13UndeleteSetResponse\"\xc6\x01\n" +
 	"\vStorePolicy\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12%\n" +
-	"\x0esize_threshold\x18\x03 \x01(\x03R\rsizeThreshold\x12+\n" +
-	"\x11entropy_estimator\x18\x04 \x01(\tR\x10entropyEstimator\x12+\n" +
-	"\x11entropy_threshold\x18\x05 \x01(\x01R\x10entropyThreshold\x12%\n" +
 	"\x0epresence_scope\x18\x06 \x01(\tR\rpresenceScope\x12J\n" +
-	"\x13key_acknowledged_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x11keyAcknowledgedAtJ\x04\b\a\x10\b\"\x17\n" +
-	"\x15GetStorePolicyRequest\"\x82\x02\n" +
+	"\x13key_acknowledged_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x11keyAcknowledgedAtJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\b\"\x17\n" +
+	"\x15GetStorePolicyRequest\"\x93\x01\n" +
 	"\x15SetStorePolicyRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12%\n" +
-	"\x0esize_threshold\x18\x02 \x01(\x03R\rsizeThreshold\x12+\n" +
-	"\x11entropy_estimator\x18\x03 \x01(\tR\x10entropyEstimator\x12+\n" +
-	"\x11entropy_threshold\x18\x04 \x01(\x01R\x10entropyThreshold\x12%\n" +
 	"\x0epresence_scope\x18\x05 \x01(\tR\rpresenceScope\x12'\n" +
-	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKeyJ\x04\b\x06\x10\a\"K\n" +
+	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKeyJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\a\"K\n" +
 	"\x10RetentionBracket\x12\x16\n" +
 	"\x06period\x18\x01 \x01(\tR\x06period\x12\x1f\n" +
 	"\vfor_seconds\x18\x02 \x01(\x03R\n" +

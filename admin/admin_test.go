@@ -208,13 +208,13 @@ func TestAdminStorePolicyAndJobs(t *testing.T) {
 	var policy pb.StorePolicy
 	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/policy", nil, &policy))
 	require.Zero(t, policy.Version)
-	require.Equal(t, "hybrid", policy.Mode)
+	require.Equal(t, "sealed", policy.Mode)
 	require.Nil(t, policy.KeyAcknowledgedAt)
 
-	body := map[string]interface{}{"mode": "store-keyed-all", "size_threshold": 4096, "entropy_estimator": "histogram-v1", "entropy_threshold": 7, "presence_scope": "store", "acknowledge_key": true}
+	body := map[string]interface{}{"mode": "none", "presence_scope": "store", "acknowledge_key": true}
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/policy", body, &policy))
 	require.EqualValues(t, 1, policy.Version)
-	require.Equal(t, "store-keyed-all", policy.Mode)
+	require.Equal(t, "none", policy.Mode)
 	require.Equal(t, "store", policy.PresenceScope)
 	require.NotNil(t, policy.KeyAcknowledgedAt)
 	acknowledged := policy.KeyAcknowledgedAt.AsTime()
@@ -222,14 +222,14 @@ func TestAdminStorePolicyAndJobs(t *testing.T) {
 
 	h.now = h.now.Add(time.Hour)
 	body["acknowledge_key"] = false
-	body["mode"] = "hybrid"
+	body["mode"] = "sealed"
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/policy", body, &policy))
 	require.EqualValues(t, 2, policy.Version)
 	require.True(t, policy.KeyAcknowledgedAt.AsTime().Equal(acknowledged), "the acknowledgement is recorded once")
 
 	body["mode"] = "rot13"
 	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/policy", body, nil))
-	body["mode"] = "hybrid"
+	body["mode"] = "sealed"
 	body["presence_scope"] = "everyone"
 	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/policy", body, nil))
 

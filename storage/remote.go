@@ -416,11 +416,7 @@ func policyFromProto(p *proto.StorePolicy) *storekey.Policy {
 		return nil
 	}
 
-	return &storekey.Policy{
-		Version: p.Version, Mode: storekey.Mode(p.Mode), SizeThreshold: p.SizeThreshold,
-		EntropyEstimator: p.EntropyEstimator, EntropyThreshold: p.EntropyThreshold,
-		PresenceScope: p.PresenceScope,
-	}
+	return &storekey.Policy{Version: p.Version, Mode: storekey.Mode(p.Mode), PresenceScope: p.PresenceScope}
 }
 
 func policyProto(p *storekey.Policy) *proto.StorePolicy {
@@ -428,11 +424,7 @@ func policyProto(p *storekey.Policy) *proto.StorePolicy {
 		return nil
 	}
 
-	return &proto.StorePolicy{
-		Version: p.Version, Mode: string(p.Mode), SizeThreshold: p.SizeThreshold,
-		EntropyEstimator: p.EntropyEstimator, EntropyThreshold: p.EntropyThreshold,
-		PresenceScope: p.PresenceScope,
-	}
+	return &proto.StorePolicy{Version: p.Version, Mode: string(p.Mode), PresenceScope: p.PresenceScope}
 }
 
 // ReadParts implements backup.PartReader through the ReadFile stream.

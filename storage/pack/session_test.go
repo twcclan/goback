@@ -317,7 +317,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	}
 
 	blob := makeTestData(t, 1)[0]
-	convergent := convergentBlob(t, "convergent chunk")
+	sealed := sealedBlob(t, "sealed chunk")
 	onlyA := tree("a")
 	onlyB := tree("b")
 	both := tree("both")
@@ -325,18 +325,18 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	ctxA, _ := beginSession(t, store, "agent-a")
 	ctxB, _ := beginSession(t, store, "agent-b")
 
-	for _, obj := range []*proto.Object{blob, convergent, onlyA, both} {
+	for _, obj := range []*proto.Object{blob, sealed, onlyA, both} {
 		require.NoError(t, store.Put(ctxA, obj))
 	}
 
-	for _, obj := range []*proto.Object{blob, convergent, onlyB, both} {
+	for _, obj := range []*proto.Object{blob, sealed, onlyB, both} {
 		require.NoError(t, store.Put(ctxB, obj))
 	}
 
 	require.NoError(t, store.Put(ctxA, commitObject()))
 	require.NoError(t, store.Put(ctxB, commitObject()))
 
-	all := []*proto.Object{blob, convergent, onlyA, onlyB, both}
+	all := []*proto.Object{blob, sealed, onlyA, onlyB, both}
 	require.Equal(t, []bool{true, true, true, true, true}, inSession(t, store, all...))
 
 	before := timestamps(t, store)
@@ -346,7 +346,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	require.Equal(t, merged, inSession(t, store, all...))
 
 	// one copy survives of an object two sessions wrote
-	for _, obj := range []*proto.Object{blob, convergent, both} {
+	for _, obj := range []*proto.Object{blob, sealed, both} {
 		loc, err := store.index.LocateObject(obj.Ref(), Scope{})
 		require.NoError(t, err)
 		_, err = store.index.LocateObject(obj.Ref(), Scope{}, loc.Archive)
@@ -466,13 +466,14 @@ func TestWritesToAnEndedSessionAreRefused(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
-func convergentBlob(t *testing.T, content string) *proto.Object {
+func sealedBlob(t *testing.T, content string) *proto.Object {
 	t.Helper()
 
 	key, err := storekey.Generate("any")
 	require.NoError(t, err)
 
-	sealed, _ := key.SealBlob(proto.Encryption_CONVERGENT, []byte(content))
+	obj := proto.NewObject(backup.SealBlob(key, []byte(content)))
+	obj.KeyId = key.ID()
 
-	return proto.NewObject(sealed)
+	return obj
 }

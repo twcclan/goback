@@ -72,13 +72,10 @@ message UndeleteSetResponse {}
 
 message StorePolicy {
     uint32 version = 1;
-    // hybrid, convergent-all, store-keyed-all or none
+    // sealed or none
     string mode = 2;
-    int64 size_threshold = 3;
-    string entropy_estimator = 4;
-    double entropy_threshold = 5;
+    reserved 3, 4, 5, 7;
     string presence_scope = 6;
-    reserved 7;
     // when the operator confirmed the store key is saved
     google.protobuf.Timestamp key_acknowledged_at = 8;
 }
@@ -87,11 +84,8 @@ message GetStorePolicyRequest {}
 
 message SetStorePolicyRequest {
     string mode = 1;
-    int64 size_threshold = 2;
-    string entropy_estimator = 3;
-    double entropy_threshold = 4;
+    reserved 2, 3, 4, 6;
     string presence_scope = 5;
-    reserved 6;
     // the operator confirms the store key is saved
     bool acknowledge_key = 7;
 }

@@ -387,7 +387,7 @@ func TestRemoteBeginCommit(t *testing.T) {
 
 	policy := storekey.DefaultPolicy()
 	policy.Version = 4
-	policy.Mode = storekey.ModeStoreKeyedAll
+	policy.Mode = storekey.ModeNone
 	policy.PresenceScope = "store"
 	index.policy = &policy
 	grant, err = gatedDial("node-1").BeginCommit(ctx, "world")

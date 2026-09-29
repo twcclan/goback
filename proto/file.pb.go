@@ -231,13 +231,12 @@ type File struct {
 	// the chunker that cut the parts
 	Chunker Chunker `protobuf:"varint,3,opt,name=chunker,proto3,enum=proto.Chunker" json:"chunker,omitempty"`
 	// the whole content of a small file, stored without a blob; sealed
-	// under the key in keys when the store is encrypted
+	// under the store key when the store is encrypted
 	Inline []byte `protobuf:"bytes,4,opt,name=inline,proto3" json:"inline,omitempty"`
-	// the per-part blob keys (one 32-byte key per part, or one for inline
-	// content), encrypted under the store key; empty in a plaintext store
-	Keys          []byte `protobuf:"bytes,5,opt,name=keys,proto3" json:"keys,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// how inline is stored
+	InlineEncryption Encryption `protobuf:"varint,6,opt,name=inline_encryption,json=inlineEncryption,proto3,enum=proto.Encryption" json:"inline_encryption,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *File) Reset() {
@@ -298,11 +297,11 @@ func (x *File) GetInline() []byte {
 	return nil
 }
 
-func (x *File) GetKeys() []byte {
+func (x *File) GetInlineEncryption() Encryption {
 	if x != nil {
-		return x.Keys
+		return x.InlineEncryption
 	}
-	return nil
+	return Encryption_PLAINTEXT
 }
 
 type FilePart struct {
@@ -370,7 +369,7 @@ var File_file_proto protoreflect.FileDescriptor
 const file_file_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"file.proto\x12\x05proto\x1a\tref.proto\"\xee\x01\n" +
+	"file.proto\x12\x05proto\x1a\tref.proto\x1a\x10encryption.proto\"\xee\x01\n" +
 	"\bFileInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\fR\x04name\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\rR\x04mode\x12\x12\n" +
@@ -381,14 +380,14 @@ const file_file_proto_rawDesc = "" +
 	"\x04type\x18\t \x01(\x0e2\x0f.proto.NodeTypeR\x04type\x12\x1f\n" +
 	"\vlink_target\x18\n" +
 	" \x01(\fR\n" +
-	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\xa7\x01\n" +
+	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\xdf\x01\n" +
 	"\x04File\x12%\n" +
 	"\x05parts\x18\x01 \x03(\v2\x0f.proto.FilePartR\x05parts\x12\"\n" +
 	"\x06splits\x18\x02 \x03(\v2\n" +
 	".proto.RefR\x06splits\x12(\n" +
 	"\achunker\x18\x03 \x01(\x0e2\x0e.proto.ChunkerR\achunker\x12\x16\n" +
-	"\x06inline\x18\x04 \x01(\fR\x06inline\x12\x12\n" +
-	"\x04keys\x18\x05 \x01(\fR\x04keys\"X\n" +
+	"\x06inline\x18\x04 \x01(\fR\x06inline\x12>\n" +
+	"\x11inline_encryption\x18\x06 \x01(\x0e2\x11.proto.EncryptionR\x10inlineEncryptionJ\x04\b\x05\x10\x06R\x04keys\"X\n" +
 	"\bFilePart\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x04R\x06offset\x12\x16\n" +
 	"\x06length\x18\x02 \x01(\x04R\x06length\x12\x1c\n" +
@@ -422,18 +421,20 @@ var file_file_proto_goTypes = []any{
 	(*File)(nil),     // 3: proto.File
 	(*FilePart)(nil), // 4: proto.FilePart
 	(*Ref)(nil),      // 5: proto.Ref
+	(Encryption)(0),  // 6: proto.Encryption
 }
 var file_file_proto_depIdxs = []int32{
 	0, // 0: proto.FileInfo.type:type_name -> proto.NodeType
 	4, // 1: proto.File.parts:type_name -> proto.FilePart
 	5, // 2: proto.File.splits:type_name -> proto.Ref
 	1, // 3: proto.File.chunker:type_name -> proto.Chunker
-	5, // 4: proto.FilePart.ref:type_name -> proto.Ref
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 4: proto.File.inline_encryption:type_name -> proto.Encryption
+	5, // 5: proto.FilePart.ref:type_name -> proto.Ref
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_file_proto_init() }
@@ -442,6 +443,7 @@ func file_file_proto_init() {
 		return
 	}
 	file_ref_proto_init()
+	file_encryption_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

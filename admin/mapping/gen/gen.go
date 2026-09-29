@@ -19,9 +19,6 @@ func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 	return &admin.StorePolicy{
 		Version:           in.Policy.Version,
 		Mode:              string(in.Policy.Mode),
-		SizeThreshold:     in.Policy.SizeThreshold,
-		EntropyEstimator:  in.Policy.EntropyEstimator,
-		EntropyThreshold:  in.Policy.EntropyThreshold,
 		PresenceScope:     in.Policy.PresenceScope,
 		KeyAcknowledgedAt: tmp0,
 	}

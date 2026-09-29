@@ -110,8 +110,6 @@ func TestWalkerWithKeySealsNamesAndContents(t *testing.T) {
 		switch obj.Type() {
 		case proto.ObjectType_BLOB:
 			require.NotNil(t, obj.GetSealed(), "every blob is sealed")
-		case proto.ObjectType_FILE:
-			require.NotEmpty(t, obj.GetFile().Keys, "every file carries its part keys")
 		}
 	}
 	f.store.mtx.RUnlock()
@@ -138,10 +136,9 @@ func TestWalkerWithKeySealsNamesAndContents(t *testing.T) {
 	err = NewBackupReader(f.store).WithKey(newKey(t)).WalkTree(context.Background(), first.Commit.Tree, nil, func(string, os.FileInfo, *proto.Ref) error { return nil })
 	require.ErrorIs(t, err, storekey.ErrWrongKey)
 
-	// the modes follow the policy
-	require.Equal(t, proto.Encryption_CONVERGENT, blobMode(t, f.store, fileObject(t, f.store, key, first.Commit.Tree, "sub/b.bin")))
-	require.Equal(t, proto.Encryption_STORE_KEYED, blobMode(t, f.store, fileObject(t, f.store, key, first.Commit.Tree, "sub/c.dat")))
-	require.NotEmpty(t, fileObject(t, f.store, key, first.Commit.Tree, "a.txt").Inline)
+	small := fileObject(t, f.store, key, first.Commit.Tree, "a.txt")
+	require.Equal(t, proto.Encryption_SEALED, small.InlineEncryption)
+	require.NotContains(t, string(small.Inline), "hello")
 
 	// an unchanged run is detected through the opened base tree
 	second := f.run()
@@ -161,42 +158,24 @@ func TestWalkerWithKeySealsNamesAndContents(t *testing.T) {
 	require.True(t, ref.Equal(proto.NewObject(fileObject(t, f.store, key, third.Commit.Tree, "sub/b.bin")).Ref()))
 }
 
-func blobMode(t *testing.T, store ObjectStore, file *proto.File) proto.Encryption {
-	t.Helper()
-
-	require.NotEmpty(t, file.Parts)
-	obj, err := store.Get(context.Background(), file.Parts[0].Ref)
-	require.NoError(t, err)
-	require.NotNil(t, obj.GetSealed())
-
-	return obj.GetSealed().Encryption
-}
-
-func TestConvergentBlobsDedupAcrossStores(t *testing.T) {
+func TestSealedBlobsDedupeUnderOneKeyOnly(t *testing.T) {
 	data := make([]byte, 400<<10)
 	rand.New(rand.NewSource(7)).Read(data)
 
+	key := newKey(t)
 	var files []*proto.File
-	for i := 0; i < 2; i++ {
+
+	for _, k := range []*storekey.Key{key, key, newKey(t)} {
 		f := newWalkerFixture(t)
-		key := newKey(t)
-		f.walker.Key = key
+		f.walker.Key = k
 		f.write("shared.dat", data)
-		f.write("secret.dat", data[:1000])
 
 		result := f.run()
-		files = append(files, fileObject(t, f.store, key, result.Commit.Tree, "shared.dat"))
-
-		secret := fileObject(t, f.store, key, result.Commit.Tree, "secret.dat")
-		require.NotEqual(t, files[0].Parts[0].Ref.Hash, secret.Inline)
+		files = append(files, fileObject(t, f.store, k, result.Commit.Tree, "shared.dat"))
 	}
 
-	require.Equal(t, len(files[0].Parts), len(files[1].Parts))
-	for i := range files[0].Parts {
-		require.True(t, files[0].Parts[i].Ref.Equal(files[1].Parts[i].Ref), "convergent blobs share refs across stores")
-	}
-
-	require.NotEqual(t, files[0].Keys, files[1].Keys, "the key lists are sealed per store")
+	require.True(t, files[0].Parts[0].Ref.Equal(files[1].Parts[0].Ref), "the same key stores a chunk under one ref")
+	require.False(t, files[0].Parts[0].Ref.Equal(files[2].Parts[0].Ref), "another key does not")
 }
 
 func TestIndexPath(t *testing.T) {
