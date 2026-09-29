@@ -48,47 +48,23 @@ func TestTheEscrowedKeyLivesInTheBucket(t *testing.T) {
 	require.NoError(t, err)
 	first := escrowed(t, key, "correct horse")
 
-	require.NoError(t, store.PutEscrowedKey(ctx, "", first))
-	require.NoError(t, store.PutEscrowedKey(ctx, "", first), "keeping the same copy again changes nothing")
+	require.NoError(t, store.PutEscrowedKey(ctx, first))
+	require.NoError(t, store.PutEscrowedKey(ctx, first), "keeping the same copy again changes nothing")
 
 	second := escrowed(t, key, "battery staple")
-	require.NoError(t, store.PutEscrowedKey(ctx, "", second), "another copy of the same key is kept beside the first")
+	require.NoError(t, store.PutEscrowedKey(ctx, second), "another copy of the same key is kept beside the first")
 
 	other, err := storekey.Generate("s1")
 	require.NoError(t, err)
-	require.ErrorIs(t, store.PutEscrowedKey(ctx, "", escrowed(t, other, "correct horse")), backup.ErrOtherKeyEscrowed)
+	require.ErrorIs(t, store.PutEscrowedKey(ctx, escrowed(t, other, "correct horse")), backup.ErrOtherKeyEscrowed)
 
-	require.ErrorIs(t, store.PutEscrowedKey(ctx, "", backup.EscrowedKey{KeyID: key.IDString(), Escrowed: []byte("{}")}), backup.ErrInvalidEscrow)
-	require.ErrorIs(t, store.PutEscrowedKey(ctx, "", backup.EscrowedKey{KeyID: "../x", Escrowed: first.Escrowed}), backup.ErrInvalidEscrow)
+	require.ErrorIs(t, store.PutEscrowedKey(ctx, backup.EscrowedKey{KeyID: key.IDString(), Escrowed: []byte("{}")}), backup.ErrInvalidEscrow)
+	require.ErrorIs(t, store.PutEscrowedKey(ctx, backup.EscrowedKey{KeyID: "../x", Escrowed: first.Escrowed}), backup.ErrInvalidEscrow)
 
 	// a store opened over the same bucket with a fresh index still has both
-	kept, err := bucketPack(t, dir).EscrowedKeys(ctx, "")
+	kept, err := bucketPack(t, dir).EscrowedKeys(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []backup.EscrowedKey{first, second}, kept)
-}
-
-func TestEachOwnerSeesOnlyItsOwnEscrowedKeys(t *testing.T) {
-	ctx := context.Background()
-	store := bucketPack(t, t.TempDir())
-
-	a, err := storekey.Generate("s1")
-	require.NoError(t, err)
-	b, err := storekey.Generate("s1")
-	require.NoError(t, err)
-
-	require.NoError(t, store.PutEscrowedKey(ctx, "owner-a", escrowed(t, a, "correct horse")))
-	require.NoError(t, store.PutEscrowedKey(ctx, "owner-b", escrowed(t, b, "correct horse")), "owners keep keys apart")
-
-	kept, err := store.EscrowedKeys(ctx, "owner-a")
-	require.NoError(t, err)
-	require.Len(t, kept, 1)
-	require.Equal(t, a.IDString(), kept[0].KeyID)
-
-	kept, err = store.EscrowedKeys(ctx, "")
-	require.NoError(t, err)
-	require.Empty(t, kept)
-
-	require.ErrorIs(t, store.PutEscrowedKey(ctx, "../owner-b", escrowed(t, a, "correct horse")), backup.ErrInvalidEscrow)
 }
 
 type escrowIndex struct {
@@ -103,7 +79,7 @@ func TestAnAgentFetchesTheEscrowedKey(t *testing.T) {
 	key, err := storekey.Generate("s1")
 	require.NoError(t, err)
 	held := escrowed(t, key, "correct horse")
-	require.NoError(t, store.PutEscrowedKey(ctx, "", held))
+	require.NoError(t, store.PutEscrowedKey(ctx, held))
 
 	client := startServerWith(t, escrowIndex{memIndex: newMemIndex(), KeyEscrow: store}, nil)("node-1")
 
