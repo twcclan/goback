@@ -738,7 +738,12 @@ func (x *Index) ReIndex(ctx context.Context) error {
 		ref    *proto.Ref
 	}
 
-	bySet := make(map[string][]pending)
+	type setKey struct {
+		id   int64
+		name string
+	}
+
+	bySet := make(map[setKey][]pending)
 
 	err = x.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
 		ref := obj.Ref()
@@ -749,7 +754,12 @@ func (x *Index) ReIndex(ctx context.Context) error {
 		}
 
 		commit := obj.GetCommit()
-		bySet[commit.GetBackupSet()] = append(bySet[commit.GetBackupSet()], pending{commit: commit, ref: ref})
+		key := setKey{id: int64(commit.GetSetId())}
+		if key.id == 0 {
+			key.name = commit.GetBackupSet()
+		}
+
+		bySet[key] = append(bySet[key], pending{commit: commit, ref: ref})
 
 		return nil
 	})
@@ -769,13 +779,13 @@ func (x *Index) ReIndex(ctx context.Context) error {
 			}
 		}
 
-		setID, err := findSet(ctx, x.client, commits[0].commit.GetBackupSet())
-		if errors.Is(err, backup.ErrNotFound) {
-			continue
-		}
-
+		setID, err := x.ensureSet(ctx, x.client, commits[0].commit, commits[0].ref, false)
 		if err != nil {
 			return err
+		}
+
+		if setID == 0 {
+			continue
 		}
 
 		err = x.reevaluateSet(ctx, setID)

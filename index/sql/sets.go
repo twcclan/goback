@@ -28,19 +28,35 @@ func findSet(ctx context.Context, c *ent.Client, name string) (int64, error) {
 // creating the set owned by that agent if needed. A set belongs to the
 // agent of its first commit; in strict mode a commit by any other agent
 // fails with backup.ErrSetOwned, otherwise it is indexed regardless. A
-// non-zero wantID recreates a set under the id its commits carry, which a
-// rebuild after index loss needs; such a set comes up with retention
-// paused until an operator sets its policy.
+// non-zero wantID finds or recreates the set under the id its commits
+// carry, which a rebuild after index loss needs, so same-named sets stay
+// apart; a recreated set comes up with retention paused until an operator
+// sets its policy. The name decides only when that id cannot be used.
 func ensureSet(ctx context.Context, c *ent.Client, name, agentID string, wantID int64, strict bool) (int64, error) {
-	s, err := c.Set.Query().Where(set.Name(name)).Only(ctx)
-	if ent.IsNotFound(err) {
-		create := c.Set.Create().SetName(name).SetNillableAgentID(nilIfZero(agentID))
-		if wantID != 0 {
-			create.SetID(wantID).SetRetentionPaused(true)
+	var (
+		s   *ent.Set
+		err error
+	)
+
+	if wantID != 0 {
+		s, err = c.Set.Get(ctx, wantID)
+		if ent.IsNotFound(err) {
+			s, err = c.Set.Create().SetID(wantID).SetName(name).SetNillableAgentID(nilIfZero(agentID)).SetRetentionPaused(true).Save(ctx)
 		}
 
+		if err == nil {
+			return claimSet(ctx, c, s, name, agentID, strict)
+		}
+
+		if !ent.IsConstraintError(err) {
+			return 0, err
+		}
+	}
+
+	s, err = c.Set.Query().Where(set.Name(name)).Only(ctx)
+	if ent.IsNotFound(err) {
 		var created *ent.Set
-		created, err = create.Save(ctx)
+		created, err = c.Set.Create().SetName(name).SetNillableAgentID(nilIfZero(agentID)).Save(ctx)
 		if err == nil {
 			return created.ID, nil
 		}
@@ -56,6 +72,14 @@ func ensureSet(ctx context.Context, c *ent.Client, name, agentID string, wantID 
 	if err != nil {
 		return 0, err
 	}
+
+	return claimSet(ctx, c, s, name, agentID, strict)
+}
+
+// claimSet gives an unowned set to agentID, and in strict mode refuses a
+// set owned by another agent.
+func claimSet(ctx context.Context, c *ent.Client, s *ent.Set, name, agentID string, strict bool) (int64, error) {
+	var err error
 
 	owner := deref(s.AgentID)
 	switch {
