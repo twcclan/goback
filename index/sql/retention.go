@@ -505,10 +505,15 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 
+	pinned, err := x.storedPins(ctx, due)
+	if err != nil {
+		return 0, err
+	}
+
 	var written []*ent.CommitRow
 
 	for _, c := range due {
-		if held[string(c.Ref)] {
+		if held[string(c.Ref)] || pinned[string(c.Ref)] {
 			continue
 		}
 
@@ -553,6 +558,65 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 	}
 
 	return count, x.closeEmptySets(ctx)
+}
+
+// storedPins indexes every pin in the store that holds a commit of an
+// active set due for its tombstone, and returns those commits. The index
+// may have missed a pin, restored from a copy older than it, and what the
+// store holds is what counts, unpins included.
+func (x *Index) storedPins(ctx context.Context, due []*ent.CommitRow) (map[string]bool, error) {
+	targets := make(map[string]bool, len(due))
+	for _, c := range due {
+		if c.Edges.Set.State == set.StateActive {
+			targets[string(c.Ref)] = true
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	unpinned := map[string]bool{}
+
+	if hw, ok := storeAs[backup.HeaderWalker](x.ObjectStore); ok {
+		err := hw.WalkHeaders(ctx, proto.ObjectType_TOMBSTONE, func(hdr *proto.ObjectHeader) error {
+			unpinned[string(hdr.GetTombstoneFor().GetHash())] = true
+			return nil
+		})
+		if err != nil && !errors.Is(err, backup.ErrNotImplemented) {
+			return nil, err
+		}
+	}
+
+	pinned := map[string]bool{}
+
+	err := x.ObjectStore.Walk(ctx, true, proto.ObjectType_PIN, func(obj *proto.Object) error {
+		target := obj.GetPin().GetTarget().GetHash()
+		ref := obj.Ref()
+
+		if !targets[string(target)] || unpinned[string(ref.Hash)] {
+			return nil
+		}
+
+		gone, err := isDeleted(ctx, x.client, ref.Hash)
+		if err != nil || gone {
+			return err
+		}
+
+		gone, err = x.client.Pin.Query().Where(pin.Ref(ref.Hash), pin.DeletedAtNotNil()).Exist(ctx)
+		if err != nil || gone {
+			return err
+		}
+
+		pinned[string(target)] = true
+
+		return x.indexPin(ctx, obj.GetPin(), ref, false)
+	})
+	if errors.Is(err, backup.ErrNotImplemented) {
+		return pinned, nil
+	}
+
+	return pinned, err
 }
 
 // restoreLeases returns the refs live restore sessions hold.

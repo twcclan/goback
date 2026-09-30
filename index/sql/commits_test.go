@@ -858,3 +858,48 @@ func TestAPinKeepsTheLabelItWasWrittenWith(t *testing.T) {
 	require.Len(t, pins, 2)
 	require.Empty(t, pins[1].GetMetadata())
 }
+
+func TestRetireKeepsACommitAPinInTheStoreHolds(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "two")), false)
+
+	// the pin reached the store but not this index, as with an index
+	// restored from a copy older than the pin
+	pin := proto.NewObject(&proto.Pin{Target: a, ReceivedAtNs: f.clock.UnixNano()})
+	require.NoError(t, f.store.Put(f.ctx, pin))
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.False(t, f.store.tombstoned(a))
+
+	pins, err := f.x.Pins(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, pins, 1, "the index learns the pin it missed")
+
+	n, err = f.x.Retire(f.ctx, f.clock.Add(30*24*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, n, "the commit stays held")
+}
+
+func TestRetireIgnoresAPinTheStoreUnpinned(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "two")), false)
+
+	pin := proto.NewObject(&proto.Pin{Target: a, ReceivedAtNs: f.clock.UnixNano()})
+	require.NoError(t, f.store.Put(f.ctx, pin))
+	require.NoError(t, f.store.Delete(f.ctx, pin.Ref()))
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.True(t, f.store.tombstoned(a))
+}
