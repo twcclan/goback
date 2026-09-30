@@ -6468,7 +6468,6 @@ type SetMutation struct {
 	typ              string
 	id               *int64
 	name             *string
-	agent_id         *string
 	state            *set.State
 	retention_policy *string
 	retention_paused *bool
@@ -6632,55 +6631,6 @@ func (m *SetMutation) OldName(ctx context.Context) (v string, err error) {
 // ResetName resets all changes to the "name" field.
 func (m *SetMutation) ResetName() {
 	m.name = nil
-}
-
-// SetAgentID sets the "agent_id" field.
-func (m *SetMutation) SetAgentID(s string) {
-	m.agent_id = &s
-}
-
-// AgentID returns the value of the "agent_id" field in the mutation.
-func (m *SetMutation) AgentID() (r string, exists bool) {
-	v := m.agent_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldAgentID returns the old "agent_id" field's value of the Set entity.
-// If the Set object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SetMutation) OldAgentID(ctx context.Context) (v *string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAgentID is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAgentID requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAgentID: %w", err)
-	}
-	return oldValue.AgentID, nil
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (m *SetMutation) ClearAgentID() {
-	m.agent_id = nil
-	m.clearedFields[set.FieldAgentID] = struct{}{}
-}
-
-// AgentIDCleared returns if the "agent_id" field was cleared in this mutation.
-func (m *SetMutation) AgentIDCleared() bool {
-	_, ok := m.clearedFields[set.FieldAgentID]
-	return ok
-}
-
-// ResetAgentID resets all changes to the "agent_id" field.
-func (m *SetMutation) ResetAgentID() {
-	m.agent_id = nil
-	delete(m.clearedFields, set.FieldAgentID)
 }
 
 // SetState sets the "state" field.
@@ -7196,12 +7146,9 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 7)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
-	}
-	if m.agent_id != nil {
-		fields = append(fields, set.FieldAgentID)
 	}
 	if m.state != nil {
 		fields = append(fields, set.FieldState)
@@ -7231,8 +7178,6 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 	switch name {
 	case set.FieldName:
 		return m.Name()
-	case set.FieldAgentID:
-		return m.AgentID()
 	case set.FieldState:
 		return m.State()
 	case set.FieldRetentionPolicy:
@@ -7256,8 +7201,6 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 	switch name {
 	case set.FieldName:
 		return m.OldName(ctx)
-	case set.FieldAgentID:
-		return m.OldAgentID(ctx)
 	case set.FieldState:
 		return m.OldState(ctx)
 	case set.FieldRetentionPolicy:
@@ -7285,13 +7228,6 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
-		return nil
-	case set.FieldAgentID:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetAgentID(v)
 		return nil
 	case set.FieldState:
 		v, ok := value.(set.State)
@@ -7380,9 +7316,6 @@ func (m *SetMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *SetMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(set.FieldAgentID) {
-		fields = append(fields, set.FieldAgentID)
-	}
 	if m.FieldCleared(set.FieldRetentionPolicy) {
 		fields = append(fields, set.FieldRetentionPolicy)
 	}
@@ -7403,9 +7336,6 @@ func (m *SetMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *SetMutation) ClearField(name string) error {
 	switch name {
-	case set.FieldAgentID:
-		m.ClearAgentID()
-		return nil
 	case set.FieldRetentionPolicy:
 		m.ClearRetentionPolicy()
 		return nil
@@ -7422,9 +7352,6 @@ func (m *SetMutation) ResetField(name string) error {
 	switch name {
 	case set.FieldName:
 		m.ResetName()
-		return nil
-	case set.FieldAgentID:
-		m.ResetAgentID()
 		return nil
 	case set.FieldState:
 		m.ResetState()

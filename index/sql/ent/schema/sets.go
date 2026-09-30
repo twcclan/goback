@@ -14,8 +14,7 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// Set is a backup set: owned by the agent of its first commit, with its
-// retention policy and lifecycle state.
+// Set is a backup set, with its retention policy and lifecycle state.
 type Set struct {
 	ent.Schema
 }
@@ -25,7 +24,6 @@ func (Set) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id"),
 		field.String("name"),
-		field.String("agent_id").Optional().Nillable(),
 		field.Enum("state").Values("active", "closing", "deleted").Default("active"),
 		field.String("retention_policy").Optional().Nillable(),
 		field.Bool("retention_paused").Default(false),

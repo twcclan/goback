@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
@@ -24,28 +23,20 @@ func findSet(ctx context.Context, c *ent.Client, name string) (int64, error) {
 	return id, err
 }
 
-// ensureSet returns the id of the named set for a commit by agentID,
-// creating the set owned by that agent if needed. A set belongs to the
-// agent of its first commit; in strict mode a commit by any other agent
-// fails with backup.ErrSetOwned, otherwise it is indexed regardless. A
+// ensureSet returns the id of the named set, creating it if needed. A
 // non-zero wantID finds or recreates the set under the id its commits
 // carry, which a rebuild after index loss needs, so same-named sets stay
 // apart; a recreated set comes up with retention paused until an operator
 // sets its policy. The name decides only when that id cannot be used.
-func ensureSet(ctx context.Context, c *ent.Client, name, agentID string, wantID int64, strict bool) (int64, error) {
-	var (
-		s   *ent.Set
-		err error
-	)
-
+func ensureSet(ctx context.Context, c *ent.Client, name string, wantID int64) (int64, error) {
 	if wantID != 0 {
-		s, err = c.Set.Get(ctx, wantID)
+		s, err := c.Set.Get(ctx, wantID)
 		if ent.IsNotFound(err) {
-			s, err = c.Set.Create().SetID(wantID).SetName(name).SetNillableAgentID(nilIfZero(agentID)).SetRetentionPaused(true).Save(ctx)
+			s, err = c.Set.Create().SetID(wantID).SetName(name).SetRetentionPaused(true).Save(ctx)
 		}
 
 		if err == nil {
-			return claimSet(ctx, c, s, name, agentID, strict)
+			return s.ID, nil
 		}
 
 		if !ent.IsConstraintError(err) {
@@ -53,43 +44,22 @@ func ensureSet(ctx context.Context, c *ent.Client, name, agentID string, wantID 
 		}
 	}
 
-	s, err = c.Set.Query().Where(set.Name(name)).Only(ctx)
-	if ent.IsNotFound(err) {
-		var created *ent.Set
-		created, err = c.Set.Create().SetName(name).SetNillableAgentID(nilIfZero(agentID)).Save(ctx)
-		if err == nil {
-			return created.ID, nil
-		}
-
-		// another commit created the set first; judge it like any other
-		if !ent.IsConstraintError(err) {
-			return 0, err
-		}
-
-		s, err = c.Set.Query().Where(set.Name(name)).Only(ctx)
+	id, err := c.Set.Query().Where(set.Name(name)).OnlyID(ctx)
+	if !ent.IsNotFound(err) {
+		return id, err
 	}
 
-	if err != nil {
+	created, err := c.Set.Create().SetName(name).Save(ctx)
+	if err == nil {
+		return created.ID, nil
+	}
+
+	// another commit created the set first
+	if !ent.IsConstraintError(err) {
 		return 0, err
 	}
 
-	return claimSet(ctx, c, s, name, agentID, strict)
-}
-
-// claimSet gives an unowned set to agentID, and in strict mode refuses a
-// set owned by another agent.
-func claimSet(ctx context.Context, c *ent.Client, s *ent.Set, name, agentID string, strict bool) (int64, error) {
-	var err error
-
-	owner := deref(s.AgentID)
-	switch {
-	case owner == "" && agentID != "":
-		_, err = c.Set.Update().Where(set.ID(s.ID), set.AgentIDIsNil()).SetAgentID(agentID).Save(ctx)
-	case owner != "" && owner != agentID && strict:
-		err = fmt.Errorf("%w: set %q belongs to agent %q, commit is by %q", backup.ErrSetOwned, name, owner, agentID)
-	}
-
-	return s.ID, err
+	return c.Set.Query().Where(set.Name(name)).OnlyID(ctx)
 }
 
 // lockSet takes the set's row lock for the transaction.
@@ -102,16 +72,10 @@ func (x *Index) lockSet(ctx context.Context, tx *ent.Tx, setID int64) (*ent.Set,
 	return s, err
 }
 
-// BeginCommit implements backup.CommitGate: the set is created or its
-// ownership checked, it must be active, and the grant carries the store
-// policy.
+// BeginCommit implements backup.CommitGate: the set is created if needed,
+// it must be active, and the grant carries the store policy.
 func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGrant, error) {
-	p, err := auth.Require(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	setID, err := ensureSet(ctx, x.client, name, p.AgentID, 0, true)
+	setID, err := ensureSet(ctx, x.client, name, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -240,25 +204,4 @@ func (x *Index) latestSize(ctx context.Context, setID int64) (int64, error) {
 	}
 
 	return deref(newest.LogicalSize), nil
-}
-
-// TransferSet makes agentID the owner of a set; empty releases it.
-func (x *Index) TransferSet(ctx context.Context, name, agentID string) error {
-	update := x.client.Set.Update().Where(set.Name(name))
-	if agentID == "" {
-		update.ClearAgentID()
-	} else {
-		update.SetAgentID(agentID)
-	}
-
-	n, err := update.Save(ctx)
-	if err != nil {
-		return err
-	}
-
-	if n == 0 {
-		return fmt.Errorf("%w: set %q", backup.ErrNotFound, name)
-	}
-
-	return nil
 }

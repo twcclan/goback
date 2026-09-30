@@ -58,11 +58,6 @@ func Name(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldName, v))
 }
 
-// AgentID applies equality check predicate on the "agent_id" field. It's identical to AgentIDEQ.
-func AgentID(v string) predicate.Set {
-	return predicate.Set(sql.FieldEQ(FieldAgentID, v))
-}
-
 // RetentionPolicy applies equality check predicate on the "retention_policy" field. It's identical to RetentionPolicyEQ.
 func RetentionPolicy(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldRetentionPolicy, v))
@@ -151,81 +146,6 @@ func NameEqualFold(v string) predicate.Set {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.Set {
 	return predicate.Set(sql.FieldContainsFold(FieldName, v))
-}
-
-// AgentIDEQ applies the EQ predicate on the "agent_id" field.
-func AgentIDEQ(v string) predicate.Set {
-	return predicate.Set(sql.FieldEQ(FieldAgentID, v))
-}
-
-// AgentIDNEQ applies the NEQ predicate on the "agent_id" field.
-func AgentIDNEQ(v string) predicate.Set {
-	return predicate.Set(sql.FieldNEQ(FieldAgentID, v))
-}
-
-// AgentIDIn applies the In predicate on the "agent_id" field.
-func AgentIDIn(vs ...string) predicate.Set {
-	return predicate.Set(sql.FieldIn(FieldAgentID, vs...))
-}
-
-// AgentIDNotIn applies the NotIn predicate on the "agent_id" field.
-func AgentIDNotIn(vs ...string) predicate.Set {
-	return predicate.Set(sql.FieldNotIn(FieldAgentID, vs...))
-}
-
-// AgentIDGT applies the GT predicate on the "agent_id" field.
-func AgentIDGT(v string) predicate.Set {
-	return predicate.Set(sql.FieldGT(FieldAgentID, v))
-}
-
-// AgentIDGTE applies the GTE predicate on the "agent_id" field.
-func AgentIDGTE(v string) predicate.Set {
-	return predicate.Set(sql.FieldGTE(FieldAgentID, v))
-}
-
-// AgentIDLT applies the LT predicate on the "agent_id" field.
-func AgentIDLT(v string) predicate.Set {
-	return predicate.Set(sql.FieldLT(FieldAgentID, v))
-}
-
-// AgentIDLTE applies the LTE predicate on the "agent_id" field.
-func AgentIDLTE(v string) predicate.Set {
-	return predicate.Set(sql.FieldLTE(FieldAgentID, v))
-}
-
-// AgentIDContains applies the Contains predicate on the "agent_id" field.
-func AgentIDContains(v string) predicate.Set {
-	return predicate.Set(sql.FieldContains(FieldAgentID, v))
-}
-
-// AgentIDHasPrefix applies the HasPrefix predicate on the "agent_id" field.
-func AgentIDHasPrefix(v string) predicate.Set {
-	return predicate.Set(sql.FieldHasPrefix(FieldAgentID, v))
-}
-
-// AgentIDHasSuffix applies the HasSuffix predicate on the "agent_id" field.
-func AgentIDHasSuffix(v string) predicate.Set {
-	return predicate.Set(sql.FieldHasSuffix(FieldAgentID, v))
-}
-
-// AgentIDIsNil applies the IsNil predicate on the "agent_id" field.
-func AgentIDIsNil() predicate.Set {
-	return predicate.Set(sql.FieldIsNull(FieldAgentID))
-}
-
-// AgentIDNotNil applies the NotNil predicate on the "agent_id" field.
-func AgentIDNotNil() predicate.Set {
-	return predicate.Set(sql.FieldNotNull(FieldAgentID))
-}
-
-// AgentIDEqualFold applies the EqualFold predicate on the "agent_id" field.
-func AgentIDEqualFold(v string) predicate.Set {
-	return predicate.Set(sql.FieldEqualFold(FieldAgentID, v))
-}
-
-// AgentIDContainsFold applies the ContainsFold predicate on the "agent_id" field.
-func AgentIDContainsFold(v string) predicate.Set {
-	return predicate.Set(sql.FieldContainsFold(FieldAgentID, v))
 }
 
 // StateEQ applies the EQ predicate on the "state" field.

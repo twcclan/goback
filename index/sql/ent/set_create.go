@@ -31,20 +31,6 @@ func (_c *SetCreate) SetName(v string) *SetCreate {
 	return _c
 }
 
-// SetAgentID sets the "agent_id" field.
-func (_c *SetCreate) SetAgentID(v string) *SetCreate {
-	_c.mutation.SetAgentID(v)
-	return _c
-}
-
-// SetNillableAgentID sets the "agent_id" field if the given value is not nil.
-func (_c *SetCreate) SetNillableAgentID(v *string) *SetCreate {
-	if v != nil {
-		_c.SetAgentID(*v)
-	}
-	return _c
-}
-
 // SetState sets the "state" field.
 func (_c *SetCreate) SetState(v set.State) *SetCreate {
 	_c.mutation.SetState(v)
@@ -307,10 +293,6 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 		_spec.SetField(set.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
-	if value, ok := _c.mutation.AgentID(); ok {
-		_spec.SetField(set.FieldAgentID, field.TypeString, value)
-		_node.AgentID = &value
-	}
 	if value, ok := _c.mutation.State(); ok {
 		_spec.SetField(set.FieldState, field.TypeEnum, value)
 		_node.State = value
@@ -463,24 +445,6 @@ func (u *SetUpsert) UpdateName() *SetUpsert {
 	return u
 }
 
-// SetAgentID sets the "agent_id" field.
-func (u *SetUpsert) SetAgentID(v string) *SetUpsert {
-	u.Set(set.FieldAgentID, v)
-	return u
-}
-
-// UpdateAgentID sets the "agent_id" field to the value that was provided on create.
-func (u *SetUpsert) UpdateAgentID() *SetUpsert {
-	u.SetExcluded(set.FieldAgentID)
-	return u
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (u *SetUpsert) ClearAgentID() *SetUpsert {
-	u.SetNull(set.FieldAgentID)
-	return u
-}
-
 // SetState sets the "state" field.
 func (u *SetUpsert) SetState(v set.State) *SetUpsert {
 	u.Set(set.FieldState, v)
@@ -630,27 +594,6 @@ func (u *SetUpsertOne) SetName(v string) *SetUpsertOne {
 func (u *SetUpsertOne) UpdateName() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateName()
-	})
-}
-
-// SetAgentID sets the "agent_id" field.
-func (u *SetUpsertOne) SetAgentID(v string) *SetUpsertOne {
-	return u.Update(func(s *SetUpsert) {
-		s.SetAgentID(v)
-	})
-}
-
-// UpdateAgentID sets the "agent_id" field to the value that was provided on create.
-func (u *SetUpsertOne) UpdateAgentID() *SetUpsertOne {
-	return u.Update(func(s *SetUpsert) {
-		s.UpdateAgentID()
-	})
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (u *SetUpsertOne) ClearAgentID() *SetUpsertOne {
-	return u.Update(func(s *SetUpsert) {
-		s.ClearAgentID()
 	})
 }
 
@@ -984,27 +927,6 @@ func (u *SetUpsertBulk) SetName(v string) *SetUpsertBulk {
 func (u *SetUpsertBulk) UpdateName() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.UpdateName()
-	})
-}
-
-// SetAgentID sets the "agent_id" field.
-func (u *SetUpsertBulk) SetAgentID(v string) *SetUpsertBulk {
-	return u.Update(func(s *SetUpsert) {
-		s.SetAgentID(v)
-	})
-}
-
-// UpdateAgentID sets the "agent_id" field to the value that was provided on create.
-func (u *SetUpsertBulk) UpdateAgentID() *SetUpsertBulk {
-	return u.Update(func(s *SetUpsert) {
-		s.UpdateAgentID()
-	})
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (u *SetUpsertBulk) ClearAgentID() *SetUpsertBulk {
-	return u.Update(func(s *SetUpsert) {
-		s.ClearAgentID()
 	})
 }
 

@@ -32,7 +32,6 @@ var m = gen.MapperImpl{}
 // Index is what the admin surface needs from a store's index.
 type Index interface {
 	ListSets(ctx context.Context) ([]index.SetInfo, error)
-	TransferSet(ctx context.Context, name, agentID string) error
 	DeleteSet(ctx context.Context, name string, erase bool) error
 	UndeleteSet(ctx context.Context, name string) error
 	GetStorePolicy(ctx context.Context) (index.StorePolicy, error)
@@ -92,31 +91,6 @@ func (s *Server) ListSets(ctx context.Context, request *pb.ListSetsRequest) (*pb
 	}
 
 	return resp, nil
-}
-
-// TransferSet implements pb.AdminServer.
-func (s *Server) TransferSet(ctx context.Context, request *pb.TransferSetRequest) (*pb.BackupSet, error) {
-	err := s.Index.TransferSet(ctx, request.Name, request.AgentId)
-	if err != nil {
-		return nil, Status(err)
-	}
-
-	return s.set(ctx, request.Name)
-}
-
-func (s *Server) set(ctx context.Context, name string) (*pb.BackupSet, error) {
-	sets, err := s.Index.ListSets(ctx)
-	if err != nil {
-		return nil, Status(err)
-	}
-
-	for _, set := range sets {
-		if set.Name == name {
-			return m.Set(set), nil
-		}
-	}
-
-	return nil, status.Errorf(codes.NotFound, "set %q not found", name)
 }
 
 // DeleteSet implements pb.AdminServer.
@@ -336,7 +310,7 @@ func Status(err error) error {
 	switch {
 	case errors.Is(err, backup.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrSetClosed), errors.Is(err, backup.ErrSetOwned),
+	case errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrSetClosed),
 		errors.Is(err, backup.ErrOtherKeyEscrowed):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, auth.ErrForbidden):

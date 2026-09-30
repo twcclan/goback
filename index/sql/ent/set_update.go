@@ -45,26 +45,6 @@ func (_u *SetUpdate) SetNillableName(v *string) *SetUpdate {
 	return _u
 }
 
-// SetAgentID sets the "agent_id" field.
-func (_u *SetUpdate) SetAgentID(v string) *SetUpdate {
-	_u.mutation.SetAgentID(v)
-	return _u
-}
-
-// SetNillableAgentID sets the "agent_id" field if the given value is not nil.
-func (_u *SetUpdate) SetNillableAgentID(v *string) *SetUpdate {
-	if v != nil {
-		_u.SetAgentID(*v)
-	}
-	return _u
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (_u *SetUpdate) ClearAgentID() *SetUpdate {
-	_u.mutation.ClearAgentID()
-	return _u
-}
-
 // SetState sets the "state" field.
 func (_u *SetUpdate) SetState(v set.State) *SetUpdate {
 	_u.mutation.SetState(v)
@@ -369,12 +349,6 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(set.FieldName, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.AgentID(); ok {
-		_spec.SetField(set.FieldAgentID, field.TypeString, value)
-	}
-	if _u.mutation.AgentIDCleared() {
-		_spec.ClearField(set.FieldAgentID, field.TypeString)
-	}
 	if value, ok := _u.mutation.State(); ok {
 		_spec.SetField(set.FieldState, field.TypeEnum, value)
 	}
@@ -613,26 +587,6 @@ func (_u *SetUpdateOne) SetNillableName(v *string) *SetUpdateOne {
 	if v != nil {
 		_u.SetName(*v)
 	}
-	return _u
-}
-
-// SetAgentID sets the "agent_id" field.
-func (_u *SetUpdateOne) SetAgentID(v string) *SetUpdateOne {
-	_u.mutation.SetAgentID(v)
-	return _u
-}
-
-// SetNillableAgentID sets the "agent_id" field if the given value is not nil.
-func (_u *SetUpdateOne) SetNillableAgentID(v *string) *SetUpdateOne {
-	if v != nil {
-		_u.SetAgentID(*v)
-	}
-	return _u
-}
-
-// ClearAgentID clears the value of the "agent_id" field.
-func (_u *SetUpdateOne) ClearAgentID() *SetUpdateOne {
-	_u.mutation.ClearAgentID()
 	return _u
 }
 
@@ -969,12 +923,6 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(set.FieldName, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.AgentID(); ok {
-		_spec.SetField(set.FieldAgentID, field.TypeString, value)
-	}
-	if _u.mutation.AgentIDCleared() {
-		_spec.ClearField(set.FieldAgentID, field.TypeString)
 	}
 	if value, ok := _u.mutation.State(); ok {
 		_spec.SetField(set.FieldState, field.TypeEnum, value)

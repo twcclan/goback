@@ -4,9 +4,6 @@ http:
   rules:
     - selector: admin.Admin.ListSets
       get: /v1/sets
-    - selector: admin.Admin.TransferSet
-      post: /v1/sets/{name}/transfer
-      body: "*"
     - selector: admin.Admin.DeleteSet
       delete: /v1/sets/{name}
     - selector: admin.Admin.UndeleteSet

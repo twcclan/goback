@@ -64,15 +64,15 @@ func init() {
 	setFields := schema.Set{}.Fields()
 	_ = setFields
 	// setDescRetentionPaused is the schema descriptor for retention_paused field.
-	setDescRetentionPaused := setFields[5].Descriptor()
+	setDescRetentionPaused := setFields[4].Descriptor()
 	// set.DefaultRetentionPaused holds the default value on creation for the retention_paused field.
 	set.DefaultRetentionPaused = setDescRetentionPaused.Default.(bool)
 	// setDescErase is the schema descriptor for erase field.
-	setDescErase := setFields[6].Descriptor()
+	setDescErase := setFields[5].Descriptor()
 	// set.DefaultErase holds the default value on creation for the erase field.
 	set.DefaultErase = setDescErase.Default.(bool)
 	// setDescRescan is the schema descriptor for rescan field.
-	setDescRescan := setFields[7].Descriptor()
+	setDescRescan := setFields[6].Descriptor()
 	// set.DefaultRescan holds the default value on creation for the rescan field.
 	set.DefaultRescan = setDescRescan.Default.(bool)
 	settingsFields := schema.Settings{}.Fields()

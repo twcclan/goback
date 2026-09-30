@@ -11,8 +11,6 @@ import "google/protobuf/timestamp.proto";
 // token, over gRPC and, through grpc-gateway, REST.
 service Admin {
     rpc ListSets(ListSetsRequest) returns (ListSetsResponse) {}
-    // TransferSet hands a set to another agent
-    rpc TransferSet(TransferSetRequest) returns (BackupSet) {}
     rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}
     rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
 
@@ -38,9 +36,9 @@ service Admin {
 }
 
 message BackupSet {
-    reserved 1;
+    reserved 1, 3;
+    reserved "agent_id";
     string name = 2;
-    string agent_id = 3;
     // active, closing or deleted
     string state = 4;
     // the logical size of the newest live commit
@@ -54,11 +52,6 @@ message ListSetsRequest {}
 
 message ListSetsResponse {
     repeated BackupSet sets = 1;
-}
-
-message TransferSetRequest {
-    string name = 1;
-    string agent_id = 2;
 }
 
 message DeleteSetRequest {

@@ -20,7 +20,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Admin_ListSets_FullMethodName       = "/admin.Admin/ListSets"
-	Admin_TransferSet_FullMethodName    = "/admin.Admin/TransferSet"
 	Admin_DeleteSet_FullMethodName      = "/admin.Admin/DeleteSet"
 	Admin_UndeleteSet_FullMethodName    = "/admin.Admin/UndeleteSet"
 	Admin_GetStorePolicy_FullMethodName = "/admin.Admin/GetStorePolicy"
@@ -41,8 +40,6 @@ const (
 // token, over gRPC and, through grpc-gateway, REST.
 type AdminClient interface {
 	ListSets(ctx context.Context, in *ListSetsRequest, opts ...grpc.CallOption) (*ListSetsResponse, error)
-	// TransferSet hands a set to another agent
-	TransferSet(ctx context.Context, in *TransferSetRequest, opts ...grpc.CallOption) (*BackupSet, error)
 	DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error)
 	UndeleteSet(ctx context.Context, in *UndeleteSetRequest, opts ...grpc.CallOption) (*UndeleteSetResponse, error)
 	GetStorePolicy(ctx context.Context, in *GetStorePolicyRequest, opts ...grpc.CallOption) (*StorePolicy, error)
@@ -75,16 +72,6 @@ func (c *adminClient) ListSets(ctx context.Context, in *ListSetsRequest, opts ..
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListSetsResponse)
 	err := c.cc.Invoke(ctx, Admin_ListSets_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *adminClient) TransferSet(ctx context.Context, in *TransferSetRequest, opts ...grpc.CallOption) (*BackupSet, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BackupSet)
-	err := c.cc.Invoke(ctx, Admin_TransferSet_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +177,6 @@ func (c *adminClient) PutEscrowedKey(ctx context.Context, in *PutEscrowedKeyRequ
 // token, over gRPC and, through grpc-gateway, REST.
 type AdminServer interface {
 	ListSets(context.Context, *ListSetsRequest) (*ListSetsResponse, error)
-	// TransferSet hands a set to another agent
-	TransferSet(context.Context, *TransferSetRequest) (*BackupSet, error)
 	DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error)
 	UndeleteSet(context.Context, *UndeleteSetRequest) (*UndeleteSetResponse, error)
 	GetStorePolicy(context.Context, *GetStorePolicyRequest) (*StorePolicy, error)
@@ -222,9 +207,6 @@ type UnimplementedAdminServer struct{}
 
 func (UnimplementedAdminServer) ListSets(context.Context, *ListSetsRequest) (*ListSetsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSets not implemented")
-}
-func (UnimplementedAdminServer) TransferSet(context.Context, *TransferSetRequest) (*BackupSet, error) {
-	return nil, status.Error(codes.Unimplemented, "method TransferSet not implemented")
 }
 func (UnimplementedAdminServer) DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSet not implemented")
@@ -288,24 +270,6 @@ func _Admin_ListSets_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServer).ListSets(ctx, req.(*ListSetsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Admin_TransferSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TransferSetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AdminServer).TransferSet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Admin_TransferSet_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServer).TransferSet(ctx, req.(*TransferSetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -482,10 +446,6 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSets",
 			Handler:    _Admin_ListSets_Handler,
-		},
-		{
-			MethodName: "TransferSet",
-			Handler:    _Admin_TransferSet_Handler,
 		},
 		{
 			MethodName: "DeleteSet",

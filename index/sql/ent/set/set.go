@@ -16,8 +16,6 @@ const (
 	FieldID = "id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
-	// FieldAgentID holds the string denoting the agent_id field in the database.
-	FieldAgentID = "agent_id"
 	// FieldState holds the string denoting the state field in the database.
 	FieldState = "state"
 	// FieldRetentionPolicy holds the string denoting the retention_policy field in the database.
@@ -74,7 +72,6 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldName,
-	FieldAgentID,
 	FieldState,
 	FieldRetentionPolicy,
 	FieldRetentionPaused,
@@ -140,11 +137,6 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
-}
-
-// ByAgentID orders the results by the agent_id field.
-func ByAgentID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldAgentID, opts...).ToFunc()
 }
 
 // ByState orders the results by the state field.

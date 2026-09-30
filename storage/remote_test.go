@@ -44,7 +44,6 @@ type memIndex struct {
 	mtx        sync.Mutex
 	objects    map[string]*proto.Object
 	referenced map[string]bool
-	owners     map[string]string
 	latest     map[string]*proto.Ref
 
 	// deny refuses BeginCommit with this reason; policy is what it grants
@@ -60,7 +59,6 @@ func newMemIndex() *memIndex {
 	return &memIndex{
 		objects:    map[string]*proto.Object{},
 		referenced: map[string]bool{},
-		owners:     map[string]string{},
 		latest:     map[string]*proto.Ref{},
 	}
 }
@@ -82,11 +80,6 @@ func (m *memIndex) Put(ctx context.Context, obj *proto.Object) error {
 	defer m.mtx.Unlock()
 
 	if c := obj.GetCommit(); c != nil {
-		if owner, ok := m.owners[c.BackupSet]; ok && owner != c.AgentId {
-			return fmt.Errorf("%w: set %q belongs to %q", backup.ErrSetOwned, c.BackupSet, owner)
-		}
-
-		m.owners[c.BackupSet] = c.AgentId
 		m.latest[c.BackupSet] = obj.Ref()
 	}
 
@@ -454,10 +447,7 @@ func TestRemoteCommitMustMatchPrincipal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "node-1", obj.GetCommit().AgentId)
 
-	// the set now belongs to node-1
-	err = put(dial("node-2"), &proto.Commit{AgentId: "node-2", BackupSet: "world"})
-	require.ErrorIs(t, err, backup.ErrSetOwned)
-	require.NoError(t, put(dial("node-2"), &proto.Commit{AgentId: "node-2", BackupSet: "logs"}))
+	require.NoError(t, put(dial("node-2"), &proto.Commit{AgentId: "node-2", BackupSet: "world"}), "any agent writes to any set")
 }
 
 func TestRemotePutStampsCommitsAndPins(t *testing.T) {

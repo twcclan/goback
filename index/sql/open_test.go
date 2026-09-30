@@ -59,7 +59,7 @@ func TestOpensADirectory(t *testing.T) {
 
 	x := New(dir, store)
 	require.NoError(t, x.Open())
-	_, err := ensureSet(context.Background(), x.client, "world", "node-1", 0, true)
+	_, err := ensureSet(context.Background(), x.client, "world", 0)
 	require.NoError(t, err)
 	require.NoError(t, x.Close())
 
@@ -74,7 +74,6 @@ func TestOpensADirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
 	require.Equal(t, "world", sets[0].Name)
-	require.Equal(t, "node-1", sets[0].AgentID)
 }
 
 // TestStoredDefaultPolicyOutranksTheBuiltIn: the CLI's keep-all default
@@ -204,27 +203,22 @@ func TestPostgres(t *testing.T) {
 		var (
 			wg      sync.WaitGroup
 			results = make([]error, 8)
+			ids     = make([]int64, 8)
 		)
 
 		for i := range results {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				_, results[i] = ensureSet(ctx, x.client, "world", fmt.Sprintf("node-%d", i), 0, true)
+				ids[i], results[i] = ensureSet(ctx, x.client, "world", 0)
 			}(i)
 		}
 		wg.Wait()
 
-		winners := 0
-		for _, err := range results {
-			if err == nil {
-				winners++
-				continue
-			}
-
-			require.ErrorIs(t, err, backup.ErrSetOwned, "a loser is refused as any other agent, not with a constraint error")
+		for i, err := range results {
+			require.NoError(t, err, "a racer finds the set another created, not a constraint error")
+			require.Equal(t, ids[0], ids[i])
 		}
-		require.Equal(t, 1, winners)
 	})
 
 	t.Run("ConcurrentOpen", func(t *testing.T) {
@@ -257,8 +251,7 @@ func TestPostgres(t *testing.T) {
 		"DeleteSetAndRebuild":              TestDeleteSetAndRebuild,
 		"ReIndexReproducesRanges":          TestReIndexReproducesRanges,
 		"PresenceFilterNeverLands":         TestPresenceFilterNeverLandsOnATombstonedCommit,
-		"EnsureSetOwnership":               TestEnsureSetOwnership,
-		"EnsureSetAdoptsUnownedSet":        TestEnsureSetAdoptsUnownedSet,
+		"EnsureSetFindsASetByName":         TestEnsureSetFindsASetByName,
 		"EnsureSetRecreatesUnderCarriedID": TestEnsureSetRecreatesUnderCarriedID,
 		"PresenceFollowsTheHead":           TestPresenceFollowsTheHead,
 		"LogicalSizeFollowsCommits":        TestLogicalSizeFollowsCommits,

@@ -125,16 +125,11 @@ func (m MapperImpl) Set(in *ent.Set) index.SetInfo {
 	if in == nil {
 		return index.SetInfo{}
 	}
-	var tmp0 string
-	if in.AgentID != nil {
-		tmp0 = *(in.AgentID)
-	}
 
 	return index.SetInfo{
-		ID:      in.ID,
-		Name:    in.Name,
-		AgentID: tmp0,
-		State:   string(in.State),
+		ID:    in.ID,
+		Name:  in.Name,
+		State: string(in.State),
 	}
 }
 

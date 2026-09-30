@@ -22,11 +22,11 @@ const (
 // SetInfo is a set with the size of its newest live commit and what its
 // objects take up in the store, as of the last garbage collection.
 type SetInfo struct {
-	ID            int64
-	Name, AgentID string
-	State         string
-	LogicalSize   int64
-	PhysicalSize  int64
+	ID           int64
+	Name         string
+	State        string
+	LogicalSize  int64
+	PhysicalSize int64
 }
 
 // StorePolicy is the store's write policy with its acknowledgement state.

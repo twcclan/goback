@@ -153,7 +153,7 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 		wantID = int64(commit.GetSetId())
 	}
 
-	setID, err := ensureSet(ctx, c, commit.GetBackupSet(), commit.GetAgentId(), wantID, strict)
+	setID, err := ensureSet(ctx, c, commit.GetBackupSet(), wantID)
 	if err != nil || !strict {
 		return setID, err
 	}
@@ -225,14 +225,8 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
-		if strict {
-			if s.State != set.StateActive {
-				return fmt.Errorf("%w: set %q", backup.ErrSetClosed, commit.GetBackupSet())
-			}
-
-			if owner := deref(s.AgentID); owner != "" && owner != commit.GetAgentId() {
-				return fmt.Errorf("%w: set %q belongs to agent %q, commit is by %q", backup.ErrSetOwned, commit.GetBackupSet(), owner, commit.GetAgentId())
-			}
+		if strict && s.State != set.StateActive {
+			return fmt.Errorf("%w: set %q", backup.ErrSetClosed, commit.GetBackupSet())
 		}
 
 		at := time.Unix(0, commit.ReceivedAtNs).UTC()

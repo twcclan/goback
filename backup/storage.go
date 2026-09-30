@@ -21,9 +21,6 @@ var (
 	// ErrDanglingRef is returned when an object references objects the store
 	// does not hold.
 	ErrDanglingRef = errors.New("object references missing objects")
-	// ErrSetOwned is returned for a commit into a set that another agent
-	// owns.
-	ErrSetOwned = errors.New("set is owned by another agent")
 	// ErrSetClosed is returned for a commit into a set that is being
 	// deleted.
 	ErrSetClosed = errors.New("set is closed")

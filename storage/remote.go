@@ -249,10 +249,6 @@ func (r *Client) put(ctx context.Context, object *proto.Object, assumed []*proto
 
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := status.Convert(err).Message()
-		if strings.Contains(msg, backup.ErrSetOwned.Error()) {
-			return nil, fmt.Errorf("%w: %s", backup.ErrSetOwned, msg)
-		}
-
 		if strings.Contains(msg, backup.ErrNoSession.Error()) {
 			return nil, fmt.Errorf("%w: %s", backup.ErrNoSession, msg)
 		}
@@ -673,7 +669,7 @@ func ToStatus(err error) error {
 	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject),
 		errors.Is(err, backup.ErrInvalidEscrow):
 		return status.Error(codes.InvalidArgument, err.Error())
-	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetOwned), errors.Is(err, backup.ErrSetClosed),
+	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetClosed),
 		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit),
 		errors.Is(err, backup.ErrPinned), errors.Is(err, backup.ErrNoSession), errors.Is(err, backup.ErrCommitDenied),
 		errors.Is(err, backup.ErrOtherKeyEscrowed):

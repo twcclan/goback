@@ -18,25 +18,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnsureSetOwnership(t *testing.T) {
+func TestEnsureSetFindsASetByName(t *testing.T) {
 	x := openIndex(t, newMemStore())
 	ctx := context.Background()
 
-	id, err := ensureSet(ctx, x.client, "world", "node-1", 0, true)
+	id, err := ensureSet(ctx, x.client, "world", 0)
 	require.NoError(t, err)
 
-	again, err := ensureSet(ctx, x.client, "world", "node-1", 0, true)
+	again, err := ensureSet(ctx, x.client, "world", 0)
 	require.NoError(t, err)
-	require.Equal(t, id, again, "the owner keeps committing into its set")
+	require.Equal(t, id, again)
 
-	_, err = ensureSet(ctx, x.client, "world", "node-2", 0, true)
-	require.ErrorIs(t, err, backup.ErrSetOwned)
-
-	lenient, err := ensureSet(ctx, x.client, "world", "node-2", 0, false)
-	require.NoError(t, err, "a rebuild indexes what the archives hold")
-	require.Equal(t, id, lenient)
-
-	other, err := ensureSet(ctx, x.client, "logs", "node-2", 0, true)
+	other, err := ensureSet(ctx, x.client, "logs", 0)
 	require.NoError(t, err)
 	require.NotEqual(t, id, other)
 
@@ -48,62 +41,23 @@ func TestEnsureSetOwnership(t *testing.T) {
 	require.ErrorIs(t, err, backup.ErrNotFound)
 }
 
-func TestEnsureSetAdoptsUnownedSet(t *testing.T) {
-	x := openIndex(t, newMemStore())
-	ctx := context.Background()
-
-	id, err := ensureSet(ctx, x.client, "world", "", 0, true)
-	require.NoError(t, err)
-
-	adopted, err := ensureSet(ctx, x.client, "world", "node-1", 0, true)
-	require.NoError(t, err)
-	require.Equal(t, id, adopted)
-
-	_, err = ensureSet(ctx, x.client, "world", "node-2", 0, true)
-	require.ErrorIs(t, err, backup.ErrSetOwned, "the first agent to claim an unowned set owns it")
-
-	s, err := x.client.Set.Get(ctx, id)
-	require.NoError(t, err)
-	require.Equal(t, "node-1", deref(s.AgentID))
-}
-
 func TestEnsureSetRecreatesUnderCarriedID(t *testing.T) {
 	x := openIndex(t, newMemStore())
 	ctx := context.Background()
 
-	id, err := ensureSet(ctx, x.client, "world", "node-1", 4200, false)
+	id, err := ensureSet(ctx, x.client, "world", 4200)
 	require.NoError(t, err)
 	require.EqualValues(t, 4200, id, "a rebuild recreates the set under the id its commits carry")
 
-	again, err := ensureSet(ctx, x.client, "world", "node-1", 4200, false)
+	again, err := ensureSet(ctx, x.client, "world", 4200)
 	require.NoError(t, err)
 	require.EqualValues(t, 4200, again)
 
 	require.NoError(t, x.resetSetSequence(ctx))
 
-	fresh, err := ensureSet(ctx, x.client, "other", "node-1", 0, true)
+	fresh, err := ensureSet(ctx, x.client, "other", 0)
 	require.NoError(t, err)
 	require.NotEqualValues(t, 4200, fresh)
-}
-
-func TestTransferSet(t *testing.T) {
-	x := openIndex(t, newMemStore())
-	ctx := context.Background()
-
-	_, err := ensureSet(ctx, x.client, "world", "node-1", 0, true)
-	require.NoError(t, err)
-
-	require.NoError(t, x.TransferSet(ctx, "world", "node-2"))
-	_, err = ensureSet(ctx, x.client, "world", "node-1", 0, true)
-	require.ErrorIs(t, err, backup.ErrSetOwned)
-	_, err = ensureSet(ctx, x.client, "world", "node-2", 0, true)
-	require.NoError(t, err)
-
-	require.NoError(t, x.TransferSet(ctx, "world", ""), "released, the set goes to the next agent that commits")
-	_, err = ensureSet(ctx, x.client, "world", "node-3", 0, true)
-	require.NoError(t, err)
-
-	require.ErrorIs(t, x.TransferSet(ctx, "nowhere", "node-1"), backup.ErrNotFound)
 }
 
 var commitClock atomic.Int64
@@ -131,11 +85,11 @@ func TestPresenceFollowsTheHead(t *testing.T) {
 	x := openIndex(t, newMemStore())
 	ctx := context.Background()
 
-	world, err := ensureSet(ctx, x.client, "world", "node-1", 0, true)
+	world, err := ensureSet(ctx, x.client, "world", 0)
 	require.NoError(t, err)
-	logs, err := ensureSet(ctx, x.client, "logs", "node-1", 0, true)
+	logs, err := ensureSet(ctx, x.client, "logs", 0)
 	require.NoError(t, err)
-	other, err := ensureSet(ctx, x.client, "other", "node-2", 0, true)
+	other, err := ensureSet(ctx, x.client, "other", 0)
 	require.NoError(t, err)
 
 	first := commitRef(t, x, world, "world-1")
@@ -231,15 +185,11 @@ func TestLogicalSizeFollowsCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
 	require.EqualValues(t, 23, sets[0].LogicalSize)
-	require.Equal(t, "node-1", sets[0].AgentID)
 }
 
 func TestBeginCommitGates(t *testing.T) {
 	f := newFixture(t)
 	ctx := f.ctx
-
-	_, err := f.x.BeginCommit(context.Background(), "world")
-	require.ErrorIs(t, err, auth.ErrUnauthenticated)
 
 	grant, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
@@ -272,10 +222,9 @@ func TestBeginCommitGates(t *testing.T) {
 	require.Equal(t, setID, commit.GetCommit().GetSetId())
 	f.presence()
 
-	// ownership is checked before any bytes move
 	other := auth.WithPrincipal(context.Background(), &auth.Principal{AgentID: "node-2"})
 	_, err = f.x.BeginCommit(other, "world")
-	require.ErrorIs(t, err, backup.ErrSetOwned)
+	require.NoError(t, err, "any agent commits into any set")
 
 	require.NoError(t, f.x.DeleteSet(ctx, "world", false))
 	_, err = f.x.BeginCommit(ctx, "world")

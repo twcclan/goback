@@ -23,9 +23,8 @@ const (
 )
 
 type BackupSet struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	AgentId string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// active, closing or deleted
 	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	// the logical size of the newest live commit
@@ -70,13 +69,6 @@ func (*BackupSet) Descriptor() ([]byte, []int) {
 func (x *BackupSet) GetName() string {
 	if x != nil {
 		return x.Name
-	}
-	return ""
-}
-
-func (x *BackupSet) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
 	}
 	return ""
 }
@@ -182,58 +174,6 @@ func (x *ListSetsResponse) GetSets() []*BackupSet {
 	return nil
 }
 
-type TransferSetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TransferSetRequest) Reset() {
-	*x = TransferSetRequest{}
-	mi := &file_admin_admin_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TransferSetRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TransferSetRequest) ProtoMessage() {}
-
-func (x *TransferSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TransferSetRequest.ProtoReflect.Descriptor instead.
-func (*TransferSetRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *TransferSetRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *TransferSetRequest) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
 type DeleteSetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -244,7 +184,7 @@ type DeleteSetRequest struct {
 
 func (x *DeleteSetRequest) Reset() {
 	*x = DeleteSetRequest{}
-	mi := &file_admin_admin_proto_msgTypes[4]
+	mi := &file_admin_admin_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +196,7 @@ func (x *DeleteSetRequest) String() string {
 func (*DeleteSetRequest) ProtoMessage() {}
 
 func (x *DeleteSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[4]
+	mi := &file_admin_admin_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +209,7 @@ func (x *DeleteSetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSetRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSetRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{4}
+	return file_admin_admin_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DeleteSetRequest) GetName() string {
@@ -294,7 +234,7 @@ type DeleteSetResponse struct {
 
 func (x *DeleteSetResponse) Reset() {
 	*x = DeleteSetResponse{}
-	mi := &file_admin_admin_proto_msgTypes[5]
+	mi := &file_admin_admin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -306,7 +246,7 @@ func (x *DeleteSetResponse) String() string {
 func (*DeleteSetResponse) ProtoMessage() {}
 
 func (x *DeleteSetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[5]
+	mi := &file_admin_admin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -319,7 +259,7 @@ func (x *DeleteSetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSetResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSetResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{5}
+	return file_admin_admin_proto_rawDescGZIP(), []int{4}
 }
 
 type UndeleteSetRequest struct {
@@ -331,7 +271,7 @@ type UndeleteSetRequest struct {
 
 func (x *UndeleteSetRequest) Reset() {
 	*x = UndeleteSetRequest{}
-	mi := &file_admin_admin_proto_msgTypes[6]
+	mi := &file_admin_admin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -343,7 +283,7 @@ func (x *UndeleteSetRequest) String() string {
 func (*UndeleteSetRequest) ProtoMessage() {}
 
 func (x *UndeleteSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[6]
+	mi := &file_admin_admin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -356,7 +296,7 @@ func (x *UndeleteSetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UndeleteSetRequest.ProtoReflect.Descriptor instead.
 func (*UndeleteSetRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{6}
+	return file_admin_admin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UndeleteSetRequest) GetName() string {
@@ -374,7 +314,7 @@ type UndeleteSetResponse struct {
 
 func (x *UndeleteSetResponse) Reset() {
 	*x = UndeleteSetResponse{}
-	mi := &file_admin_admin_proto_msgTypes[7]
+	mi := &file_admin_admin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +326,7 @@ func (x *UndeleteSetResponse) String() string {
 func (*UndeleteSetResponse) ProtoMessage() {}
 
 func (x *UndeleteSetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[7]
+	mi := &file_admin_admin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +339,7 @@ func (x *UndeleteSetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UndeleteSetResponse.ProtoReflect.Descriptor instead.
 func (*UndeleteSetResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{7}
+	return file_admin_admin_proto_rawDescGZIP(), []int{6}
 }
 
 type StorePolicy struct {
@@ -416,7 +356,7 @@ type StorePolicy struct {
 
 func (x *StorePolicy) Reset() {
 	*x = StorePolicy{}
-	mi := &file_admin_admin_proto_msgTypes[8]
+	mi := &file_admin_admin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +368,7 @@ func (x *StorePolicy) String() string {
 func (*StorePolicy) ProtoMessage() {}
 
 func (x *StorePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[8]
+	mi := &file_admin_admin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +381,7 @@ func (x *StorePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorePolicy.ProtoReflect.Descriptor instead.
 func (*StorePolicy) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{8}
+	return file_admin_admin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StorePolicy) GetVersion() uint32 {
@@ -480,7 +420,7 @@ type GetStorePolicyRequest struct {
 
 func (x *GetStorePolicyRequest) Reset() {
 	*x = GetStorePolicyRequest{}
-	mi := &file_admin_admin_proto_msgTypes[9]
+	mi := &file_admin_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +432,7 @@ func (x *GetStorePolicyRequest) String() string {
 func (*GetStorePolicyRequest) ProtoMessage() {}
 
 func (x *GetStorePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[9]
+	mi := &file_admin_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +445,7 @@ func (x *GetStorePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStorePolicyRequest.ProtoReflect.Descriptor instead.
 func (*GetStorePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{9}
+	return file_admin_admin_proto_rawDescGZIP(), []int{8}
 }
 
 type SetStorePolicyRequest struct {
@@ -520,7 +460,7 @@ type SetStorePolicyRequest struct {
 
 func (x *SetStorePolicyRequest) Reset() {
 	*x = SetStorePolicyRequest{}
-	mi := &file_admin_admin_proto_msgTypes[10]
+	mi := &file_admin_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +472,7 @@ func (x *SetStorePolicyRequest) String() string {
 func (*SetStorePolicyRequest) ProtoMessage() {}
 
 func (x *SetStorePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[10]
+	mi := &file_admin_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +485,7 @@ func (x *SetStorePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetStorePolicyRequest.ProtoReflect.Descriptor instead.
 func (*SetStorePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{10}
+	return file_admin_admin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetStorePolicyRequest) GetMode() string {
@@ -585,7 +525,7 @@ type RetentionBracket struct {
 
 func (x *RetentionBracket) Reset() {
 	*x = RetentionBracket{}
-	mi := &file_admin_admin_proto_msgTypes[11]
+	mi := &file_admin_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +537,7 @@ func (x *RetentionBracket) String() string {
 func (*RetentionBracket) ProtoMessage() {}
 
 func (x *RetentionBracket) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[11]
+	mi := &file_admin_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +550,7 @@ func (x *RetentionBracket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetentionBracket.ProtoReflect.Descriptor instead.
 func (*RetentionBracket) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{11}
+	return file_admin_admin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RetentionBracket) GetPeriod() string {
@@ -641,7 +581,7 @@ type RetentionPolicy struct {
 
 func (x *RetentionPolicy) Reset() {
 	*x = RetentionPolicy{}
-	mi := &file_admin_admin_proto_msgTypes[12]
+	mi := &file_admin_admin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +593,7 @@ func (x *RetentionPolicy) String() string {
 func (*RetentionPolicy) ProtoMessage() {}
 
 func (x *RetentionPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[12]
+	mi := &file_admin_admin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +606,7 @@ func (x *RetentionPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetentionPolicy.ProtoReflect.Descriptor instead.
 func (*RetentionPolicy) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{12}
+	return file_admin_admin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RetentionPolicy) GetKeepLast() int32 {
@@ -711,7 +651,7 @@ type Retention struct {
 
 func (x *Retention) Reset() {
 	*x = Retention{}
-	mi := &file_admin_admin_proto_msgTypes[13]
+	mi := &file_admin_admin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +663,7 @@ func (x *Retention) String() string {
 func (*Retention) ProtoMessage() {}
 
 func (x *Retention) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[13]
+	mi := &file_admin_admin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +676,7 @@ func (x *Retention) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Retention.ProtoReflect.Descriptor instead.
 func (*Retention) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{13}
+	return file_admin_admin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Retention) GetSet() string {
@@ -790,7 +730,7 @@ type GetRetentionRequest struct {
 
 func (x *GetRetentionRequest) Reset() {
 	*x = GetRetentionRequest{}
-	mi := &file_admin_admin_proto_msgTypes[14]
+	mi := &file_admin_admin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +742,7 @@ func (x *GetRetentionRequest) String() string {
 func (*GetRetentionRequest) ProtoMessage() {}
 
 func (x *GetRetentionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[14]
+	mi := &file_admin_admin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +755,7 @@ func (x *GetRetentionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRetentionRequest.ProtoReflect.Descriptor instead.
 func (*GetRetentionRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{14}
+	return file_admin_admin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetRetentionRequest) GetSet() string {
@@ -841,7 +781,7 @@ type SetRetentionRequest struct {
 
 func (x *SetRetentionRequest) Reset() {
 	*x = SetRetentionRequest{}
-	mi := &file_admin_admin_proto_msgTypes[15]
+	mi := &file_admin_admin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +793,7 @@ func (x *SetRetentionRequest) String() string {
 func (*SetRetentionRequest) ProtoMessage() {}
 
 func (x *SetRetentionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[15]
+	mi := &file_admin_admin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +806,7 @@ func (x *SetRetentionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRetentionRequest.ProtoReflect.Descriptor instead.
 func (*SetRetentionRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{15}
+	return file_admin_admin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetRetentionRequest) GetSet() string {
@@ -912,7 +852,7 @@ type RetireRequest struct {
 
 func (x *RetireRequest) Reset() {
 	*x = RetireRequest{}
-	mi := &file_admin_admin_proto_msgTypes[16]
+	mi := &file_admin_admin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +864,7 @@ func (x *RetireRequest) String() string {
 func (*RetireRequest) ProtoMessage() {}
 
 func (x *RetireRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[16]
+	mi := &file_admin_admin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +877,7 @@ func (x *RetireRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetireRequest.ProtoReflect.Descriptor instead.
 func (*RetireRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{16}
+	return file_admin_admin_proto_rawDescGZIP(), []int{15}
 }
 
 type RetireResponse struct {
@@ -949,7 +889,7 @@ type RetireResponse struct {
 
 func (x *RetireResponse) Reset() {
 	*x = RetireResponse{}
-	mi := &file_admin_admin_proto_msgTypes[17]
+	mi := &file_admin_admin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +901,7 @@ func (x *RetireResponse) String() string {
 func (*RetireResponse) ProtoMessage() {}
 
 func (x *RetireResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[17]
+	mi := &file_admin_admin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +914,7 @@ func (x *RetireResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetireResponse.ProtoReflect.Descriptor instead.
 func (*RetireResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{17}
+	return file_admin_admin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RetireResponse) GetRetired() int64 {
@@ -992,7 +932,7 @@ type CollectGarbageRequest struct {
 
 func (x *CollectGarbageRequest) Reset() {
 	*x = CollectGarbageRequest{}
-	mi := &file_admin_admin_proto_msgTypes[18]
+	mi := &file_admin_admin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1004,7 +944,7 @@ func (x *CollectGarbageRequest) String() string {
 func (*CollectGarbageRequest) ProtoMessage() {}
 
 func (x *CollectGarbageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[18]
+	mi := &file_admin_admin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1017,7 +957,7 @@ func (x *CollectGarbageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectGarbageRequest.ProtoReflect.Descriptor instead.
 func (*CollectGarbageRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{18}
+	return file_admin_admin_proto_rawDescGZIP(), []int{17}
 }
 
 type CollectGarbageResponse struct {
@@ -1029,7 +969,7 @@ type CollectGarbageResponse struct {
 
 func (x *CollectGarbageResponse) Reset() {
 	*x = CollectGarbageResponse{}
-	mi := &file_admin_admin_proto_msgTypes[19]
+	mi := &file_admin_admin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1041,7 +981,7 @@ func (x *CollectGarbageResponse) String() string {
 func (*CollectGarbageResponse) ProtoMessage() {}
 
 func (x *CollectGarbageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[19]
+	mi := &file_admin_admin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1054,7 +994,7 @@ func (x *CollectGarbageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectGarbageResponse.ProtoReflect.Descriptor instead.
 func (*CollectGarbageResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{19}
+	return file_admin_admin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CollectGarbageResponse) GetReport() string {
@@ -1075,7 +1015,7 @@ type PutEscrowedKeyRequest struct {
 
 func (x *PutEscrowedKeyRequest) Reset() {
 	*x = PutEscrowedKeyRequest{}
-	mi := &file_admin_admin_proto_msgTypes[20]
+	mi := &file_admin_admin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1087,7 +1027,7 @@ func (x *PutEscrowedKeyRequest) String() string {
 func (*PutEscrowedKeyRequest) ProtoMessage() {}
 
 func (x *PutEscrowedKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[20]
+	mi := &file_admin_admin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1100,7 +1040,7 @@ func (x *PutEscrowedKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutEscrowedKeyRequest.ProtoReflect.Descriptor instead.
 func (*PutEscrowedKeyRequest) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{20}
+	return file_admin_admin_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PutEscrowedKeyRequest) GetKeyId() string {
@@ -1125,7 +1065,7 @@ type PutEscrowedKeyResponse struct {
 
 func (x *PutEscrowedKeyResponse) Reset() {
 	*x = PutEscrowedKeyResponse{}
-	mi := &file_admin_admin_proto_msgTypes[21]
+	mi := &file_admin_admin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1137,7 +1077,7 @@ func (x *PutEscrowedKeyResponse) String() string {
 func (*PutEscrowedKeyResponse) ProtoMessage() {}
 
 func (x *PutEscrowedKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_admin_proto_msgTypes[21]
+	mi := &file_admin_admin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1150,26 +1090,22 @@ func (x *PutEscrowedKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutEscrowedKeyResponse.ProtoReflect.Descriptor instead.
 func (*PutEscrowedKeyResponse) Descriptor() ([]byte, []int) {
-	return file_admin_admin_proto_rawDescGZIP(), []int{21}
+	return file_admin_admin_proto_rawDescGZIP(), []int{20}
 }
 
 var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x01\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x01\n" +
 	"\tBackupSet\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x19\n" +
-	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x14\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
 	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSize\x12#\n" +
-	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSizeJ\x04\b\x01\x10\x02\"\x11\n" +
+	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
-	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"C\n" +
-	"\x12TransferSetRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x19\n" +
-	"\bagent_id\x18\x02 \x01(\tR\aagentId\"<\n" +
+	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"<\n" +
 	"\x10DeleteSetRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05erase\x18\x02 \x01(\bR\x05erase\"\x13\n" +
@@ -1225,10 +1161,9 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x15PutEscrowedKeyRequest\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1a\n" +
 	"\bescrowed\x18\x02 \x01(\tR\bescrowed\"\x18\n" +
-	"\x16PutEscrowedKeyResponse2\xf5\x05\n" +
+	"\x16PutEscrowedKeyResponse2\xb7\x05\n" +
 	"\x05Admin\x12=\n" +
-	"\bListSets\x12\x16.admin.ListSetsRequest\x1a\x17.admin.ListSetsResponse\"\x00\x12<\n" +
-	"\vTransferSet\x12\x19.admin.TransferSetRequest\x1a\x10.admin.BackupSet\"\x00\x12@\n" +
+	"\bListSets\x12\x16.admin.ListSetsRequest\x1a\x17.admin.ListSetsResponse\"\x00\x12@\n" +
 	"\tDeleteSet\x12\x17.admin.DeleteSetRequest\x1a\x18.admin.DeleteSetResponse\"\x00\x12F\n" +
 	"\vUndeleteSet\x12\x19.admin.UndeleteSetRequest\x1a\x1a.admin.UndeleteSetResponse\"\x00\x12D\n" +
 	"\x0eGetStorePolicy\x12\x1c.admin.GetStorePolicyRequest\x1a\x12.admin.StorePolicy\"\x00\x12D\n" +
@@ -1251,63 +1186,60 @@ func file_admin_admin_proto_rawDescGZIP() []byte {
 	return file_admin_admin_proto_rawDescData
 }
 
-var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_admin_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_admin_admin_proto_goTypes = []any{
 	(*BackupSet)(nil),              // 0: admin.BackupSet
 	(*ListSetsRequest)(nil),        // 1: admin.ListSetsRequest
 	(*ListSetsResponse)(nil),       // 2: admin.ListSetsResponse
-	(*TransferSetRequest)(nil),     // 3: admin.TransferSetRequest
-	(*DeleteSetRequest)(nil),       // 4: admin.DeleteSetRequest
-	(*DeleteSetResponse)(nil),      // 5: admin.DeleteSetResponse
-	(*UndeleteSetRequest)(nil),     // 6: admin.UndeleteSetRequest
-	(*UndeleteSetResponse)(nil),    // 7: admin.UndeleteSetResponse
-	(*StorePolicy)(nil),            // 8: admin.StorePolicy
-	(*GetStorePolicyRequest)(nil),  // 9: admin.GetStorePolicyRequest
-	(*SetStorePolicyRequest)(nil),  // 10: admin.SetStorePolicyRequest
-	(*RetentionBracket)(nil),       // 11: admin.RetentionBracket
-	(*RetentionPolicy)(nil),        // 12: admin.RetentionPolicy
-	(*Retention)(nil),              // 13: admin.Retention
-	(*GetRetentionRequest)(nil),    // 14: admin.GetRetentionRequest
-	(*SetRetentionRequest)(nil),    // 15: admin.SetRetentionRequest
-	(*RetireRequest)(nil),          // 16: admin.RetireRequest
-	(*RetireResponse)(nil),         // 17: admin.RetireResponse
-	(*CollectGarbageRequest)(nil),  // 18: admin.CollectGarbageRequest
-	(*CollectGarbageResponse)(nil), // 19: admin.CollectGarbageResponse
-	(*PutEscrowedKeyRequest)(nil),  // 20: admin.PutEscrowedKeyRequest
-	(*PutEscrowedKeyResponse)(nil), // 21: admin.PutEscrowedKeyResponse
-	(*timestamppb.Timestamp)(nil),  // 22: google.protobuf.Timestamp
+	(*DeleteSetRequest)(nil),       // 3: admin.DeleteSetRequest
+	(*DeleteSetResponse)(nil),      // 4: admin.DeleteSetResponse
+	(*UndeleteSetRequest)(nil),     // 5: admin.UndeleteSetRequest
+	(*UndeleteSetResponse)(nil),    // 6: admin.UndeleteSetResponse
+	(*StorePolicy)(nil),            // 7: admin.StorePolicy
+	(*GetStorePolicyRequest)(nil),  // 8: admin.GetStorePolicyRequest
+	(*SetStorePolicyRequest)(nil),  // 9: admin.SetStorePolicyRequest
+	(*RetentionBracket)(nil),       // 10: admin.RetentionBracket
+	(*RetentionPolicy)(nil),        // 11: admin.RetentionPolicy
+	(*Retention)(nil),              // 12: admin.Retention
+	(*GetRetentionRequest)(nil),    // 13: admin.GetRetentionRequest
+	(*SetRetentionRequest)(nil),    // 14: admin.SetRetentionRequest
+	(*RetireRequest)(nil),          // 15: admin.RetireRequest
+	(*RetireResponse)(nil),         // 16: admin.RetireResponse
+	(*CollectGarbageRequest)(nil),  // 17: admin.CollectGarbageRequest
+	(*CollectGarbageResponse)(nil), // 18: admin.CollectGarbageResponse
+	(*PutEscrowedKeyRequest)(nil),  // 19: admin.PutEscrowedKeyRequest
+	(*PutEscrowedKeyResponse)(nil), // 20: admin.PutEscrowedKeyResponse
+	(*timestamppb.Timestamp)(nil),  // 21: google.protobuf.Timestamp
 }
 var file_admin_admin_proto_depIdxs = []int32{
 	0,  // 0: admin.ListSetsResponse.sets:type_name -> admin.BackupSet
-	22, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
-	11, // 2: admin.RetentionPolicy.brackets:type_name -> admin.RetentionBracket
-	12, // 3: admin.Retention.policy:type_name -> admin.RetentionPolicy
-	12, // 4: admin.Retention.effective:type_name -> admin.RetentionPolicy
-	12, // 5: admin.SetRetentionRequest.policy:type_name -> admin.RetentionPolicy
+	21, // 1: admin.StorePolicy.key_acknowledged_at:type_name -> google.protobuf.Timestamp
+	10, // 2: admin.RetentionPolicy.brackets:type_name -> admin.RetentionBracket
+	11, // 3: admin.Retention.policy:type_name -> admin.RetentionPolicy
+	11, // 4: admin.Retention.effective:type_name -> admin.RetentionPolicy
+	11, // 5: admin.SetRetentionRequest.policy:type_name -> admin.RetentionPolicy
 	1,  // 6: admin.Admin.ListSets:input_type -> admin.ListSetsRequest
-	3,  // 7: admin.Admin.TransferSet:input_type -> admin.TransferSetRequest
-	4,  // 8: admin.Admin.DeleteSet:input_type -> admin.DeleteSetRequest
-	6,  // 9: admin.Admin.UndeleteSet:input_type -> admin.UndeleteSetRequest
-	9,  // 10: admin.Admin.GetStorePolicy:input_type -> admin.GetStorePolicyRequest
-	10, // 11: admin.Admin.SetStorePolicy:input_type -> admin.SetStorePolicyRequest
-	14, // 12: admin.Admin.GetRetention:input_type -> admin.GetRetentionRequest
-	15, // 13: admin.Admin.SetRetention:input_type -> admin.SetRetentionRequest
-	16, // 14: admin.Admin.Retire:input_type -> admin.RetireRequest
-	18, // 15: admin.Admin.CollectGarbage:input_type -> admin.CollectGarbageRequest
-	20, // 16: admin.Admin.PutEscrowedKey:input_type -> admin.PutEscrowedKeyRequest
-	2,  // 17: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
-	0,  // 18: admin.Admin.TransferSet:output_type -> admin.BackupSet
-	5,  // 19: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
-	7,  // 20: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
-	8,  // 21: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
-	8,  // 22: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
-	13, // 23: admin.Admin.GetRetention:output_type -> admin.Retention
-	13, // 24: admin.Admin.SetRetention:output_type -> admin.Retention
-	17, // 25: admin.Admin.Retire:output_type -> admin.RetireResponse
-	19, // 26: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
-	21, // 27: admin.Admin.PutEscrowedKey:output_type -> admin.PutEscrowedKeyResponse
-	17, // [17:28] is the sub-list for method output_type
-	6,  // [6:17] is the sub-list for method input_type
+	3,  // 7: admin.Admin.DeleteSet:input_type -> admin.DeleteSetRequest
+	5,  // 8: admin.Admin.UndeleteSet:input_type -> admin.UndeleteSetRequest
+	8,  // 9: admin.Admin.GetStorePolicy:input_type -> admin.GetStorePolicyRequest
+	9,  // 10: admin.Admin.SetStorePolicy:input_type -> admin.SetStorePolicyRequest
+	13, // 11: admin.Admin.GetRetention:input_type -> admin.GetRetentionRequest
+	14, // 12: admin.Admin.SetRetention:input_type -> admin.SetRetentionRequest
+	15, // 13: admin.Admin.Retire:input_type -> admin.RetireRequest
+	17, // 14: admin.Admin.CollectGarbage:input_type -> admin.CollectGarbageRequest
+	19, // 15: admin.Admin.PutEscrowedKey:input_type -> admin.PutEscrowedKeyRequest
+	2,  // 16: admin.Admin.ListSets:output_type -> admin.ListSetsResponse
+	4,  // 17: admin.Admin.DeleteSet:output_type -> admin.DeleteSetResponse
+	6,  // 18: admin.Admin.UndeleteSet:output_type -> admin.UndeleteSetResponse
+	7,  // 19: admin.Admin.GetStorePolicy:output_type -> admin.StorePolicy
+	7,  // 20: admin.Admin.SetStorePolicy:output_type -> admin.StorePolicy
+	12, // 21: admin.Admin.GetRetention:output_type -> admin.Retention
+	12, // 22: admin.Admin.SetRetention:output_type -> admin.Retention
+	16, // 23: admin.Admin.Retire:output_type -> admin.RetireResponse
+	18, // 24: admin.Admin.CollectGarbage:output_type -> admin.CollectGarbageResponse
+	20, // 25: admin.Admin.PutEscrowedKey:output_type -> admin.PutEscrowedKeyResponse
+	16, // [16:26] is the sub-list for method output_type
+	6,  // [6:16] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1318,14 +1250,14 @@ func file_admin_admin_proto_init() {
 	if File_admin_admin_proto != nil {
 		return
 	}
-	file_admin_admin_proto_msgTypes[15].OneofWrappers = []any{}
+	file_admin_admin_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_admin_proto_rawDesc), len(file_admin_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

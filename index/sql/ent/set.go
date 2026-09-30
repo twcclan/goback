@@ -18,8 +18,6 @@ type Set struct {
 	ID int64 `json:"id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
-	// AgentID holds the value of the "agent_id" field.
-	AgentID *string `json:"agent_id,omitempty"`
 	// State holds the value of the "state" field.
 	State set.State `json:"state,omitempty"`
 	// RetentionPolicy holds the value of the "retention_policy" field.
@@ -98,7 +96,7 @@ func (*Set) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case set.FieldID, set.FieldPhysicalSize:
 			values[i] = new(sql.NullInt64)
-		case set.FieldName, set.FieldAgentID, set.FieldState, set.FieldRetentionPolicy:
+		case set.FieldName, set.FieldState, set.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -126,13 +124,6 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
-			}
-		case set.FieldAgentID:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field agent_id", values[i])
-			} else if value.Valid {
-				_m.AgentID = new(string)
-				*_m.AgentID = value.String
 			}
 		case set.FieldState:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -230,11 +221,6 @@ func (_m *Set) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
-	builder.WriteString(", ")
-	if v := _m.AgentID; v != nil {
-		builder.WriteString("agent_id=")
-		builder.WriteString(*v)
-	}
 	builder.WriteString(", ")
 	builder.WriteString("state=")
 	builder.WriteString(fmt.Sprintf("%v", _m.State))

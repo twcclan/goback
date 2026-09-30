@@ -182,14 +182,8 @@ func TestAdminSets(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets", nil, &list))
 	require.Len(t, list.Sets, 1)
 	require.Equal(t, "world", list.Sets[0].Name)
-	require.Equal(t, "node-1", list.Sets[0].AgentId)
 	require.Equal(t, "active", list.Sets[0].State)
 	require.EqualValues(t, 3, list.Sets[0].LogicalSize)
-
-	var set pb.BackupSet
-	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/v1/sets/world/transfer", map[string]interface{}{"agent_id": "node-2"}, &set))
-	require.Equal(t, "node-2", set.AgentId)
-	require.Equal(t, http.StatusNotFound, h.call(http.MethodPost, "/v1/sets/nope/transfer", map[string]interface{}{"agent_id": "node-2"}, nil))
 
 	require.Equal(t, http.StatusOK, h.call(http.MethodDelete, "/v1/sets/world", nil, nil))
 	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets", nil, &list))

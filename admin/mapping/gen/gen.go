@@ -28,7 +28,6 @@ func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 
 	return &admin.BackupSet{
 		Name:         in.Name,
-		AgentId:      in.AgentID,
 		State:        in.State,
 		LogicalSize:  in.LogicalSize,
 		PhysicalSize: in.PhysicalSize,

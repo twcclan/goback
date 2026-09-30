@@ -284,7 +284,6 @@ var (
 	SetsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString},
-		{Name: "agent_id", Type: field.TypeString, Nullable: true},
 		{Name: "state", Type: field.TypeEnum, Enums: []string{"active", "closing", "deleted"}, Default: "active"},
 		{Name: "retention_policy", Type: field.TypeString, Nullable: true},
 		{Name: "retention_paused", Type: field.TypeBool, Default: false},
