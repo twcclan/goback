@@ -28,8 +28,9 @@ import (
 // m maps index rows to what the callers speak; one value for the package.
 var m = gen.MapperImpl{}
 
-// Stamp assigns the receipt time to a commit or pin and the set id to a
-// commit, replacing whatever they carried.
+// Stamp assigns the set id to a commit and a receipt time to a commit or
+// pin. One that already carries a receipt time is a replay and keeps it;
+// callers taking objects from clients clear it first.
 func (x *Index) Stamp(ctx context.Context, object *proto.Object) error {
 	commit := object.GetCommit()
 	if commit == nil && object.GetPin() == nil {
@@ -45,7 +46,12 @@ func (x *Index) Stamp(ctx context.Context, object *proto.Object) error {
 		}
 	}
 
-	object.Stamp(uint64(setID), x.stamp())
+	receivedAt := time.Unix(0, object.ReceivedAtNs()).UTC()
+	if object.ReceivedAtNs() == 0 {
+		receivedAt = x.stamp()
+	}
+
+	object.Stamp(uint64(setID), receivedAt)
 
 	return nil
 }

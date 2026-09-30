@@ -54,6 +54,22 @@ func newFileWriter(ctx context.Context, store ObjectStore, key *storekey.Key, si
 	}
 }
 
+// PutFile stores size bytes of content as a file, cut and sealed under key
+// as a backup would, and returns the ref a tree node should carry.
+func PutFile(ctx context.Context, store ObjectStore, key *storekey.Key, size int64, content io.Reader) (*proto.Ref, error) {
+	writer := newFileWriter(ctx, store, key, size)
+
+	if _, err := io.Copy(writer, content); err != nil {
+		return nil, err
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	return writer.Ref(), nil
+}
+
 type fileWriter struct {
 	store            ObjectStore
 	key              *storekey.Key

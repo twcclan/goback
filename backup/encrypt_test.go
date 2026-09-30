@@ -193,3 +193,27 @@ func TestIndexPath(t *testing.T) {
 		return name
 	}())
 }
+
+func TestFilesPutOutsideAWalkReadBack(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	key := newKey(t)
+
+	contents := map[string][]byte{
+		"small": []byte("hello\n"),
+		"large": bytes.Repeat([]byte("0123456789abcdef"), 64<<10),
+	}
+
+	var nodes []*proto.TreeNode
+	for name, data := range contents {
+		ref, err := PutFile(ctx, store, key, int64(len(data)), bytes.NewReader(data))
+		require.NoError(t, err)
+
+		nodes = append(nodes, &proto.TreeNode{Stat: &proto.FileInfo{Name: []byte(name), Size: int64(len(data))}, Ref: ref})
+	}
+
+	tree, err := PutTree(ctx, store, SortNodes(nodes), key, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, contents, readAll(t, NewBackupReader(store).WithKey(key), tree))
+}

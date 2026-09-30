@@ -903,3 +903,22 @@ func TestRetireIgnoresAPinTheStoreUnpinned(t *testing.T) {
 	require.Equal(t, 1, n)
 	require.True(t, f.store.tombstoned(a))
 }
+
+func TestAReplayedCommitKeepsItsReceiptTime(t *testing.T) {
+	f := newFixture(t)
+
+	then := f.clock.Add(-365 * 24 * time.Hour)
+	replayed := proto.NewObject(&proto.Commit{
+		Timestamp:    then.Unix(),
+		Tree:         f.tree(f.file("a.txt", "old")).Ref(),
+		BackupSet:    "world",
+		ReceivedAtNs: then.UnixNano(),
+	})
+	require.NoError(t, f.x.Put(f.ctx, replayed))
+	f.presence()
+
+	fresh := f.commit("world", f.tree(f.file("a.txt", "new")), false)
+
+	require.True(t, f.commitRow(replayed.Ref()).ReceivedAt.Equal(then))
+	require.True(t, f.commitRow(fresh).ReceivedAt.Equal(f.clock))
+}
