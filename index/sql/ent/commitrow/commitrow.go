@@ -36,6 +36,8 @@ const (
 	FieldPresence = "presence"
 	// FieldPartial holds the string denoting the partial field in the database.
 	FieldPartial = "partial"
+	// FieldIncomplete holds the string denoting the incomplete field in the database.
+	FieldIncomplete = "incomplete"
 	// FieldRetainedBy holds the string denoting the retained_by field in the database.
 	FieldRetainedBy = "retained_by"
 	// FieldRetireAt holds the string denoting the retire_at field in the database.
@@ -78,6 +80,7 @@ var Columns = []string{
 	FieldSetID,
 	FieldPresence,
 	FieldPartial,
+	FieldIncomplete,
 	FieldRetainedBy,
 	FieldRetireAt,
 	FieldDeletedAt,
@@ -108,6 +111,8 @@ var (
 	DefaultConsistent bool
 	// DefaultPartial holds the default value on creation for the "partial" field.
 	DefaultPartial bool
+	// DefaultIncomplete holds the default value on creation for the "incomplete" field.
+	DefaultIncomplete bool
 	// DefaultRetainedBy holds the default value on creation for the "retained_by" field.
 	DefaultRetainedBy string
 )
@@ -158,6 +163,11 @@ func BySetID(opts ...sql.OrderTermOption) OrderOption {
 // ByPartial orders the results by the partial field.
 func ByPartial(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPartial, opts...).ToFunc()
+}
+
+// ByIncomplete orders the results by the incomplete field.
+func ByIncomplete(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIncomplete, opts...).ToFunc()
 }
 
 // ByRetainedBy orders the results by the retained_by field.

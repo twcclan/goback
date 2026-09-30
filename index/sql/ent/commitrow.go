@@ -43,6 +43,8 @@ type CommitRow struct {
 	Presence []byte `json:"presence,omitempty"`
 	// Partial holds the value of the "partial" field.
 	Partial bool `json:"partial,omitempty"`
+	// Incomplete holds the value of the "incomplete" field.
+	Incomplete bool `json:"incomplete,omitempty"`
 	// RetainedBy holds the value of the "retained_by" field.
 	RetainedBy string `json:"retained_by,omitempty"`
 	// RetireAt holds the value of the "retire_at" field.
@@ -90,7 +92,7 @@ func (*CommitRow) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case commitrow.FieldRef, commitrow.FieldTree, commitrow.FieldParent, commitrow.FieldPresence, commitrow.FieldMetadata:
 			values[i] = new([]byte)
-		case commitrow.FieldConsistent, commitrow.FieldPartial:
+		case commitrow.FieldConsistent, commitrow.FieldPartial, commitrow.FieldIncomplete:
 			values[i] = new(sql.NullBool)
 		case commitrow.FieldID, commitrow.FieldScanStartNs, commitrow.FieldPolicyVersion, commitrow.FieldSetID, commitrow.FieldLogicalSize:
 			values[i] = new(sql.NullInt64)
@@ -190,6 +192,12 @@ func (_m *CommitRow) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field partial", values[i])
 			} else if value.Valid {
 				_m.Partial = value.Bool
+			}
+		case commitrow.FieldIncomplete:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field incomplete", values[i])
+			} else if value.Valid {
+				_m.Incomplete = value.Bool
 			}
 		case commitrow.FieldRetainedBy:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -316,6 +324,9 @@ func (_m *CommitRow) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("partial=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Partial))
+	builder.WriteString(", ")
+	builder.WriteString("incomplete=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Incomplete))
 	builder.WriteString(", ")
 	builder.WriteString("retained_by=")
 	builder.WriteString(_m.RetainedBy)

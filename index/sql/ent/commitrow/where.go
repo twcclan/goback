@@ -115,6 +115,11 @@ func Partial(v bool) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldPartial, v))
 }
 
+// Incomplete applies equality check predicate on the "incomplete" field. It's identical to IncompleteEQ.
+func Incomplete(v bool) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldIncomplete, v))
+}
+
 // RetainedBy applies equality check predicate on the "retained_by" field. It's identical to RetainedByEQ.
 func RetainedBy(v string) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldRetainedBy, v))
@@ -588,6 +593,16 @@ func PartialEQ(v bool) predicate.CommitRow {
 // PartialNEQ applies the NEQ predicate on the "partial" field.
 func PartialNEQ(v bool) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldNEQ(FieldPartial, v))
+}
+
+// IncompleteEQ applies the EQ predicate on the "incomplete" field.
+func IncompleteEQ(v bool) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldIncomplete, v))
+}
+
+// IncompleteNEQ applies the NEQ predicate on the "incomplete" field.
+func IncompleteNEQ(v bool) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNEQ(FieldIncomplete, v))
 }
 
 // RetainedByEQ applies the EQ predicate on the "retained_by" field.

@@ -76,6 +76,9 @@ func (CommitRow) Fields() []ent.Field {
 		field.Int64("set_id"),
 		field.Bytes("presence").Optional(),
 		field.Bool("partial").Default(false),
+		// incomplete marks a commit a rebuild indexed around objects the
+		// store no longer holds
+		field.Bool("incomplete").Default(false),
 		field.String("retained_by").Default(""),
 		field.Time("retire_at").Optional().Nillable(),
 		field.Time("deleted_at").Optional().Nillable(),

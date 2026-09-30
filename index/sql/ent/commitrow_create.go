@@ -135,6 +135,20 @@ func (_c *CommitRowCreate) SetNillablePartial(v *bool) *CommitRowCreate {
 	return _c
 }
 
+// SetIncomplete sets the "incomplete" field.
+func (_c *CommitRowCreate) SetIncomplete(v bool) *CommitRowCreate {
+	_c.mutation.SetIncomplete(v)
+	return _c
+}
+
+// SetNillableIncomplete sets the "incomplete" field if the given value is not nil.
+func (_c *CommitRowCreate) SetNillableIncomplete(v *bool) *CommitRowCreate {
+	if v != nil {
+		_c.SetIncomplete(*v)
+	}
+	return _c
+}
+
 // SetRetainedBy sets the "retained_by" field.
 func (_c *CommitRowCreate) SetRetainedBy(v string) *CommitRowCreate {
 	_c.mutation.SetRetainedBy(v)
@@ -285,6 +299,10 @@ func (_c *CommitRowCreate) defaults() {
 		v := commitrow.DefaultPartial
 		_c.mutation.SetPartial(v)
 	}
+	if _, ok := _c.mutation.Incomplete(); !ok {
+		v := commitrow.DefaultIncomplete
+		_c.mutation.SetIncomplete(v)
+	}
 	if _, ok := _c.mutation.RetainedBy(); !ok {
 		v := commitrow.DefaultRetainedBy
 		_c.mutation.SetRetainedBy(v)
@@ -322,6 +340,9 @@ func (_c *CommitRowCreate) check() error {
 	}
 	if _, ok := _c.mutation.Partial(); !ok {
 		return &ValidationError{Name: "partial", err: errors.New(`ent: missing required field "CommitRow.partial"`)}
+	}
+	if _, ok := _c.mutation.Incomplete(); !ok {
+		return &ValidationError{Name: "incomplete", err: errors.New(`ent: missing required field "CommitRow.incomplete"`)}
 	}
 	if _, ok := _c.mutation.RetainedBy(); !ok {
 		return &ValidationError{Name: "retained_by", err: errors.New(`ent: missing required field "CommitRow.retained_by"`)}
@@ -399,6 +420,10 @@ func (_c *CommitRowCreate) createSpec() (*CommitRow, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Partial(); ok {
 		_spec.SetField(commitrow.FieldPartial, field.TypeBool, value)
 		_node.Partial = value
+	}
+	if value, ok := _c.mutation.Incomplete(); ok {
+		_spec.SetField(commitrow.FieldIncomplete, field.TypeBool, value)
+		_node.Incomplete = value
 	}
 	if value, ok := _c.mutation.RetainedBy(); ok {
 		_spec.SetField(commitrow.FieldRetainedBy, field.TypeString, value)
@@ -650,6 +675,18 @@ func (u *CommitRowUpsert) SetPartial(v bool) *CommitRowUpsert {
 // UpdatePartial sets the "partial" field to the value that was provided on create.
 func (u *CommitRowUpsert) UpdatePartial() *CommitRowUpsert {
 	u.SetExcluded(commitrow.FieldPartial)
+	return u
+}
+
+// SetIncomplete sets the "incomplete" field.
+func (u *CommitRowUpsert) SetIncomplete(v bool) *CommitRowUpsert {
+	u.Set(commitrow.FieldIncomplete, v)
+	return u
+}
+
+// UpdateIncomplete sets the "incomplete" field to the value that was provided on create.
+func (u *CommitRowUpsert) UpdateIncomplete() *CommitRowUpsert {
+	u.SetExcluded(commitrow.FieldIncomplete)
 	return u
 }
 
@@ -1003,6 +1040,20 @@ func (u *CommitRowUpsertOne) SetPartial(v bool) *CommitRowUpsertOne {
 func (u *CommitRowUpsertOne) UpdatePartial() *CommitRowUpsertOne {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.UpdatePartial()
+	})
+}
+
+// SetIncomplete sets the "incomplete" field.
+func (u *CommitRowUpsertOne) SetIncomplete(v bool) *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetIncomplete(v)
+	})
+}
+
+// UpdateIncomplete sets the "incomplete" field to the value that was provided on create.
+func (u *CommitRowUpsertOne) UpdateIncomplete() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateIncomplete()
 	})
 }
 
@@ -1543,6 +1594,20 @@ func (u *CommitRowUpsertBulk) SetPartial(v bool) *CommitRowUpsertBulk {
 func (u *CommitRowUpsertBulk) UpdatePartial() *CommitRowUpsertBulk {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.UpdatePartial()
+	})
+}
+
+// SetIncomplete sets the "incomplete" field.
+func (u *CommitRowUpsertBulk) SetIncomplete(v bool) *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetIncomplete(v)
+	})
+}
+
+// UpdateIncomplete sets the "incomplete" field to the value that was provided on create.
+func (u *CommitRowUpsertBulk) UpdateIncomplete() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateIncomplete()
 	})
 }
 

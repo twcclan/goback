@@ -172,3 +172,73 @@ func (f *fixture) setID(name string) int64 {
 
 	return id
 }
+
+// forget drops an object from the fixture's store, as a repair that could
+// not keep it does.
+func (f *fixture) forget(ref *proto.Ref) {
+	f.store.mu.Lock()
+	delete(f.store.objects, string(ref.Hash))
+	f.store.mu.Unlock()
+}
+
+func TestARebuildIndexesACommitAroundALostDirectory(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	region := f.dir("region", f.file("r.0.0.mca", "chunks"))
+	commit := f.commit("world", f.tree(f.file("level.dat", "intact"), region), false)
+	f.forget(region.Ref)
+
+	y := f.index()
+	require.NoError(t, y.ReIndex(ctx))
+
+	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, held, 1, "the commit is indexed, not skipped")
+	require.True(t, held[0].Ref.Equal(commit))
+	require.True(t, held[0].Incomplete)
+
+	versions, err := y.FileInfo(ctx, "world", "level.dat", f.clock.Add(time.Hour), 1)
+	require.NoError(t, err)
+	require.Len(t, versions, 1, "what the store still holds is restorable")
+
+	grant, err := y.BeginCommit(ctx, "world")
+	require.NoError(t, err)
+	require.True(t, grant.Rescan, "nothing can say what the lost directory held")
+}
+
+func TestARebuildIndexesACommitWhoseRootIsLost(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	root := f.tree(f.file("level.dat", "intact"))
+	f.commit("world", root, false)
+	f.forget(root.Ref())
+
+	y := f.index()
+	require.NoError(t, y.ReIndex(ctx))
+
+	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	require.True(t, held[0].Incomplete)
+
+	grant, err := y.BeginCommit(ctx, "world")
+	require.NoError(t, err)
+	require.True(t, grant.Rescan)
+}
+
+func TestAWholeRebuildIsComplete(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	f.commit("world", f.tree(f.file("level.dat", "intact")), false)
+
+	y := f.index()
+	require.NoError(t, y.ReIndex(ctx))
+
+	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	require.False(t, held[0].Incomplete)
+}

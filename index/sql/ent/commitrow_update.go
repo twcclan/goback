@@ -185,6 +185,20 @@ func (_u *CommitRowUpdate) SetNillablePartial(v *bool) *CommitRowUpdate {
 	return _u
 }
 
+// SetIncomplete sets the "incomplete" field.
+func (_u *CommitRowUpdate) SetIncomplete(v bool) *CommitRowUpdate {
+	_u.mutation.SetIncomplete(v)
+	return _u
+}
+
+// SetNillableIncomplete sets the "incomplete" field if the given value is not nil.
+func (_u *CommitRowUpdate) SetNillableIncomplete(v *bool) *CommitRowUpdate {
+	if v != nil {
+		_u.SetIncomplete(*v)
+	}
+	return _u
+}
+
 // SetRetainedBy sets the "retained_by" field.
 func (_u *CommitRowUpdate) SetRetainedBy(v string) *CommitRowUpdate {
 	_u.mutation.SetRetainedBy(v)
@@ -422,6 +436,9 @@ func (_u *CommitRowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Partial(); ok {
 		_spec.SetField(commitrow.FieldPartial, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Incomplete(); ok {
+		_spec.SetField(commitrow.FieldIncomplete, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.RetainedBy(); ok {
 		_spec.SetField(commitrow.FieldRetainedBy, field.TypeString, value)
@@ -666,6 +683,20 @@ func (_u *CommitRowUpdateOne) SetPartial(v bool) *CommitRowUpdateOne {
 func (_u *CommitRowUpdateOne) SetNillablePartial(v *bool) *CommitRowUpdateOne {
 	if v != nil {
 		_u.SetPartial(*v)
+	}
+	return _u
+}
+
+// SetIncomplete sets the "incomplete" field.
+func (_u *CommitRowUpdateOne) SetIncomplete(v bool) *CommitRowUpdateOne {
+	_u.mutation.SetIncomplete(v)
+	return _u
+}
+
+// SetNillableIncomplete sets the "incomplete" field if the given value is not nil.
+func (_u *CommitRowUpdateOne) SetNillableIncomplete(v *bool) *CommitRowUpdateOne {
+	if v != nil {
+		_u.SetIncomplete(*v)
 	}
 	return _u
 }
@@ -937,6 +968,9 @@ func (_u *CommitRowUpdateOne) sqlSave(ctx context.Context) (_node *CommitRow, er
 	}
 	if value, ok := _u.mutation.Partial(); ok {
 		_spec.SetField(commitrow.FieldPartial, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Incomplete(); ok {
+		_spec.SetField(commitrow.FieldIncomplete, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.RetainedBy(); ok {
 		_spec.SetField(commitrow.FieldRetainedBy, field.TypeString, value)

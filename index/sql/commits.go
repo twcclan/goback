@@ -163,20 +163,17 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 
 // indexCommit records a commit and the versions its tree introduces. In
 // strict mode a commit whose tree cannot be traversed is rejected with
-// backup.ErrDanglingRef. Commits of a set are indexed one at a time, in
-// receipt order.
+// backup.ErrDanglingRef; otherwise it is indexed around the objects the
+// store lost and marked incomplete, and a set with directories it can no
+// longer list is read in full by its next run. Commits of a set are
+// indexed one at a time, in receipt order.
 func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, strict, evaluate bool) error {
 	treeObj, err := x.ObjectStore.Get(ctx, commit.Tree)
-	if errors.Is(err, backup.ErrNotFound) {
-		if strict {
-			return fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.GetHash())
-		}
-
-		x.logger().Warn("root tree could not be retrieved", "tree", fmt.Sprintf("%x", commit.Tree.GetHash()))
-		return nil
+	if errors.Is(err, backup.ErrNotFound) && strict {
+		return fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.GetHash())
 	}
 
-	if err != nil {
+	if err != nil && !errors.Is(err, backup.ErrNotFound) {
 		return err
 	}
 
@@ -241,8 +238,16 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return nil
 		}
 
-		diff := &treeDiff{c: c, store: x.ObjectStore, setID: setID, at: at}
-		root, err := diff.flatten(ctx, commit.Tree, treeObj.GetTree())
+		diff := &treeDiff{c: c, store: x.ObjectStore, setID: setID, at: at, tolerant: !strict}
+
+		root := &proto.Tree{}
+		err = nil
+		if treeObj == nil {
+			diff.holes = append(diff.holes, "")
+		} else {
+			root, err = diff.flatten(ctx, "", commit.Tree, treeObj.GetTree())
+		}
+
 		if err == nil {
 			err = diff.dir(ctx, "", root)
 		}
@@ -263,7 +268,8 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		err = c.CommitRow.Create().SetRef(ref.Hash).SetTimestamp(time.Unix(commit.Timestamp, 0).UTC()).SetReceivedAt(at).
 			SetTree(commit.Tree.Hash).SetParent(commit.GetParent().GetHash()).SetAgentID(commit.GetAgentId()).
 			SetScanStartNs(commit.GetScanStartNs()).SetPolicyVersion(commit.GetPolicyVersion()).SetConsistent(commit.GetConsistent()).
-			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).Exec(ctx)
+			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).
+			SetIncomplete(len(diff.holes)+len(diff.gaps) > 0).Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -276,6 +282,18 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		err = x.clearDamage(ctx, tx, setID, commit.Partial, commit.GetScanStartNs())
 		if err != nil {
 			return err
+		}
+
+		if len(diff.holes)+len(diff.gaps) > 0 {
+			x.logger().Warn("indexed commit around objects the store lost", "ref", fmt.Sprintf("%x", ref.Hash),
+				"unlisted directories", diff.holes, "unreadable files", diff.gaps)
+		}
+
+		if len(diff.holes) > 0 {
+			err = tx.Set.UpdateOneID(setID).SetRescan(true).Exec(ctx)
+			if err != nil {
+				return err
+			}
 		}
 
 		if evaluate {
@@ -306,6 +324,18 @@ type treeDiff struct {
 	store backup.ObjectStore
 	setID int64
 	at    time.Time
+
+	// tolerant walks around objects the store no longer holds, recording
+	// where in holes (directories whose content is unknown) and gaps
+	// (files whose content is gone), instead of failing
+	tolerant bool
+	holes    []string
+	gaps     []string
+}
+
+// missing reports whether err is a lost object the walk goes around.
+func (d *treeDiff) missing(err error) bool {
+	return d.tolerant && errors.Is(err, backup.ErrNotFound)
 }
 
 // ref records that the set references an object, which makes it readable.
@@ -316,7 +346,7 @@ func (d *treeDiff) ref(ctx context.Context, hash []byte) error {
 
 // flatten records a tree and its split trees and returns the flat node
 // list, like backup.LoadTree.
-func (d *treeDiff) flatten(ctx context.Context, ref *proto.Ref, t *proto.Tree) (*proto.Tree, error) {
+func (d *treeDiff) flatten(ctx context.Context, dir string, ref *proto.Ref, t *proto.Tree) (*proto.Tree, error) {
 	err := d.ref(ctx, ref.GetHash())
 	if err != nil {
 		return nil, err
@@ -329,6 +359,11 @@ func (d *treeDiff) flatten(ctx context.Context, ref *proto.Ref, t *proto.Tree) (
 	flat := &proto.Tree{}
 	for _, split := range t.Splits {
 		obj, err := d.store.Get(ctx, split)
+		if d.missing(err) {
+			d.holes = append(d.holes, dir)
+			continue
+		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -337,7 +372,7 @@ func (d *treeDiff) flatten(ctx context.Context, ref *proto.Ref, t *proto.Tree) (
 			return nil, fmt.Errorf("split %x is not a tree", split.GetHash())
 		}
 
-		sub, err := d.flatten(ctx, split, obj.GetTree())
+		sub, err := d.flatten(ctx, dir, split, obj.GetTree())
 		if err != nil {
 			return nil, err
 		}
@@ -350,13 +385,18 @@ func (d *treeDiff) flatten(ctx context.Context, ref *proto.Ref, t *proto.Tree) (
 
 // refFile records a file object and, for one large enough to be split,
 // the sub-file objects it names.
-func (d *treeDiff) refFile(ctx context.Context, node *proto.TreeNode) error {
+func (d *treeDiff) refFile(ctx context.Context, path string, node *proto.TreeNode) error {
 	err := d.ref(ctx, node.GetRef().GetHash())
 	if err != nil || node.GetStat().GetSize() < backup.SplitFileSize {
 		return err
 	}
 
 	obj, err := d.store.Get(ctx, node.GetRef())
+	if d.missing(err) {
+		d.gaps = append(d.gaps, path)
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
@@ -507,7 +547,7 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 			continue
 		}
 
-		err = d.refFile(ctx, node)
+		err = d.refFile(ctx, child, node)
 		if err != nil {
 			return err
 		}
@@ -544,6 +584,10 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		grp.Go(func() error {
 			var err error
 			subtrees[i], err = d.store.Get(gctx, node.GetRef())
+			if d.missing(err) {
+				return nil
+			}
+
 			if err == nil && subtrees[i].GetTree() == nil {
 				err = fmt.Errorf("%x is not a tree", node.GetRef().GetHash())
 			}
@@ -556,12 +600,24 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 	}
 
 	for i, node := range descend {
-		flat, err := d.flatten(ctx, node.GetRef(), subtrees[i].GetTree())
+		child := proto.JoinPath(dir, node.GetStat().GetName())
+
+		if subtrees[i] == nil {
+			d.holes = append(d.holes, child)
+
+			if err := d.closeSubtree(ctx, child); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		flat, err := d.flatten(ctx, child, node.GetRef(), subtrees[i].GetTree())
 		if err != nil {
 			return err
 		}
 
-		err = d.dir(ctx, proto.JoinPath(dir, node.GetStat().GetName()), flat)
+		err = d.dir(ctx, child, flat)
 		if err != nil {
 			return err
 		}
@@ -996,6 +1052,9 @@ type CommitDetail struct {
 	// "monthly". It is empty for a commit retention has not evaluated yet
 	// or has retired.
 	RetainedBy string
+	// Incomplete reports a commit indexed around objects the store no
+	// longer holds, which cannot be restored whole.
+	Incomplete bool
 }
 
 // CommitDetails is CommitInfo with what the index knows about each commit
@@ -1024,6 +1083,7 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 			Ref:         &proto.Ref{Hash: row.Ref},
 			LogicalSize: row.LogicalSize,
 			RetainedBy:  row.RetainedBy,
+			Incomplete:  row.Incomplete,
 		}
 	}), nil
 }

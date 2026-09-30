@@ -724,6 +724,7 @@ type CommitRowMutation struct {
 	consistent        *bool
 	presence          *[]byte
 	partial           *bool
+	incomplete        *bool
 	retained_by       *string
 	retire_at         *time.Time
 	deleted_at        *time.Time
@@ -1336,6 +1337,42 @@ func (m *CommitRowMutation) ResetPartial() {
 	m.partial = nil
 }
 
+// SetIncomplete sets the "incomplete" field.
+func (m *CommitRowMutation) SetIncomplete(b bool) {
+	m.incomplete = &b
+}
+
+// Incomplete returns the value of the "incomplete" field in the mutation.
+func (m *CommitRowMutation) Incomplete() (r bool, exists bool) {
+	v := m.incomplete
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIncomplete returns the old "incomplete" field's value of the CommitRow entity.
+// If the CommitRow object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitRowMutation) OldIncomplete(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIncomplete is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIncomplete requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIncomplete: %w", err)
+	}
+	return oldValue.Incomplete, nil
+}
+
+// ResetIncomplete resets all changes to the "incomplete" field.
+func (m *CommitRowMutation) ResetIncomplete() {
+	m.incomplete = nil
+}
+
 // SetRetainedBy sets the "retained_by" field.
 func (m *CommitRowMutation) SetRetainedBy(s string) {
 	m.retained_by = &s
@@ -1748,7 +1785,7 @@ func (m *CommitRowMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CommitRowMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.ref != nil {
 		fields = append(fields, commitrow.FieldRef)
 	}
@@ -1784,6 +1821,9 @@ func (m *CommitRowMutation) Fields() []string {
 	}
 	if m.partial != nil {
 		fields = append(fields, commitrow.FieldPartial)
+	}
+	if m.incomplete != nil {
+		fields = append(fields, commitrow.FieldIncomplete)
 	}
 	if m.retained_by != nil {
 		fields = append(fields, commitrow.FieldRetainedBy)
@@ -1838,6 +1878,8 @@ func (m *CommitRowMutation) Field(name string) (ent.Value, bool) {
 		return m.Presence()
 	case commitrow.FieldPartial:
 		return m.Partial()
+	case commitrow.FieldIncomplete:
+		return m.Incomplete()
 	case commitrow.FieldRetainedBy:
 		return m.RetainedBy()
 	case commitrow.FieldRetireAt:
@@ -1885,6 +1927,8 @@ func (m *CommitRowMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldPresence(ctx)
 	case commitrow.FieldPartial:
 		return m.OldPartial(ctx)
+	case commitrow.FieldIncomplete:
+		return m.OldIncomplete(ctx)
 	case commitrow.FieldRetainedBy:
 		return m.OldRetainedBy(ctx)
 	case commitrow.FieldRetireAt:
@@ -1991,6 +2035,13 @@ func (m *CommitRowMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPartial(v)
+		return nil
+	case commitrow.FieldIncomplete:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIncomplete(v)
 		return nil
 	case commitrow.FieldRetainedBy:
 		v, ok := value.(string)
@@ -2215,6 +2266,9 @@ func (m *CommitRowMutation) ResetField(name string) error {
 		return nil
 	case commitrow.FieldPartial:
 		m.ResetPartial()
+		return nil
+	case commitrow.FieldIncomplete:
+		m.ResetIncomplete()
 		return nil
 	case commitrow.FieldRetainedBy:
 		m.ResetRetainedBy()
