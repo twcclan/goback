@@ -18,9 +18,10 @@ func TestDamagedPathsTravelWithTheGrantUntilARunCoversThem(t *testing.T) {
 	_, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
 
-	require.NoError(t, f.x.MarkDamaged(ctx, "world", []string{"world/level.dat", "world/region/r.0.0.mca"}))
-	require.NoError(t, f.x.MarkDamaged(ctx, "world", []string{"world/level.dat"}), "the same path twice is one row")
-	require.NoError(t, f.x.MarkDamaged(ctx, "gone", []string{"anything"}), "a set that does not exist is ignored")
+	world := f.setID("world")
+	require.NoError(t, f.x.MarkDamaged(ctx, world, []string{"world/level.dat", "world/region/r.0.0.mca"}))
+	require.NoError(t, f.x.MarkDamaged(ctx, world, []string{"world/level.dat"}), "the same path twice is one row")
+	require.NoError(t, f.x.MarkDamaged(ctx, world+1, []string{"anything"}), "a set that does not exist is ignored")
 
 	grant, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
@@ -57,7 +58,7 @@ func TestARescanIsClearedByAFullRun(t *testing.T) {
 	_, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
 
-	require.NoError(t, f.x.MarkRescan(ctx, "world"))
+	require.NoError(t, f.x.MarkRescan(ctx, f.setID("world")))
 
 	grant, err := f.x.BeginCommit(ctx, "world")
 	require.NoError(t, err)
@@ -86,7 +87,7 @@ func TestAClosedVersionIsLostInTheCommitsThatHoldIt(t *testing.T) {
 	second := f.commit("world", f.tree(current), false)
 
 	require.NoError(t, f.x.MarkLost(ctx, []backup.FilePath{
-		{Ref: old.Ref, Set: "world", Path: "level.dat"},
+		{Ref: old.Ref, SetID: f.setID("world"), Path: "level.dat"},
 	}))
 
 	lost, err := f.x.LostVersions(ctx, "world")
@@ -113,9 +114,9 @@ func TestAnOpenVersionStopsBeingLostOnceARunCoversIt(t *testing.T) {
 	f.commit("world", f.tree(current), false)
 
 	require.NoError(t, f.x.MarkLost(ctx, []backup.FilePath{
-		{Ref: current.Ref, Set: "world", Path: "level.dat", Open: true},
+		{Ref: current.Ref, SetID: f.setID("world"), Path: "level.dat", Open: true},
 	}))
-	require.NoError(t, f.x.MarkDamaged(ctx, "world", []string{"level.dat"}))
+	require.NoError(t, f.x.MarkDamaged(ctx, f.setID("world"), []string{"level.dat"}))
 
 	lost, err := f.x.LostVersions(ctx, "world")
 	require.NoError(t, err)
@@ -160,4 +161,14 @@ func TestARebuildFindsWhatTheStoreLost(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, grant.Rescan)
 	require.Equal(t, []string{"r.0.0.mca"}, grant.Damaged)
+}
+
+// setID is the id of the fixture's named set.
+func (f *fixture) setID(name string) int64 {
+	f.t.Helper()
+
+	id, err := findSet(f.ctx, f.x.client, name)
+	require.NoError(f.t, err)
+
+	return id
 }

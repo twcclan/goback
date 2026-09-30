@@ -45,14 +45,14 @@ func (x *Index) PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]backup.F
 			name, names[row.SetID] = s.Name, s.Name
 		}
 
-		key := name + "\x00" + row.Path + "\x00" + string(row.Ref)
+		key := fmt.Sprint(row.SetID) + "\x00" + row.Path + "\x00" + string(row.Ref)
 		if seen[key] {
 			continue
 		}
 
 		seen[key] = true
 		out = append(out, backup.FilePath{
-			Ref: &proto.Ref{Hash: row.Ref}, Set: name, Path: row.Path,
+			Ref: &proto.Ref{Hash: row.Ref}, SetID: row.SetID, Set: name, Path: row.Path,
 			Open: row.ValidUntil == nil,
 		})
 	}
@@ -63,23 +63,19 @@ func (x *Index) PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]backup.F
 // MarkDamaged records that the paths of a set hold content the store lost,
 // so the next backup reads them again. An unknown set is ignored, since a
 // set that is gone has nothing to repair.
-func (x *Index) MarkDamaged(ctx context.Context, name string, paths []string) error {
-	s, err := x.client.Set.Query().Where(set.Name(name)).Only(ctx)
-	if ent.IsNotFound(err) {
-		return nil
-	}
-
-	if err != nil {
+func (x *Index) MarkDamaged(ctx context.Context, setID int64, paths []string) error {
+	exists, err := x.client.Set.Query().Where(set.ID(setID)).Exist(ctx)
+	if err != nil || !exists {
 		return err
 	}
 
 	now := x.now()
 	for _, path := range paths {
-		err := x.client.DamagedPath.Create().SetSetID(s.ID).SetPath(path).SetFoundAt(now).
+		err := x.client.DamagedPath.Create().SetSetID(setID).SetPath(path).SetFoundAt(now).
 			OnConflictColumns(damagedpath.FieldSetID, damagedpath.FieldPath).
 			UpdateFoundAt().Exec(ctx)
 		if err != nil {
-			return fmt.Errorf("marking %q of set %q damaged: %w", path, name, err)
+			return fmt.Errorf("marking %q of set %d damaged: %w", path, setID, err)
 		}
 	}
 
@@ -88,14 +84,14 @@ func (x *Index) MarkDamaged(ctx context.Context, name string, paths []string) er
 
 // MarkRescan records that a whole set must be read again, for damage no
 // path could be resolved for.
-func (x *Index) MarkRescan(ctx context.Context, name string) error {
-	n, err := x.client.Set.Update().Where(set.Name(name)).SetRescan(true).Save(ctx)
+func (x *Index) MarkRescan(ctx context.Context, setID int64) error {
+	n, err := x.client.Set.Update().Where(set.ID(setID)).SetRescan(true).Save(ctx)
 	if err != nil {
 		return err
 	}
 
 	if n == 0 {
-		return fmt.Errorf("%w: set %q", backup.ErrNotFound, name)
+		return fmt.Errorf("%w: set %d", backup.ErrNotFound, setID)
 	}
 
 	return nil
@@ -162,28 +158,12 @@ func (x *Index) clearDamage(ctx context.Context, tx *ent.Tx, setID int64, partia
 // MarkLost records that stored versions cannot be read any more. Every
 // commit whose range covers one holds a file it cannot restore.
 func (x *Index) MarkLost(ctx context.Context, versions []backup.FilePath) error {
-	ids := make(map[string]int64)
-
 	for _, v := range versions {
-		id, ok := ids[v.Set]
-		if !ok {
-			s, err := x.client.Set.Query().Where(set.Name(v.Set)).Only(ctx)
-			if ent.IsNotFound(err) {
-				continue
-			}
-
-			if err != nil {
-				return err
-			}
-
-			id, ids[v.Set] = s.ID, s.ID
-		}
-
 		err := x.client.File.Update().
-			Where(file.SetID(id), file.Path(v.Path), file.RefEQ(v.Ref.GetHash())).
+			Where(file.SetID(v.SetID), file.Path(v.Path), file.RefEQ(v.Ref.GetHash())).
 			SetLost(true).Exec(ctx)
 		if err != nil {
-			return fmt.Errorf("marking %q of set %q lost: %w", v.Path, v.Set, err)
+			return fmt.Errorf("marking %q of set %d lost: %w", v.Path, v.SetID, err)
 		}
 	}
 
@@ -325,12 +305,12 @@ func (x *Index) findDamage(ctx context.Context) error {
 		return nil
 	}
 
-	names, err := x.client.Set.Query().Select(set.FieldName).Strings(ctx)
+	sets, err := x.client.Set.Query().IDs(ctx)
 	if err != nil {
 		return err
 	}
 
-	report, err := backup.ReportDamage(ctx, x.ObjectStore, x, names, lost)
+	report, err := backup.ReportDamage(ctx, x.ObjectStore, x, sets, lost)
 	if err != nil {
 		return err
 	}

@@ -81,18 +81,20 @@ func markDamage(ctx context.Context, idx backup.Index, lost []*proto.Ref) {
 		log.Fatalf("Listing the sets failed: %v", err)
 	}
 
-	names := make([]string, 0, len(sets))
+	ids := make([]int64, 0, len(sets))
+	names := make(map[int64]string, len(sets))
 	for _, s := range sets {
-		names = append(names, s.Name)
+		ids = append(ids, s.ID)
+		names[s.ID] = s.Name
 	}
 
-	result, err := backup.ReportDamage(ctx, idx, damage, names, lost)
+	result, err := backup.ReportDamage(ctx, idx, damage, ids, lost)
 	if err != nil {
 		log.Fatalf("Recording the damage failed: %v", err)
 	}
 
 	for set, paths := range result.Paths {
-		log.Printf("set %s: %d paths will be read again by the next backup", set, len(paths))
+		log.Printf("set %s: %d paths will be read again by the next backup", names[set], len(paths))
 	}
 
 	for _, at := range result.Lost {

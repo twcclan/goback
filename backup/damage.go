@@ -9,7 +9,9 @@ import (
 
 // FilePath is where a file object is stored in a set.
 type FilePath struct {
-	Ref  *proto.Ref
+	Ref   *proto.Ref
+	SetID int64
+	// Set is the set's name, for reporting; SetID is what identifies it.
 	Set  string
 	Path string
 	// Open reports whether this is the version the set's newest commit
@@ -23,22 +25,22 @@ type DamageIndex interface {
 	// PathsOfFiles returns where the given file objects are stored; a file
 	// object no live version references any more yields nothing.
 	PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]FilePath, error)
-	// MarkDamaged records paths a run must read again.
-	MarkDamaged(ctx context.Context, set string, paths []string) error
+	// MarkDamaged records paths of the set a run must read again.
+	MarkDamaged(ctx context.Context, setID int64, paths []string) error
 	// MarkLost records versions no run can produce again, so a restore of
 	// the commits holding them says so rather than failing.
 	MarkLost(ctx context.Context, versions []FilePath) error
 	// MarkRescan records that a whole set must be read again.
-	MarkRescan(ctx context.Context, set string) error
+	MarkRescan(ctx context.Context, setID int64) error
 }
 
 // DamageReport is what ReportDamage made of a store's losses.
 type DamageReport struct {
-	// Paths are the paths marked for a re-read, by set.
-	Paths map[string][]string
-	// Rescan names the sets marked for a full re-read, because some loss
+	// Paths are the paths marked for a re-read, by set id.
+	Paths map[int64][]string
+	// Rescan is the sets marked for a full re-read, because some loss
 	// could not be placed at a path.
-	Rescan []string
+	Rescan []int64
 	// Unplaced are the lost objects no live path holds.
 	Unplaced []*proto.Ref
 	// Lost are the closed versions nothing can produce again; the commits
@@ -51,8 +53,8 @@ type DamageReport struct {
 // loss it cannot place — a lost file or tree object, or a blob whose file
 // object is gone too — marks its sets for a full re-read instead, which
 // is the only way left to find it.
-func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets []string, lost []*proto.Ref) (*DamageReport, error) {
-	report := &DamageReport{Paths: map[string][]string{}}
+func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets []int64, lost []*proto.Ref) (*DamageReport, error) {
+	report := &DamageReport{Paths: map[int64][]string{}}
 	if len(lost) == 0 {
 		return report, nil
 	}
@@ -123,7 +125,7 @@ func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets 
 		// only the version the newest commit points at is still on a
 		// source somewhere; a closed one is gone for good
 		if at.Open {
-			report.Paths[at.Set] = append(report.Paths[at.Set], at.Path)
+			report.Paths[at.SetID] = append(report.Paths[at.SetID], at.Path)
 		}
 
 		report.Lost = append(report.Lost, at)

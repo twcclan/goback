@@ -33,8 +33,8 @@ func (w *walkingStore) Walk(_ context.Context, _ bool, typ proto.ObjectType, fn 
 // it was told to read again.
 type placingIndex struct {
 	at      []FilePath
-	damaged map[string][]string
-	rescan  []string
+	damaged map[int64][]string
+	rescan  []int64
 	lost    []FilePath
 }
 
@@ -54,9 +54,9 @@ func (p *placingIndex) PathsOfFiles(_ context.Context, refs []*proto.Ref) ([]Fil
 	return out, nil
 }
 
-func (p *placingIndex) MarkDamaged(_ context.Context, set string, paths []string) error {
+func (p *placingIndex) MarkDamaged(_ context.Context, set int64, paths []string) error {
 	if p.damaged == nil {
-		p.damaged = map[string][]string{}
+		p.damaged = map[int64][]string{}
 	}
 
 	p.damaged[set] = append(p.damaged[set], paths...)
@@ -70,11 +70,17 @@ func (p *placingIndex) MarkLost(_ context.Context, versions []FilePath) error {
 	return nil
 }
 
-func (p *placingIndex) MarkRescan(_ context.Context, set string) error {
+func (p *placingIndex) MarkRescan(_ context.Context, set int64) error {
 	p.rescan = append(p.rescan, set)
 
 	return nil
 }
+
+// the ids of the sets the tests place damage in
+const (
+	world int64 = 1
+	logs  int64 = 2
+)
 
 func partedFile(parts ...*proto.Ref) *proto.Object {
 	file := &proto.File{}
@@ -97,14 +103,14 @@ func TestDamageIsPlacedAtThePathThatHeldIt(t *testing.T) {
 
 	store := &walkingStore{memStore: newMemStore(), files: []*proto.Object{holder, other}}
 	idx := &placingIndex{at: []FilePath{
-		{Ref: holder.Ref(), Set: "world", Path: "world/region/r.0.0.mca", Open: true},
-		{Ref: other.Ref(), Set: "world", Path: "world/level.dat", Open: true},
+		{Ref: holder.Ref(), SetID: world, Set: "world", Path: "world/region/r.0.0.mca", Open: true},
+		{Ref: other.Ref(), SetID: world, Set: "world", Path: "world/level.dat", Open: true},
 	}}
 
-	report, err := ReportDamage(ctx, store, idx, []string{"world"}, []*proto.Ref{lost})
+	report, err := ReportDamage(ctx, store, idx, []int64{world}, []*proto.Ref{lost})
 	require.NoError(t, err)
-	require.Equal(t, map[string][]string{"world": {"world/region/r.0.0.mca"}}, report.Paths)
-	require.Equal(t, map[string][]string{"world": {"world/region/r.0.0.mca"}}, idx.damaged)
+	require.Equal(t, map[int64][]string{world: {"world/region/r.0.0.mca"}}, report.Paths)
+	require.Equal(t, map[int64][]string{world: {"world/region/r.0.0.mca"}}, idx.damaged)
 	require.Empty(t, report.Rescan, "a placed loss needs no full re-read")
 	require.Empty(t, idx.rescan)
 }
@@ -114,11 +120,11 @@ func TestALostFileObjectIsPlacedByItsOwnRef(t *testing.T) {
 
 	gone := partedFile(testRef("a"), testRef("b"))
 	store := &walkingStore{memStore: newMemStore()}
-	idx := &placingIndex{at: []FilePath{{Ref: gone.Ref(), Set: "world", Path: "world/level.dat", Open: true}}}
+	idx := &placingIndex{at: []FilePath{{Ref: gone.Ref(), SetID: world, Set: "world", Path: "world/level.dat", Open: true}}}
 
-	report, err := ReportDamage(ctx, store, idx, []string{"world"}, []*proto.Ref{gone.Ref()})
+	report, err := ReportDamage(ctx, store, idx, []int64{world}, []*proto.Ref{gone.Ref()})
 	require.NoError(t, err)
-	require.Equal(t, map[string][]string{"world": {"world/level.dat"}}, report.Paths)
+	require.Equal(t, map[int64][]string{world: {"world/level.dat"}}, report.Paths)
 	require.Empty(t, report.Rescan)
 }
 
@@ -129,16 +135,16 @@ func TestAnUnplaceableLossAsksForAFullReRead(t *testing.T) {
 	store := &walkingStore{memStore: newMemStore()}
 	idx := &placingIndex{}
 
-	report, err := ReportDamage(ctx, store, idx, []string{"world", "logs"}, []*proto.Ref{lost})
+	report, err := ReportDamage(ctx, store, idx, []int64{world, logs}, []*proto.Ref{lost})
 	require.NoError(t, err)
 	require.Empty(t, report.Paths)
-	require.Equal(t, []string{"world", "logs"}, report.Rescan)
-	require.Equal(t, []string{"world", "logs"}, idx.rescan)
+	require.Equal(t, []int64{world, logs}, report.Rescan)
+	require.Equal(t, []int64{world, logs}, idx.rescan)
 	require.Len(t, report.Unplaced, 1)
 }
 
 func TestNoLossReportsNothing(t *testing.T) {
-	report, err := ReportDamage(context.Background(), &walkingStore{memStore: newMemStore()}, &placingIndex{}, []string{"world"}, nil)
+	report, err := ReportDamage(context.Background(), &walkingStore{memStore: newMemStore()}, &placingIndex{}, []int64{world}, nil)
 	require.NoError(t, err)
 	require.Empty(t, report.Paths)
 	require.Empty(t, report.Rescan)
@@ -153,11 +159,11 @@ func TestAClosedVersionIsLostRatherThanReadAgain(t *testing.T) {
 
 	store := &walkingStore{memStore: newMemStore(), files: []*proto.Object{old, current}}
 	idx := &placingIndex{at: []FilePath{
-		{Ref: old.Ref(), Set: "world", Path: "world/level.dat"},
-		{Ref: current.Ref(), Set: "world", Path: "world/level.dat", Open: true},
+		{Ref: old.Ref(), SetID: world, Set: "world", Path: "world/level.dat"},
+		{Ref: current.Ref(), SetID: world, Set: "world", Path: "world/level.dat", Open: true},
 	}}
 
-	report, err := ReportDamage(ctx, store, idx, []string{"world"}, []*proto.Ref{lost})
+	report, err := ReportDamage(ctx, store, idx, []int64{world}, []*proto.Ref{lost})
 	require.NoError(t, err)
 	require.Empty(t, report.Paths, "no run can produce a version the newest commit no longer points at")
 	require.Empty(t, idx.damaged)
@@ -176,10 +182,10 @@ func TestALossInASplitIsPlacedAtTheFileThatSplitsIt(t *testing.T) {
 
 	// the split comes before the file that names it
 	store := &walkingStore{memStore: newMemStore(), files: []*proto.Object{split, big}}
-	idx := &placingIndex{at: []FilePath{{Ref: big.Ref(), Set: "world", Path: "world/region/r.0.0.mca", Open: true}}}
+	idx := &placingIndex{at: []FilePath{{Ref: big.Ref(), SetID: world, Set: "world", Path: "world/region/r.0.0.mca", Open: true}}}
 
-	report, err := ReportDamage(ctx, store, idx, []string{"world"}, []*proto.Ref{lost})
+	report, err := ReportDamage(ctx, store, idx, []int64{world}, []*proto.Ref{lost})
 	require.NoError(t, err)
-	require.Equal(t, map[string][]string{"world": {"world/region/r.0.0.mca"}}, report.Paths)
+	require.Equal(t, map[int64][]string{world: {"world/region/r.0.0.mca"}}, report.Paths)
 	require.Empty(t, report.Rescan)
 }
