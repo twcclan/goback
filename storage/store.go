@@ -465,6 +465,12 @@ func (s *Store) BeginSession(ctx context.Context, set string, restore *proto.Ref
 		return nil, err
 	}
 
+	if restore != nil {
+		if err := s.readable(ctx, restore); err != nil {
+			return nil, err
+		}
+	}
+
 	session := &backup.Session{
 		AgentID: p.AgentID,
 		Set:     set,

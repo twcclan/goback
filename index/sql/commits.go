@@ -122,6 +122,15 @@ func (x *Index) checkPinTarget(ctx context.Context, c *ent.Client, target *proto
 		return fmt.Errorf("%w: commit %x", backup.ErrTombstoned, target.GetHash())
 	}
 
+	visible, err := x.References(ctx, target)
+	if err != nil {
+		return err
+	}
+
+	if !visible {
+		return fmt.Errorf("commit %x: %w", target.GetHash(), backup.ErrNotFound)
+	}
+
 	return nil
 }
 
