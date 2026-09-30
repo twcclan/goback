@@ -612,7 +612,13 @@ func canonicalFile(f *File) ([]byte, error) {
 	}
 
 	var b []byte
+
+	// a split of a larger file holds a run of its parts, so the parts are
+	// contiguous from wherever the first one starts
 	var next uint64
+	if len(f.Parts) > 0 && f.Parts[0] != nil {
+		next = f.Parts[0].Offset
+	}
 
 	for i, part := range f.Parts {
 		if part == nil {

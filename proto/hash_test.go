@@ -117,6 +117,7 @@ func TestCanonicalRejects(t *testing.T) {
 		"link target on dir": NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("a"), Type: NodeType_NODE_DIRECTORY, LinkTarget: []byte("x")}, Ref: good}}}),
 		"nodes and splits":   NewObject(&Tree{Nodes: []*TreeNode{{Stat: &FileInfo{Name: []byte("a")}, Ref: good}}, Splits: []*Ref{good}}),
 		"gap in parts":       NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 5, Ref: good}, {Offset: 6, Length: 1, Ref: good}}}),
+		"gap in a split":     NewObject(&File{Parts: []*FilePart{{Offset: 100, Length: 5, Ref: good}, {Offset: 106, Length: 1, Ref: good}}}),
 		"empty part":         NewObject(&File{Parts: []*FilePart{{Offset: 0, Length: 0, Ref: good}}}),
 		"parts and splits":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Splits: []*Ref{good}}),
 		"inline and parts":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Inline: []byte("x")}),
@@ -132,6 +133,13 @@ func TestCanonicalRejects(t *testing.T) {
 			require.Panics(t, func() { obj.Ref() })
 		})
 	}
+}
+
+func TestASplitHoldsARunOfItsFilesParts(t *testing.T) {
+	good := refOf("good")
+
+	split := NewObject(&File{Parts: []*FilePart{{Offset: 100, Length: 5, Ref: good}, {Offset: 105, Length: 1, Ref: good}}})
+	require.NoError(t, split.Validate())
 }
 
 func TestCanonicalRejectsUnknownFields(t *testing.T) {
