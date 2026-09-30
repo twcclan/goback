@@ -219,3 +219,26 @@ func TestFilesPutOutsideAWalkReadBack(t *testing.T) {
 
 	require.Equal(t, contents, readAll(t, NewBackupReader(store).WithKey(key), tree))
 }
+
+func TestAFileStoredOverItsPartsIsTheFileItsWriterStored(t *testing.T) {
+	ctx := context.Background()
+	data := make([]byte, 600<<10)
+	rand.New(rand.NewSource(9)).Read(data)
+
+	for _, key := range []*storekey.Key{nil, newKey(t)} {
+		store := newMemStore()
+
+		ref, err := PutFile(ctx, store, key, int64(len(data)), bytes.NewReader(data))
+		require.NoError(t, err)
+
+		obj, err := store.Get(ctx, ref)
+		require.NoError(t, err)
+
+		parts, err := FileParts(ctx, store, obj.GetFile())
+		require.NoError(t, err)
+
+		again, err := PutParts(ctx, store, key, parts)
+		require.NoError(t, err)
+		require.True(t, ref.Equal(again))
+	}
+}

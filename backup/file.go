@@ -481,6 +481,26 @@ func (bfw *fileWriter) Close() (err error) {
 		return err
 	}
 
+	return bfw.putParts()
+}
+
+// PutParts stores a file over parts that store already holds, as a backup
+// that cut those parts would, and returns the ref a tree node should
+// carry. parts must not be empty; an empty file is stored with PutFile.
+func PutParts(ctx context.Context, store ObjectStore, key *storekey.Key, parts []*proto.FilePart) (*proto.Ref, error) {
+	writer := newFileWriter(ctx, store, key, 0)
+	writer.parts = parts
+
+	if err := writer.putParts(); err != nil {
+		return nil, err
+	}
+
+	return writer.Ref(), nil
+}
+
+// putParts stores the file object over the parts, split into sub-file
+// objects when there are too many.
+func (bfw *fileWriter) putParts() (err error) {
 	var file *proto.Object
 
 	if len(bfw.parts) > maxFileParts {
