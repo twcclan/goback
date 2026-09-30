@@ -246,3 +246,97 @@ func (x *Index) LostVersions(ctx context.Context, name string) ([]LostVersion, e
 
 	return out, nil
 }
+
+// findDamage marks what the indexed versions reference but the store no
+// longer holds, as the repair that lost it did in the index a rebuild
+// replaces.
+func (x *Index) findDamage(ctx context.Context) error {
+	var rows []struct {
+		Ref []byte `json:"ref"`
+	}
+
+	err := x.client.File.Query().Where(file.RefNotNil()).Unique(true).Select(file.FieldRef).Scan(ctx, &rows)
+	if err != nil {
+		return err
+	}
+
+	checked := map[string]bool{}
+
+	var (
+		lost  []*proto.Ref
+		check func(ref *proto.Ref) error
+	)
+
+	gone := func(ref *proto.Ref) {
+		if !checked[string(ref.GetHash())] {
+			checked[string(ref.GetHash())] = true
+			lost = append(lost, ref)
+		}
+	}
+
+	check = func(ref *proto.Ref) error {
+		if checked[string(ref.GetHash())] {
+			return nil
+		}
+
+		obj, err := x.ObjectStore.Get(ctx, ref)
+		if errors.Is(err, backup.ErrNotFound) {
+			gone(ref)
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		checked[string(ref.GetHash())] = true
+
+		for _, part := range obj.GetFile().GetParts() {
+			held, err := x.ObjectStore.Has(ctx, part.GetRef())
+			if err != nil {
+				return err
+			}
+
+			if !held {
+				gone(part.GetRef())
+			}
+		}
+
+		for _, split := range obj.GetFile().GetSplits() {
+			if err := check(split); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	for _, row := range rows {
+		if len(row.Ref) == 0 {
+			continue
+		}
+
+		if err := check(&proto.Ref{Hash: row.Ref}); err != nil {
+			return err
+		}
+	}
+
+	if len(lost) == 0 {
+		return nil
+	}
+
+	names, err := x.client.Set.Query().Select(set.FieldName).Strings(ctx)
+	if err != nil {
+		return err
+	}
+
+	report, err := backup.ReportDamage(ctx, x.ObjectStore, x, names, lost)
+	if err != nil {
+		return err
+	}
+
+	x.logger().Warn("the store lost objects its versions reference", "objects", len(lost),
+		"damaged sets", len(report.Paths), "unrecoverable versions", len(report.Lost), "sets to read again", len(report.Rescan))
+
+	return nil
+}

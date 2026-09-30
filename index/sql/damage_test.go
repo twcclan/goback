@@ -128,3 +128,36 @@ func TestAnOpenVersionStopsBeingLostOnceARunCoversIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, lost, "the run stored the open version again")
 }
+
+func TestARebuildFindsWhatTheStoreLost(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	kept := proto.NewObject(&proto.Blob{Data: []byte("kept")})
+	lost := proto.NewObject(&proto.Blob{Data: []byte("lost")})
+	require.NoError(t, f.store.Put(ctx, kept))
+	require.NoError(t, f.store.Put(ctx, lost))
+
+	parted := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Offset: 0, Length: 4, Ref: kept.Ref()},
+		{Offset: 4, Length: 4, Ref: lost.Ref()},
+	}})
+	require.NoError(t, f.store.Put(ctx, parted))
+
+	f.commit("world", f.tree(f.file("level.dat", "intact"), &proto.TreeNode{
+		Stat: &proto.FileInfo{Name: []byte("r.0.0.mca"), Type: proto.NodeType_NODE_FILE, MtimeNs: f.epoch.UnixNano(), Size: 8, Mode: 0644},
+		Ref:  parted.Ref(),
+	}), false)
+
+	f.store.mu.Lock()
+	delete(f.store.objects, string(lost.Ref().Hash))
+	f.store.mu.Unlock()
+
+	y := f.index()
+	require.NoError(t, y.ReIndex(ctx))
+
+	grant, err := y.BeginCommit(ctx, "world")
+	require.NoError(t, err)
+	require.False(t, grant.Rescan)
+	require.Equal(t, []string{"r.0.0.mca"}, grant.Damaged)
+}

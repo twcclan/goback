@@ -794,7 +794,12 @@ func (x *Index) ReIndex(ctx context.Context) error {
 		}
 	}
 
-	return x.resetSetSequence(ctx)
+	err = x.resetSetSequence(ctx)
+	if err != nil {
+		return err
+	}
+
+	return x.findDamage(ctx)
 }
 
 // resetSetSequence moves the set id sequence past the ids a rebuild
