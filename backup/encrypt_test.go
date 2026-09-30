@@ -202,6 +202,8 @@ func TestFilesPutOutsideAWalkReadBack(t *testing.T) {
 	contents := map[string][]byte{
 		"small": []byte("hello\n"),
 		"large": bytes.Repeat([]byte("0123456789abcdef"), 64<<10),
+		// sealing grows it past what may be inline
+		"at the inline limit": bytes.Repeat([]byte("x"), proto.InlineLimit),
 	}
 
 	var nodes []*proto.TreeNode

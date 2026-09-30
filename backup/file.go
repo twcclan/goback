@@ -434,24 +434,37 @@ func (bfw *fileWriter) object(file *proto.File) *proto.Object {
 	return obj
 }
 
+// inline is the file as one object holding its content, or nil when the
+// content, sealed if there is a key, is too large for that.
+func (bfw *fileWriter) inline() *proto.File {
+	if len(bfw.parts) > 0 || bfw.blobSize > proto.InlineLimit {
+		return nil
+	}
+
+	content := make([]byte, bfw.blobSize)
+	copy(content, bfw.buf[:bfw.blobSize])
+
+	file := &proto.File{Inline: content}
+	if bfw.key != nil {
+		file.Inline = bfw.key.SealInline(content)
+		file.InlineEncryption = proto.Encryption_SEALED
+	}
+
+	if len(file.Inline) > proto.InlineLimit {
+		return nil
+	}
+
+	return file
+}
+
 func (bfw *fileWriter) Close() (err error) {
-	if len(bfw.parts) == 0 && bfw.blobSize <= proto.InlineLimit {
-		inline := make([]byte, bfw.blobSize)
-		copy(inline, bfw.buf[:bfw.blobSize])
-
-		file := &proto.File{Inline: inline}
-
-		if bfw.key != nil {
-			file.Inline = bfw.key.SealInline(inline)
-			file.InlineEncryption = proto.Encryption_SEALED
-		}
-
+	if file := bfw.inline(); file != nil {
 		obj := bfw.object(file)
 		bfw.ref = obj.Ref()
 
 		err = bfw.store.Put(bfw.ctx, obj)
 		if err == nil && bfw.uploaded != nil {
-			atomic.AddInt64(bfw.uploaded, int64(len(inline)))
+			atomic.AddInt64(bfw.uploaded, int64(bfw.blobSize))
 		}
 
 		return err
