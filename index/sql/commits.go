@@ -910,9 +910,11 @@ func (x *Index) applyTombstone(ctx context.Context, ref []byte, at time.Time) (i
 }
 
 // References implements backup.RefScope: a commit, tree or file ref is
-// readable once an indexed commit of any set names it.
+// readable once an indexed commit of any set the caller sees names it.
 func (x *Index) References(ctx context.Context, ref *proto.Ref) (bool, error) {
-	return x.client.SetRef.Query().Where(setref.Ref(ref.GetHash())).Exist(ctx)
+	// joins sets, so a set hidden from the caller does not make it readable;
+	// HasSet would only test the column
+	return x.client.SetRef.Query().Where(setref.Ref(ref.GetHash()), setref.HasSetWith()).Exist(ctx)
 }
 
 // Reachable reports whether a commit of one of the named sets references
