@@ -71,7 +71,15 @@ func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets 
 		covers[string(ref.GetHash())] = []string{string(ref.GetHash())}
 	}
 
+	// a split file's parts are held by its split children, which no path
+	// names; a loss in one is placed at the file that splits it
+	splitOf := map[string]*proto.Ref{}
+
 	err := store.Walk(ctx, true, proto.ObjectType_FILE, func(obj *proto.Object) error {
+		for _, split := range obj.GetFile().GetSplits() {
+			splitOf[string(split.GetHash())] = obj.Ref()
+		}
+
 		var held []string
 		for _, part := range obj.GetFile().GetParts() {
 			if missing[string(part.Ref.GetHash())] {
@@ -91,6 +99,19 @@ func ReportDamage(ctx context.Context, store ObjectStore, idx DamageIndex, sets 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("walking the file objects: %w", err)
+	}
+
+	for _, holder := range holders {
+		held := covers[string(holder.GetHash())]
+
+		for parent, ok := splitOf[string(holder.GetHash())]; ok; parent, ok = splitOf[string(parent.GetHash())] {
+			key := string(parent.GetHash())
+			if _, seen := covers[key]; !seen {
+				holders = append(holders, parent)
+			}
+
+			covers[key] = append(covers[key], held...)
+		}
 	}
 
 	placed, err := idx.PathsOfFiles(ctx, holders)

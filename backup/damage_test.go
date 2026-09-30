@@ -166,3 +166,20 @@ func TestAClosedVersionIsLostRatherThanReadAgain(t *testing.T) {
 	require.Equal(t, report.Lost, idx.lost)
 	require.Empty(t, report.Rescan, "the loss was placed, it just cannot be undone")
 }
+
+func TestALossInASplitIsPlacedAtTheFileThatSplitsIt(t *testing.T) {
+	ctx := context.Background()
+
+	lost := testRef("lost")
+	split := partedFile(testRef("kept"), lost)
+	big := proto.NewObject(&proto.File{Splits: []*proto.Ref{partedFile(testRef("first")).Ref(), split.Ref()}})
+
+	// the split comes before the file that names it
+	store := &walkingStore{memStore: newMemStore(), files: []*proto.Object{split, big}}
+	idx := &placingIndex{at: []FilePath{{Ref: big.Ref(), Set: "world", Path: "world/region/r.0.0.mca", Open: true}}}
+
+	report, err := ReportDamage(ctx, store, idx, []string{"world"}, []*proto.Ref{lost})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"world": {"world/region/r.0.0.mca"}}, report.Paths)
+	require.Empty(t, report.Rescan)
+}
