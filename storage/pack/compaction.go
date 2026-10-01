@@ -3,6 +3,7 @@ package pack
 import (
 	"context"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,7 +74,8 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	ctx, span := tracer.Start(ctx, "PackStorage.rewrite")
 	defer span.End()
 
-	rw := &rewrite{started: time.Now(), ps: ps, group: group, inGroup: make(map[string]bool, len(group.candidates)), written: make(map[string]bool)}
+	rw := &rewrite{started: time.Now(), ps: ps, group: group, inGroup: make(map[string]bool, len(group.candidates)),
+		written: make(map[string]bool), unmarked: make(map[string]uint64)}
 	for _, candidate := range group.candidates {
 		rw.inGroup[candidate.name] = true
 	}
@@ -132,7 +134,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
 		"copied", humanize.Bytes(rw.copied), "took", time.Since(rw.started).Round(time.Second))
 
-	if err := ps.carryErasureClock(rw.obsolete, rw.outputs); err != nil {
+	if err := ps.carryErasureClock(rw.obsolete, rw.outputs, rw.unmarked); err != nil {
 		return err
 	}
 
@@ -175,13 +177,17 @@ type rewrite struct {
 	outputs  []*archive
 	obsolete []*archive
 	copied   uint64
+	// unmarked names the copied objects their input's last mark result
+	// left unreachable, and that result's generation
+	unmarked map[string]uint64
 }
 
 // progressEvery is how many rewritten archives pass between progress logs.
 const progressEvery = 500
 
-// claim reports whether the caller is the first to write the object.
-func (rw *rewrite) claim(hash []byte) bool {
+// claim reports whether the caller is the first to write the object, and
+// records the mark the input's last generation gave it.
+func (rw *rewrite) claim(hash []byte, mark *gcFile, pos int) bool {
 	rw.mtx.Lock()
 	defer rw.mtx.Unlock()
 
@@ -190,6 +196,10 @@ func (rw *rewrite) claim(hash []byte) bool {
 	}
 
 	rw.written[string(hash)] = true
+
+	if mark != nil && pos >= 0 && !mark.Current.Test(uint(pos)) {
+		rw.unmarked[string(hash)] = mark.Generation
+	}
 
 	return true
 }
@@ -230,6 +240,8 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 		return errors.Wrapf(err, "locating the objects of %s", candidate.name)
 	}
 
+	mark := candidate.gcResult()
+
 	err = candidate.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -252,7 +264,7 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 			return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, candidate.name)
 		}
 
-		if !rw.claim(hdr.Ref.Hash) {
+		if !rw.claim(hdr.Ref.Hash, mark, idx.position(hdr.Ref.Hash)) {
 			return nil
 		}
 
@@ -354,10 +366,13 @@ func (o *rewriteOutput) abort() {
 	}
 }
 
-// carryErasureClock seeds the outputs of a rewrite with the earliest
-// DeadSince of its inputs, so the erasure bound keeps counting from when
-// the objects first went unmarked rather than from the rewrite.
-func (ps *PackStorage) carryErasureClock(inputs, outputs []*archive) error {
+// carryErasureClock seeds the outputs of a rewrite with the mark of the
+// newest generation among its inputs, so that an unreachable object keeps
+// counting towards its second unmarked generation, and with the earliest
+// DeadSince of the inputs, so the erasure bound keeps counting from when
+// the objects first went unmarked. An object whose input was last marked
+// in an older generation counts as reachable.
+func (ps *PackStorage) carryErasureClock(inputs, outputs []*archive, unmarked map[string]uint64) error {
 	var since time.Time
 	var generation uint64
 	var snapshot time.Time
@@ -377,7 +392,7 @@ func (ps *PackStorage) carryErasureClock(inputs, outputs []*archive) error {
 		}
 	}
 
-	if since.IsZero() {
+	if generation == 0 {
 		return nil
 	}
 
@@ -391,7 +406,28 @@ func (ps *PackStorage) carryErasureClock(inputs, outputs []*archive) error {
 			Generation: generation,
 			Snapshot:   snapshot,
 			Current:    bitset.New(uint(len(idx))).SetAll(),
-			DeadSince:  since,
+		}
+
+		for pos, rec := range idx {
+			if g, ok := unmarked[string(rec.Sum[:])]; !ok || g != generation {
+				continue
+			}
+
+			seed.Current.Clear(uint(pos))
+			seed.DeadObjects++
+			seed.DeadBytes += uint64(rec.Length)
+			seed.Dead = append(seed.Dead, prefixOf(rec.Sum[:]))
+		}
+
+		if seed.DeadObjects > 0 {
+			sort.Slice(seed.Dead, func(i, j int) bool { return seed.Dead[i] < seed.Dead[j] })
+
+			seed.DeadSince = since
+			if seed.DeadSince.IsZero() {
+				seed.DeadSince = snapshot
+			}
+		} else if !since.IsZero() {
+			seed.DeadSince = since
 		}
 
 		if err := writeGCFile(ps.storage, a.name, seed); err != nil {

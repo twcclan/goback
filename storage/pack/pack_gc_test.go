@@ -834,3 +834,27 @@ func TestCollectAttributesNothingWithoutAnOwner(t *testing.T) {
 
 	require.NoError(t, store.Close())
 }
+
+func TestCompactionBetweenCollectionsKeepsTheUnreachableCounting(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	reachable, unreachable := makeGCTestData(t)
+	putAll(t, store, append(append([]*proto.Object{}, reachable...), unreachable...))
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	require.NoError(t, store.Compact())
+	requirePresent(t, store, unreachable, false)
+	requirePresent(t, store, reachable, true)
+
+	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, len(unreachable), second.ReclaimedObjects, "the generation before the compaction still counts")
+
+	requireStored(t, store, unreachable, false)
+	requireStored(t, store, reachable, true)
+
+	require.NoError(t, store.Close())
+}
