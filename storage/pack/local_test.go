@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -47,7 +49,40 @@ func (las *localArchiveStorage) Create(name string) (File, error) {
 		return nil, err
 	}
 
-	return os.Create(las.path(name))
+	file, err := os.Create(las.path(name))
+	if err != nil {
+		return nil, err
+	}
+
+	return &stampedFile{File: file}, nil
+}
+
+// stampedFile gives each file it closes a modification time newer than the
+// last one's, as a bucket's creation times are; the file system's own
+// clock may give two files written in quick succession the same time.
+type stampedFile struct {
+	*os.File
+}
+
+var stamps struct {
+	sync.Mutex
+	last time.Time
+}
+
+func (f *stampedFile) Close() error {
+	if err := f.File.Close(); err != nil {
+		return err
+	}
+
+	stamps.Lock()
+	stamp := time.Now().Truncate(time.Microsecond)
+	if !stamp.After(stamps.last) {
+		stamp = stamps.last.Add(time.Microsecond)
+	}
+	stamps.last = stamp
+	stamps.Unlock()
+
+	return os.Chtimes(f.Name(), stamp, stamp)
 }
 
 func (las *localArchiveStorage) CreateNew(name string, data []byte) error {
