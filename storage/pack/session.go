@@ -108,7 +108,13 @@ func (ps *PackStorage) BeginSession(ctx context.Context, s *backup.Session) (con
 	s.Started = now
 	s.LastSeen = now
 
-	err = ps.markBegun(s)
+	// the seals written from here on are the ones its commit checks
+	sealed, err := ps.lastSeal()
+	if err != nil {
+		return nil, err
+	}
+
+	err = ps.markBegun(s, sealed)
 	if err != nil {
 		return nil, err
 	}

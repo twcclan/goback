@@ -413,7 +413,7 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	ps.touchSession(ws)
 
 	if object.Type() == proto.ObjectType_COMMIT {
-		err := ps.commit(ws)
+		err := ps.commit(ctx, ws, object.Ref())
 		if err != nil {
 			ps.refuse(ctx, ws, object.Ref(), err)
 		}
@@ -441,7 +441,7 @@ func (ps *PackStorage) refuse(ctx context.Context, ws *writeSession, ref *proto.
 // archive is finalized and its archives flip to committed. A session with
 // an archive that failed to finalize cannot commit: the objects it
 // acknowledged are in no index. A commit ends the session.
-func (ps *PackStorage) commit(ws *writeSession) error {
+func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, ref *proto.Ref) error {
 	if err := ws.failed(); err != nil {
 		return fmt.Errorf("session %s lost an archive: %w", ws.id, err)
 	}
@@ -460,6 +460,10 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 		if err := ps.settle(ws.id); err != nil {
 			return err
 		}
+	}
+
+	if err := ps.resurrect(ctx, ws, ref); err != nil {
+		return err
 	}
 
 	outcome, err := ps.markEnded(ws.id, sessionCommitted)

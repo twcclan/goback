@@ -234,17 +234,12 @@ func TestCollectMarksThenSweeps(t *testing.T) {
 
 	third, err := store.Collect(ctx, gcOptions(t, 72*time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, len(unreachable), third.DeadObjects, "the tombstones outlived their targets")
 	require.Zero(t, third.Condemned)
-	require.Zero(t, third.Swept)
+	require.EqualValues(t, len(unreachable), third.ReclaimedObjects, "the tombstones hide no copy any more")
 
 	fourth, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, len(unreachable), fourth.ReclaimedObjects)
-
-	fifth, err := store.Collect(ctx, gcOptions(t, 120*time.Hour))
-	require.NoError(t, err)
-	require.Zero(t, fifth.DeadObjects)
+	require.Zero(t, fourth.DeadObjects)
 	requireStored(t, store, reachable, true)
 
 	require.NoError(t, store.Close())
@@ -417,15 +412,11 @@ func TestCollectReclaimsTombstonedCommit(t *testing.T) {
 	require.EqualValues(t, len(gone), second.ReclaimedObjects)
 	requireStored(t, store, gone, false)
 	requireStored(t, store, kept, true)
-	require.Equal(t, len(gone), countTombstones(t, store), "the tombstones outlive their targets by two generations")
+	require.Equal(t, len(gone), countTombstones(t, store), "the tombstones outlive the copies they condemned")
 
-	_, err = store.Collect(ctx, gcOptions(t, 72*time.Hour))
+	third, err := store.Collect(ctx, gcOptions(t, 72*time.Hour))
 	require.NoError(t, err)
-	require.Equal(t, len(gone), countTombstones(t, store))
-
-	fourth, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
-	require.NoError(t, err)
-	require.EqualValues(t, len(gone), fourth.ReclaimedObjects)
+	require.EqualValues(t, len(gone), third.ReclaimedObjects, "a tombstone that hides no copy is spent")
 	require.Equal(t, 0, countTombstones(t, store))
 	requireStored(t, store, kept, true)
 
@@ -971,7 +962,8 @@ func TestACollectionCoversWhatAnotherProcessCommittedAfterItLoadedIt(t *testing.
 	sctx, err := writer.BeginSession(ctx, &backup.Session{AgentID: "a", Set: "world"})
 	require.NoError(t, err)
 
-	for _, obj := range makeTestData(t, 10) {
+	objects := makeTestData(t, 10)
+	for _, obj := range objects {
 		require.NoError(t, writer.Put(sctx, obj))
 	}
 
@@ -990,7 +982,7 @@ func TestACollectionCoversWhatAnotherProcessCommittedAfterItLoadedIt(t *testing.
 	require.NoError(t, err)
 	require.Zero(t, report.Archives)
 
-	require.NoError(t, writer.Put(sctx, commitObject()))
+	require.NoError(t, writer.Put(sctx, commitOver(objects[0].Ref())))
 	require.NoError(t, writer.EndSession(sctx))
 
 	report, err = collector.Collect(ctx, gcOptions(t, 0))

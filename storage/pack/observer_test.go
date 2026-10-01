@@ -59,10 +59,11 @@ func TestTheObserverHearsEveryArchiveStoredWithTheBytesItTakes(t *testing.T) {
 	store := closing(t, newTestStore(t, t.TempDir(), WithArchiveObserver(seen), WithMaxSize(64*1024)))
 
 	ctx, s := beginSession(t, store, "agent")
-	for _, obj := range makeTestData(t, 20) {
+	objects := makeTestData(t, 20)
+	for _, obj := range objects {
 		require.NoError(t, store.Put(ctx, obj))
 	}
-	require.NoError(t, store.Put(ctx, commitObject()))
+	require.NoError(t, store.Put(ctx, commitOver(objects[0].Ref())))
 
 	require.NotEmpty(t, seen.stored)
 

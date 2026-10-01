@@ -34,10 +34,13 @@ type beginMarker struct {
 	Set     string    `json:"set"`
 	Restore []byte    `json:"restore,omitempty"`
 	Started time.Time `json:"started"`
+	// Sealed is the newest generation that had left a seal when the
+	// session began.
+	Sealed uint64 `json:"sealed,omitempty"`
 }
 
-func (ps *PackStorage) markBegun(s *backup.Session) error {
-	data, err := json.Marshal(beginMarker{ID: s.ID, AgentID: s.AgentID, Set: s.Set, Restore: s.Restore.GetHash(), Started: s.Started})
+func (ps *PackStorage) markBegun(s *backup.Session, sealed uint64) error {
+	data, err := json.Marshal(beginMarker{ID: s.ID, AgentID: s.AgentID, Set: s.Set, Restore: s.Restore.GetHash(), Started: s.Started, Sealed: sealed})
 	if err != nil {
 		return err
 	}
@@ -141,7 +144,7 @@ func (ps *PackStorage) markerIDs(ext string) (map[string]bool, error) {
 	return ids, nil
 }
 
-func (ps *PackStorage) readBegin(id string) (*backup.Session, error) {
+func (ps *PackStorage) readBeginMarker(id string) (*beginMarker, error) {
 	file, err := ps.storage.Open(id + SessionBeginExt)
 	if err != nil {
 		return nil, err
@@ -151,6 +154,15 @@ func (ps *PackStorage) readBegin(id string) (*backup.Session, error) {
 	var marker beginMarker
 	if err := json.NewDecoder(file).Decode(&marker); err != nil {
 		return nil, fmt.Errorf("reading the begin of session %s: %w", id, err)
+	}
+
+	return &marker, nil
+}
+
+func (ps *PackStorage) readBegin(id string) (*backup.Session, error) {
+	marker, err := ps.readBeginMarker(id)
+	if err != nil {
+		return nil, err
 	}
 
 	s := &backup.Session{ID: marker.ID, AgentID: marker.AgentID, Set: marker.Set, Started: marker.Started, LastSeen: marker.Started}

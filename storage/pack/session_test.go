@@ -31,6 +31,12 @@ func commitObject() *proto.Object {
 	return proto.NewObject(&proto.Commit{Timestamp: 1, Tree: makeRef(), BackupSet: "world"})
 }
 
+// commitOver commits over an object of the session's own, so the commit
+// relies on nothing it did not store.
+func commitOver(ref *proto.Ref) *proto.Object {
+	return proto.NewObject(&proto.Commit{Timestamp: 1, Tree: ref, BackupSet: "world"})
+}
+
 func requireVisible(t *testing.T, store *PackStorage, ctx context.Context, obj *proto.Object, visible bool) {
 	t.Helper()
 
@@ -79,7 +85,7 @@ func TestSessionWritesAreVisibleOnlyToTheSessionUntilCommit(t *testing.T) {
 	requireVisible(t, store, root, objects[1], false)
 
 	// a commit flips the session's archives to committed
-	commit := commitObject()
+	commit := commitOver(objects[0].Ref())
 	require.NoError(t, store.Put(ctxA, commit))
 
 	for _, obj := range append(objects, commit) {
