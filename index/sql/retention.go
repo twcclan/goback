@@ -20,6 +20,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/tree"
 	"github.com/twcclan/goback/proto"
+	"go.opentelemetry.io/otel/attribute"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
@@ -492,6 +493,18 @@ func (x *Index) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
 func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 	now = now.UTC()
 
+	ctx, span := tracer.Start(ctx, "Index.Retire")
+	defer span.End()
+
+	phases := newPhases()
+	tombstoned := 0
+
+	defer func() {
+		if tombstoned > 0 {
+			phases.log(x.logger(), "retired commits", "commits", tombstoned)
+		}
+	}()
+
 	held, err := x.restoreLeases(ctx)
 	if err != nil {
 		return 0, err
@@ -505,10 +518,14 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 
+	phases.done("due")
+
 	pinned, err := x.storedPins(ctx, due)
 	if err != nil {
 		return 0, err
 	}
+
+	phases.done("pins")
 
 	var eligible []*ent.CommitRow
 
@@ -523,6 +540,10 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 
+	tombstoned = len(written)
+	phases.done("tombstones")
+	span.SetAttributes(attribute.Int("due", len(due)), attribute.Int("tombstoned", len(written)))
+
 	// rows say tombstoned only once the tombstones are durable, so a crash
 	// before this point leaves commits that the next run tombstones again
 	if len(written) > 0 {
@@ -530,6 +551,8 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 			return 0, err
 		}
 	}
+
+	phases.done("flush")
 
 	count := 0
 	sets := make(map[int64][][]byte)
@@ -550,6 +573,8 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 		}
 	}
 
+	phases.done("mark")
+
 	for setID, refs := range sets {
 		if err := x.pruneRefs(ctx, setID, refs); err != nil {
 			return count, err
@@ -559,6 +584,8 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 			return count, err
 		}
 	}
+
+	phases.done("prune")
 
 	return count, x.closeEmptySets(ctx)
 }

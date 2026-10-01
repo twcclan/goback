@@ -234,6 +234,9 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	opts = opts.withDefaults()
 	started := time.Now()
 
+	ctx, span := tracer.Start(ctx, "PackStorage.Collect")
+	defer span.End()
+
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
@@ -283,7 +286,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	defer live.close()
 
 	report.Resumed = run.resumed
-	gcMarkDuration.Record(ctx, time.Since(markStart).Seconds())
+	markTook := time.Since(markStart)
+	gcMarkDuration.Record(ctx, markTook.Seconds())
 
 	mergeStart := time.Now()
 	report.SetBytes = run.setBytes
@@ -305,7 +309,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 			report.ErasedArchives++
 		}
 	}
-	gcMergeDuration.Record(ctx, time.Since(mergeStart).Seconds())
+	mergeTook := time.Since(mergeStart)
+	gcMergeDuration.Record(ctx, mergeTook.Seconds())
 
 	live.close()
 	_ = os.RemoveAll(run.runDir)
@@ -321,7 +326,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		return nil, errors.Wrap(err, "storing gc state")
 	}
 
-	ps.logger.Info("gc marked", "generation", run.gen, "marked", report.Marked, "objects", report.Objects, "archives", report.Archives, "dead", report.DeadObjects, "deadBytes", humanize.Bytes(report.DeadBytes))
+	ps.logger.Info("gc marked", "generation", run.gen, "marked", report.Marked, "objects", report.Objects, "archives", report.Archives, "dead", report.DeadObjects, "deadBytes", humanize.Bytes(report.DeadBytes),
+		"mark", markTook.Round(time.Millisecond), "merge", mergeTook.Round(time.Millisecond))
 
 	report.SweepSkipped = run.sweepBlocker()
 	if report.SweepSkipped == "" {

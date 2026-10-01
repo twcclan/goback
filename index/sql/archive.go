@@ -12,6 +12,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/session"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // objectBatch is how many object rows one insert carries.
@@ -23,6 +24,7 @@ var _ pack.ClaimIndex = (*Index)(nil)
 // the pending archives of the scope's session.
 func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string) (pack.IndexLocation, error) {
 	ctx := context.Background()
+	defer recordLookup(ctx, "object", time.Now())
 
 	visible := archive.State(int(pack.ArchiveCommitted))
 	if scope.Session != "" {
@@ -49,6 +51,7 @@ func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string
 // LocateCopies implements pack.ArchiveIndex.
 func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation, error) {
 	ctx := context.Background()
+	defer recordLookup(ctx, "copies", time.Now())
 	copies := make(map[string][]pack.IndexLocation)
 
 	for start := 0; start < len(refs); start += objectBatch {
@@ -72,6 +75,10 @@ func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation
 	}
 
 	return copies, nil
+}
+
+func recordLookup(ctx context.Context, lookup string, started time.Time) {
+	lookupDuration.Record(ctx, float64(time.Since(started))/float64(time.Millisecond), metric.WithAttributes(keyLookup.String(lookup)))
 }
 
 // LookupArchive implements pack.ArchiveIndex.

@@ -12,6 +12,7 @@ import (
 	"github.com/bits-and-blooms/bitset"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -69,7 +70,10 @@ func (ps *PackStorage) doCompaction() error {
 // with a usable copy committed outside the group is dropped; the rest is
 // copied into root archives with its timestamp kept.
 func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup) error {
-	rw := &rewrite{ps: ps, group: group, inGroup: make(map[string]bool, len(group.candidates)), written: make(map[string]bool)}
+	ctx, span := tracer.Start(ctx, "PackStorage.rewrite")
+	defer span.End()
+
+	rw := &rewrite{started: time.Now(), ps: ps, group: group, inGroup: make(map[string]bool, len(group.candidates)), written: make(map[string]bool)}
 	for _, candidate := range group.candidates {
 		rw.inGroup[candidate.name] = true
 	}
@@ -78,6 +82,8 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
 	}
+
+	span.SetAttributes(attribute.Int("candidates", len(group.candidates)), attribute.Int("workers", workers))
 
 	queue := make(chan *archive)
 	grp, gctx := errgroup.WithContext(ctx)
@@ -117,10 +123,14 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	}
 
 	if err := grp.Wait(); err != nil {
+		span.RecordError(err)
 		return err
 	}
 
-	ps.logger.Info("compaction dropped objects", "objects", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes))
+	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(rw.copied)))
+
+	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
+		"copied", humanize.Bytes(rw.copied), "took", time.Since(rw.started).Round(time.Second))
 
 	if err := ps.carryErasureClock(rw.obsolete, rw.outputs); err != nil {
 		return err
@@ -158,11 +168,17 @@ type rewrite struct {
 	group   *compactionGroup
 	inGroup map[string]bool
 
+	started time.Time
+
 	mtx      sync.Mutex
 	written  map[string]bool
 	outputs  []*archive
 	obsolete []*archive
+	copied   uint64
 }
+
+// progressEvery is how many rewritten archives pass between progress logs.
+const progressEvery = 500
 
 // claim reports whether the caller is the first to write the object.
 func (rw *rewrite) claim(hash []byte) bool {
@@ -196,6 +212,9 @@ func (rw *rewrite) elsewhere(copies []IndexLocation) bool {
 
 // candidate copies what survives of one candidate into out.
 func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate *archive) error {
+	started := time.Now()
+	var copied uint64
+
 	idx, err := candidate.getIndex()
 	if err != nil {
 		return errors.Wrapf(err, "reading the index of %s", candidate.name)
@@ -242,15 +261,29 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 			return err
 		}
 
+		copied += uint64(length)
+
 		return ar.putRaw(ctx, hdr, bytes)
 	})
 	if err != nil {
 		return err
 	}
 
+	rewriteArchives.Add(ctx, 1)
+	rewriteCopied.Add(ctx, int64(copied))
+	rewriteDuration.Record(ctx, time.Since(started).Seconds())
+
 	rw.mtx.Lock()
 	rw.obsolete = append(rw.obsolete, candidate)
+	rw.copied += copied
+	done, total := len(rw.obsolete), len(rw.group.candidates)
 	rw.mtx.Unlock()
+
+	if done%progressEvery == 0 {
+		elapsed := time.Since(rw.started)
+		rw.ps.logger.Info("rewriting archives", "done", done, "of", total, "elapsed", elapsed.Round(time.Second),
+			"left", (elapsed / time.Duration(done) * time.Duration(total-done)).Round(time.Second))
+	}
 
 	return nil
 }

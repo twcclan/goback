@@ -29,6 +29,10 @@ var (
 	gcSweepDuration  = mustInstrument(meter.Float64Histogram("goback.storage.pack.gc.sweep_duration", metric.WithDescription("duration of the gc sweep"), metric.WithUnit("s")))
 	gcDeadBytes      = mustInstrument(meter.Int64Gauge("goback.storage.pack.gc.dead_bytes", metric.WithDescription("bytes the last generation found unreachable"), metric.WithUnit("By")))
 	gcReclaimedBytes = mustInstrument(meter.Int64Counter("goback.storage.pack.gc.reclaimed_bytes", metric.WithDescription("bytes dropped by gc sweeps"), metric.WithUnit("By")))
+
+	rewriteArchives = mustInstrument(meter.Int64Counter("goback.storage.pack.rewrite.archives", metric.WithDescription("archives a sweep or compaction rewrote")))
+	rewriteCopied   = mustInstrument(meter.Int64Counter("goback.storage.pack.rewrite.copied_bytes", metric.WithDescription("bytes a sweep or compaction carried into new archives"), metric.WithUnit("By")))
+	rewriteDuration = mustInstrument(meter.Float64Histogram("goback.storage.pack.rewrite.archive_duration", metric.WithDescription("duration of rewriting one archive"), metric.WithUnit("s")))
 )
 
 func mustInstrument[T any](instrument T, err error) T {
