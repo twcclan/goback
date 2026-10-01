@@ -158,6 +158,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 			ps.logger.Warn("removing local index failed", "archive", archive.name, "err", err)
 		}
 
+		ps.forgetCached(context.Background(), idx)
 		ps.deleteArchiveFiles(archive.name)
 	}
 

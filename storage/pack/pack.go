@@ -243,6 +243,31 @@ func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, err
 	}
 }
 
+// forgetCached drops from the cache the objects of a deleted archive that
+// no other archive still holds.
+func (ps *PackStorage) forgetCached(ctx context.Context, idx IndexFile) {
+	if ps.cache == nil {
+		return
+	}
+
+	for _, rec := range idx {
+		switch proto.ObjectType(rec.Type) {
+		case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
+		default:
+			continue
+		}
+
+		ref := &proto.Ref{Hash: rec.Sum[:]}
+		if _, err := ps.index.LocateObject(ref, Scope{}); !errors.Is(err, ErrRecordNotFound) {
+			continue
+		}
+
+		if err := ps.cache.Delete(ctx, ref); err != nil {
+			ps.logger.Warn("dropping a deleted object from the metadata cache failed", "ref", fmt.Sprintf("%x", rec.Sum), "err", err)
+		}
+	}
+}
+
 func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Object {
 	if ps.cache != nil {
 		obj, err := ps.cache.Get(ctx, ref)
@@ -478,11 +503,6 @@ func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 
 	ps.touchSessionOf(ctx)
 
-	cached := ps.getCache(ctx, ref)
-	if cached != nil {
-		return cached, nil
-	}
-
 	obj, err := ps.get(ctx, ref)
 	if err != nil && !errors.Is(err, backup.ErrNotFound) {
 		// the copy may have moved while a rewrite retired its archive
@@ -500,6 +520,12 @@ func (ps *PackStorage) get(ctx context.Context, ref *proto.Ref) (*proto.Object, 
 
 	if rec == nil {
 		return nil, backup.ErrNotFound
+	}
+
+	// the cache answers only for what the index serves this caller, so
+	// it never outlives a deletion or reaches past a scope
+	if cached := ps.getCache(ctx, ref); cached != nil {
+		return cached, nil
 	}
 
 	archive.mtx.RLock()
