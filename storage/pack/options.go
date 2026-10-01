@@ -22,6 +22,7 @@ type packOptions struct {
 	atRestKey       *AtRestKey
 	observer        ArchiveObserver
 	logger          *slog.Logger
+	indexCache      string
 }
 
 // ArchiveObserver is told about every archive the store puts into its

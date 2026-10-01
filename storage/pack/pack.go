@@ -28,12 +28,12 @@ const (
 	// CommittedExt marks an archive of a session that a commit made
 	// committed. It is written before the index is told, so the storage
 	// alone says which session archives are committed.
-	CommittedExt = ".committed"
-	varIntMaxSize      = 10
+	CommittedExt  = ".committed"
+	varIntMaxSize = 10
 )
 
 var (
-	ErrFileNotFound     = errors.New("requested file was not found")
+	ErrFileNotFound = errors.New("requested file was not found")
 	// ErrFileExists is CreateNew's answer for a name that is taken.
 	ErrFileExists       = errors.New("the file exists")
 	ErrInvalidExtension = errors.New("the provided extension is invalid")
@@ -60,6 +60,10 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 
 	if opts.storage == nil {
 		return nil, errors.New("No archive storage provided")
+	}
+
+	if opts.indexCache != "" {
+		opts.storage = &indexCache{ArchiveStorage: opts.storage, dir: opts.indexCache}
 	}
 
 	if opts.index == nil {
