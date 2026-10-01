@@ -38,6 +38,9 @@ type CollectOptions struct {
 	MinAge time.Duration
 	// NoSweep stops after the mark.
 	NoSweep bool
+	// Handoff publishes the sweep as a plan for RewritePlan instead of
+	// running it.
+	Handoff bool
 	// Quarantine is how long the files of an archive a rewrite retired
 	// are kept before a collection deletes them (DefaultQuarantine).
 	Quarantine time.Duration
@@ -134,8 +137,13 @@ type CollectReport struct {
 	SetDeduplicated map[int64]uint64
 	// Condemned counts the unreachable objects the run stored tombstones for.
 	Condemned int
+	// Waiting is the generation whose published plan has not been
+	// rewritten yet; a run that waits does nothing else.
+	Waiting uint64
 	// SweepSkipped names the reason when the run marked but did not sweep.
-	SweepSkipped     string
+	SweepSkipped string
+	// Published counts the archives of the plan the run published.
+	Published        int
 	Swept            int
 	ReclaimedObjects uint64
 	ReclaimedBytes   uint64
@@ -287,6 +295,15 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
+	pending, err := ps.planGenerations()
+	if err != nil {
+		return nil, errors.Wrap(err, "listing published plans")
+	}
+
+	if len(pending) > 0 {
+		return &CollectReport{Waiting: pending[0], Duration: time.Since(started)}, nil
+	}
+
 	prev, err := loadGCState(ps.storage)
 	if err != nil {
 		return nil, errors.Wrap(err, "loading gc state")
@@ -419,7 +436,11 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		}
 	}
 
-	if report.SweepSkipped == "" {
+	if report.SweepSkipped == "" && opts.Handoff {
+		if report.Published, err = run.publish(); err != nil {
+			return nil, err
+		}
+	} else if report.SweepSkipped == "" {
 		sweepStart := time.Now()
 		if err := run.sweep(ctx, report); err != nil {
 			return nil, err

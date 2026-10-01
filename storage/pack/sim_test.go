@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -31,12 +32,14 @@ type simulation struct {
 
 	servers    []*PackStorage
 	maintainer *PackStorage
+	// handoff has collections publish their sweeps for a rewriter process
+	handoff bool
 
 	writers []*simWriter
 	pool    []*proto.Object
 	commits int
 
-	live    map[string][]*proto.Object
+	live    [][]*proto.Object
 	retired int
 
 	reclaimed uint64
@@ -52,13 +55,13 @@ type simWriter struct {
 	closure []*proto.Object
 }
 
-func newSimulation(t *testing.T, seed int64) *simulation {
+func newSimulation(t *testing.T, seed int64, handoff bool) *simulation {
 	sim := &simulation{
-		t:      t,
-		rng:    rand.New(rand.NewSource(seed)),
-		bucket: newMemBucket(),
-		index:  NewInMemoryIndex(),
-		live:   make(map[string][]*proto.Object),
+		t:       t,
+		handoff: handoff,
+		rng:     rand.New(rand.NewSource(seed)),
+		bucket:  newMemBucket(),
+		index:   NewInMemoryIndex(),
 	}
 
 	sim.servers = []*PackStorage{sim.open(), sim.open()}
@@ -151,7 +154,7 @@ func (sim *simulation) step(i int) {
 		sim.writers[i] = nil
 
 		if sim.endable(store.Put(w.ctx, w.commit)) {
-			sim.live[string(w.commit.Ref().Hash)] = w.closure
+			sim.live = append(sim.live, w.closure)
 		}
 
 		return
@@ -235,7 +238,21 @@ func (sim *simulation) collect() {
 		MinAge:    time.Nanosecond,
 		DeadRatio: 1e-9,
 		TempDir:   sim.t.TempDir(),
+		Handoff:   sim.handoff,
 	})
+	require.NoError(sim.t, err)
+
+	sim.reclaimed += report.ReclaimedObjects
+	sim.check()
+}
+
+// rewrite runs the published plans in a process of its own, as a
+// maintenance job elsewhere does.
+func (sim *simulation) rewrite() {
+	rewriter := sim.open()
+	defer func() { require.NoError(sim.t, rewriter.Close()) }()
+
+	report, err := rewriter.RewritePlan(context.Background())
 	require.NoError(sim.t, err)
 
 	sim.reclaimed += report.ReclaimedObjects
@@ -244,16 +261,17 @@ func (sim *simulation) collect() {
 
 // retire tombstones a committed backup, which nothing then needs to keep.
 func (sim *simulation) retire() {
-	for key, closure := range sim.live {
-		commit := closure[len(closure)-1]
-		require.NoError(sim.t, sim.maintainer.Delete(context.Background(), commit.Ref()))
-		require.NoError(sim.t, sim.maintainer.Flush())
-
-		delete(sim.live, key)
-		sim.retired++
-
+	if len(sim.live) == 0 {
 		return
 	}
+
+	i := sim.rng.Intn(len(sim.live))
+	commit := sim.live[i][len(sim.live[i])-1]
+	require.NoError(sim.t, sim.maintainer.Delete(context.Background(), commit.Ref()))
+	require.NoError(sim.t, sim.maintainer.Flush())
+
+	sim.live = slices.Delete(sim.live, i, i+1)
+	sim.retired++
 }
 
 // check restores every live backup through a process opened afresh.
@@ -273,6 +291,8 @@ func (sim *simulation) check() {
 func (sim *simulation) run(steps int) {
 	for range steps {
 		switch roll := sim.rng.Intn(100); {
+		case roll < 60 && sim.handoff && roll >= 54:
+			sim.rewrite()
 		case roll < 60:
 			sim.writersStep()
 		case roll < 75:
@@ -293,6 +313,10 @@ func (sim *simulation) run(steps int) {
 
 	for range 4 {
 		sim.collect()
+
+		if sim.handoff {
+			sim.rewrite()
+		}
 	}
 
 	for _, server := range sim.servers {
@@ -314,16 +338,18 @@ func TestSimulatedStoresKeepEveryCommittedBackup(t *testing.T) {
 	var reclaimed uint64
 	var live, retired, lost int
 
-	for seed := range int64(seeds) {
-		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
-			sim := newSimulation(t, seed)
-			sim.run(steps)
+	for _, handoff := range []bool{false, true} {
+		for seed := range int64(seeds) {
+			t.Run(fmt.Sprintf("handoff-%v/seed-%d", handoff, seed), func(t *testing.T) {
+				sim := newSimulation(t, seed, handoff)
+				sim.run(steps)
 
-			reclaimed += sim.reclaimed
-			live += len(sim.live)
-			retired += sim.retired
-			lost += sim.lost
-		})
+				reclaimed += sim.reclaimed
+				live += len(sim.live)
+				retired += sim.retired
+				lost += sim.lost
+			})
+		}
 	}
 
 	t.Logf("%d backups live, %d retired, %d sessions lost, %d objects reclaimed", live, retired, lost, reclaimed)
