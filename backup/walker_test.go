@@ -520,6 +520,26 @@ func TestWalkerDeletedAndAddedEntries(t *testing.T) {
 	require.True(t, after["keep.txt"].Ref.Equal(f.tree(first.Commit.Tree)["keep.txt"].Ref))
 }
 
+func TestWalkerCarriesWhatLeftTheDiskWhileCarryAllows(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("1", []byte("one"))
+	f.write("2", []byte("two"))
+	first := f.run()
+
+	require.NoError(t, os.Remove(filepath.Join(f.root, "1")))
+	require.NoError(t, os.Remove(filepath.Join(f.root, "2")))
+	f.write("3", []byte("three"))
+	f.walker.Carry = func(name string) bool { return name != "1" }
+
+	second := f.run()
+	require.EqualValues(t, 1, second.Read)
+
+	after := f.tree(second.Commit.Tree)
+	require.Len(t, after, 2)
+	require.Contains(t, after, "3")
+	require.True(t, after["2"].Ref.Equal(f.tree(first.Commit.Tree)["2"].Ref))
+}
+
 func TestWalkerIncludeFilter(t *testing.T) {
 	f := newWalkerFixture(t)
 	f.write("logs/x.log", []byte("log"))

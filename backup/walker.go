@@ -56,6 +56,11 @@ type Walker struct {
 	// interprets it.
 	Metadata map[string]string
 
+	// Carry, when set, keeps every entry of the previous commit's root that
+	// is gone from the disk and for which it returns true, so a set can
+	// accumulate files that leave the disk once committed.
+	Carry func(name string) bool
+
 	// Include decides per slash-separated relative path; nil includes all.
 	Include func(rel string) bool
 
@@ -676,6 +681,19 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 	for _, node := range results {
 		if node != nil {
 			nodes = append(nodes, node)
+		}
+	}
+
+	if root && w.Carry != nil {
+		listed := make(map[string]bool, len(entries))
+		for _, entry := range entries {
+			listed[entry.name] = true
+		}
+
+		for _, node := range base {
+			if name := string(node.Stat.Name); !listed[name] && w.Carry(name) {
+				nodes = append(nodes, node)
+			}
 		}
 	}
 

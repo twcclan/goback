@@ -18,5 +18,6 @@ var Command = cli.Command{
 	Description: "Back up and restore Postgres clusters: base backups and the WAL archive, each in a set of its own",
 	Subcommands: []cli.Command{
 		archiveCmd,
+		walCmd,
 	},
 }

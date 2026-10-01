@@ -1,0 +1,100 @@
+package postgres
+
+import (
+	"bytes"
+	"encoding/binary"
+	"testing"
+	"time"
+
+	"github.com/twcclan/goback/proto"
+
+	"github.com/stretchr/testify/require"
+)
+
+const segSize = 16 << 20
+
+func header(timeline uint32, lsn, systemID uint64) []byte {
+	buf := make([]byte, 40)
+	binary.LittleEndian.PutUint16(buf[0:], 0xD116)
+	binary.LittleEndian.PutUint32(buf[4:], timeline)
+	binary.LittleEndian.PutUint64(buf[8:], lsn)
+	binary.LittleEndian.PutUint64(buf[24:], systemID)
+	binary.LittleEndian.PutUint32(buf[32:], segSize)
+	binary.LittleEndian.PutUint32(buf[36:], 8192)
+
+	return buf
+}
+
+func base(file string, received time.Time) *proto.Commit {
+	return &proto.Commit{ReceivedAtNs: received.UnixNano(), Metadata: map[string]string{MetaStartWALFile: file}}
+}
+
+func TestTheCutoffIsTheOldestBaseInsideTheWindow(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+
+	newestFirst := []*proto.Commit{
+		base("00000001000000000000000C", now.Add(-day)),
+		base("000000010000000000000008", now.Add(-5*day)),
+		base("000000010000000000000004", now.Add(-20*day)),
+	}
+
+	cutoff, ok := Cutoff(newestFirst, 14*day, now)
+	require.True(t, ok)
+	require.Equal(t, "000000010000000000000008", cutoff)
+
+	cutoff, ok = Cutoff(newestFirst, day/2, now)
+	require.True(t, ok)
+	require.Equal(t, "00000001000000000000000C", cutoff, "with no base inside the window the newest one stays restorable")
+
+	_, ok = Cutoff(nil, day, now)
+	require.False(t, ok)
+}
+
+func TestCarryKeepsHistoriesAndWhatFollowsTheCutoff(t *testing.T) {
+	carry := Carry("000000020000000000000008")
+
+	require.True(t, carry("00000002.history"))
+	require.True(t, carry("000000010000000000000008"), "a lower timeline at the cutoff's position")
+	require.True(t, carry("000000020000000000000009.partial"))
+	require.False(t, carry("000000020000000000000007"))
+	require.False(t, carry("000000010000000000000007.00000028.backup"))
+}
+
+func TestASegmentFromAnotherClusterIsRefused(t *testing.T) {
+	name := "000000010000000100000002"
+	lsn := uint64(1)<<32 | 2*segSize
+
+	id, err := checkSegment(name, bytes.NewReader(header(1, lsn, 42)), 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 42, id)
+
+	_, err = checkSegment(name, bytes.NewReader(header(1, lsn, 7)), 42)
+	require.ErrorIs(t, err, ErrForeignSegment)
+
+	_, err = checkSegment("000000010000000100000003", bytes.NewReader(header(1, lsn, 42)), 42)
+	require.Error(t, err, "a segment whose header places it elsewhere")
+}
+
+func TestAGapInATimelineIsFound(t *testing.T) {
+	require.NoError(t, checkContiguous([]string{
+		"0000000100000000000000FE",
+		"0000000100000000000000FF",
+		"000000010000000100000000",
+		"00000002.history",
+		"000000020000000100000000.partial",
+		"000000020000000100000001",
+	}, segSize))
+
+	require.ErrorIs(t, checkContiguous([]string{
+		"0000000100000000000000FE",
+		"000000010000000100000000",
+	}, segSize), ErrGap)
+}
+
+func TestLSNsReadAsPostgresPrintsThem(t *testing.T) {
+	lsn, err := ParseLSN("16/B374D848")
+	require.NoError(t, err)
+	require.Equal(t, uint64(0x16B374D848), lsn)
+	require.Equal(t, "16/B374D848", FormatLSN(lsn))
+}

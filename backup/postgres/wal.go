@@ -1,0 +1,197 @@
+package postgres
+
+import (
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/twcclan/goback/proto"
+)
+
+// The commit metadata the Postgres sets carry.
+const (
+	// MetaSystemID is the cluster's system identifier, in decimal.
+	MetaSystemID = "pg.system_id"
+	// MetaTimeline is the timeline a base backup started on, in decimal.
+	MetaTimeline = "pg.timeline"
+	// MetaStartLSN and MetaStopLSN bound a base backup, as Postgres prints
+	// LSNs (0/2000028).
+	MetaStartLSN = "pg.start_lsn"
+	MetaStopLSN  = "pg.stop_lsn"
+	// MetaStartWALFile names the WAL file a base backup started in.
+	MetaStartWALFile = "pg.start_wal_file"
+	// MetaFirstWALFile and MetaLastWALFile bound the segments a WAL commit
+	// holds.
+	MetaFirstWALFile = "pg.first_wal_file"
+	MetaLastWALFile  = "pg.last_wal_file"
+)
+
+// ErrForeignSegment is returned for a WAL segment from another cluster than
+// the set's.
+var ErrForeignSegment = errors.New("WAL segment from another cluster")
+
+// ErrGap is returned for WAL that skips a segment.
+var ErrGap = errors.New("WAL is missing a segment")
+
+const walNameLen = 24
+
+// walPosition is the log and segment part of a WAL file name, which orders
+// WAL files across timelines; ok is false for names that are not WAL.
+func walPosition(name string) (string, bool) {
+	if len(name) < walNameLen {
+		return "", false
+	}
+
+	if _, err := hex.DecodeString(name[:walNameLen]); err != nil {
+		return "", false
+	}
+
+	return name[8:walNameLen], true
+}
+
+// isSegment reports whether name is a whole WAL segment, not a history,
+// backup history or partial file.
+func isSegment(name string) bool {
+	_, ok := walPosition(name)
+	return ok && len(name) == walNameLen
+}
+
+// Cutoff names the WAL file the WAL set must reach back to: the one the
+// oldest base backup received within window started in, or the newest base
+// when none was. ok is false when no base backup records one, and then
+// every WAL file is kept.
+func Cutoff(bases []*proto.Commit, window time.Duration, now time.Time) (string, bool) {
+	since := now.Add(-window).UnixNano()
+
+	var cutoff string
+	for _, base := range bases {
+		file := base.GetMetadata()[MetaStartWALFile]
+		if _, ok := walPosition(file); !ok {
+			continue
+		}
+
+		if cutoff == "" || base.GetReceivedAtNs() >= since {
+			cutoff = file
+		}
+	}
+
+	return cutoff, cutoff != ""
+}
+
+// Carry keeps every timeline history and every WAL file at or after the
+// cutoff, and whatever is not WAL at all.
+func Carry(cutoff string) func(name string) bool {
+	limit, _ := walPosition(cutoff)
+
+	return func(name string) bool {
+		position, ok := walPosition(name)
+		return !ok || position >= limit
+	}
+}
+
+// segmentHeader is what the long page header at the start of every WAL
+// segment says about it.
+type segmentHeader struct {
+	timeline uint32
+	pageAddr uint64
+	systemID uint64
+	segSize  uint32
+}
+
+// readSegmentHeader reads XLogLongPageHeaderData, which Postgres writes in
+// the byte order of the machine; every platform it builds on for production
+// is little-endian.
+func readSegmentHeader(r io.Reader) (segmentHeader, error) {
+	buf := make([]byte, 40)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return segmentHeader{}, fmt.Errorf("reading the segment header: %w", err)
+	}
+
+	return segmentHeader{
+		timeline: binary.LittleEndian.Uint32(buf[4:]),
+		pageAddr: binary.LittleEndian.Uint64(buf[8:]),
+		systemID: binary.LittleEndian.Uint64(buf[24:]),
+		segSize:  binary.LittleEndian.Uint32(buf[32:]),
+	}, nil
+}
+
+// checkSegment checks that the segment named name belongs to the cluster
+// systemID, which is learned from the segment when zero, and that its
+// header agrees with its name.
+func checkSegment(name string, r io.Reader, systemID uint64) (uint64, error) {
+	hdr, err := readSegmentHeader(r)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+
+	if systemID != 0 && hdr.systemID != systemID {
+		return 0, fmt.Errorf("%w: %s belongs to %d, the set to %d", ErrForeignSegment, name, hdr.systemID, systemID)
+	}
+
+	if hdr.segSize == 0 {
+		return 0, fmt.Errorf("%s: no segment size in its header", name)
+	}
+
+	want := fmt.Sprintf("%08X%08X%08X", hdr.timeline, hdr.pageAddr>>32, (hdr.pageAddr&0xFFFFFFFF)/uint64(hdr.segSize))
+	if want != name {
+		return 0, fmt.Errorf("%s: its header places it at %s", name, want)
+	}
+
+	return hdr.systemID, nil
+}
+
+// checkContiguous reports a gap between consecutive segments of a
+// timeline. names must be sorted; segSize is the cluster's segment size.
+func checkContiguous(names []string, segSize uint64) error {
+	perLog := uint64(0x100000000) / segSize
+
+	last := make(map[string]uint64)
+	for _, name := range names {
+		if !isSegment(name) {
+			continue
+		}
+
+		log, _ := strconv.ParseUint(name[8:16], 16, 32)
+		seg, _ := strconv.ParseUint(name[16:24], 16, 32)
+		n := log*perLog + seg
+
+		timeline := name[:8]
+		if prev, ok := last[timeline]; ok && n != prev+1 {
+			return fmt.Errorf("%w: %s follows segment %d of timeline %s", ErrGap, name, prev, timeline)
+		}
+
+		last[timeline] = n
+	}
+
+	return nil
+}
+
+// FormatLSN prints an LSN as Postgres does.
+func FormatLSN(lsn uint64) string {
+	return fmt.Sprintf("%X/%X", lsn>>32, lsn&0xFFFFFFFF)
+}
+
+// ParseLSN reads an LSN as Postgres prints it.
+func ParseLSN(s string) (uint64, error) {
+	hi, lo, ok := strings.Cut(s, "/")
+	if !ok {
+		return 0, fmt.Errorf("%q is not an LSN", s)
+	}
+
+	h, err := strconv.ParseUint(hi, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not an LSN", s)
+	}
+
+	l, err := strconv.ParseUint(lo, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not an LSN", s)
+	}
+
+	return h<<32 | l, nil
+}
