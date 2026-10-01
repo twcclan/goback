@@ -27,10 +27,11 @@ func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 
 	return &admin.BackupSet{
-		Name:         in.Name,
-		State:        in.State,
-		LogicalSize:  in.LogicalSize,
-		PhysicalSize: in.PhysicalSize,
+		Name:             in.Name,
+		State:            in.State,
+		LogicalSize:      in.LogicalSize,
+		PhysicalSize:     in.PhysicalSize,
+		DeduplicatedSize: in.DeduplicatedSize,
 	}
 }
 

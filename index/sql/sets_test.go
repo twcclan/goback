@@ -463,7 +463,7 @@ func TestRootOwnerNamesTheSetBehindACommitOrPin(t *testing.T) {
 	require.Equal(t, pack.Attribution{Group: 42, Set: sets[0].ID}, owner(commit.Hash))
 }
 
-func TestRecordedPhysicalSizesReplaceTheLastRuns(t *testing.T) {
+func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	f := newFixture(t)
 
 	f.commit("world", f.tree(f.file("a.txt", "one")), false)
@@ -472,16 +472,18 @@ func TestRecordedPhysicalSizesReplaceTheLastRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, sets[0].PhysicalSize, "nothing has collected yet")
 
-	require.NoError(t, f.x.RecordPhysicalSizes(f.ctx, map[int64]uint64{sets[0].ID: 4096}))
+	require.NoError(t, f.x.RecordSetSizes(f.ctx, map[int64]uint64{sets[0].ID: 4096}, map[int64]uint64{sets[0].ID: 10000}))
 
 	sets, err = f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 4096, sets[0].PhysicalSize)
+	require.EqualValues(t, 10000, sets[0].DeduplicatedSize)
 
 	// a run that reaches nothing of the set's own leaves it holding nothing
-	require.NoError(t, f.x.RecordPhysicalSizes(f.ctx, map[int64]uint64{}))
+	require.NoError(t, f.x.RecordSetSizes(f.ctx, map[int64]uint64{}, map[int64]uint64{}))
 
 	sets, err = f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.Zero(t, sets[0].PhysicalSize)
+	require.Zero(t, sets[0].DeduplicatedSize)
 }

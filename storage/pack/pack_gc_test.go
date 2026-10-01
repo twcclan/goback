@@ -676,21 +676,23 @@ func TestLiveRunsMergeSortedAndDistinct(t *testing.T) {
 	runs := newLiveRuns(t.TempDir(), 100)
 	defer runs.close()
 
-	var keys []refKey
+	var refs []liveRef
 	for i := 0; i < 1000; i++ {
+		n := uint64(rand.Intn(300))
+
 		var k refKey
-		binary.BigEndian.PutUint64(k[:], uint64(rand.Intn(300)))
-		keys = append(keys, k)
+		binary.BigEndian.PutUint64(k[:], n)
+		refs = append(refs, liveRef{key: k, size: n * 10})
 	}
 
-	for start := 0; start < len(keys); start += 37 {
-		require.NoError(t, runs.add(keys[start:min(start+37, len(keys))]))
+	for start := 0; start < len(refs); start += 37 {
+		require.NoError(t, runs.add(refs[start:min(start+37, len(refs))]))
 	}
 	require.NotEmpty(t, runs.files)
 
 	distinct := make(map[refKey]bool)
-	for _, k := range keys {
-		distinct[k] = true
+	for _, ref := range refs {
+		distinct[ref.key] = true
 	}
 
 	it, err := runs.iterator()
@@ -703,12 +705,13 @@ func TestLiveRunsMergeSortedAndDistinct(t *testing.T) {
 		var k refKey
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 
-		owners, ok := it.at(k)
+		owners, size, ok := it.at(k)
 		require.Equal(t, distinct[k], ok, "key %d", i)
 
 		if ok {
 			found++
 			require.Equal(t, []Attribution{{}}, owners, "one unattributed run holds them all")
+			require.EqualValues(t, i*10, size, "key %d", i)
 		}
 	}
 
@@ -773,6 +776,8 @@ func TestCollectAttributesObjectsToTheSetThatReachesThemFirst(t *testing.T) {
 	require.EqualValues(t, storedBytes(t, store, myCommit, myTree, myFile, mine, shared), report.SetBytes[7])
 	require.EqualValues(t, storedBytes(t, store, yourCommit, yourTree, yourFile, yours), report.SetBytes[9],
 		"the shared blob belongs to the set that reached it first")
+	require.EqualValues(t, 1024+512, report.SetDeduplicated[7])
+	require.EqualValues(t, 2048, report.SetDeduplicated[9])
 
 	var attributed uint64
 	for _, bytes := range report.SetBytes {
@@ -781,6 +786,45 @@ func TestCollectAttributesObjectsToTheSetThatReachesThemFirst(t *testing.T) {
 	require.EqualValues(t, report.Marked, 9, "every object is live")
 	require.EqualValues(t, storedBytes(t, store, shared, mine, yours, myFile, yourFile, myTree, yourTree, myCommit, yourCommit), attributed,
 		"what the sets hold adds up to what the store holds")
+
+	require.NoError(t, store.Close())
+}
+
+func TestCollectCountsTheContentOfEachSetOnceBeforeCompression(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	shared := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("s"), 8192)})
+	mine := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("m"), 4096)})
+
+	myFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Ref: mine.Ref(), Length: 4096},
+		{Ref: shared.Ref(), Offset: 4096, Length: 8192},
+	}})
+	sameContent := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Ref: shared.Ref(), Length: 8192},
+		{Ref: mine.Ref(), Offset: 8192, Length: 4096},
+	}})
+	small := proto.NewObject(&proto.File{Inline: []byte("tiny")})
+	myCommit := proto.NewObject(&proto.Commit{Tree: treeOf([]*proto.Object{myFile, sameContent, small}).Ref(), Timestamp: 1})
+
+	putAll(t, store, []*proto.Object{shared, mine})
+	putAll(t, store, []*proto.Object{shared, mine, myFile, sameContent, small, treeOf([]*proto.Object{myFile, sameContent, small}), myCommit})
+
+	opts := gcOptions(t, 0)
+	opts.Owner = func(root []byte) Attribution {
+		if bytes.Equal(root, myCommit.Ref().Hash) {
+			return Attribution{Set: 7}
+		}
+
+		return Attribution{}
+	}
+
+	report, err := store.Collect(ctx, opts)
+	require.NoError(t, err)
+
+	require.EqualValues(t, 4096+8192+len("tiny"), report.SetDeduplicated[7], "each chunk counts once, at its length before compression")
+	require.Greater(t, report.SetBytes[7], storedBytes(t, store, shared, mine), "both copies take up room")
 
 	require.NoError(t, store.Close())
 }
@@ -818,6 +862,8 @@ func TestCollectCountsASharedObjectInEveryGroup(t *testing.T) {
 	// the file and its chunk belong to both groups, so both carry them
 	require.EqualValues(t, storedBytes(t, store, myCommit, myTree, myFile, shared), report.SetBytes[7])
 	require.EqualValues(t, storedBytes(t, store, yourCommit, yourTree, myFile, shared), report.SetBytes[9])
+	require.EqualValues(t, 512, report.SetDeduplicated[7])
+	require.EqualValues(t, 512, report.SetDeduplicated[9])
 
 	require.NoError(t, store.Close())
 }

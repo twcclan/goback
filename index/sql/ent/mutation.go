@@ -6464,33 +6464,35 @@ func (m *SessionMutation) ResetEdge(name string) error {
 // SetMutation represents an operation that mutates the Set nodes in the graph.
 type SetMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *int64
-	name             *string
-	state            *set.State
-	retention_policy *string
-	retention_paused *bool
-	erase            *bool
-	rescan           *bool
-	physical_size    *int64
-	addphysical_size *int64
-	clearedFields    map[string]struct{}
-	files            map[int]struct{}
-	removedfiles     map[int]struct{}
-	clearedfiles     bool
-	trees            map[int]struct{}
-	removedtrees     map[int]struct{}
-	clearedtrees     bool
-	refs             map[int]struct{}
-	removedrefs      map[int]struct{}
-	clearedrefs      bool
-	damaged          map[int]struct{}
-	removeddamaged   map[int]struct{}
-	cleareddamaged   bool
-	done             bool
-	oldValue         func(context.Context) (*Set, error)
-	predicates       []predicate.Set
+	op                   Op
+	typ                  string
+	id                   *int64
+	name                 *string
+	state                *set.State
+	retention_policy     *string
+	retention_paused     *bool
+	erase                *bool
+	rescan               *bool
+	physical_size        *int64
+	addphysical_size     *int64
+	deduplicated_size    *int64
+	adddeduplicated_size *int64
+	clearedFields        map[string]struct{}
+	files                map[int]struct{}
+	removedfiles         map[int]struct{}
+	clearedfiles         bool
+	trees                map[int]struct{}
+	removedtrees         map[int]struct{}
+	clearedtrees         bool
+	refs                 map[int]struct{}
+	removedrefs          map[int]struct{}
+	clearedrefs          bool
+	damaged              map[int]struct{}
+	removeddamaged       map[int]struct{}
+	cleareddamaged       bool
+	done                 bool
+	oldValue             func(context.Context) (*Set, error)
+	predicates           []predicate.Set
 }
 
 var _ ent.Mutation = (*SetMutation)(nil)
@@ -6896,6 +6898,76 @@ func (m *SetMutation) ResetPhysicalSize() {
 	delete(m.clearedFields, set.FieldPhysicalSize)
 }
 
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (m *SetMutation) SetDeduplicatedSize(i int64) {
+	m.deduplicated_size = &i
+	m.adddeduplicated_size = nil
+}
+
+// DeduplicatedSize returns the value of the "deduplicated_size" field in the mutation.
+func (m *SetMutation) DeduplicatedSize() (r int64, exists bool) {
+	v := m.deduplicated_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeduplicatedSize returns the old "deduplicated_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldDeduplicatedSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeduplicatedSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeduplicatedSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeduplicatedSize: %w", err)
+	}
+	return oldValue.DeduplicatedSize, nil
+}
+
+// AddDeduplicatedSize adds i to the "deduplicated_size" field.
+func (m *SetMutation) AddDeduplicatedSize(i int64) {
+	if m.adddeduplicated_size != nil {
+		*m.adddeduplicated_size += i
+	} else {
+		m.adddeduplicated_size = &i
+	}
+}
+
+// AddedDeduplicatedSize returns the value that was added to the "deduplicated_size" field in this mutation.
+func (m *SetMutation) AddedDeduplicatedSize() (r int64, exists bool) {
+	v := m.adddeduplicated_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (m *SetMutation) ClearDeduplicatedSize() {
+	m.deduplicated_size = nil
+	m.adddeduplicated_size = nil
+	m.clearedFields[set.FieldDeduplicatedSize] = struct{}{}
+}
+
+// DeduplicatedSizeCleared returns if the "deduplicated_size" field was cleared in this mutation.
+func (m *SetMutation) DeduplicatedSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldDeduplicatedSize]
+	return ok
+}
+
+// ResetDeduplicatedSize resets all changes to the "deduplicated_size" field.
+func (m *SetMutation) ResetDeduplicatedSize() {
+	m.deduplicated_size = nil
+	m.adddeduplicated_size = nil
+	delete(m.clearedFields, set.FieldDeduplicatedSize)
+}
+
 // AddFileIDs adds the "files" edge to the File entity by ids.
 func (m *SetMutation) AddFileIDs(ids ...int) {
 	if m.files == nil {
@@ -7146,7 +7218,7 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
 	}
@@ -7167,6 +7239,9 @@ func (m *SetMutation) Fields() []string {
 	}
 	if m.physical_size != nil {
 		fields = append(fields, set.FieldPhysicalSize)
+	}
+	if m.deduplicated_size != nil {
+		fields = append(fields, set.FieldDeduplicatedSize)
 	}
 	return fields
 }
@@ -7190,6 +7265,8 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 		return m.Rescan()
 	case set.FieldPhysicalSize:
 		return m.PhysicalSize()
+	case set.FieldDeduplicatedSize:
+		return m.DeduplicatedSize()
 	}
 	return nil, false
 }
@@ -7213,6 +7290,8 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldRescan(ctx)
 	case set.FieldPhysicalSize:
 		return m.OldPhysicalSize(ctx)
+	case set.FieldDeduplicatedSize:
+		return m.OldDeduplicatedSize(ctx)
 	}
 	return nil, fmt.Errorf("unknown Set field %s", name)
 }
@@ -7271,6 +7350,13 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPhysicalSize(v)
 		return nil
+	case set.FieldDeduplicatedSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeduplicatedSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
 }
@@ -7282,6 +7368,9 @@ func (m *SetMutation) AddedFields() []string {
 	if m.addphysical_size != nil {
 		fields = append(fields, set.FieldPhysicalSize)
 	}
+	if m.adddeduplicated_size != nil {
+		fields = append(fields, set.FieldDeduplicatedSize)
+	}
 	return fields
 }
 
@@ -7292,6 +7381,8 @@ func (m *SetMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case set.FieldPhysicalSize:
 		return m.AddedPhysicalSize()
+	case set.FieldDeduplicatedSize:
+		return m.AddedDeduplicatedSize()
 	}
 	return nil, false
 }
@@ -7308,6 +7399,13 @@ func (m *SetMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddPhysicalSize(v)
 		return nil
+	case set.FieldDeduplicatedSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDeduplicatedSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set numeric field %s", name)
 }
@@ -7321,6 +7419,9 @@ func (m *SetMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(set.FieldPhysicalSize) {
 		fields = append(fields, set.FieldPhysicalSize)
+	}
+	if m.FieldCleared(set.FieldDeduplicatedSize) {
+		fields = append(fields, set.FieldDeduplicatedSize)
 	}
 	return fields
 }
@@ -7341,6 +7442,9 @@ func (m *SetMutation) ClearField(name string) error {
 		return nil
 	case set.FieldPhysicalSize:
 		m.ClearPhysicalSize()
+		return nil
+	case set.FieldDeduplicatedSize:
+		m.ClearDeduplicatedSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set nullable field %s", name)
@@ -7370,6 +7474,9 @@ func (m *SetMutation) ResetField(name string) error {
 		return nil
 	case set.FieldPhysicalSize:
 		m.ResetPhysicalSize()
+		return nil
+	case set.FieldDeduplicatedSize:
+		m.ResetDeduplicatedSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)

@@ -31,9 +31,12 @@ type BackupSet struct {
 	LogicalSize int64 `protobuf:"varint,5,opt,name=logical_size,json=logicalSize,proto3" json:"logical_size,omitempty"`
 	// what the set's objects take up in the store, as of the last
 	// garbage collection
-	PhysicalSize  int64 `protobuf:"varint,6,opt,name=physical_size,json=physicalSize,proto3" json:"physical_size,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PhysicalSize int64 `protobuf:"varint,6,opt,name=physical_size,json=physicalSize,proto3" json:"physical_size,omitempty"`
+	// the size of the distinct content the set's objects carry before
+	// compression, as of the last garbage collection
+	DeduplicatedSize int64 `protobuf:"varint,7,opt,name=deduplicated_size,json=deduplicatedSize,proto3" json:"deduplicated_size,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *BackupSet) Reset() {
@@ -90,6 +93,13 @@ func (x *BackupSet) GetLogicalSize() int64 {
 func (x *BackupSet) GetPhysicalSize() int64 {
 	if x != nil {
 		return x.PhysicalSize
+	}
+	return 0
+}
+
+func (x *BackupSet) GetDeduplicatedSize() int64 {
+	if x != nil {
+		return x.DeduplicatedSize
 	}
 	return 0
 }
@@ -1097,12 +1107,13 @@ var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x01\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc0\x01\n" +
 	"\tBackupSet\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
 	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSize\x12#\n" +
-	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
+	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSize\x12+\n" +
+	"\x11deduplicated_size\x18\a \x01(\x03R\x10deduplicatedSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
 	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"<\n" +

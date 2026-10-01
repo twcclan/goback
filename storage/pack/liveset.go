@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"container/heap"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,16 @@ import (
 )
 
 type refKey [32]byte
+
+// liveRef is a reached object with the uncompressed size of the file
+// content it carries.
+type liveRef struct {
+	key  refKey
+	size uint64
+}
+
+// liveRefSize is what one liveRef takes up in a run.
+const liveRefSize = len(refKey{}) + 8
 
 func keyOf(hash []byte) refKey {
 	var k refKey
@@ -32,7 +43,7 @@ type liveRuns struct {
 	owner  Attribution
 
 	mtx    sync.Mutex
-	buf    []refKey
+	buf    []liveRef
 	files  []string
 	owners []Attribution
 	added  uint64
@@ -48,7 +59,7 @@ func newLiveRuns(dir string, limit int) *liveRuns {
 	return &liveRuns{dir: dir, limit: limit}
 }
 
-func (l *liveRuns) add(refs []refKey) error {
+func (l *liveRuns) add(refs []liveRef) error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -62,8 +73,8 @@ func (l *liveRuns) add(refs []refKey) error {
 	return nil
 }
 
-func sortKeys(keys []refKey) {
-	sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
+func sortRefs(refs []liveRef) {
+	sort.Slice(refs, func(i, j int) bool { return bytes.Compare(refs[i].key[:], refs[j].key[:]) < 0 })
 }
 
 // sortRoots groups the roots by group and then by set, so a batch of
@@ -96,7 +107,7 @@ func (l *liveRuns) begin(prefix string, owner Attribution) {
 }
 
 func (l *liveRuns) spillLocked() error {
-	sortKeys(l.buf)
+	sortRefs(l.buf)
 
 	file, err := os.CreateTemp(l.dir, l.prefix+"*.run")
 	if err != nil {
@@ -104,8 +115,12 @@ func (l *liveRuns) spillLocked() error {
 	}
 
 	w := bufio.NewWriterSize(file, 1<<20)
-	for _, k := range l.buf {
-		if _, err := w.Write(k[:]); err != nil {
+	var entry [liveRefSize]byte
+	for _, ref := range l.buf {
+		copy(entry[:], ref.key[:])
+		binary.BigEndian.PutUint64(entry[len(ref.key):], ref.size)
+
+		if _, err := w.Write(entry[:]); err != nil {
 			_ = file.Close()
 			return err
 		}
@@ -160,10 +175,10 @@ func (l *liveRuns) iterator() (*liveIter, error) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
-	sortKeys(l.buf)
+	sortRefs(l.buf)
 
 	it := &liveIter{}
-	it.heads = append(it.heads, &runHead{keys: l.buf, owner: l.owner})
+	it.heads = append(it.heads, &runHead{refs: l.buf, owner: l.owner})
 
 	for i, name := range l.files {
 		file, err := os.Open(filepath.Clean(name))
@@ -187,27 +202,33 @@ func (l *liveRuns) iterator() (*liveIter, error) {
 }
 
 type runHead struct {
-	keys   []refKey
+	refs   []liveRef
 	file   *os.File
 	reader *bufio.Reader
-	cur    refKey
+	cur    liveRef
 	owner  Attribution
 }
 
 func (h *runHead) advance() bool {
 	if h.reader == nil {
-		if len(h.keys) == 0 {
+		if len(h.refs) == 0 {
 			return false
 		}
 
-		h.cur, h.keys = h.keys[0], h.keys[1:]
+		h.cur, h.refs = h.refs[0], h.refs[1:]
 
 		return true
 	}
 
-	_, err := io.ReadFull(h.reader, h.cur[:])
+	var entry [liveRefSize]byte
+	if _, err := io.ReadFull(h.reader, entry[:]); err != nil {
+		return false
+	}
 
-	return err == nil
+	copy(h.cur.key[:], entry[:])
+	h.cur.size = binary.BigEndian.Uint64(entry[len(h.cur.key):])
+
+	return true
 }
 
 type runHeap []*runHead
@@ -217,7 +238,7 @@ func (h runHeap) Len() int { return len(h) }
 // Less orders by ref, then by group and set, so an object several sets
 // reach goes to the one whose roots the mark walked first.
 func (h runHeap) Less(i, j int) bool {
-	if c := bytes.Compare(h[i].cur[:], h[j].cur[:]); c != 0 {
+	if c := bytes.Compare(h[i].cur.key[:], h[j].cur.key[:]); c != 0 {
 		return c < 0
 	}
 
@@ -238,27 +259,29 @@ type liveIter struct {
 	heap  runHeap
 
 	key    refKey
+	size   uint64
 	owners []Attribution
 	held   bool
 	drawn  bool
 }
 
 // at returns everything that reached key, in group then set order and
-// without repeats, or false when the runs hold nothing at key. The
-// answer stands until the caller asks after a later key, so the same
-// object in two archives is answered twice.
-func (it *liveIter) at(key refKey) ([]Attribution, bool) {
+// without repeats, with the size of the file content it carries, or false
+// when the runs hold nothing at key. The answer stands until the caller
+// asks after a later key, so the same object in two archives is answered
+// twice.
+func (it *liveIter) at(key refKey) ([]Attribution, uint64, bool) {
 	for {
 		if !it.drawn {
 			it.draw()
 		}
 
 		if !it.held || bytes.Compare(it.key[:], key[:]) > 0 {
-			return nil, false
+			return nil, 0, false
 		}
 
 		if it.key == key {
-			return it.owners, true
+			return it.owners, it.size, true
 		}
 
 		it.drawn = false
@@ -267,16 +290,17 @@ func (it *liveIter) at(key refKey) ([]Attribution, bool) {
 
 // draw collects the runs' entries for the next key they hold.
 func (it *liveIter) draw() {
-	it.drawn, it.held, it.owners = true, false, it.owners[:0]
+	it.drawn, it.held, it.size, it.owners = true, false, 0, it.owners[:0]
 
 	if it.heap.Len() == 0 {
 		return
 	}
 
-	it.key, it.held = it.heap[0].cur, true
+	it.key, it.held = it.heap[0].cur.key, true
 
-	for it.heap.Len() > 0 && it.heap[0].cur == it.key {
+	for it.heap.Len() > 0 && it.heap[0].cur.key == it.key {
 		top := it.heap[0]
+		it.size = max(it.size, top.cur.size)
 
 		if n := len(it.owners); n == 0 || it.owners[n-1] != top.owner {
 			it.owners = append(it.owners, top.owner)

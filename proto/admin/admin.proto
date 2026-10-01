@@ -46,6 +46,9 @@ message BackupSet {
     // what the set's objects take up in the store, as of the last
     // garbage collection
     int64 physical_size = 6;
+    // the size of the distinct content the set's objects carry before
+    // compression, as of the last garbage collection
+    int64 deduplicated_size = 7;
 }
 
 message ListSetsRequest {}

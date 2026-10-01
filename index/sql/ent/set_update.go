@@ -148,6 +148,33 @@ func (_u *SetUpdate) ClearPhysicalSize() *SetUpdate {
 	return _u
 }
 
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (_u *SetUpdate) SetDeduplicatedSize(v int64) *SetUpdate {
+	_u.mutation.ResetDeduplicatedSize()
+	_u.mutation.SetDeduplicatedSize(v)
+	return _u
+}
+
+// SetNillableDeduplicatedSize sets the "deduplicated_size" field if the given value is not nil.
+func (_u *SetUpdate) SetNillableDeduplicatedSize(v *int64) *SetUpdate {
+	if v != nil {
+		_u.SetDeduplicatedSize(*v)
+	}
+	return _u
+}
+
+// AddDeduplicatedSize adds value to the "deduplicated_size" field.
+func (_u *SetUpdate) AddDeduplicatedSize(v int64) *SetUpdate {
+	_u.mutation.AddDeduplicatedSize(v)
+	return _u
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (_u *SetUpdate) ClearDeduplicatedSize() *SetUpdate {
+	_u.mutation.ClearDeduplicatedSize()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdate) AddFileIDs(ids ...int) *SetUpdate {
 	_u.mutation.AddFileIDs(ids...)
@@ -375,6 +402,15 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.PhysicalSizeCleared() {
 		_spec.ClearField(set.FieldPhysicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.DeduplicatedSize(); ok {
+		_spec.SetField(set.FieldDeduplicatedSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDeduplicatedSize(); ok {
+		_spec.AddField(set.FieldDeduplicatedSize, field.TypeInt64, value)
+	}
+	if _u.mutation.DeduplicatedSizeCleared() {
+		_spec.ClearField(set.FieldDeduplicatedSize, field.TypeInt64)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -693,6 +729,33 @@ func (_u *SetUpdateOne) ClearPhysicalSize() *SetUpdateOne {
 	return _u
 }
 
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (_u *SetUpdateOne) SetDeduplicatedSize(v int64) *SetUpdateOne {
+	_u.mutation.ResetDeduplicatedSize()
+	_u.mutation.SetDeduplicatedSize(v)
+	return _u
+}
+
+// SetNillableDeduplicatedSize sets the "deduplicated_size" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillableDeduplicatedSize(v *int64) *SetUpdateOne {
+	if v != nil {
+		_u.SetDeduplicatedSize(*v)
+	}
+	return _u
+}
+
+// AddDeduplicatedSize adds value to the "deduplicated_size" field.
+func (_u *SetUpdateOne) AddDeduplicatedSize(v int64) *SetUpdateOne {
+	_u.mutation.AddDeduplicatedSize(v)
+	return _u
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (_u *SetUpdateOne) ClearDeduplicatedSize() *SetUpdateOne {
+	_u.mutation.ClearDeduplicatedSize()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdateOne) AddFileIDs(ids ...int) *SetUpdateOne {
 	_u.mutation.AddFileIDs(ids...)
@@ -950,6 +1013,15 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 	}
 	if _u.mutation.PhysicalSizeCleared() {
 		_spec.ClearField(set.FieldPhysicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.DeduplicatedSize(); ok {
+		_spec.SetField(set.FieldDeduplicatedSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDeduplicatedSize(); ok {
+		_spec.AddField(set.FieldDeduplicatedSize, field.TypeInt64, value)
+	}
+	if _u.mutation.DeduplicatedSizeCleared() {
+		_spec.ClearField(set.FieldDeduplicatedSize, field.TypeInt64)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{

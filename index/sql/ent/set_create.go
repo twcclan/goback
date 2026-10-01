@@ -115,6 +115,20 @@ func (_c *SetCreate) SetNillablePhysicalSize(v *int64) *SetCreate {
 	return _c
 }
 
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (_c *SetCreate) SetDeduplicatedSize(v int64) *SetCreate {
+	_c.mutation.SetDeduplicatedSize(v)
+	return _c
+}
+
+// SetNillableDeduplicatedSize sets the "deduplicated_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableDeduplicatedSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetDeduplicatedSize(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SetCreate) SetID(v int64) *SetCreate {
 	_c.mutation.SetID(v)
@@ -316,6 +330,10 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PhysicalSize(); ok {
 		_spec.SetField(set.FieldPhysicalSize, field.TypeInt64, value)
 		_node.PhysicalSize = &value
+	}
+	if value, ok := _c.mutation.DeduplicatedSize(); ok {
+		_spec.SetField(set.FieldDeduplicatedSize, field.TypeInt64, value)
+		_node.DeduplicatedSize = &value
 	}
 	if nodes := _c.mutation.FilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -535,6 +553,30 @@ func (u *SetUpsert) ClearPhysicalSize() *SetUpsert {
 	return u
 }
 
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (u *SetUpsert) SetDeduplicatedSize(v int64) *SetUpsert {
+	u.Set(set.FieldDeduplicatedSize, v)
+	return u
+}
+
+// UpdateDeduplicatedSize sets the "deduplicated_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateDeduplicatedSize() *SetUpsert {
+	u.SetExcluded(set.FieldDeduplicatedSize)
+	return u
+}
+
+// AddDeduplicatedSize adds v to the "deduplicated_size" field.
+func (u *SetUpsert) AddDeduplicatedSize(v int64) *SetUpsert {
+	u.Add(set.FieldDeduplicatedSize, v)
+	return u
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (u *SetUpsert) ClearDeduplicatedSize() *SetUpsert {
+	u.SetNull(set.FieldDeduplicatedSize)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -699,6 +741,34 @@ func (u *SetUpsertOne) UpdatePhysicalSize() *SetUpsertOne {
 func (u *SetUpsertOne) ClearPhysicalSize() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearPhysicalSize()
+	})
+}
+
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (u *SetUpsertOne) SetDeduplicatedSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetDeduplicatedSize(v)
+	})
+}
+
+// AddDeduplicatedSize adds v to the "deduplicated_size" field.
+func (u *SetUpsertOne) AddDeduplicatedSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddDeduplicatedSize(v)
+	})
+}
+
+// UpdateDeduplicatedSize sets the "deduplicated_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateDeduplicatedSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateDeduplicatedSize()
+	})
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (u *SetUpsertOne) ClearDeduplicatedSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearDeduplicatedSize()
 	})
 }
 
@@ -1032,6 +1102,34 @@ func (u *SetUpsertBulk) UpdatePhysicalSize() *SetUpsertBulk {
 func (u *SetUpsertBulk) ClearPhysicalSize() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearPhysicalSize()
+	})
+}
+
+// SetDeduplicatedSize sets the "deduplicated_size" field.
+func (u *SetUpsertBulk) SetDeduplicatedSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetDeduplicatedSize(v)
+	})
+}
+
+// AddDeduplicatedSize adds v to the "deduplicated_size" field.
+func (u *SetUpsertBulk) AddDeduplicatedSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddDeduplicatedSize(v)
+	})
+}
+
+// UpdateDeduplicatedSize sets the "deduplicated_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateDeduplicatedSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateDeduplicatedSize()
+	})
+}
+
+// ClearDeduplicatedSize clears the value of the "deduplicated_size" field.
+func (u *SetUpsertBulk) ClearDeduplicatedSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearDeduplicatedSize()
 	})
 }
 

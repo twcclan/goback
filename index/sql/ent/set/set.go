@@ -28,6 +28,8 @@ const (
 	FieldRescan = "rescan"
 	// FieldPhysicalSize holds the string denoting the physical_size field in the database.
 	FieldPhysicalSize = "physical_size"
+	// FieldDeduplicatedSize holds the string denoting the deduplicated_size field in the database.
+	FieldDeduplicatedSize = "deduplicated_size"
 	// EdgeFiles holds the string denoting the files edge name in mutations.
 	EdgeFiles = "files"
 	// EdgeTrees holds the string denoting the trees edge name in mutations.
@@ -78,6 +80,7 @@ var Columns = []string{
 	FieldErase,
 	FieldRescan,
 	FieldPhysicalSize,
+	FieldDeduplicatedSize,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -167,6 +170,11 @@ func ByRescan(opts ...sql.OrderTermOption) OrderOption {
 // ByPhysicalSize orders the results by the physical_size field.
 func ByPhysicalSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPhysicalSize, opts...).ToFunc()
+}
+
+// ByDeduplicatedSize orders the results by the deduplicated_size field.
+func ByDeduplicatedSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeduplicatedSize, opts...).ToFunc()
 }
 
 // ByFilesCount orders the results by files count.

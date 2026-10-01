@@ -120,6 +120,7 @@ func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 		}
 
 		out[i].PhysicalSize = deref(rows[i].PhysicalSize)
+		out[i].DeduplicatedSize = deref(rows[i].DeduplicatedSize)
 	}
 
 	return out, nil
@@ -169,17 +170,18 @@ func (x *Index) RootOwner(ctx context.Context) (func(root []byte) pack.Attributi
 	}, nil
 }
 
-// RecordPhysicalSizes records what a garbage collection attributed to each
-// set; a set it did not name holds nothing of its own.
-func (x *Index) RecordPhysicalSizes(ctx context.Context, sizes map[int64]uint64) error {
+// RecordSetSizes records what a garbage collection attributed to each set,
+// the physical and the deduplicated size; a set it did not name holds
+// nothing of its own.
+func (x *Index) RecordSetSizes(ctx context.Context, physical, deduplicated map[int64]uint64) error {
 	return x.tx(ctx, func(tx *ent.Tx) error {
-		err := tx.Set.Update().ClearPhysicalSize().Exec(ctx)
+		err := tx.Set.Update().ClearPhysicalSize().ClearDeduplicatedSize().Exec(ctx)
 		if err != nil {
 			return err
 		}
 
-		for id, size := range sizes {
-			err = tx.Set.UpdateOneID(id).SetPhysicalSize(int64(size)).Exec(ctx)
+		for id, size := range physical {
+			err = tx.Set.UpdateOneID(id).SetPhysicalSize(int64(size)).SetDeduplicatedSize(int64(deduplicated[id])).Exec(ctx)
 			if ent.IsNotFound(err) {
 				continue
 			}

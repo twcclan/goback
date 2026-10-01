@@ -123,6 +123,9 @@ type CollectReport struct {
 	// once, for the first set the mark reached it from; across groups it
 	// counts in each.
 	SetBytes map[int64]uint64
+	// SetDeduplicated is the uncompressed size of the distinct file content
+	// each set's live objects carry, attributed as SetBytes is.
+	SetDeduplicated map[int64]uint64
 	// SweepSkipped names the reason when the run marked but did not sweep.
 	SweepSkipped     string
 	Swept            int
@@ -212,8 +215,9 @@ type gcRun struct {
 	tombstones []gcTombstone
 	// targets maps every tombstone target to whether the snapshot still holds it.
 	targets map[refKey]bool
-	// setBytes is what the mark attributed to each set.
-	setBytes map[int64]uint64
+	// setBytes and setDeduplicated are what the mark attributed to each set.
+	setBytes        map[int64]uint64
+	setDeduplicated map[int64]uint64
 }
 
 // gcRoot is a root with what it belongs to, zero when nothing names it.
@@ -246,7 +250,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 
 	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(),
-		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool), setBytes: make(map[int64]uint64)}
+		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool),
+		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64)}
 	if prev != nil {
 		run.gen = prev.Generation + 1
 	}
@@ -291,6 +296,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 
 	mergeStart := time.Now()
 	report.SetBytes = run.setBytes
+	report.SetDeduplicated = run.setDeduplicated
 	report.Marked, err = run.merge(live)
 	if err != nil {
 		return nil, err
@@ -548,12 +554,12 @@ func (v *visitedSet) claim(keys []refKey) []refKey {
 	return fresh
 }
 
-// snapshotID identifies the generation, the archives it covers and the
-// sorted roots, so a checkpoint is only resumed against the same snapshot
-// and the same batches.
+// snapshotID identifies the generation, the run format, the archives it
+// covers and the sorted roots, so a checkpoint is only resumed against the
+// same snapshot and the same batches, by a build that reads its runs.
 func (r *gcRun) snapshotID() string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%d\n", r.gen)
+	fmt.Fprintf(h, "%d %d\n", r.gen, liveRefSize)
 	for _, ga := range r.order {
 		fmt.Fprintf(h, "%s\n", ga.a.name)
 	}
@@ -681,7 +687,8 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 			chunk := frontier[start:min(start+markChunk, len(frontier))]
 
 			grp.Go(func() error {
-				var children, found []refKey
+				var children []refKey
+				var found []liveRef
 
 				reads, err := r.readChunk(gctx, chunk)
 				if err != nil {
@@ -689,7 +696,7 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 				}
 
 				for _, read := range reads {
-					found = append(found, read.key)
+					found = append(found, liveRef{key: read.key, size: uint64(len(read.obj.GetFile().GetInline()))})
 					children = appendChildren(children, &found, read.obj)
 				}
 
@@ -854,7 +861,7 @@ func (r *gcRun) readSpan(ctx context.Context, records []placed, span int64) ([]m
 
 // appendChildren adds the object's metadata children to children and its
 // blob parts straight to live.
-func appendChildren(children []refKey, live *[]refKey, obj *proto.Object) []refKey {
+func appendChildren(children []refKey, live *[]liveRef, obj *proto.Object) []refKey {
 	switch obj.Type() {
 	case proto.ObjectType_COMMIT:
 		if tree := obj.GetCommit().GetTree(); tree != nil {
@@ -874,7 +881,7 @@ func appendChildren(children []refKey, live *[]refKey, obj *proto.Object) []refK
 		file := obj.GetFile()
 		for _, part := range file.GetParts() {
 			if part.GetRef() != nil {
-				*live = append(*live, keyOf(part.Ref.Hash))
+				*live = append(*live, liveRef{key: keyOf(part.Ref.Hash), size: part.GetLength()})
 			}
 		}
 		for _, split := range file.GetSplits() {
@@ -918,9 +925,15 @@ func (h *mergeHeap) Pop() interface{} {
 func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 	var marked uint64
 
-	err := r.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution) {
+	var counted refKey
+	err := r.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution, size uint64) {
 		ga.cur.Set(uint(pos))
 		marked++
+
+		// a second copy of an object adds to what it takes up, not to the
+		// content it carries
+		first := rec.Sum != counted
+		counted = rec.Sum
 
 		// owners come in group order, so the first of each group is the
 		// set that group carries the object in
@@ -932,6 +945,10 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 
 			group = owner.Group
 			r.setBytes[owner.Set] += uint64(rec.Length)
+
+			if first {
+				r.setDeduplicated[owner.Set] += size
+			}
 		}
 	}, func(sum refKey) {
 		if _, isTarget := r.targets[sum]; isTarget {
@@ -955,7 +972,7 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 // scan walks every index record of the snapshot in ref order alongside the
 // sorted runs; hit sees the records the runs name, with everything that
 // reached them, and each sees every record.
-func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution), each func(sum refKey)) error {
+func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution, size uint64), each func(sum refKey)) error {
 	it, err := runs.iterator()
 	if err != nil {
 		return err
@@ -996,8 +1013,8 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *Index
 		top := h[0]
 		sum := top.rec.Sum
 
-		if owners, ok := it.at(sum); ok {
-			hit(top.ga, top.pos, top.rec, owners)
+		if owners, size, ok := it.at(sum); ok {
+			hit(top.ga, top.pos, top.rec, owners, size)
 		}
 
 		if each != nil {
@@ -1048,7 +1065,7 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 		return err
 	}
 
-	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ []Attribution) { ga.erase = true }, nil)
+	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ []Attribution, _ uint64) { ga.erase = true }, nil)
 }
 
 func (r *gcRun) writeResults() error {

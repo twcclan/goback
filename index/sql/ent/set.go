@@ -30,6 +30,8 @@ type Set struct {
 	Rescan bool `json:"rescan,omitempty"`
 	// PhysicalSize holds the value of the "physical_size" field.
 	PhysicalSize *int64 `json:"physical_size,omitempty"`
+	// DeduplicatedSize holds the value of the "deduplicated_size" field.
+	DeduplicatedSize *int64 `json:"deduplicated_size,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SetQuery when eager-loading is set.
 	Edges        SetEdges `json:"edges"`
@@ -94,7 +96,7 @@ func (*Set) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case set.FieldRetentionPaused, set.FieldErase, set.FieldRescan:
 			values[i] = new(sql.NullBool)
-		case set.FieldID, set.FieldPhysicalSize:
+		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize:
 			values[i] = new(sql.NullInt64)
 		case set.FieldName, set.FieldState, set.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -162,6 +164,13 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.PhysicalSize = new(int64)
 				*_m.PhysicalSize = value.Int64
+			}
+		case set.FieldDeduplicatedSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field deduplicated_size", values[i])
+			} else if value.Valid {
+				_m.DeduplicatedSize = new(int64)
+				*_m.DeduplicatedSize = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -241,6 +250,11 @@ func (_m *Set) String() string {
 	builder.WriteString(", ")
 	if v := _m.PhysicalSize; v != nil {
 		builder.WriteString("physical_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.DeduplicatedSize; v != nil {
+		builder.WriteString("deduplicated_size=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteByte(')')
