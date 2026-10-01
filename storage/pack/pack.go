@@ -1083,6 +1083,101 @@ func (ps *PackStorage) Open() error {
 	return nil
 }
 
+// refreshArchives catches the loaded archives up with the storage and the
+// index: it opens the archives other processes stored since, takes up the
+// commits of archives it loaded while they were pending, and unloads the
+// committed archives whose files are gone.
+func (ps *PackStorage) refreshArchives() error {
+	matches, err := ps.storage.List(ArchiveSuffix)
+	if err != nil {
+		return errors.Wrap(err, "failed listing archive names")
+	}
+
+	listed := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		listed[strings.TrimSuffix(match, ArchiveSuffix)] = true
+	}
+
+	ps.mtx.RLock()
+	loaded := make(map[string]*archive, len(ps.archives))
+	for _, a := range ps.archives {
+		loaded[a.name] = a
+	}
+	ps.mtx.RUnlock()
+
+	sem := semaphore.NewWeighted(indexOpenerThreads)
+	group, ctx := errgroup.WithContext(context.Background())
+
+	for name := range listed {
+		if loaded[name] != nil {
+			continue
+		}
+
+		if err := sem.Acquire(ctx, 1); err != nil {
+			break
+		}
+
+		group.Go(func() error {
+			defer sem.Release(1)
+
+			// an archive another process is still writing is that
+			// process's to finish or clean up
+			info, known, err := ps.index.LookupArchive(name)
+			if err != nil {
+				return err
+			}
+
+			if (known && info.State == ArchiveOpen) || (!known && !ps.hasIndexFile(name)) {
+				return nil
+			}
+
+			_, err = ps.openArchive(name)
+			if errors.Is(err, errArchiveRetired) {
+				return nil
+			}
+
+			return err
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return err
+	}
+
+	for name, a := range loaded {
+		a.mtx.RLock()
+		settled := a.readOnly && a.owner == nil
+		state := a.state
+		a.mtx.RUnlock()
+
+		if !settled {
+			continue
+		}
+
+		if state == ArchiveCommitted {
+			if !listed[name] {
+				ps.unloadArchive(a)
+				_ = a.Close()
+			}
+
+			continue
+		}
+
+		info, known, err := ps.index.LookupArchive(name)
+		if err != nil {
+			return err
+		}
+
+		if known && info.State == ArchiveCommitted {
+			a.mtx.Lock()
+			a.state, a.session = ArchiveCommitted, ""
+			a.mtx.Unlock()
+		}
+	}
+
+	return nil
+}
+
 // File is one archive, index or gc file held by an ArchiveStorage.
 type File interface {
 	io.Reader

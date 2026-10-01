@@ -944,3 +944,87 @@ func TestSessionsAndCollectionsAreStampedByTheSharedClock(t *testing.T) {
 
 	require.NoError(t, store.Close())
 }
+
+func TestACollectionRootsTheCommitsAnotherProcessStored(t *testing.T) {
+	base := t.TempDir()
+	index := NewInMemoryIndex()
+	ctx := context.Background()
+
+	open := func() *PackStorage {
+		store, err := NewPackStorage(WithArchiveStorage(newLocal(base)), WithArchiveIndex(index), WithMaxSize(256*1024))
+		require.NoError(t, err)
+		require.NoError(t, store.Open())
+
+		return store
+	}
+
+	collector := open()
+	writer := open()
+
+	chunk := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("c"), 4096)})
+	putAll(t, collector, []*proto.Object{chunk})
+
+	file := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Ref: chunk.Ref(), Length: 4096}}})
+	tree := treeOf([]*proto.Object{file})
+	commit := proto.NewObject(&proto.Commit{Tree: tree.Ref(), Timestamp: 1})
+	putAll(t, writer, []*proto.Object{file, tree, commit})
+
+	for _, ahead := range []time.Duration{0, 48 * time.Hour, 96 * time.Hour} {
+		_, err := collector.Collect(ctx, gcOptions(t, ahead))
+		require.NoError(t, err)
+	}
+
+	requireStored(t, collector, []*proto.Object{chunk, file, tree, commit}, true)
+
+	require.NoError(t, writer.Close())
+	require.NoError(t, collector.Close())
+}
+
+func TestACollectionCoversWhatAnotherProcessCommittedAfterItLoadedIt(t *testing.T) {
+	base := t.TempDir()
+	index := NewInMemoryIndex()
+	ctx := context.Background()
+
+	open := func() *PackStorage {
+		store, err := NewPackStorage(WithArchiveStorage(newLocal(base)), WithArchiveIndex(index))
+		require.NoError(t, err)
+		require.NoError(t, store.Open())
+
+		return store
+	}
+
+	collector := open()
+	writer := open()
+
+	sctx, err := writer.BeginSession(ctx, &backup.Session{AgentID: "a", Set: "world"})
+	require.NoError(t, err)
+
+	for _, obj := range makeTestData(t, 10) {
+		require.NoError(t, writer.Put(sctx, obj))
+	}
+
+	// the half-written archive is the writer's, so a collection leaves it be
+	_, err = collector.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	collector.mtx.RLock()
+	require.Empty(t, collector.archives)
+	collector.mtx.RUnlock()
+
+	require.NoError(t, writer.Flush())
+
+	// now finalized and pending, a collection loads it but does not cover it
+	report, err := collector.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+	require.Zero(t, report.Archives)
+
+	require.NoError(t, writer.Put(sctx, commitObject()))
+	require.NoError(t, writer.EndSession(sctx))
+
+	report, err = collector.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+	require.Equal(t, 2, report.Archives, "the archive it had pending and the one holding the commit")
+
+	require.NoError(t, writer.Close())
+	require.NoError(t, collector.Close())
+}

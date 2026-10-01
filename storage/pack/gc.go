@@ -398,6 +398,10 @@ func scanArchive(a *archive, fn func(pos int, rec *IndexRecord) error, count *in
 // takeSnapshot fixes the set of committed archives this generation covers
 // and loads their indexes and previous mark results.
 func (r *gcRun) takeSnapshot() error {
+	if err := r.ps.refreshArchives(); err != nil {
+		return errors.Wrap(err, "catching up with the storage's archives")
+	}
+
 	r.ps.mtx.RLock()
 	archives := make([]*archive, 0, len(r.ps.archives))
 	for _, a := range r.ps.archives {
