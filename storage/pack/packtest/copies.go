@@ -13,8 +13,8 @@ import (
 )
 
 // TestArchiveIndexCopies checks that LocateCopies finds every committed
-// copy of each ref, and none in a pending archive, however many refs it is
-// asked about.
+// copy of each ref, however many refs it is asked about, and those in a
+// pending archive only for its own session.
 func TestArchiveIndexCopies(t *testing.T, idx pack.ArchiveIndex) {
 	big := RandomArchive(1500)
 	other := RandomArchive(5)
@@ -38,7 +38,7 @@ func TestArchiveIndexCopies(t *testing.T, idx pack.ArchiveIndex) {
 	unknown := RandomIndexFile(1)[0].Sum
 	refs = append(refs, &proto.Ref{Hash: unknown[:]})
 
-	copies, err := idx.LocateCopies(refs)
+	copies, err := idx.LocateCopies(refs, pack.Scope{})
 	require.NoError(t, err)
 	require.NotContains(t, copies, string(unknown[:]))
 
@@ -65,4 +65,26 @@ func TestArchiveIndexCopies(t *testing.T, idx pack.ArchiveIndex) {
 	for _, record := range other.index[:5] {
 		require.Equal(t, map[string]pack.IndexRecord{other.name: record}, where(record))
 	}
+
+	shared := &proto.Ref{Hash: big.index[0].Sum[:]}
+	pendingName := session.ID + "/" + pending.name
+
+	for _, scope := range []pack.Scope{{}, {Session: uuid.New().String()}} {
+		copies, err = idx.LocateCopies([]*proto.Ref{shared}, scope)
+		require.NoError(t, err)
+
+		for _, loc := range copies[string(shared.Hash)] {
+			require.NotEqual(t, pendingName, loc.Archive, "a pending copy is seen outside its session")
+		}
+	}
+
+	copies, err = idx.LocateCopies([]*proto.Ref{shared}, pack.Scope{Session: session.ID})
+	require.NoError(t, err)
+
+	var archives []string
+	for _, loc := range copies[string(shared.Hash)] {
+		archives = append(archives, loc.Archive)
+	}
+
+	require.ElementsMatch(t, []string{big.name, other.name, pendingName}, archives, "its session sees its pending copy")
 }

@@ -26,12 +26,7 @@ func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string
 	ctx := context.Background()
 	defer recordLookup(ctx, "object", time.Now())
 
-	visible := archive.State(int(pack.ArchiveCommitted))
-	if scope.Session != "" {
-		visible = archive.Or(visible, archive.And(archive.SessionID(scope.Session), archive.State(int(pack.ArchivePending))))
-	}
-
-	where := []predicate.Object{object.Ref(ref.Hash), object.HasArchiveWith(visible)}
+	where := []predicate.Object{object.Ref(ref.Hash), object.HasArchiveWith(visibleTo(scope))}
 	if len(exclude) > 0 {
 		where = append(where, object.ArchiveIDNotIn(exclude...))
 	}
@@ -49,7 +44,7 @@ func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string
 }
 
 // LocateCopies implements pack.ArchiveIndex.
-func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation, error) {
+func (x *Index) LocateCopies(refs []*proto.Ref, scope pack.Scope) (map[string][]pack.IndexLocation, error) {
 	ctx := context.Background()
 	defer recordLookup(ctx, "copies", time.Now())
 	copies := make(map[string][]pack.IndexLocation)
@@ -63,7 +58,7 @@ func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation
 		}
 
 		rows, err := x.client.Object.Query().
-			Where(object.RefIn(hashes...), object.HasArchiveWith(archive.State(int(pack.ArchiveCommitted)))).
+			Where(object.RefIn(hashes...), object.HasArchiveWith(visibleTo(scope))).
 			All(ctx)
 		if err != nil {
 			return nil, err
@@ -75,6 +70,17 @@ func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation
 	}
 
 	return copies, nil
+}
+
+// visibleTo selects the committed archives plus the pending archives of
+// the scope's session.
+func visibleTo(scope pack.Scope) predicate.Archive {
+	visible := archive.State(int(pack.ArchiveCommitted))
+	if scope.Session != "" {
+		visible = archive.Or(visible, archive.And(archive.SessionID(scope.Session), archive.State(int(pack.ArchivePending))))
+	}
+
+	return visible
 }
 
 func recordLookup(ctx context.Context, lookup string, started time.Time) {

@@ -151,19 +151,40 @@ var _ backup.Leased = (*PackStorage)(nil)
 // SessionLease implements backup.Leased: zero when sessions never expire.
 func (ps *PackStorage) SessionLease() time.Duration { return ps.sessionLease }
 
-// Has reports whether the store holds a copy of the object that the last
-// completed garbage collection found reachable. A copy it found unreachable
-// does not count, so the caller uploads again instead of relying on it.
+// Has reports whether the store holds a copy of the object that the caller
+// may rely on. The newest record of the object decides: a tombstone newer
+// than every copy makes it absent, unless an un-tombstone is newer still.
+// A copy the last completed garbage collection found unreachable does not
+// count, so the caller uploads again instead of relying on it.
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	scope := ScopeOf(ctx)
 
-	a, _, err := ps.committedCopy(scope, ref, true)
+	tomb := proto.TombstoneRef(ref)
+	untomb := proto.TombstoneRef(tomb)
+
+	found, err := ps.index.LocateCopies([]*proto.Ref{ref, tomb, untomb}, scope)
 	if err != nil {
 		return false, err
 	}
 
-	if a != nil {
-		return true, nil
+	bound, err := ps.tombstoneBound(found[string(tomb.Hash)], found[string(untomb.Hash)])
+	if err != nil {
+		return false, err
+	}
+
+	for _, loc := range found[string(ref.Hash)] {
+		a, err := ps.archiveByName(loc.Archive)
+		if err != nil && !errors.Is(err, errArchiveRetired) {
+			return false, err
+		}
+
+		if a == nil || a.candidate(ref.Hash) {
+			continue
+		}
+
+		if bound == nil || a.newerThan(loc.Record, *bound) {
+			return true, nil
+		}
 	}
 
 	if ws := ps.lookupWriteSession(scope.Session); ws != nil {
@@ -182,6 +203,48 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// tombstoneBound returns the version of the newest tombstone among tombs,
+// or nil when there is none or an un-tombstone among untombs is newer.
+func (ps *PackStorage) tombstoneBound(tombs, untombs []IndexLocation) (*Version, error) {
+	tomb, err := ps.newest(tombs)
+	if tomb == nil || err != nil {
+		return nil, err
+	}
+
+	untomb, err := ps.newest(untombs)
+	if err != nil {
+		return nil, err
+	}
+
+	if untomb != nil && tomb.Before(*untomb) {
+		return nil, nil
+	}
+
+	return tomb, nil
+}
+
+// newest returns the version of the newest of locs, nil for none.
+func (ps *PackStorage) newest(locs []IndexLocation) (*Version, error) {
+	var newest *Version
+
+	for _, loc := range locs {
+		a, err := ps.archiveByName(loc.Archive)
+		if err != nil && !errors.Is(err, errArchiveRetired) {
+			return nil, err
+		}
+
+		if a == nil {
+			continue
+		}
+
+		if v := a.version(loc.Record); newest == nil || newest.Before(v) {
+			newest = &v
+		}
+	}
+
+	return newest, nil
 }
 
 // committedCopy finds a committed copy of ref the scope may read, passing
@@ -736,7 +799,10 @@ func (ps *PackStorage) finalizeLocked(ws *writeSession) error {
 	}
 
 	if err == nil {
-		a.created, err = a.indexCreated()
+		var created time.Time
+
+		created, err = a.indexCreated()
+		a.setCreated(created)
 	}
 
 	if a.rows != nil {
@@ -1260,9 +1326,9 @@ type ArchiveIndex interface {
 	SessionIndex
 
 	LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error)
-	// LocateCopies returns every copy the committed archives hold of each
-	// ref, keyed by its hash; a ref none holds is absent.
-	LocateCopies(refs []*proto.Ref) (map[string][]IndexLocation, error)
+	// LocateCopies returns every copy the archives visible to scope hold
+	// of each ref, keyed by its hash; a ref none holds is absent.
+	LocateCopies(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error)
 	LookupArchive(archive string) (ArchiveInfo, bool, error)
 	// IndexArchive registers an archive; a pending one needs a live session.
 	// Of an archive it already knows, it only records a creation time the

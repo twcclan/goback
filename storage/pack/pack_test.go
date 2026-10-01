@@ -285,13 +285,13 @@ func TestParallelCompactionKeepsOneCopyOfAnObjectSeveralArchivesHold(t *testing.
 		refs[i] = object.Ref()
 	}
 
-	before, err := index.LocateCopies(refs)
+	before, err := index.LocateCopies(refs, Scope{})
 	require.NoError(t, err)
 	require.Greater(t, len(before[string(refs[0].Hash)]), 1, "the test needs objects held more than once")
 
 	require.NoError(t, store.doCompaction())
 
-	after, err := index.LocateCopies(refs)
+	after, err := index.LocateCopies(refs, Scope{})
 	require.NoError(t, err)
 
 	for i, ref := range refs {

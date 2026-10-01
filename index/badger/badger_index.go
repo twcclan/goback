@@ -214,7 +214,7 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...
 }
 
 // LocateCopies implements pack.ArchiveIndex.
-func (b *BadgerIndex) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation, error) {
+func (b *BadgerIndex) LocateCopies(refs []*proto.Ref, scope pack.Scope) (map[string][]pack.IndexLocation, error) {
 	copies := make(map[string][]pack.IndexLocation)
 
 	err := b.db.View(func(txn *badger.Txn) error {
@@ -239,7 +239,7 @@ func (b *BadgerIndex) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLo
 				info := b.archiveInfos[id]
 				b.archivesMtx.RUnlock()
 
-				if !(pack.Scope{}).Visible(info) {
+				if !scope.Visible(info) {
 					continue
 				}
 

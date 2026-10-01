@@ -236,7 +236,7 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 		refs[i] = &proto.Ref{Hash: idx[i].Sum[:]}
 	}
 
-	copies, err := rw.ps.index.LocateCopies(refs)
+	copies, err := rw.ps.index.LocateCopies(refs, Scope{})
 	if err != nil {
 		return errors.Wrapf(err, "locating the objects of %s", candidate.name)
 	}

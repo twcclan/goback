@@ -77,7 +77,7 @@ outer:
 }
 
 // LocateCopies implements pack.ArchiveIndex.
-func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref) (map[string][]IndexLocation, error) {
+func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error) {
 	i.mtx.RLock()
 	defer i.mtx.RUnlock()
 
@@ -88,7 +88,7 @@ func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref) (map[string][]IndexLocat
 		copy(sum[:], ref.Hash)
 
 		for archive, records := range i.index {
-			if !(Scope{}).Visible(i.archives[archive]) {
+			if !scope.Visible(i.archives[archive]) {
 				continue
 			}
 

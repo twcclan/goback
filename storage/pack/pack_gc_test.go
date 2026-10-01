@@ -578,7 +578,7 @@ func TestCollectKeepsRestoreSessionTargets(t *testing.T) {
 
 	_, err = store.Collect(ctx, gcOptions(t, 0))
 	require.NoError(t, err)
-	requirePresent(t, store, gone, true)
+	requireStored(t, store, gone, true)
 
 	require.NoError(t, store.EndSession(sctx))
 

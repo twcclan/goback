@@ -300,6 +300,26 @@ func (a *archive) indexName() string {
 	return a.name + IndexExt
 }
 
+func (a *archive) setCreated(created time.Time) {
+	a.mtx.Lock()
+	a.created = created
+	a.mtx.Unlock()
+}
+
+// version returns the version of rec, one of the archive's records.
+func (a *archive) version(rec IndexRecord) Version {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	return rec.Version(a.created)
+}
+
+// newerThan reports whether rec, one of the archive's records, is newer
+// than v.
+func (a *archive) newerThan(rec IndexRecord, v Version) bool {
+	return v.Before(a.version(rec))
+}
+
 // indexCreated returns when the storage created the archive's index file,
 // or the archive itself when the index file is gone.
 func (a *archive) indexCreated() (time.Time, error) {
