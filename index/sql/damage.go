@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -14,6 +15,8 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/proto"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // PathsOfFiles returns where the given file objects are stored, by set
@@ -227,6 +230,9 @@ func (x *Index) LostVersions(ctx context.Context, name string) ([]LostVersion, e
 	return out, nil
 }
 
+// damageWorkers is how many file objects findDamage checks at once.
+const damageWorkers = 16
+
 // findDamage marks what the indexed versions reference but the store no
 // longer holds, as the repair that lost it did in the index a rebuild
 // replaces.
@@ -240,22 +246,36 @@ func (x *Index) findDamage(ctx context.Context) error {
 		return err
 	}
 
-	checked := map[string]bool{}
-
 	var (
-		lost  []*proto.Ref
-		check func(ref *proto.Ref) error
+		mtx  sync.Mutex
+		seen = map[string]bool{}
+		lost []*proto.Ref
 	)
 
-	gone := func(ref *proto.Ref) {
-		if !checked[string(ref.GetHash())] {
-			checked[string(ref.GetHash())] = true
-			lost = append(lost, ref)
+	// claim reports whether ref is new to this pass; versions of a file
+	// share most of their parts, so each is looked at once
+	claim := func(ref *proto.Ref) bool {
+		mtx.Lock()
+		defer mtx.Unlock()
+
+		if seen[string(ref.GetHash())] {
+			return false
 		}
+
+		seen[string(ref.GetHash())] = true
+
+		return true
 	}
 
-	check = func(ref *proto.Ref) error {
-		if checked[string(ref.GetHash())] {
+	gone := func(ref *proto.Ref) {
+		mtx.Lock()
+		lost = append(lost, ref)
+		mtx.Unlock()
+	}
+
+	var check func(ctx context.Context, ref *proto.Ref) error
+	check = func(ctx context.Context, ref *proto.Ref) error {
+		if !claim(ref) {
 			return nil
 		}
 
@@ -269,9 +289,11 @@ func (x *Index) findDamage(ctx context.Context) error {
 			return err
 		}
 
-		checked[string(ref.GetHash())] = true
-
 		for _, part := range obj.GetFile().GetParts() {
+			if !claim(part.GetRef()) {
+				continue
+			}
+
 			held, err := x.ObjectStore.Has(ctx, part.GetRef())
 			if err != nil {
 				return err
@@ -283,7 +305,7 @@ func (x *Index) findDamage(ctx context.Context) error {
 		}
 
 		for _, split := range obj.GetFile().GetSplits() {
-			if err := check(split); err != nil {
+			if err := check(ctx, split); err != nil {
 				return err
 			}
 		}
@@ -291,14 +313,27 @@ func (x *Index) findDamage(ctx context.Context) error {
 		return nil
 	}
 
-	for _, row := range rows {
+	group, gctx := errgroup.WithContext(ctx)
+	group.SetLimit(damageWorkers)
+
+	began := time.Now()
+
+	for i, row := range rows {
 		if len(row.Ref) == 0 {
 			continue
 		}
 
-		if err := check(&proto.Ref{Hash: row.Ref}); err != nil {
-			return err
+		if i > 0 && i%10000 == 0 {
+			x.logger().Info("checking that the store holds what the versions reference", "files", i, "of", len(rows), "elapsed", time.Since(began).Round(time.Second))
 		}
+
+		group.Go(func() error {
+			return check(gctx, &proto.Ref{Hash: row.Ref})
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return err
 	}
 
 	if len(lost) == 0 {

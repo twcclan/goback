@@ -163,6 +163,52 @@ func TestARebuildFindsWhatTheStoreLost(t *testing.T) {
 	require.Equal(t, []string{"r.0.0.mca"}, grant.Damaged)
 }
 
+func TestARebuildAsksAboutAPartTheVersionsShareOnce(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	shared := proto.NewObject(&proto.Blob{Data: []byte("shared")})
+	lost := proto.NewObject(&proto.Blob{Data: []byte("lost")})
+	require.NoError(t, f.store.Put(ctx, shared))
+	require.NoError(t, f.store.Put(ctx, lost))
+
+	for i := range 3 {
+		tail := proto.NewObject(&proto.Blob{Data: []byte{byte(i)}})
+		require.NoError(t, f.store.Put(ctx, tail))
+
+		version := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+			{Offset: 0, Length: 6, Ref: shared.Ref()},
+			{Offset: 6, Length: 4, Ref: lost.Ref()},
+			{Offset: 10, Length: 1, Ref: tail.Ref()},
+		}})
+		require.NoError(t, f.store.Put(ctx, version))
+
+		f.clock = f.clock.Add(time.Hour)
+		f.commit("world", f.tree(&proto.TreeNode{
+			Stat: &proto.FileInfo{Name: []byte("r.0.0.mca"), Type: proto.NodeType_NODE_FILE, MtimeNs: f.clock.UnixNano(), Size: 11, Mode: 0644},
+			Ref:  version.Ref(),
+		}), false)
+	}
+
+	f.forget(lost.Ref())
+
+	f.store.mu.Lock()
+	clear(f.store.asked)
+	f.store.mu.Unlock()
+
+	y := f.index()
+	require.NoError(t, y.ReIndex(ctx))
+
+	f.store.mu.Lock()
+	require.Equal(t, 1, f.store.asked[string(shared.Ref().Hash)])
+	require.Equal(t, 1, f.store.asked[string(lost.Ref().Hash)])
+	f.store.mu.Unlock()
+
+	grant, err := y.BeginCommit(ctx, "world")
+	require.NoError(t, err)
+	require.Equal(t, []string{"r.0.0.mca"}, grant.Damaged)
+}
+
 // setID is the id of the fixture's named set.
 func (f *fixture) setID(name string) int64 {
 	f.t.Helper()
