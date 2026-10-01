@@ -83,6 +83,16 @@ func (ws *writeSession) addPending(a *archive, ref *proto.Ref) {
 	ws.pendingMtx.Unlock()
 }
 
+// now is the time sessions and collections are stamped with: the index's
+// when every process shares it, this machine's otherwise.
+func (ps *PackStorage) now(ctx context.Context) (time.Time, error) {
+	if clock, ok := ps.index.(SharedClock); ok {
+		return clock.SharedNow(ctx)
+	}
+
+	return time.Now(), nil
+}
+
 // BeginSession registers the session, assigning an id when it has none,
 // and returns a context under which writes belong to it.
 func (ps *PackStorage) BeginSession(ctx context.Context, s *backup.Session) (context.Context, error) {
@@ -90,11 +100,15 @@ func (ps *PackStorage) BeginSession(ctx context.Context, s *backup.Session) (con
 		s.ID = uuid.New().String()
 	}
 
-	now := time.Now()
+	now, err := ps.now(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	s.Started = now
 	s.LastSeen = now
 
-	err := ps.index.BeginSession(s)
+	err = ps.index.BeginSession(s)
 	if err != nil {
 		return nil, err
 	}

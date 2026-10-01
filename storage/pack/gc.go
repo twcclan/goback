@@ -327,7 +327,12 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 	gcDeadBytes.Record(ctx, int64(report.DeadBytes))
 
-	state := &gcState{Generation: run.gen, Snapshot: run.snapshot, Completed: time.Now().UTC()}
+	completed, err := ps.now(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &gcState{Generation: run.gen, Snapshot: run.snapshot, Completed: completed.UTC()}
 	if err := storeGCState(ps.storage, state); err != nil {
 		return nil, errors.Wrap(err, "storing gc state")
 	}

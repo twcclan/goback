@@ -310,6 +310,11 @@ func (x *Index) clock(ctx context.Context) (time.Time, error) {
 	return now.UTC(), nil
 }
 
+// SharedNow implements pack.SharedClock.
+func (x *Index) SharedNow(ctx context.Context) (time.Time, error) {
+	return x.clock(ctx)
+}
+
 // OpenArchive implements pack.ClaimIndex.
 func (x *Index) OpenArchive(name, id string) error {
 	ctx := context.Background()

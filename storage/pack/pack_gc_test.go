@@ -904,3 +904,43 @@ func TestCompactionBetweenCollectionsKeepsTheUnreachableCounting(t *testing.T) {
 
 	require.NoError(t, store.Close())
 }
+
+// skewedIndex is an index whose shared clock runs an hour behind this
+// machine's.
+type skewedIndex struct {
+	*InMemoryIndex
+}
+
+func (skewedIndex) SharedNow(context.Context) (time.Time, error) {
+	return time.Now().Add(-time.Hour), nil
+}
+
+func TestSessionsAndCollectionsAreStampedByTheSharedClock(t *testing.T) {
+	index := skewedIndex{NewInMemoryIndex()}
+	store, err := NewPackStorage(WithArchiveStorage(newLocal(t.TempDir())), WithArchiveIndex(index))
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+
+	ctx := context.Background()
+
+	_, err = store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	state, err := loadGCState(store.storage)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(-time.Hour), state.Completed, time.Minute)
+
+	session := &backup.Session{AgentID: "a", Set: "world"}
+	_, err = store.BeginSession(ctx, session)
+	require.NoError(t, err)
+
+	begun, err := index.GetSession(session.ID)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(-time.Hour), begun.Started, time.Minute)
+
+	report, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+	require.Empty(t, report.SweepSkipped, "a session that began after the last collection on the shared clock does not hold the sweep back")
+
+	require.NoError(t, store.Close())
+}

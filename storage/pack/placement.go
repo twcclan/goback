@@ -104,6 +104,13 @@ type SessionIndex interface {
 	CommitSession(id string) error
 }
 
+// SharedClock is implemented by an index whose processes share one clock.
+// The store stamps when a session begins and when a collection completes
+// by it, because a collection compares the two.
+type SharedClock interface {
+	SharedNow(ctx context.Context) (time.Time, error)
+}
+
 // ErrClaimLapsed is what a ClaimIndex answers for an open archive whose
 // claim ran out before it was finalized.
 var ErrClaimLapsed = errors.New("the claim on the archive lapsed")
