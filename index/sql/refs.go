@@ -19,6 +19,8 @@ import (
 // under it, so a concurrent commit cannot lose a ref.
 func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte) error {
 	dead := map[string]bool{}
+	reached := map[string]bool{}
+
 	for _, ref := range tombstoned {
 		dead[string(ref)] = true
 
@@ -36,7 +38,7 @@ func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte)
 			continue
 		}
 
-		err = x.walkRefs(ctx, commit.GetTree(), map[string]bool{}, func(hash []byte) { dead[string(hash)] = true })
+		err = x.walkRefs(ctx, commit.GetTree(), reached, func(hash []byte) { dead[string(hash)] = true })
 		if err != nil && !errors.Is(err, backup.ErrNotFound) {
 			return err
 		}
@@ -81,8 +83,15 @@ func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte)
 			return err
 		}
 
+		refs := make([][]byte, 0, len(dead))
 		for ref := range dead {
-			_, err := tx.SetRef.Delete().Where(setref.SetID(setID), setref.Ref([]byte(ref))).Exec(ctx)
+			refs = append(refs, []byte(ref))
+		}
+
+		for start := 0; start < len(refs); start += objectBatch {
+			chunk := refs[start:min(start+objectBatch, len(refs))]
+
+			_, err := tx.SetRef.Delete().Where(setref.SetID(setID), setref.RefIn(chunk...)).Exec(ctx)
 			if err != nil {
 				return err
 			}

@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
@@ -902,4 +903,49 @@ func TestRetireIgnoresAPinTheStoreUnpinned(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 	require.True(t, f.store.tombstoned(a))
+}
+
+func TestRetiringCommitsThatShareADirectoryReadsItOnce(t *testing.T) {
+	f := newFixture(t)
+
+	var shared []*proto.TreeNode
+	for i := range 20 {
+		shared = append(shared, f.file(fmt.Sprintf("f%02d", i), "same"))
+	}
+
+	sharedDir := f.dir("shared", shared...)
+
+	var onlyRetired []*proto.Ref
+	for c := range 30 {
+		changing := f.file("changing", fmt.Sprint("v", c))
+		f.commit("world", f.tree(sharedDir, changing), false)
+
+		if c == 0 {
+			require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+		}
+
+		if c < 29 {
+			onlyRetired = append(onlyRetired, changing.Ref)
+		}
+
+		f.advance(time.Hour)
+	}
+
+	clear(f.store.read)
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(400*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 29, n)
+
+	require.LessOrEqual(t, f.store.read[string(sharedDir.Ref.Hash)], 2, "once among the retired, once among the live")
+
+	for _, ref := range onlyRetired {
+		held, err := f.x.client.SetRef.Query().Where(setref.Ref(ref.Hash)).Exist(f.ctx)
+		require.NoError(t, err)
+		require.False(t, held, "a file only retired commits reached leaves the set")
+	}
+
+	held, err := f.x.client.SetRef.Query().Where(setref.Ref(shared[0].Ref.Hash)).Exist(f.ctx)
+	require.NoError(t, err)
+	require.True(t, held, "a file the live commit reaches stays")
 }

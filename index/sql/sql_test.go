@@ -47,12 +47,13 @@ type memStore struct {
 	leases     []*proto.Ref
 	flushed    int
 	flushErr   error
-	// asked counts the Has calls for each ref
+	// asked counts the Has calls for each ref, and read the Get calls
 	asked map[string]int
+	read  map[string]int
 }
 
 func newMemStore() *memStore {
-	return &memStore{objects: map[string]*proto.Object{}, tombstones: map[string]struct{}{}, erased: map[string]struct{}{}, asked: map[string]int{}}
+	return &memStore{objects: map[string]*proto.Object{}, tombstones: map[string]struct{}{}, erased: map[string]struct{}{}, asked: map[string]int{}, read: map[string]int{}}
 }
 
 func (m *memStore) Erase(ctx context.Context, ref *proto.Ref) error {
@@ -79,6 +80,7 @@ func (m *memStore) Put(_ context.Context, obj *proto.Object) error {
 func (m *memStore) Get(_ context.Context, ref *proto.Ref) (*proto.Object, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.read[string(ref.Hash)]++
 	obj, ok := m.objects[string(ref.Hash)]
 	if !ok {
 		return nil, backup.ErrNotFound
