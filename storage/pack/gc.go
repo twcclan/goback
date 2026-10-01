@@ -236,7 +236,10 @@ type gcRun struct {
 
 	archives map[string]*gcArchive
 	order    []*gcArchive
-	erased   []refKey
+	// pending are the finalized archives of live sessions that have not
+	// committed, read for the un-tombstones a committing session wrote
+	pending []*archive
+	erased  []refKey
 	visited  *visitedSet
 	runDir   string
 	resumed  int
@@ -502,6 +505,13 @@ func scanArchive(a *archive, fn func(pos int, rec *IndexRecord) error, count *in
 // takeSnapshot fixes the set of committed archives this generation covers
 // and loads their indexes and previous mark results.
 func (r *gcRun) takeSnapshot() error {
+	// listed first: a session that commits after this is either live here
+	// or has its archives committed in the snapshot
+	live, err := r.liveSessions()
+	if err != nil {
+		return errors.Wrap(err, "listing sessions")
+	}
+
 	if err := r.ps.refreshArchives(); err != nil {
 		return errors.Wrap(err, "catching up with the storage's archives")
 	}
@@ -511,10 +521,15 @@ func (r *gcRun) takeSnapshot() error {
 	for _, a := range r.ps.archives {
 		a.mtx.RLock()
 		committed := a.readOnly && a.state == ArchiveCommitted
+		pending := a.readOnly && a.state == ArchivePending && live[a.session]
 		a.mtx.RUnlock()
 
 		if committed {
 			archives = append(archives, a)
+		}
+
+		if pending {
+			r.pending = append(r.pending, a)
 		}
 	}
 	r.ps.mtx.RUnlock()
@@ -615,10 +630,39 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		}
 	}
 
-	for _, t := range r.tombstones {
-		if untombed, ok := tombOf[t.target]; ok && !r.untombed[untombed] {
+	takeBack := func(tomb refKey) {
+		if untombed, ok := tombOf[tomb]; ok && !r.untombed[untombed] {
 			r.untombed[untombed] = true
 			r.roots = append(r.roots, r.root(untombed[:]))
+		}
+	}
+
+	for _, t := range r.tombstones {
+		takeBack(t.target)
+	}
+
+	// a session commits only after copying what it relies on, so its
+	// un-tombstones stay its own until then; they keep what they take
+	// back from the moment they are written
+	for _, a := range r.pending {
+		err := scanArchive(a, func(_ int, rec *IndexRecord) error {
+			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
+				return nil
+			}
+
+			hdr, err := a.readHeader(rec)
+			if err != nil {
+				return errors.Wrapf(err, "reading tombstone %x in %s", rec.Sum, a.name)
+			}
+
+			if hdr.TombstoneFor != nil {
+				takeBack(keyOf(hdr.TombstoneFor.Hash))
+			}
+
+			return nil
+		}, nil, nil)
+		if err != nil && !notExist(err) {
+			return errors.Wrapf(err, "reading index of %s", a.name)
 		}
 	}
 

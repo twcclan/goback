@@ -9,6 +9,10 @@ import (
 	"github.com/twcclan/goback/proto"
 )
 
+// commitAfterResurrect, when set, runs between a commit's resurrection
+// and its end marker; tests use it to interleave collections.
+var commitAfterResurrect func()
+
 // resurrect protects what a committing session relied on without storing
 // it. It takes back the tombstones of every ref the session's objects
 // reference outside its own archives, and when a collection sealed
@@ -20,19 +24,17 @@ func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *
 		return err
 	}
 
-	// the un-tombstones are committed before the seals are read, so a
-	// collection either reads them or sealed before
-	untombs := newWriteSession(nil)
+	// the un-tombstones are stored before the seals are read, so a
+	// collection either reads them or sealed before; they stay the
+	// session's, so no other session relies on them before the copies
+	// below are made
 	for _, ref := range skipped {
-		err := ps.withWritableArchive(ctx, untombs, func(a *archive) error {
-			return a.putTombstone(ctx, proto.TombstoneRef(ref), false)
-		})
-		if err != nil {
+		if err := ps.putTombstone(ctx, ws, proto.TombstoneRef(ref), false); err != nil {
 			return fmt.Errorf("taking back the tombstones of what session %s relied on: %w", ws.id, err)
 		}
 	}
 
-	if err := ps.flushSession(untombs); err != nil {
+	if err := ps.flushSession(ws); err != nil {
 		return err
 	}
 

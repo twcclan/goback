@@ -466,7 +466,19 @@ func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, ref *proto.
 	}
 
 	if err := ps.resurrect(ctx, ws, ref); err != nil {
+		// what the session relied on is gone, so it can never commit; once
+		// it has ended, marks no longer keep what its un-tombstones take back
+		if errors.Is(err, backup.ErrSessionLost) {
+			if endErr := ps.endSession(ws.id); endErr != nil {
+				ps.logger.Warn("ending a session that lost objects failed", "session", ws.id, "err", endErr)
+			}
+		}
+
 		return err
+	}
+
+	if commitAfterResurrect != nil {
+		commitAfterResurrect()
 	}
 
 	outcome, err := ps.markEnded(ws.id, sessionCommitted)
@@ -640,9 +652,42 @@ func (ps *PackStorage) tombstone(ctx context.Context, ref *proto.Ref, erase bool
 		return err
 	}
 
-	return ps.withWritableArchive(ctx, ws, func(a *archive) error {
-		return a.putTombstone(ctx, ref, erase)
+	return ps.putTombstone(ctx, ws, ref, erase)
+}
+
+// putTombstone writes a tombstone of ref into the session's archive and,
+// as put does for objects, waits for its row in a claimed archive.
+func (ps *PackStorage) putTombstone(ctx context.Context, ws *writeSession, ref *proto.Ref, erase bool) error {
+	var (
+		claimed *archive
+		indexed chan error
+	)
+
+	err := ps.withWritableArchive(ctx, ws, func(a *archive) error {
+		if err := a.putTombstone(ctx, ref, erase); err != nil {
+			return err
+		}
+
+		if a.rows != nil {
+			if record := a.indexLocation(proto.TombstoneRef(ref)); record != nil {
+				claimed, indexed = a, a.rows.enqueue(*record)
+			}
+		}
+
+		return nil
 	})
+	if err != nil || claimed == nil {
+		return err
+	}
+
+	err = claimed.rows.wait(indexed)
+	if lapsed(err) {
+		_ = ps.finalizeArchive(claimed)
+
+		return fmt.Errorf("%w: %w", backup.ErrSessionLost, err)
+	}
+
+	return err
 }
 
 // WalkHeaders implements backup.HeaderWalker over the committed archives.

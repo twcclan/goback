@@ -34,7 +34,8 @@ CONSTANTS
     Pipelined,   \* one mark confirms the previous generation and condemns for the next
     SealScope,   \* a committing session only re-checks seals written after it began
     SkipUntombRoots, \* mutation: a pipelined mark does not keep what un-tombstones take back
-    TombsNewer   \* a pipelined condemnation checks its tombstones are newer than the snapshot's copies
+    TombsNewer,  \* a pipelined condemnation checks its tombstones are newer than the snapshot's copies
+    SkipPendingRoots \* mutation: a mark ignores the un-tombstones of sessions that have not committed
 
 None == "none"
 
@@ -140,7 +141,7 @@ Untomb(s) ==
     /\ phase[s] = "active"
     /\ phase' = [phase EXCEPT ![s] = "untombed"]
     /\ \E ver \in [dedup[s] -> NewVersions] :
-         /\ records' = records \cup {Record("untomb", o, ver[o], s, None) : o \in dedup[s]}
+         /\ records' = records \cup {Record("untomb", o, ver[o], s, s) : o \in dedup[s]}
          /\ clock' = IF dedup[s] = {} THEN clock ELSE
                        LET top == CHOOSE v \in {ver[o] : o \in dedup[s]} : \A o \in dedup[s] : ver[o] <= v
                        IN IF top > clock THEN top ELSE clock
@@ -336,7 +337,10 @@ RewriterCrash(w) ==
    condemned and condemns for the next; un-tombstones carry no writer, so
    every one keeps what it takes back *)
 
-Untombs == {r \in Committed : r.kind = "untomb"}
+\* un-tombstones stay their session's until it commits, so no other session
+\* relies on them before its copies are made; marks keep what they take back
+\* from the moment they are written
+Untombs == {r \in IF SkipPendingRoots THEN Committed ELSE records : r.kind = "untomb"}
 
 PMark(m) ==
     LET kept == IF SkipUntombRoots THEN {} ELSE Closure({u.obj : u \in Untombs})
