@@ -672,10 +672,18 @@ func (x *Index) restoreLeases(ctx context.Context) (map[string]bool, error) {
 // retireBatch is how many commits one retiring transaction takes.
 const retireBatch = 500
 
-// writeTombstones writes the tombstones of retired commits under their row
+// writeTombstones claims retired commits in deleted_refs under their row
 // locks, passing over those a pin, an undelete or another run got to
-// first, and returns the ones it wrote.
+// first, then writes their tombstones, and returns the commits it wrote.
+// A claimed commit whose tombstone failed is written by the next run.
 func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now time.Time) ([]*ent.CommitRow, error) {
+	_, canErase := storeAs[backup.Eraser](x.ObjectStore)
+	for _, c := range due {
+		if c.Edges.Set.Erase && !canErase {
+			return nil, fmt.Errorf("store %T cannot erase commit %x", x.ObjectStore, c.Ref)
+		}
+	}
+
 	var written []*ent.CommitRow
 
 	for start := 0; start < len(due); start += retireBatch {
@@ -720,10 +728,6 @@ func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now t
 					continue
 				}
 
-				if err := x.tombstone(ctx, c.Ref, c.Edges.Set.Erase); err != nil {
-					return err
-				}
-
 				deleted = append(deleted, c.Ref)
 				done = append(done, c)
 			}
@@ -737,7 +741,14 @@ func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now t
 			return nil, err
 		}
 
-		written = append(written, done...)
+		// a tombstone goes out only for a commit the database has given up
+		for _, c := range done {
+			if err := x.tombstone(ctx, c.Ref, c.Edges.Set.Erase); err != nil {
+				return nil, err
+			}
+
+			written = append(written, c)
+		}
 	}
 
 	return written, nil

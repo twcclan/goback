@@ -987,3 +987,28 @@ func TestATombstoneYieldsToWhatChangedAfterTheCommitFellDue(t *testing.T) {
 	require.False(t, f.store.tombstoned(pinned))
 	require.False(t, f.store.tombstoned(extended))
 }
+
+func TestATombstoneTheStoreRefusedIsWrittenByTheNextRun(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "two")), false)
+
+	later := f.clock.Add(15 * 24 * time.Hour)
+
+	f.store.deleteErr = errors.New("bucket unreachable")
+	_, err := f.x.Retire(f.ctx, later)
+	require.ErrorIs(t, err, f.store.deleteErr)
+	require.False(t, f.store.tombstoned(a))
+	require.True(t, f.deleted(f.x, a), "the commit is spoken for before its tombstone goes out")
+	require.ErrorIs(t, f.x.UndeleteCommit(f.ctx, a), backup.ErrTombstoned)
+
+	f.store.deleteErr = nil
+	n, err := f.x.Retire(f.ctx, later)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.True(t, f.store.tombstoned(a))
+	require.NotNil(t, f.commitRow(a).TombstonedAt)
+}

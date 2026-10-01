@@ -47,6 +47,7 @@ type memStore struct {
 	leases     []*proto.Ref
 	flushed    int
 	flushErr   error
+	deleteErr  error
 	// asked counts the Has calls for each ref, and read the Get calls
 	asked map[string]int
 	read  map[string]int
@@ -99,6 +100,9 @@ func (m *memStore) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 func (m *memStore) Delete(_ context.Context, ref *proto.Ref) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	m.tombstones[string(ref.Hash)] = struct{}{}
 	return nil
 }
