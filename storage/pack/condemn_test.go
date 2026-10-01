@@ -173,3 +173,64 @@ func TestCollectDropsOnlyCopiesOlderThanTheTombstone(t *testing.T) {
 	require.True(t, run.droppable(ga, unmarked, 0, older))
 	require.False(t, run.droppable(ga, unmarked, 0, newer))
 }
+
+func TestCollectWaitsBeforeTheMarkThatConfirms(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	blobs := makeTestData(t, 40)
+	putAll(t, store, makeChain(blobs[20:]))
+
+	chain := makeChain(blobs[:20])
+	commit := chain[len(chain)-1]
+	putAll(t, store, chain[:len(chain)-1])
+
+	sctx, _ := beginSession(t, store, "agent-a")
+	requirePresent(t, store, chain[:len(chain)-1], true)
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	// the session commits what it deduplicated while the next mark runs
+	gcAfterBatch = func(int) error {
+		gcAfterBatch = nil
+		return store.Put(sctx, commit)
+	}
+	t.Cleanup(func() { gcAfterBatch = nil })
+
+	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	require.NoError(t, err)
+	require.NotEmpty(t, second.SweepSkipped)
+	requireStored(t, store, chain, true)
+
+	_, err = store.Collect(ctx, gcOptions(t, 72*time.Hour))
+	require.NoError(t, err)
+	requireStored(t, store, chain, true)
+}
+
+func TestCollectWaitsForACommitThatEndedButHasNotReachedTheIndex(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	chain := makeChain(makeTestData(t, 20))
+	putAll(t, store, chain[:len(chain)-1])
+
+	sctx, session := beginSession(t, store, "agent-a")
+	requirePresent(t, store, chain[:len(chain)-1], true)
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	// the commit took its end and stopped before its archives were committed
+	require.NoError(t, store.Put(sctx, makeTestData(t, 1)[0]))
+	require.NoError(t, store.Flush())
+	require.NoError(t, store.storage.CreateNew(session.ID+SessionEndExt, []byte(sessionCommitted)))
+
+	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	require.NoError(t, err)
+	require.NotEmpty(t, second.SweepSkipped)
+	requireStored(t, store, chain[:len(chain)-1], true)
+	require.NoError(t, store.EndSession(sctx))
+}

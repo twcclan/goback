@@ -288,6 +288,10 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 
 	report := &CollectReport{Generation: run.gen}
 
+	// the sessions the previous generation waits for must have ended
+	// before this mark starts, so it sees what they committed
+	blocker := run.sweepBlocker()
+
 	if err := run.takeSnapshot(); err != nil {
 		return nil, err
 	}
@@ -370,7 +374,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	ps.logger.Info("gc marked", "generation", run.gen, "marked", report.Marked, "objects", report.Objects, "archives", report.Archives, "dead", report.DeadObjects, "deadBytes", humanize.Bytes(report.DeadBytes),
 		"mark", markTook.Round(time.Millisecond), "merge", mergeTook.Round(time.Millisecond))
 
-	report.SweepSkipped = run.sweepBlocker()
+	report.SweepSkipped = blocker
 	if report.SweepSkipped == "" {
 		sweepStart := time.Now()
 		if err := run.sweep(ctx, report); err != nil {
@@ -1399,8 +1403,9 @@ func (r *gcRun) horizon() ([]time.Time, []string, error) {
 	return condemned, horizon, nil
 }
 
-// liveSessions are the sessions that began and have not ended, by their
-// markers or by the index, which also knows sessions older than markers.
+// liveSessions are the sessions that began and have not ended. A session
+// the index still holds is live even with an end marker, since its commit
+// may not have reached the index yet.
 func (r *gcRun) liveSessions() (map[string]bool, error) {
 	begun, err := r.ps.markerIDs(SessionBeginExt)
 	if err != nil {
@@ -1417,15 +1422,15 @@ func (r *gcRun) liveSessions() (map[string]bool, error) {
 		return nil, err
 	}
 
-	for _, s := range indexed {
-		begun[s.ID] = true
-	}
-
-	live := make(map[string]bool, len(begun))
+	live := make(map[string]bool, len(begun)+len(indexed))
 	for id := range begun {
 		if !ended[id] {
 			live[id] = true
 		}
+	}
+
+	for _, s := range indexed {
+		live[s.ID] = true
 	}
 
 	return live, nil
