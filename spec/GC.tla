@@ -10,6 +10,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS
     Objects,     \* object hashes
+    Edges,       \* 10 * parent + child: a tree or file references its children
     Sessions,    \* each session runs once
     Maintainers, \* processes that may run maintenance
     Versions,    \* the write versions a record may get
@@ -22,7 +23,8 @@ CONSTANTS
     NoFence,     \* mutation: maintainers ignore the lease
     Resurrect,   \* sessions resurrect at commit instead of being waited out
     SkipSealCheck, \* mutation: a committing session ignores the seal
-    EarlyUntombs \* mutation: the maintainer reads un-tombstones before sealing
+    EarlyUntombs, \* mutation: the maintainer reads un-tombstones before sealing
+    SkipClosure  \* mutation: an un-tombstone keeps its object but not what it references
 
 None == "none"
 
@@ -44,7 +46,13 @@ vars == <<records, clock, phase, refs, roots, gc, lease, cycles, dedup, sealed>>
 \* the maintainer writes tombstones
 Record(kind, o, v, writer, owner) == [kind |-> kind, obj |-> o, ver |-> v, writer |-> writer, owner |-> owner]
 
-Reachable == {p[2] : p \in roots}
+Children(o) == {c \in Objects : 10 * o + c \in Edges}
+
+\* everything a set of objects references, themselves included
+RECURSIVE Closure(_)
+Closure(S) == IF S = {} THEN {} ELSE S \cup Closure(UNION {Children(o) : o \in S})
+
+Reachable == Closure({p[2] : p \in roots})
 
 Committed == {r \in records : r.owner = None}
 
@@ -118,9 +126,10 @@ Untomb(s) ==
     /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed>>
 
 \* after its un-tombstones are written, a session uploads again whatever a
-\* sealed tombstone condemns
+\* sealed tombstone condemns among what it deduplicated and all that
+\* references
 Check(s) ==
-    LET redo == IF SkipSealCheck THEN {} ELSE {o \in dedup[s] : \E t \in sealed : t.obj = o}
+    LET redo == IF SkipSealCheck THEN {} ELSE {o \in Closure(dedup[s]) : \E t \in sealed : t.obj = o}
     IN /\ Resurrect
        /\ phase[s] = "untombed"
        /\ phase' = [phase EXCEPT ![s] = "checked"]
@@ -131,8 +140,10 @@ Check(s) ==
                           IN IF top > clock THEN top ELSE clock
        /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed>>
 
+\* an agent uploads an object only after handling what it references
 Commit(s) ==
     /\ phase[s] = IF Resurrect THEN "checked" ELSE "active"
+    /\ \A r \in records : (r.kind = "copy" /\ r.owner = s /\ r.obj \notin dedup[s]) => Children(r.obj) \subseteq refs[s]
     /\ phase' = [phase EXCEPT ![s] = "committed"]
     /\ records' = {IF r.owner = s THEN [r EXCEPT !.owner = None] ELSE r : r \in records}
     /\ roots' = roots \cup {<<s, o>> : o \in refs[s]}
@@ -227,9 +238,11 @@ Plan(m) ==
     LET g == gc[m]
         tombs == g.tombs \cap records
         untombs == IF EarlyUntombs THEN g.untombs \cap records ELSE {r \in records : r.kind = "untomb"}
+        \* what a live session's un-tombstones take back is a root
+        kept == IF SkipClosure THEN {} ELSE Closure({u.obj : u \in {v \in untombs : v.writer \in g.live}})
         dead == {c \in records :
                     /\ SkipSnapshot \/ c \in g.snap
-                    /\ c.kind = "copy" /\ c.owner = None /\ c.obj \notin g.m2
+                    /\ c.kind = "copy" /\ c.owner = None /\ c.obj \notin g.m2 \cup kept
                     /\ \E t \in tombs : t.obj = c.obj /\ c.ver < t.ver /\ ~Revoked(t, untombs, g.live)}
         spent == {t \in tombs :
                     \/ t.obj \in g.m2
@@ -271,7 +284,7 @@ Spec == Init /\ [][Next]_vars
 
 (* properties *)
 
-Safe == \A p \in roots : \E r \in Committed : r.kind = "copy" /\ r.obj = p[2]
+Safe == \A o \in Reachable : \E r \in Committed : r.kind = "copy" /\ r.obj = o
 
 TypeOK ==
     /\ phase \in [Sessions -> {"new", "active", "untombed", "checked", "committed", "aborted"}]
