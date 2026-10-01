@@ -471,26 +471,6 @@ func (ps *PackStorage) indexLocation(ctx context.Context, ref *proto.Ref) (*arch
 	return nil, nil, nil
 }
 
-// indexLocationExcept finds a committed copy of the ref outside the given
-// archives.
-func (ps *PackStorage) indexLocationExcept(ref *proto.Ref, exclude ...*archive) (*IndexLocation, error) {
-	var exclusions []string
-	for _, archive := range exclude {
-		exclusions = append(exclusions, archive.name)
-	}
-
-	loc, err := ps.index.LocateObject(ref, Scope{}, exclusions...)
-	if err != nil {
-		if errors.Is(err, ErrRecordNotFound) {
-			return nil, nil
-		}
-
-		return nil, err
-	}
-
-	return &loc, nil
-}
-
 // Get implements backup.ObjectStore.
 func (ps *PackStorage) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	ctx, span := tracer.Start(ctx, "PackStorage.Get")
@@ -1114,6 +1094,9 @@ type ArchiveIndex interface {
 	SessionIndex
 
 	LocateObject(ref *proto.Ref, scope Scope, exclude ...string) (IndexLocation, error)
+	// LocateCopies returns every copy the committed archives hold of each
+	// ref, keyed by its hash; a ref none holds is absent.
+	LocateCopies(refs []*proto.Ref) (map[string][]IndexLocation, error)
 	LookupArchive(archive string) (ArchiveInfo, bool, error)
 	// IndexArchive registers an archive; a pending one needs a live session.
 	IndexArchive(archive ArchiveInfo, index IndexFile) error

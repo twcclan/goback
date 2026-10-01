@@ -260,6 +260,51 @@ func TestPackCompaction(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
+func TestParallelCompactionKeepsOneCopyOfAnObjectSeveralArchivesHold(t *testing.T) {
+	index := NewInMemoryIndex()
+
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(t.TempDir())),
+		WithArchiveIndex(index),
+		WithMaxSize(64<<20),
+		WithCompaction(CompactionConfig{Workers: 4}),
+	)
+	require.NoError(t, err)
+
+	objects := makeTestData(t, numObjects)
+	for range 3 {
+		for _, object := range objects {
+			require.NoError(t, store.Put(context.Background(), object))
+		}
+
+		require.NoError(t, store.Flush())
+	}
+
+	refs := make([]*proto.Ref, len(objects))
+	for i, object := range objects {
+		refs[i] = object.Ref()
+	}
+
+	before, err := index.LocateCopies(refs)
+	require.NoError(t, err)
+	require.Greater(t, len(before[string(refs[0].Hash)]), 1, "the test needs objects held more than once")
+
+	require.NoError(t, store.doCompaction())
+
+	after, err := index.LocateCopies(refs)
+	require.NoError(t, err)
+
+	for i, ref := range refs {
+		require.Len(t, after[string(ref.Hash)], 1, "object %d", i)
+
+		object, err := store.Get(context.Background(), ref)
+		require.NoError(t, err)
+		require.Equal(t, objects[i].Bytes(), object.Bytes())
+	}
+
+	require.NoError(t, store.Close())
+}
+
 var benchRnd = rand.New(rand.NewSource(0))
 
 type Opener interface {

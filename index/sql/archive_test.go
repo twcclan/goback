@@ -20,6 +20,10 @@ func TestArchiveIndexExclusion(t *testing.T) {
 	packtest.TestArchiveIndexExclusion(t, openIndex(t, newMemStore()))
 }
 
+func TestArchiveIndexCopies(t *testing.T) {
+	packtest.TestArchiveIndexCopies(t, openIndex(t, newMemStore()))
+}
+
 func TestArchiveIndexSessions(t *testing.T) {
 	packtest.TestArchiveIndexSessions(t, openIndex(t, newMemStore()))
 }

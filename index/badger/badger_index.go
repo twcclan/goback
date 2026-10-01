@@ -216,6 +216,53 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...
 	return location, txErr
 }
 
+// LocateCopies implements pack.ArchiveIndex.
+func (b *BadgerIndex) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation, error) {
+	copies := make(map[string][]pack.IndexLocation)
+
+	err := b.db.View(func(txn *badger.Txn) error {
+		for _, ref := range refs {
+			iterator := txn.NewIterator(badger.IteratorOptions{PrefetchValues: true, Prefix: b.recordPrefix(ref.Hash)})
+
+			for iterator.Seek(nil); iterator.Valid(); iterator.Next() {
+				value := &badgerValue{}
+				err := iterator.Item().Value(func(val []byte) error {
+					return binary.Read(bytes.NewReader(val), badgerIndexEndianness, value)
+				})
+				if err != nil {
+					iterator.Close()
+					return err
+				}
+
+				key := iterator.Item().Key()
+				id := badgerIndexEndianness.Uint64(key[len(key)-8:])
+
+				b.archivesMtx.RLock()
+				info := b.archiveInfos[id]
+				b.archivesMtx.RUnlock()
+
+				if !(pack.Scope{}).Visible(info) {
+					continue
+				}
+
+				location := pack.IndexLocation{
+					Archive: info.Name,
+					Record:  pack.IndexRecord{Offset: value.Offset, Length: value.Length, Type: value.Type},
+				}
+				copy(location.Record.Sum[:], ref.Hash)
+
+				copies[string(ref.Hash)] = append(copies[string(ref.Hash)], location)
+			}
+
+			iterator.Close()
+		}
+
+		return nil
+	})
+
+	return copies, err
+}
+
 func (b *BadgerIndex) loadArchives() error {
 	return b.db.View(func(txn *badger.Txn) error {
 		prefix := []byte(prefixArchive)

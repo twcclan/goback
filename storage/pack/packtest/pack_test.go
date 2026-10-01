@@ -12,6 +12,10 @@ func TestInMemoryIndex(t *testing.T) {
 	TestArchiveIndex(t, index)
 }
 
+func TestInMemoryIndexCopies(t *testing.T) {
+	TestArchiveIndexCopies(t, pack.NewInMemoryIndex())
+}
+
 func TestInMemoryIndexSessions(t *testing.T) {
 	TestArchiveIndexSessions(t, pack.NewInMemoryIndex())
 }

@@ -46,6 +46,34 @@ func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string
 	return m.Location(row), nil
 }
 
+// LocateCopies implements pack.ArchiveIndex.
+func (x *Index) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLocation, error) {
+	ctx := context.Background()
+	copies := make(map[string][]pack.IndexLocation)
+
+	for start := 0; start < len(refs); start += objectBatch {
+		chunk := refs[start:min(start+objectBatch, len(refs))]
+
+		hashes := make([][]byte, len(chunk))
+		for i, ref := range chunk {
+			hashes[i] = ref.Hash
+		}
+
+		rows, err := x.client.Object.Query().
+			Where(object.RefIn(hashes...), object.HasArchiveWith(archive.State(int(pack.ArchiveCommitted)))).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, row := range rows {
+			copies[string(row.Ref)] = append(copies[string(row.Ref)], m.Location(row))
+		}
+	}
+
+	return copies, nil
+}
+
 // LookupArchive implements pack.ArchiveIndex.
 func (x *Index) LookupArchive(name string) (pack.ArchiveInfo, bool, error) {
 	row, err := x.client.Archive.Get(context.Background(), name)

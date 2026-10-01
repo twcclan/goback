@@ -76,6 +76,31 @@ outer:
 	return IndexLocation{}, ErrRecordNotFound
 }
 
+// LocateCopies implements pack.ArchiveIndex.
+func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref) (map[string][]IndexLocation, error) {
+	i.mtx.RLock()
+	defer i.mtx.RUnlock()
+
+	copies := make(map[string][]IndexLocation)
+
+	for _, ref := range refs {
+		var sum [proto.HashSize]byte
+		copy(sum[:], ref.Hash)
+
+		for archive, records := range i.index {
+			if !(Scope{}).Visible(i.archives[archive]) {
+				continue
+			}
+
+			if record, ok := records[sum]; ok {
+				copies[string(ref.Hash)] = append(copies[string(ref.Hash)], IndexLocation{Archive: archive, Record: record})
+			}
+		}
+	}
+
+	return copies, nil
+}
+
 // LookupArchive implements pack.ArchiveIndex.
 func (i *InMemoryIndex) LookupArchive(archive string) (ArchiveInfo, bool, error) {
 	i.mtx.RLock()

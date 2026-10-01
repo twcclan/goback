@@ -78,6 +78,10 @@ func TestBadgerIndexExclusion(t *testing.T) {
 	packtest.TestArchiveIndexExclusion(t, idx)
 }
 
+func TestBadgerIndexCopies(t *testing.T) {
+	packtest.TestArchiveIndexCopies(t, setupBadger(t))
+}
+
 func BenchmarkLookup(b *testing.B) {
 	idx := setupBadger(b)
 

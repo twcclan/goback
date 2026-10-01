@@ -97,6 +97,9 @@ type CompactionConfig struct {
 	// MinimumCandidates is how many eligible archives Compact needs before
 	// it rewrites them.
 	MinimumCandidates int
+	// Workers is how many archives a rewrite, by Compact or Collect, reads
+	// at once, each into its own output; zero means GOMAXPROCS.
+	Workers int
 }
 
 // WithCompaction tunes Compact.
