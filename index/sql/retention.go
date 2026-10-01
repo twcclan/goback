@@ -510,21 +510,17 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 
-	var written []*ent.CommitRow
+	var eligible []*ent.CommitRow
 
 	for _, c := range due {
-		if held[string(c.Ref)] || pinned[string(c.Ref)] {
-			continue
+		if !held[string(c.Ref)] && !pinned[string(c.Ref)] {
+			eligible = append(eligible, c)
 		}
+	}
 
-		done, err := x.writeTombstone(ctx, c.Ref, now, c.Edges.Set.Erase)
-		if err != nil {
-			return 0, err
-		}
-
-		if done {
-			written = append(written, c)
-		}
+	written, err := x.writeTombstones(ctx, eligible, now)
+	if err != nil {
+		return 0, err
 	}
 
 	// rows say tombstoned only once the tombstones are durable, so a crash
@@ -539,12 +535,19 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 	sets := make(map[int64][][]byte)
 
 	for _, c := range written {
-		if err := x.markTombstoned(ctx, c.Ref, now); err != nil {
-			return count, err
-		}
-
-		count++
 		sets[c.SetID] = append(sets[c.SetID], c.Ref)
+	}
+
+	for setID, refs := range sets {
+		for start := 0; start < len(refs); start += retireBatch {
+			chunk := refs[start:min(start+retireBatch, len(refs))]
+
+			if err := x.markTombstoned(ctx, setID, chunk, now); err != nil {
+				return count, err
+			}
+
+			count += len(chunk)
+		}
 	}
 
 	for setID, refs := range sets {
@@ -639,89 +642,147 @@ func (x *Index) restoreLeases(ctx context.Context) (map[string]bool, error) {
 	return held, nil
 }
 
-// writeTombstone writes the tombstone of one retired commit under its row
-// lock, unless a pin, an undelete or another run got there first.
-func (x *Index) writeTombstone(ctx context.Context, ref []byte, now time.Time, erase bool) (bool, error) {
-	var written bool
+// retireBatch is how many commits one retiring transaction takes.
+const retireBatch = 500
 
-	err := x.tx(ctx, func(tx *ent.Tx) error {
-		row, err := forUpdate(x, tx.CommitRow.Query().Where(commitrow.Ref(ref))).Only(ctx)
-		if ent.IsNotFound(err) || (err == nil && row.TombstonedAt != nil) {
-			return nil
+// writeTombstones writes the tombstones of retired commits under their row
+// locks, passing over those a pin, an undelete or another run got to
+// first, and returns the ones it wrote.
+func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now time.Time) ([]*ent.CommitRow, error) {
+	var written []*ent.CommitRow
+
+	for start := 0; start < len(due); start += retireBatch {
+		chunk := due[start:min(start+retireBatch, len(due))]
+
+		refs := make([][]byte, len(chunk))
+		for i, c := range chunk {
+			refs[i] = c.Ref
 		}
 
-		if err != nil {
-			return err
-		}
+		var done []*ent.CommitRow
 
-		pinned, err := tx.Pin.Query().Where(pin.Target(ref), pin.DeletedAtIsNil()).Exist(ctx)
-		if err != nil {
-			return err
-		}
+		err := x.tx(ctx, func(tx *ent.Tx) error {
+			done = nil
 
-		if pinned || row.ExpiresAt == nil || row.ExpiresAt.After(now) {
-			return nil
-		}
-
-		if erase {
-			eraser, ok := storeAs[backup.Eraser](x.ObjectStore)
-			if !ok {
-				return fmt.Errorf("store %T cannot erase commit %x", x.ObjectStore, ref)
+			// row order, so that two runs lock in the same order
+			rows, err := forUpdate(x, tx.CommitRow.Query().Where(commitrow.RefIn(refs...)).Order(ent.Asc(commitrow.FieldID))).All(ctx)
+			if err != nil {
+				return err
 			}
 
-			err = eraser.Erase(ctx, &proto.Ref{Hash: ref})
-		} else {
-			err = x.ObjectStore.Delete(ctx, &proto.Ref{Hash: ref})
-		}
+			current := make(map[string]*ent.CommitRow, len(rows))
+			for _, row := range rows {
+				current[string(row.Ref)] = row
+			}
 
+			pins, err := tx.Pin.Query().Where(pin.TargetIn(refs...), pin.DeletedAtIsNil()).Select(pin.FieldTarget).All(ctx)
+			if err != nil {
+				return err
+			}
+
+			pinned := make(map[string]bool, len(pins))
+			for _, p := range pins {
+				pinned[string(p.Target)] = true
+			}
+
+			var deleted [][]byte
+
+			for _, c := range chunk {
+				row := current[string(c.Ref)]
+				if row == nil || row.TombstonedAt != nil || pinned[string(c.Ref)] || row.ExpiresAt == nil || row.ExpiresAt.After(now) {
+					continue
+				}
+
+				if err := x.tombstone(ctx, c.Ref, c.Edges.Set.Erase); err != nil {
+					return err
+				}
+
+				deleted = append(deleted, c.Ref)
+				done = append(done, c)
+			}
+
+			// deleted_refs names the commits from here on, so no undelete or
+			// pin slips in while the tombstones are on their way to the
+			// archives
+			return recordDeleted(ctx, tx.Client(), deleted, now)
+		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		// deleted_refs names the commit from here on, so no undelete or pin
-		// slips in while the tombstone is on its way to the archives
-		err = recordDeleted(ctx, tx.Client(), ref, now)
-		if err != nil {
-			return err
-		}
+		written = append(written, done...)
+	}
 
-		written = true
-
-		return nil
-	})
-
-	return written, err
+	return written, nil
 }
 
-// markTombstoned records a durable tombstone on the commit's row and drops
-// the commit ref from what the store's sets reach.
-func (x *Index) markTombstoned(ctx context.Context, ref []byte, now time.Time) error {
+// tombstone writes the commit's tombstone, erasing it when its set says
+// so.
+func (x *Index) tombstone(ctx context.Context, ref []byte, erase bool) error {
+	if !erase {
+		return x.ObjectStore.Delete(ctx, &proto.Ref{Hash: ref})
+	}
+
+	eraser, ok := storeAs[backup.Eraser](x.ObjectStore)
+	if !ok {
+		return fmt.Errorf("store %T cannot erase commit %x", x.ObjectStore, ref)
+	}
+
+	return eraser.Erase(ctx, &proto.Ref{Hash: ref})
+}
+
+// markTombstoned records durable tombstones on the rows of the set's
+// commits and drops the commit refs from what the store's sets reach.
+func (x *Index) markTombstoned(ctx context.Context, setID int64, refs [][]byte, now time.Time) error {
 	return x.tx(ctx, func(tx *ent.Tx) error {
-		_, tombstoned, err := x.lockCommit(ctx, tx, ref)
-		if err != nil || tombstoned {
+		if _, err := x.lockSet(ctx, tx, setID); err != nil {
 			return err
 		}
 
-		err = tx.CommitRow.Update().Where(commitrow.Ref(ref)).SetTombstonedAt(now).ClearPresence().Exec(ctx)
+		rows, err := forUpdate(x, tx.CommitRow.Query().
+			Where(commitrow.RefIn(refs...), commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).
+			Order(ent.Asc(commitrow.FieldID))).All(ctx)
 		if err != nil {
 			return err
 		}
 
-		err = recordDeleted(ctx, tx.Client(), ref, now)
+		if len(rows) == 0 {
+			return nil
+		}
+
+		marked := make([][]byte, len(rows))
+		for i, row := range rows {
+			marked[i] = row.Ref
+		}
+
+		err = tx.CommitRow.Update().Where(commitrow.RefIn(marked...)).SetTombstonedAt(now).ClearPresence().Exec(ctx)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.SetRef.Delete().Where(setref.Ref(ref)).Exec(ctx)
+		if err := recordDeleted(ctx, tx.Client(), marked, now); err != nil {
+			return err
+		}
+
+		_, err = tx.SetRef.Delete().Where(setref.RefIn(marked...)).Exec(ctx)
 
 		return err
 	})
 }
 
-// recordDeleted adds a ref to deleted_refs, the durable set of refs a
+// recordDeleted adds refs to deleted_refs, the durable set of refs a
 // tombstone names.
-func recordDeleted(ctx context.Context, c *ent.Client, ref []byte, at time.Time) error {
-	return ignoreNoRows(c.DeletedRef.Create().SetRef(ref).SetTombstonedAt(at).OnConflict().DoNothing().Exec(ctx))
+func recordDeleted(ctx context.Context, c *ent.Client, refs [][]byte, at time.Time) error {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	rows := make([]*ent.DeletedRefCreate, len(refs))
+	for i, ref := range refs {
+		rows[i] = c.DeletedRef.Create().SetRef(ref).SetTombstonedAt(at)
+	}
+
+	return ignoreNoRows(c.DeletedRef.CreateBulk(rows...).OnConflict().DoNothing().Exec(ctx))
 }
 
 // isDeleted reports whether a tombstone names the ref.

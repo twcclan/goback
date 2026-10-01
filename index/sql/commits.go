@@ -882,7 +882,7 @@ func (x *Index) applyTombstone(ctx context.Context, ref []byte, at time.Time) (i
 	err := x.tx(ctx, func(tx *ent.Tx) error {
 		c := tx.Client()
 
-		err := recordDeleted(ctx, c, ref, at)
+		err := recordDeleted(ctx, c, [][]byte{ref}, at)
 		if err != nil {
 			return err
 		}

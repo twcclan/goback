@@ -915,8 +915,10 @@ func TestRetiringCommitsThatShareADirectoryReadsItOnce(t *testing.T) {
 
 	sharedDir := f.dir("shared", shared...)
 
+	commits := retireBatch + 30
+
 	var onlyRetired []*proto.Ref
-	for c := range 30 {
+	for c := range commits {
 		changing := f.file("changing", fmt.Sprint("v", c))
 		f.commit("world", f.tree(sharedDir, changing), false)
 
@@ -924,7 +926,7 @@ func TestRetiringCommitsThatShareADirectoryReadsItOnce(t *testing.T) {
 			require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
 		}
 
-		if c < 29 {
+		if c < commits-1 {
 			onlyRetired = append(onlyRetired, changing.Ref)
 		}
 
@@ -935,7 +937,7 @@ func TestRetiringCommitsThatShareADirectoryReadsItOnce(t *testing.T) {
 
 	n, err := f.x.Retire(f.ctx, f.clock.Add(400*24*time.Hour))
 	require.NoError(t, err)
-	require.Equal(t, 29, n)
+	require.Equal(t, commits-1, n)
 
 	require.LessOrEqual(t, f.store.read[string(sharedDir.Ref.Hash)], 2, "once among the retired, once among the live")
 
@@ -948,4 +950,40 @@ func TestRetiringCommitsThatShareADirectoryReadsItOnce(t *testing.T) {
 	held, err := f.x.client.SetRef.Query().Where(setref.Ref(shared[0].Ref.Hash)).Exist(f.ctx)
 	require.NoError(t, err)
 	require.True(t, held, "a file the live commit reaches stays")
+}
+
+// A pin or a longer window that arrives after Retire found its commits due
+// still holds the commit when its tombstone would be written.
+func TestATombstoneYieldsToWhatChangedAfterTheCommitFellDue(t *testing.T) {
+	f := newFixture(t)
+
+	pinned := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	extended := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "three")), false)
+
+	later := f.clock.Add(400 * 24 * time.Hour)
+
+	due, err := f.x.client.CommitRow.Query().
+		Where(commitrow.RefIn(pinned.Hash, extended.Hash)).WithSet().All(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, due, 2)
+
+	_, err = f.pin(pinned)
+	require.NoError(t, err)
+
+	// the pin alone has to hold it, whatever its row says
+	require.NoError(t, f.x.client.CommitRow.Update().Where(commitrow.Ref(pinned.Hash)).
+		SetExpiresAt(f.clock).Exec(f.ctx))
+
+	require.NoError(t, f.x.client.CommitRow.Update().Where(commitrow.Ref(extended.Hash)).
+		SetExpiresAt(later.Add(time.Hour)).Exec(f.ctx))
+
+	written, err := f.x.writeTombstones(f.ctx, due, later)
+	require.NoError(t, err)
+	require.Empty(t, written)
+	require.False(t, f.store.tombstoned(pinned))
+	require.False(t, f.store.tombstoned(extended))
 }
