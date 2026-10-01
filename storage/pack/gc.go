@@ -295,7 +295,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
-	pending, err := ps.planGenerations()
+	pending, err := ps.PendingPlans()
 	if err != nil {
 		return nil, errors.Wrap(err, "listing published plans")
 	}

@@ -33,9 +33,9 @@ func planName(generation uint64) string {
 	return fmt.Sprintf("%020d%s", generation, PlanExt)
 }
 
-// planGenerations lists the generations whose plan is still pending,
-// oldest first.
-func (ps *PackStorage) planGenerations() ([]uint64, error) {
+// PendingPlans lists the generations whose published plan RewritePlan has
+// not run yet, oldest first.
+func (ps *PackStorage) PendingPlans() ([]uint64, error) {
 	names, err := ps.storage.List(PlanExt)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (ps *PackStorage) RewritePlan(ctx context.Context) (*RewriteReport, error) 
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
-	generations, err := ps.planGenerations()
+	generations, err := ps.PendingPlans()
 	if err != nil {
 		return nil, err
 	}

@@ -51,6 +51,8 @@ require (
 	modernc.org/sqlite v1.57.0
 )
 
+require cloud.google.com/go/run v1.23.0 // indirect
+
 require (
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go v0.123.0 // indirect
