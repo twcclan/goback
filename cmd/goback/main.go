@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/maintain"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
 	"github.com/twcclan/goback/cmd/goback/commands/pin"
+	"github.com/twcclan/goback/cmd/goback/commands/postgres"
 	"github.com/twcclan/goback/cmd/goback/commands/repair"
 	"github.com/twcclan/goback/cmd/goback/commands/scrub"
 	"github.com/twcclan/goback/cmd/goback/commands/server"
@@ -41,6 +42,7 @@ func main() {
 		maintain.Command,
 		object.Command,
 		pin.Command,
+		postgres.Command,
 		repair.Command,
 		scrub.Command,
 		server.Command,
