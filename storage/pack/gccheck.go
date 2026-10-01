@@ -90,20 +90,34 @@ func (r *gcRun) confirmDrops(ctx context.Context) error {
 	defer live.close()
 	defer os.RemoveAll(check.runDir)
 
-	var reachable []string
+	dropped := make(map[refKey][]string)
+	kept := make(map[refKey]bool)
 
 	err = check.scan(live, func(ga *gcArchive, pos int, rec *IndexRecord, _ []Attribution, _ uint64) {
-		planned := r.archives[ga.a.name]
-		if planned == nil || proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
+		if proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
 			return
 		}
 
-		if r.droppable(planned, planned.next, pos, rec) {
-			reachable = append(reachable, fmt.Sprintf("%x in %s", rec.Sum, ga.a.name))
+		key := keyOf(rec.Sum[:])
+
+		planned := r.archives[ga.a.name]
+		if planned == nil || !r.droppable(planned, planned.next, pos, rec) {
+			kept[key] = true
+			return
 		}
+
+		dropped[key] = append(dropped[key], ga.a.name)
 	}, nil)
 	if err != nil {
 		return err
+	}
+
+	var reachable []string
+
+	for key, archives := range dropped {
+		if !kept[key] {
+			reachable = append(reachable, fmt.Sprintf("%x in %v", key, archives))
+		}
 	}
 
 	if len(reachable) == 0 {
