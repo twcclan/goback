@@ -1012,3 +1012,30 @@ func TestATombstoneTheStoreRefusedIsWrittenByTheNextRun(t *testing.T) {
 	require.True(t, f.store.tombstoned(a))
 	require.NotNil(t, f.commitRow(a).TombstonedAt)
 }
+
+// headKeeper records the commits a store is asked to make heads.
+type headKeeper struct {
+	backup.ObjectStore
+	heads []*proto.Ref
+}
+
+func (h *headKeeper) AdvanceHead(commit *proto.Object) error {
+	h.heads = append(h.heads, commit.Ref())
+	return nil
+}
+
+func (h *headKeeper) Unwrap() backup.ObjectStore { return h.ObjectStore }
+
+func TestARebuildPointsEachSetAtItsCommits(t *testing.T) {
+	f := newFixture(t)
+
+	first := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	f.advance(time.Hour)
+	second := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+
+	keeper := &headKeeper{ObjectStore: f.store}
+	y := openIndex(t, keeper)
+	require.NoError(t, y.ReIndex(f.ctx))
+
+	require.ElementsMatch(t, []*proto.Ref{first, second}, keeper.heads)
+}

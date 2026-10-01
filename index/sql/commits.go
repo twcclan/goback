@@ -812,6 +812,12 @@ func (x *Index) ReIndex(ctx context.Context) error {
 			return err
 		}
 
+		if keeper, ok := storeAs[backup.HeadKeeper](x.ObjectStore); ok {
+			if err := keeper.AdvanceHead(obj); err != nil {
+				return err
+			}
+		}
+
 		commit := obj.GetCommit()
 		key := setKey{id: int64(commit.GetSetId())}
 		if key.id == 0 {

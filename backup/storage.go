@@ -41,6 +41,14 @@ var (
 	ErrSessionLost = errors.New("the session lost objects it had stored")
 )
 
+// HeadKeeper is a store that keeps each set's latest complete commit
+// beside its objects, so a restore finds the set without an index.
+type HeadKeeper interface {
+	// AdvanceHead points the commit's set at it, unless the set already
+	// points at one received later.
+	AdvanceHead(commit *proto.Object) error
+}
+
 // References lists the refs an object points at directly: a commit's tree,
 // a tree's nodes and splits, a file's parts, a pin's target.
 func References(obj *proto.Object) []*proto.Ref {

@@ -419,9 +419,15 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 		err := ps.commit(ctx, ws, object.Ref())
 		if err != nil {
 			ps.refuse(ctx, ws, object.Ref(), err)
+
+			return err
 		}
 
-		return err
+		// the commit is durable without its head; a restore without the
+		// index then finds the set's previous one
+		if err := ps.AdvanceHead(object); err != nil {
+			ps.logger.Warn("pointing the set at its new commit failed", "commit", fmt.Sprintf("%x", object.Ref().Hash), "err", err)
+		}
 	}
 
 	return nil
@@ -432,6 +438,15 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 // it in an archive. The tombstone goes beside the record, in the session's
 // own archive, so the two are kept or dropped together.
 func (ps *PackStorage) refuse(ctx context.Context, ws *writeSession, ref *proto.Ref, cause error) {
+	// a session that ended took the record with its archives
+	ps.sessionsMtx.Lock()
+	_, live := ps.sessions[ws.id]
+	ps.sessionsMtx.Unlock()
+
+	if ws.session != nil && !live {
+		return
+	}
+
 	err := ps.withWritableArchive(ctx, ws, func(a *archive) error {
 		return a.putTombstone(ctx, ref, false)
 	})
@@ -1175,7 +1190,7 @@ func (ps *PackStorage) withWritableArchive(ctx context.Context, ws *writeSession
 
 		if ps.claims != nil && ws.session != nil {
 			if err := ps.claim(a); err != nil {
-				_, _ = a.CloseWriter()
+				_ = a.Close()
 				ps.archiveSemaphore.Release(1)
 				ps.deleteArchiveFiles(a.name)
 
