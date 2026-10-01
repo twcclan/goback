@@ -413,6 +413,12 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		"mark", markTook.Round(time.Millisecond), "merge", mergeTook.Round(time.Millisecond))
 
 	report.SweepSkipped = run.sweepBlocker()
+	if report.SweepSkipped == "" && run.anySelected() {
+		if err := run.confirmDrops(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	if report.SweepSkipped == "" {
 		sweepStart := time.Now()
 		if err := run.sweep(ctx, report); err != nil {
@@ -1273,7 +1279,12 @@ func (r *gcRun) sweepBlocker() string {
 		return "first generation"
 	}
 
-	return ""
+	reason, err := r.ps.halted()
+	if err != nil {
+		return fmt.Sprintf("reading whether collections are halted: %s", err)
+	}
+
+	return reason
 }
 
 // sweep rewrites the archives whose dead share or age selects them, dropping
@@ -1305,6 +1316,17 @@ func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
 	report.ReclaimedBytes += group.droppedBytes
 
 	return nil
+}
+
+// anySelected reports whether a sweep would rewrite any archive.
+func (r *gcRun) anySelected() bool {
+	for _, ga := range r.order {
+		if r.selected(ga) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // selected reports whether an archive is worth rewriting this generation.
