@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -47,6 +48,30 @@ func (las *localArchiveStorage) Create(name string) (File, error) {
 	}
 
 	return os.Create(las.path(name))
+}
+
+func (las *localArchiveStorage) CreateNew(name string, data []byte) error {
+	err := os.MkdirAll(filepath.Dir(las.path(name)), 0755)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(las.path(name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if errors.Is(err, fs.ErrExist) {
+		return ErrFileExists
+	}
+
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(data)
+	if err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	return file.Close()
 }
 
 // Delete removes the file and the directories it leaves empty.

@@ -152,22 +152,18 @@ func TestRemoteSessionsScopeVisibility(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, latest.Equal(commit.Ref()))
 
-	after := proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte("x")}, Ref: tree.Ref()}}})
-	require.NoError(t, a.Put(sctx, after))
-
-	require.NoError(t, a.EndSession(sctx))
-
 	_, err = store.LookupSession(ctx, session.ID)
-	require.ErrorIs(t, err, backup.ErrNoSession)
+	require.ErrorIs(t, err, backup.ErrNoSession, "the commit ended the session")
 
-	_, err = a.Get(ctx, after.Ref())
-	require.ErrorIs(t, err, backup.ErrNotFound, "what the session did not commit is gone")
+	after := proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte("x")}, Ref: tree.Ref()}}})
+	require.Error(t, a.Put(sctx, after))
+	require.ErrorIs(t, a.EndSession(sctx), backup.ErrNoSession, "ending it again finds no session")
 
 	_, err = a.Get(ctx, tree.Ref())
 	require.NoError(t, err)
 
 	err = b.EndSession(backup.WithSession(ctx, &backup.Session{ID: session.ID}))
-	require.Equal(t, codes.NotFound, status.Code(err))
+	require.ErrorIs(t, err, backup.ErrNoSession)
 
 	_, err = dial("").BeginSession(ctx, &backup.Session{Set: "world"})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))

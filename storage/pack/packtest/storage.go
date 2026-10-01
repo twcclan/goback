@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 // TestArchiveStorage runs the ArchiveStorage contract against an empty
@@ -31,6 +32,7 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		{"list files", testListAllFiles},
 		{"list files filtered", testListSomeFiles},
 		{"nested names", testNestedNames},
+		{"create new", testCreateNew},
 		{"test delete all", testDeleteAll},
 	}
 
@@ -300,4 +302,19 @@ func testNestedNames(t *testing.T, store pack.ArchiveStorage, files []file) {
 	if _, err = store.Open(name); err != pack.ErrFileNotFound {
 		t.Fatalf("expected the file to be gone, got %v", err)
 	}
+}
+
+func testCreateNew(t *testing.T, store pack.ArchiveStorage, _ []file) {
+	require.NoError(t, store.CreateNew("marker.new", []byte("first")))
+	require.ErrorIs(t, store.CreateNew("marker.new", []byte("second")), pack.ErrFileExists)
+
+	file, err := store.Open("marker.new")
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(file)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	require.Equal(t, "first", string(data), "a taken name keeps what it held")
+
+	require.NoError(t, store.Delete("marker.new"))
 }

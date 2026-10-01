@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/twcclan/goback/auth"
@@ -43,7 +44,9 @@ func (r *Client) BeginSession(ctx context.Context, s *backup.Session) (context.C
 	return backup.WithSession(ctx, s), nil
 }
 
-// EndSession drops what the context's session has not committed.
+// EndSession drops what the context's session has not committed; a
+// session the store no longer has, such as one its commit ended, is
+// backup.ErrNoSession.
 func (r *Client) EndSession(ctx context.Context) error {
 	s, ok := backup.SessionFromContext(ctx)
 	if !ok {
@@ -51,6 +54,9 @@ func (r *Client) EndSession(ctx context.Context) error {
 	}
 
 	_, err := r.store.EndSession(ctx, &proto.EndSessionRequest{SessionId: s.ID})
+	if status.Code(err) == codes.NotFound {
+		return fmt.Errorf("session %s: %w", s.ID, backup.ErrNoSession)
+	}
 
 	return err
 }

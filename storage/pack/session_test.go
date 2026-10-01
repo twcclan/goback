@@ -95,18 +95,13 @@ func TestSessionWritesAreVisibleOnlyToTheSessionUntilCommit(t *testing.T) {
 	}))
 	require.Equal(t, len(objects)+1, walked, "Walk sees committed archives")
 
-	// the session continues: later writes are pending again
-	later := makeTestData(t, 1)[0]
-	require.NoError(t, store.Put(ctxA, later))
-	requireVisible(t, store, ctxA, later, true)
-	requireVisible(t, store, ctxB, later, false)
-
-	require.NoError(t, store.EndSession(ctxA))
-	requireVisible(t, store, root, later, false)
-	requireVisible(t, store, root, objects[2], true)
-
+	// the commit ended the session
 	_, err = store.LookupSession(root, sessionA.ID)
 	require.ErrorIs(t, err, backup.ErrNoSession)
+	require.ErrorIs(t, store.Put(ctxA, makeTestData(t, 1)[0]), backup.ErrNoSession)
+
+	require.NoError(t, store.EndSession(ctxA))
+	requireVisible(t, store, root, objects[2], true)
 
 	require.NoError(t, store.Close())
 }

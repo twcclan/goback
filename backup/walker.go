@@ -289,8 +289,9 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 
 		ctx = sctx
 
+		// a commit ends the session itself
 		defer func() {
-			if err := w.Sessions.EndSession(ctx); err != nil {
+			if err := w.Sessions.EndSession(ctx); err != nil && !errors.Is(err, ErrNoSession) {
 				w.logger().Warn("ending the session failed", "err", err)
 			}
 		}()

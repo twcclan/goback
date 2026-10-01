@@ -265,6 +265,20 @@ func (c *BucketStore) Create(name string) (pack.File, error) {
 	return c.newWriteFile(c.key(name))
 }
 
+// CreateNew implements pack.ArchiveStorage with the bucket's own
+// precondition, so it holds across processes on GCS and S3; a file://
+// bucket only checks within one process.
+func (c *BucketStore) CreateNew(name string, data []byte) error {
+	err := c.bucket.WriteAll(context.Background(), c.key(name), data, &blob.WriterOptions{IfNotExist: true})
+	c.count(OpPut, int64(len(data)))
+
+	if gcerrors.Code(err) == gcerrors.FailedPrecondition {
+		return pack.ErrFileExists
+	}
+
+	return err
+}
+
 // Checksum implements pack.Checksummer with the MD5 the bucket reports,
 // empty when it has none.
 func (c *BucketStore) Checksum(name string) ([]byte, error) {

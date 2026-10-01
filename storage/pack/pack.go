@@ -35,6 +35,8 @@ const (
 
 var (
 	ErrFileNotFound     = errors.New("requested file was not found")
+	// ErrFileExists is CreateNew's answer for a name that is taken.
+	ErrFileExists       = errors.New("the file exists")
 	ErrInvalidExtension = errors.New("the provided extension is invalid")
 )
 
@@ -440,7 +442,7 @@ func (ps *PackStorage) refuse(ctx context.Context, ws *writeSession, ref *proto.
 // commit makes everything the session wrote durable and visible: its open
 // archive is finalized and its archives flip to committed. A session with
 // an archive that failed to finalize cannot commit: the objects it
-// acknowledged are in no index.
+// acknowledged are in no index. A commit ends the session.
 func (ps *PackStorage) commit(ws *writeSession) error {
 	if err := ws.failed(); err != nil {
 		return fmt.Errorf("session %s lost an archive: %w", ws.id, err)
@@ -460,6 +462,15 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 		if err := ps.settle(ws.id); err != nil {
 			return err
 		}
+	}
+
+	outcome, err := ps.markEnded(ws.id, sessionCommitted)
+	if err != nil {
+		return err
+	}
+
+	if outcome != sessionCommitted {
+		return fmt.Errorf("session %s ended before it committed: %w", ws.id, backup.ErrNoSession)
 	}
 
 	err = ps.markCommitted(ws.id)
@@ -482,7 +493,7 @@ func (ps *PackStorage) commit(ws *writeSession) error {
 	}
 	ps.mtx.RUnlock()
 
-	return nil
+	return ps.endSession(ws.id)
 }
 
 // releasePending drops the pending entries of an archive once the archive
@@ -1191,7 +1202,7 @@ func (ps *PackStorage) Open() error {
 		return err
 	}
 
-	return nil
+	return ps.reconcileSessions()
 }
 
 // refreshArchives catches the loaded archives up with the storage and the
@@ -1303,6 +1314,10 @@ type File interface {
 // a missing name is ErrFileNotFound.
 type ArchiveStorage interface {
 	Create(name string) (File, error)
+	// CreateNew stores data under name unless a file has it already, which
+	// it answers with ErrFileExists; of several callers racing for a name,
+	// exactly one succeeds.
+	CreateNew(name string, data []byte) error
 	Open(name string) (File, error)
 	List(extension string) ([]string, error)
 	Delete(name string) error
