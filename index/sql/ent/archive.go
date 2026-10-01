@@ -24,6 +24,8 @@ type Archive struct {
 	State int `json:"state,omitempty"`
 	// OpenedAt holds the value of the "opened_at" field.
 	OpenedAt *time.Time `json:"opened_at,omitempty"`
+	// CreatedAt holds the value of the "created_at" field.
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the ArchiveQuery when eager-loading is set.
 	Edges        ArchiveEdges `json:"edges"`
@@ -70,7 +72,7 @@ func (*Archive) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case archive.FieldID, archive.FieldSessionID:
 			values[i] = new(sql.NullString)
-		case archive.FieldOpenedAt:
+		case archive.FieldOpenedAt, archive.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -112,6 +114,13 @@ func (_m *Archive) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.OpenedAt = new(time.Time)
 				*_m.OpenedAt = value.Time
+			}
+		case archive.FieldCreatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field created_at", values[i])
+			} else if value.Valid {
+				_m.CreatedAt = new(time.Time)
+				*_m.CreatedAt = value.Time
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -169,6 +178,11 @@ func (_m *Archive) String() string {
 	builder.WriteString(", ")
 	if v := _m.OpenedAt; v != nil {
 		builder.WriteString("opened_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.CreatedAt; v != nil {
+		builder.WriteString("created_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteByte(')')

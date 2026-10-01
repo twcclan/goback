@@ -22,6 +22,10 @@ const (
 	FieldLength = "length"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
+	// FieldCarriedTime holds the string denoting the carried_time field in the database.
+	FieldCarriedTime = "carried_time"
+	// FieldCarriedOffset holds the string denoting the carried_offset field in the database.
+	FieldCarriedOffset = "carried_offset"
 	// EdgeArchive holds the string denoting the archive edge name in mutations.
 	EdgeArchive = "archive"
 	// Table holds the table name of the object in the database.
@@ -43,6 +47,8 @@ var Columns = []string{
 	FieldStart,
 	FieldLength,
 	FieldType,
+	FieldCarriedTime,
+	FieldCarriedOffset,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -81,6 +87,16 @@ func ByLength(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
+}
+
+// ByCarriedTime orders the results by the carried_time field.
+func ByCarriedTime(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCarriedTime, opts...).ToFunc()
+}
+
+// ByCarriedOffset orders the results by the carried_offset field.
+func ByCarriedOffset(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCarriedOffset, opts...).ToFunc()
 }
 
 // ByArchiveField orders the results by archive field.

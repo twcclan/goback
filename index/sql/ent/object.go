@@ -27,6 +27,10 @@ type Object struct {
 	Length uint32 `json:"length,omitempty"`
 	// Type holds the value of the "type" field.
 	Type uint32 `json:"type,omitempty"`
+	// CarriedTime holds the value of the "carried_time" field.
+	CarriedTime int64 `json:"carried_time,omitempty"`
+	// CarriedOffset holds the value of the "carried_offset" field.
+	CarriedOffset uint32 `json:"carried_offset,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the ObjectQuery when eager-loading is set.
 	Edges        ObjectEdges `json:"edges"`
@@ -60,7 +64,7 @@ func (*Object) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case object.FieldRef:
 			values[i] = new([]byte)
-		case object.FieldID, object.FieldStart, object.FieldLength, object.FieldType:
+		case object.FieldID, object.FieldStart, object.FieldLength, object.FieldType, object.FieldCarriedTime, object.FieldCarriedOffset:
 			values[i] = new(sql.NullInt64)
 		case object.FieldArchiveID:
 			values[i] = new(sql.NullString)
@@ -114,6 +118,18 @@ func (_m *Object) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field type", values[i])
 			} else if value.Valid {
 				_m.Type = uint32(value.Int64)
+			}
+		case object.FieldCarriedTime:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field carried_time", values[i])
+			} else if value.Valid {
+				_m.CarriedTime = value.Int64
+			}
+		case object.FieldCarriedOffset:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field carried_offset", values[i])
+			} else if value.Valid {
+				_m.CarriedOffset = uint32(value.Int64)
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -170,6 +186,12 @@ func (_m *Object) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Type))
+	builder.WriteString(", ")
+	builder.WriteString("carried_time=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CarriedTime))
+	builder.WriteString(", ")
+	builder.WriteString("carried_offset=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CarriedOffset))
 	builder.WriteByte(')')
 	return builder.String()
 }

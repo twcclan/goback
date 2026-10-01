@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -17,8 +18,61 @@ type IndexFile []IndexRecord
 var indexEndianness = binary.BigEndian
 
 // increment when you make backwards-incompatible changes
-var indexFileMagicBytes = []byte("GOBACKIDX_0002")
+var indexFileMagicBytes = []byte("GOBACKIDX_0003")
+
+// unversionedMagicBytes heads the index files written before records
+// carried their versions; they are read with every version unset.
+var unversionedMagicBytes = []byte("GOBACKIDX_0002")
+
 var errIndexHeaderMismatch = errors.New("received unexpected index file header")
+
+// unversionedRecord is the record layout of an unversioned index file.
+type unversionedRecord struct {
+	Sum    [proto.HashSize]byte
+	Offset uint32
+	Length uint32
+	Type   uint32
+}
+
+// readIndexHeader reads an index file's magic and record count, and
+// returns how to read each record that follows.
+func readIndexHeader(r io.Reader) (func(io.Reader, *IndexRecord) error, uint32, error) {
+	magic := make([]byte, len(indexFileMagicBytes))
+	if _, err := io.ReadFull(r, magic); err != nil {
+		return nil, 0, err
+	}
+
+	read := readRecord
+	switch {
+	case bytes.Equal(magic, indexFileMagicBytes):
+	case bytes.Equal(magic, unversionedMagicBytes):
+		read = readUnversionedRecord
+	default:
+		return nil, 0, errIndexHeaderMismatch
+	}
+
+	var count uint32
+	if err := binary.Read(r, indexEndianness, &count); err != nil {
+		return nil, 0, err
+	}
+
+	return read, count, nil
+}
+
+func readRecord(r io.Reader, record *IndexRecord) error {
+	return binary.Read(r, indexEndianness, record)
+}
+
+func readUnversionedRecord(r io.Reader, record *IndexRecord) error {
+	var old unversionedRecord
+	if err := binary.Read(r, indexEndianness, &old); err != nil {
+		return err
+	}
+
+	*record = IndexRecord{Sum: old.Sum, Offset: old.Offset, Length: old.Length, Type: old.Type}
+
+	return nil
+}
 
 // Len implements sort.Interface.
 func (idx IndexFile) Len() int           { return len(idx) }
@@ -50,27 +104,19 @@ type indexScanner interface {
 type fileScanner struct {
 	file File
 	buf  *bufio.Reader
+	read func(io.Reader, *IndexRecord) error
 	left uint32
 }
 
 func newFileScanner(file File) (*fileScanner, error) {
 	buf := bufio.NewReader(file)
 
-	magic := make([]byte, len(indexFileMagicBytes))
-	if _, err := io.ReadFull(buf, magic); err != nil {
+	read, count, err := readIndexHeader(buf)
+	if err != nil {
 		return nil, err
 	}
 
-	if !bytes.Equal(magic, indexFileMagicBytes) {
-		return nil, errIndexHeaderMismatch
-	}
-
-	var count uint32
-	if err := binary.Read(buf, indexEndianness, &count); err != nil {
-		return nil, err
-	}
-
-	return &fileScanner{file: file, buf: buf, left: count}, nil
+	return &fileScanner{file: file, buf: buf, read: read, left: count}, nil
 }
 
 func (s *fileScanner) next() (*IndexRecord, error) {
@@ -79,7 +125,7 @@ func (s *fileScanner) next() (*IndexRecord, error) {
 	}
 
 	record := new(IndexRecord)
-	if err := binary.Read(s.buf, indexEndianness, record); err != nil {
+	if err := s.read(s.buf, record); err != nil {
 		return nil, err
 	}
 
@@ -113,32 +159,19 @@ func (s *sliceScanner) close() error { return nil }
 // ReadFrom implements io.ReaderFrom.
 func (idx *IndexFile) ReadFrom(reader io.Reader) (int64, error) {
 	buf := bufio.NewReader(reader)
-	var count uint32
 	byteCounter := &countingWriter{}
 
 	source := io.TeeReader(buf, byteCounter)
 
-	magic := make([]byte, len(indexFileMagicBytes))
-	_, err := io.ReadFull(source, magic)
+	read, count, err := readIndexHeader(source)
 	if err != nil {
 		return byteCounter.count, err
 	}
 
-	if !bytes.Equal(magic, indexFileMagicBytes) {
-		return byteCounter.count, errIndexHeaderMismatch
-	}
-
-	err = binary.Read(source, indexEndianness, &count)
-	if err != nil {
-		return 0, err
-	}
-
 	*idx = make([]IndexRecord, count)
 
-	for i := 0; i < int(count); i++ {
-
-		idxSlice := *idx
-		err = binary.Read(source, indexEndianness, &idxSlice[i])
+	for i := range *idx {
+		err = read(source, &(*idx)[i])
 		if err != nil {
 			return 0, err
 		}
@@ -181,6 +214,27 @@ type IndexRecord struct {
 	Offset uint32
 	Length uint32
 	Type   uint32
+	// CarriedTime and CarriedOffset are the version a rewrite carried the
+	// record over with; a zero CarriedTime means the record has its
+	// archive's version.
+	CarriedTime   int64
+	CarriedOffset uint32
+}
+
+// Version is the version of the record in an archive created at created.
+func (r IndexRecord) Version(created time.Time) Version {
+	if r.CarriedTime != 0 {
+		return Version{Time: time.Unix(0, r.CarriedTime), Offset: r.CarriedOffset}
+	}
+
+	return Version{Time: created, Offset: r.Offset}
+}
+
+// Carry returns the record, at a new place, keeping the version v.
+func (r IndexRecord) Carry(v Version) IndexRecord {
+	r.CarriedTime, r.CarriedOffset = v.Time.UnixNano(), v.Offset
+
+	return r
 }
 
 var _ io.WriterTo = (IndexFile)(nil)

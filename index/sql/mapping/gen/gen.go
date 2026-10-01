@@ -9,6 +9,7 @@ import (
 	mapping "github.com/twcclan/goback/index/sql/mapping"
 	proto "github.com/twcclan/goback/proto"
 	pack "github.com/twcclan/goback/storage/pack"
+	"time"
 )
 
 func (m MapperImpl) Archive(in *ent.Archive) pack.ArchiveInfo {
@@ -20,10 +21,16 @@ func (m MapperImpl) Archive(in *ent.Archive) pack.ArchiveInfo {
 		tmp0 = *(in.SessionID)
 	}
 
+	var tmp1 time.Time
+	if in.CreatedAt != nil {
+		tmp1 = *(in.CreatedAt)
+	}
+
 	return pack.ArchiveInfo{
 		Name:    in.ID,
 		Session: tmp0,
 		State:   pack.ArchiveState(in.State),
+		Created: tmp1,
 	}
 }
 
@@ -99,10 +106,12 @@ func (m MapperImpl) Record(in *ent.Object) pack.IndexRecord {
 	}
 
 	return pack.IndexRecord{
-		Sum:    mapping.Sum(in.Ref),
-		Offset: in.Start,
-		Length: in.Length,
-		Type:   in.Type,
+		Sum:           mapping.Sum(in.Ref),
+		Offset:        in.Start,
+		Length:        in.Length,
+		Type:          in.Type,
+		CarriedTime:   in.CarriedTime,
+		CarriedOffset: in.CarriedOffset,
 	}
 }
 

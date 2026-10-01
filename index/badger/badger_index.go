@@ -172,9 +172,10 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...
 
 	outer:
 		for iterator.Seek(nil); iterator.Valid(); iterator.Next() {
-			value := &badgerValue{}
-			err := iterator.Item().Value(func(val []byte) error {
-				return binary.Read(bytes.NewReader(val), badgerIndexEndianness, value)
+			var value badgerValue
+			err := iterator.Item().Value(func(val []byte) (err error) {
+				value, err = decodeValue(val)
+				return err
 			})
 			if err != nil {
 				return err
@@ -199,11 +200,7 @@ func (b *BadgerIndex) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...
 
 			location = pack.IndexLocation{
 				Archive: info.Name,
-				Record: pack.IndexRecord{
-					Offset: value.Offset,
-					Length: value.Length,
-					Type:   value.Type,
-				},
+				Record:  value.record(),
 			}
 
 			copy(location.Record.Sum[:], ref.Hash)
@@ -225,9 +222,10 @@ func (b *BadgerIndex) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLo
 			iterator := txn.NewIterator(badger.IteratorOptions{PrefetchValues: true, Prefix: b.recordPrefix(ref.Hash)})
 
 			for iterator.Seek(nil); iterator.Valid(); iterator.Next() {
-				value := &badgerValue{}
-				err := iterator.Item().Value(func(val []byte) error {
-					return binary.Read(bytes.NewReader(val), badgerIndexEndianness, value)
+				var value badgerValue
+				err := iterator.Item().Value(func(val []byte) (err error) {
+					value, err = decodeValue(val)
+					return err
 				})
 				if err != nil {
 					iterator.Close()
@@ -247,7 +245,7 @@ func (b *BadgerIndex) LocateCopies(refs []*proto.Ref) (map[string][]pack.IndexLo
 
 				location := pack.IndexLocation{
 					Archive: info.Name,
-					Record:  pack.IndexRecord{Offset: value.Offset, Length: value.Length, Type: value.Type},
+					Record:  value.record(),
 				}
 				copy(location.Record.Sum[:], ref.Hash)
 
@@ -336,9 +334,35 @@ func (b *BadgerIndex) LookupArchive(archive string) (pack.ArchiveInfo, bool, err
 }
 
 type badgerValue struct {
-	Offset uint32
-	Length uint32
-	Type   uint32
+	Offset        uint32
+	Length        uint32
+	Type          uint32
+	CarriedTime   int64
+	CarriedOffset uint32
+}
+
+// unversionedValueSize is the size of the values written before records
+// carried their versions.
+const unversionedValueSize = 12
+
+func decodeValue(val []byte) (badgerValue, error) {
+	var value badgerValue
+
+	if len(val) == unversionedValueSize {
+		value.Offset = badgerIndexEndianness.Uint32(val)
+		value.Length = badgerIndexEndianness.Uint32(val[4:])
+		value.Type = badgerIndexEndianness.Uint32(val[8:])
+
+		return value, nil
+	}
+
+	err := binary.Read(bytes.NewReader(val), badgerIndexEndianness, &value)
+
+	return value, err
+}
+
+func (v badgerValue) record() pack.IndexRecord {
+	return pack.IndexRecord{Offset: v.Offset, Length: v.Length, Type: v.Type, CarriedTime: v.CarriedTime, CarriedOffset: v.CarriedOffset}
 }
 
 func (b *BadgerIndex) idValue(id uint64) []byte {
@@ -349,13 +373,18 @@ func (b *BadgerIndex) idValue(id uint64) []byte {
 	return d
 }
 
-// encodeArchive lays out an archive record: id, state, then the
-// length-prefixed session.
+// encodeArchive lays out an archive record: id, state, the
+// length-prefixed session, then the creation time in unix nanoseconds,
+// which records written before archives had one lack.
 func (b *BadgerIndex) encodeArchive(id uint64, info pack.ArchiveInfo) []byte {
 	d := b.idValue(id)
 	d = append(d, byte(info.State))
 	d = binary.BigEndian.AppendUint16(d, uint16(len(info.Session)))
 	d = append(d, info.Session...)
+
+	if !info.Created.IsZero() {
+		d = binary.BigEndian.AppendUint64(d, uint64(info.Created.UnixNano()))
+	}
 
 	return d
 }
@@ -385,14 +414,18 @@ func decodeArchive(name string, val []byte) (uint64, pack.ArchiveInfo, error) {
 		rest = rest[n:]
 	}
 
+	if len(rest) >= 8 {
+		info.Created = time.Unix(0, int64(binary.BigEndian.Uint64(rest)))
+	}
+
 	return id, info, nil
 }
 
 // IndexArchive implements pack.ArchiveIndex; a pending archive needs a
 // live session and a known archive is left alone.
 func (b *BadgerIndex) IndexArchive(archive pack.ArchiveInfo, index pack.IndexFile) error {
-	if _, ok := b.archiveID(archive.Name); ok {
-		return nil
+	if id, ok := b.archiveID(archive.Name); ok {
+		return b.fillCreated(id, archive.Created)
 	}
 
 	if archive.State == pack.ArchivePending {
@@ -411,9 +444,11 @@ func (b *BadgerIndex) IndexArchive(archive pack.ArchiveInfo, index pack.IndexFil
 	for _, record := range index {
 		buf := new(bytes.Buffer)
 		value := &badgerValue{
-			Offset: record.Offset,
-			Length: record.Length,
-			Type:   record.Type,
+			Offset:        record.Offset,
+			Length:        record.Length,
+			Type:          record.Type,
+			CarriedTime:   record.CarriedTime,
+			CarriedOffset: record.CarriedOffset,
 		}
 		err := binary.Write(buf, badgerIndexEndianness, value)
 		if err != nil {
@@ -454,6 +489,30 @@ func (b *BadgerIndex) IndexArchive(archive pack.ArchiveInfo, index pack.IndexFil
 		}
 
 		b.remember(archiveId, archive)
+
+		return nil
+	})
+}
+
+// fillCreated records the creation time of a known archive that lacks one.
+func (b *BadgerIndex) fillCreated(id uint64, created time.Time) error {
+	b.archivesMtx.RLock()
+	info := b.archiveInfos[id]
+	b.archivesMtx.RUnlock()
+
+	if created.IsZero() || !info.Created.IsZero() {
+		return nil
+	}
+
+	info.Created = created
+
+	return b.db.Update(func(txn *badger.Txn) error {
+		err := txn.Set(b.key(prefixArchive, []byte(info.Name)), b.encodeArchive(id, info))
+		if err != nil {
+			return err
+		}
+
+		b.remember(id, info)
 
 		return nil
 	})

@@ -389,6 +389,14 @@ func nilIfZero(s string) *string {
 	return &s
 }
 
+func nilIfZeroTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
+}
+
 func deref[T any](p *T) T {
 	if p == nil {
 		var zero T

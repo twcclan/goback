@@ -426,13 +426,13 @@ func (f *failingIndex) IndexArchive(info ArchiveInfo, index IndexFile) error {
 	return f.InMemoryIndex.IndexArchive(info, index)
 }
 
-func (f *failingIndex) FinalizeArchive(name string, within time.Duration) error {
+func (f *failingIndex) FinalizeArchive(name string, within time.Duration, created time.Time) error {
 	if f.failNext {
 		f.failNext = false
 		return errors.New("index unavailable")
 	}
 
-	return f.InMemoryIndex.FinalizeArchive(name, within)
+	return f.InMemoryIndex.FinalizeArchive(name, within, created)
 }
 
 // TestCommitRefusesASessionThatLostAnArchive lets the idle sweep fail to

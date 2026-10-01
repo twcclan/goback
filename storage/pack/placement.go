@@ -56,6 +56,9 @@ type ArchiveInfo struct {
 	Name    string
 	Session string
 	State   ArchiveState
+	// Created is when the bucket created the archive's index file, which
+	// versions every record the archive holds; zero while it has none.
+	Created time.Time
 }
 
 // Scope filters LocateObject: the committed archives plus the pending
@@ -133,9 +136,10 @@ type ClaimIndex interface {
 	// AddObjects indexes objects written to an open archive, or answers
 	// ErrClaimLapsed when the archive is no longer open.
 	AddObjects(archive string, records []IndexRecord) error
-	// FinalizeArchive turns an open archive pending when it was claimed
-	// less than within ago, and answers ErrClaimLapsed otherwise.
-	FinalizeArchive(name string, within time.Duration) error
+	// FinalizeArchive turns an open archive pending, created at created,
+	// when it was claimed less than within ago, and answers ErrClaimLapsed
+	// otherwise.
+	FinalizeArchive(name string, within time.Duration, created time.Time) error
 	// Holds reports whether a pending or open archive of the session holds
 	// the object.
 	Holds(ref *proto.Ref, session string) (bool, error)

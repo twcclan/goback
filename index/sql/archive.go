@@ -115,11 +115,20 @@ func (x *Index) IndexArchive(info pack.ArchiveInfo, index pack.IndexFile) error 
 		}
 
 		exists, err := tx.Archive.Query().Where(archive.ID(info.Name)).Exist(ctx)
-		if err != nil || exists {
+		if err != nil {
 			return err
 		}
 
-		err = tx.Archive.Create().SetID(info.Name).SetNillableSessionID(nilIfZero(info.Session)).SetState(int(info.State)).Exec(ctx)
+		if exists {
+			if info.Created.IsZero() {
+				return nil
+			}
+
+			return tx.Archive.Update().Where(archive.ID(info.Name), archive.CreatedAtIsNil()).SetCreatedAt(info.Created).Exec(ctx)
+		}
+
+		err = tx.Archive.Create().SetID(info.Name).SetNillableSessionID(nilIfZero(info.Session)).SetState(int(info.State)).
+			SetNillableCreatedAt(nilIfZeroTime(info.Created)).Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -136,6 +145,9 @@ func insertObjects(ctx context.Context, tx *ent.Tx, name string, records []pack.
 		builders := make([]*ent.ObjectCreate, stop)
 		for i, record := range records[:stop] {
 			builders[i] = tx.Object.Create().SetRef(record.Sum[:]).SetArchiveID(name).SetStart(record.Offset).SetLength(record.Length).SetType(record.Type)
+			if record.CarriedTime != 0 {
+				builders[i].SetCarriedTime(record.CarriedTime).SetCarriedOffset(record.CarriedOffset)
+			}
 		}
 
 		err := tx.Object.CreateBulk(builders...).OnConflict().DoNothing().Exec(ctx)
@@ -364,7 +376,7 @@ func (x *Index) AddObjects(name string, records []pack.IndexRecord) error {
 }
 
 // FinalizeArchive implements pack.ClaimIndex.
-func (x *Index) FinalizeArchive(name string, within time.Duration) error {
+func (x *Index) FinalizeArchive(name string, within time.Duration, created time.Time) error {
 	ctx := context.Background()
 
 	now, err := x.clock(ctx)
@@ -374,7 +386,7 @@ func (x *Index) FinalizeArchive(name string, within time.Duration) error {
 
 	n, err := x.client.Archive.Update().
 		Where(archive.ID(name), archive.State(int(pack.ArchiveOpen)), archive.OpenedAtGT(now.Add(-within))).
-		SetState(int(pack.ArchivePending)).ClearOpenedAt().Save(ctx)
+		SetState(int(pack.ArchivePending)).ClearOpenedAt().SetCreatedAt(created).Save(ctx)
 	if err != nil {
 		return err
 	}

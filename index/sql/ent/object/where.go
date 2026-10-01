@@ -78,6 +78,16 @@ func Type(v uint32) predicate.Object {
 	return predicate.Object(sql.FieldEQ(FieldType, v))
 }
 
+// CarriedTime applies equality check predicate on the "carried_time" field. It's identical to CarriedTimeEQ.
+func CarriedTime(v int64) predicate.Object {
+	return predicate.Object(sql.FieldEQ(FieldCarriedTime, v))
+}
+
+// CarriedOffset applies equality check predicate on the "carried_offset" field. It's identical to CarriedOffsetEQ.
+func CarriedOffset(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldEQ(FieldCarriedOffset, v))
+}
+
 // RefEQ applies the EQ predicate on the "ref" field.
 func RefEQ(v []byte) predicate.Object {
 	return predicate.Object(sql.FieldEQ(FieldRef, v))
@@ -301,6 +311,106 @@ func TypeLT(v uint32) predicate.Object {
 // TypeLTE applies the LTE predicate on the "type" field.
 func TypeLTE(v uint32) predicate.Object {
 	return predicate.Object(sql.FieldLTE(FieldType, v))
+}
+
+// CarriedTimeEQ applies the EQ predicate on the "carried_time" field.
+func CarriedTimeEQ(v int64) predicate.Object {
+	return predicate.Object(sql.FieldEQ(FieldCarriedTime, v))
+}
+
+// CarriedTimeNEQ applies the NEQ predicate on the "carried_time" field.
+func CarriedTimeNEQ(v int64) predicate.Object {
+	return predicate.Object(sql.FieldNEQ(FieldCarriedTime, v))
+}
+
+// CarriedTimeIn applies the In predicate on the "carried_time" field.
+func CarriedTimeIn(vs ...int64) predicate.Object {
+	return predicate.Object(sql.FieldIn(FieldCarriedTime, vs...))
+}
+
+// CarriedTimeNotIn applies the NotIn predicate on the "carried_time" field.
+func CarriedTimeNotIn(vs ...int64) predicate.Object {
+	return predicate.Object(sql.FieldNotIn(FieldCarriedTime, vs...))
+}
+
+// CarriedTimeGT applies the GT predicate on the "carried_time" field.
+func CarriedTimeGT(v int64) predicate.Object {
+	return predicate.Object(sql.FieldGT(FieldCarriedTime, v))
+}
+
+// CarriedTimeGTE applies the GTE predicate on the "carried_time" field.
+func CarriedTimeGTE(v int64) predicate.Object {
+	return predicate.Object(sql.FieldGTE(FieldCarriedTime, v))
+}
+
+// CarriedTimeLT applies the LT predicate on the "carried_time" field.
+func CarriedTimeLT(v int64) predicate.Object {
+	return predicate.Object(sql.FieldLT(FieldCarriedTime, v))
+}
+
+// CarriedTimeLTE applies the LTE predicate on the "carried_time" field.
+func CarriedTimeLTE(v int64) predicate.Object {
+	return predicate.Object(sql.FieldLTE(FieldCarriedTime, v))
+}
+
+// CarriedTimeIsNil applies the IsNil predicate on the "carried_time" field.
+func CarriedTimeIsNil() predicate.Object {
+	return predicate.Object(sql.FieldIsNull(FieldCarriedTime))
+}
+
+// CarriedTimeNotNil applies the NotNil predicate on the "carried_time" field.
+func CarriedTimeNotNil() predicate.Object {
+	return predicate.Object(sql.FieldNotNull(FieldCarriedTime))
+}
+
+// CarriedOffsetEQ applies the EQ predicate on the "carried_offset" field.
+func CarriedOffsetEQ(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldEQ(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetNEQ applies the NEQ predicate on the "carried_offset" field.
+func CarriedOffsetNEQ(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldNEQ(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetIn applies the In predicate on the "carried_offset" field.
+func CarriedOffsetIn(vs ...uint32) predicate.Object {
+	return predicate.Object(sql.FieldIn(FieldCarriedOffset, vs...))
+}
+
+// CarriedOffsetNotIn applies the NotIn predicate on the "carried_offset" field.
+func CarriedOffsetNotIn(vs ...uint32) predicate.Object {
+	return predicate.Object(sql.FieldNotIn(FieldCarriedOffset, vs...))
+}
+
+// CarriedOffsetGT applies the GT predicate on the "carried_offset" field.
+func CarriedOffsetGT(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldGT(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetGTE applies the GTE predicate on the "carried_offset" field.
+func CarriedOffsetGTE(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldGTE(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetLT applies the LT predicate on the "carried_offset" field.
+func CarriedOffsetLT(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldLT(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetLTE applies the LTE predicate on the "carried_offset" field.
+func CarriedOffsetLTE(v uint32) predicate.Object {
+	return predicate.Object(sql.FieldLTE(FieldCarriedOffset, v))
+}
+
+// CarriedOffsetIsNil applies the IsNil predicate on the "carried_offset" field.
+func CarriedOffsetIsNil() predicate.Object {
+	return predicate.Object(sql.FieldIsNull(FieldCarriedOffset))
+}
+
+// CarriedOffsetNotNil applies the NotNil predicate on the "carried_offset" field.
+func CarriedOffsetNotNil() predicate.Object {
+	return predicate.Object(sql.FieldNotNull(FieldCarriedOffset))
 }
 
 // HasArchive applies the HasEdge predicate on the "archive" edge.

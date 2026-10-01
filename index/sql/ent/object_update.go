@@ -111,6 +111,60 @@ func (_u *ObjectUpdate) AddType(v int32) *ObjectUpdate {
 	return _u
 }
 
+// SetCarriedTime sets the "carried_time" field.
+func (_u *ObjectUpdate) SetCarriedTime(v int64) *ObjectUpdate {
+	_u.mutation.ResetCarriedTime()
+	_u.mutation.SetCarriedTime(v)
+	return _u
+}
+
+// SetNillableCarriedTime sets the "carried_time" field if the given value is not nil.
+func (_u *ObjectUpdate) SetNillableCarriedTime(v *int64) *ObjectUpdate {
+	if v != nil {
+		_u.SetCarriedTime(*v)
+	}
+	return _u
+}
+
+// AddCarriedTime adds value to the "carried_time" field.
+func (_u *ObjectUpdate) AddCarriedTime(v int64) *ObjectUpdate {
+	_u.mutation.AddCarriedTime(v)
+	return _u
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (_u *ObjectUpdate) ClearCarriedTime() *ObjectUpdate {
+	_u.mutation.ClearCarriedTime()
+	return _u
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (_u *ObjectUpdate) SetCarriedOffset(v uint32) *ObjectUpdate {
+	_u.mutation.ResetCarriedOffset()
+	_u.mutation.SetCarriedOffset(v)
+	return _u
+}
+
+// SetNillableCarriedOffset sets the "carried_offset" field if the given value is not nil.
+func (_u *ObjectUpdate) SetNillableCarriedOffset(v *uint32) *ObjectUpdate {
+	if v != nil {
+		_u.SetCarriedOffset(*v)
+	}
+	return _u
+}
+
+// AddCarriedOffset adds value to the "carried_offset" field.
+func (_u *ObjectUpdate) AddCarriedOffset(v int32) *ObjectUpdate {
+	_u.mutation.AddCarriedOffset(v)
+	return _u
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (_u *ObjectUpdate) ClearCarriedOffset() *ObjectUpdate {
+	_u.mutation.ClearCarriedOffset()
+	return _u
+}
+
 // SetArchive sets the "archive" edge to the Archive entity.
 func (_u *ObjectUpdate) SetArchive(v *Archive) *ObjectUpdate {
 	return _u.SetArchiveID(v.ID)
@@ -194,6 +248,24 @@ func (_u *ObjectUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedType(); ok {
 		_spec.AddField(object.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.CarriedTime(); ok {
+		_spec.SetField(object.FieldCarriedTime, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCarriedTime(); ok {
+		_spec.AddField(object.FieldCarriedTime, field.TypeInt64, value)
+	}
+	if _u.mutation.CarriedTimeCleared() {
+		_spec.ClearField(object.FieldCarriedTime, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CarriedOffset(); ok {
+		_spec.SetField(object.FieldCarriedOffset, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.AddedCarriedOffset(); ok {
+		_spec.AddField(object.FieldCarriedOffset, field.TypeUint32, value)
+	}
+	if _u.mutation.CarriedOffsetCleared() {
+		_spec.ClearField(object.FieldCarriedOffset, field.TypeUint32)
 	}
 	if _u.mutation.ArchiveCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -327,6 +399,60 @@ func (_u *ObjectUpdateOne) AddType(v int32) *ObjectUpdateOne {
 	return _u
 }
 
+// SetCarriedTime sets the "carried_time" field.
+func (_u *ObjectUpdateOne) SetCarriedTime(v int64) *ObjectUpdateOne {
+	_u.mutation.ResetCarriedTime()
+	_u.mutation.SetCarriedTime(v)
+	return _u
+}
+
+// SetNillableCarriedTime sets the "carried_time" field if the given value is not nil.
+func (_u *ObjectUpdateOne) SetNillableCarriedTime(v *int64) *ObjectUpdateOne {
+	if v != nil {
+		_u.SetCarriedTime(*v)
+	}
+	return _u
+}
+
+// AddCarriedTime adds value to the "carried_time" field.
+func (_u *ObjectUpdateOne) AddCarriedTime(v int64) *ObjectUpdateOne {
+	_u.mutation.AddCarriedTime(v)
+	return _u
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (_u *ObjectUpdateOne) ClearCarriedTime() *ObjectUpdateOne {
+	_u.mutation.ClearCarriedTime()
+	return _u
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (_u *ObjectUpdateOne) SetCarriedOffset(v uint32) *ObjectUpdateOne {
+	_u.mutation.ResetCarriedOffset()
+	_u.mutation.SetCarriedOffset(v)
+	return _u
+}
+
+// SetNillableCarriedOffset sets the "carried_offset" field if the given value is not nil.
+func (_u *ObjectUpdateOne) SetNillableCarriedOffset(v *uint32) *ObjectUpdateOne {
+	if v != nil {
+		_u.SetCarriedOffset(*v)
+	}
+	return _u
+}
+
+// AddCarriedOffset adds value to the "carried_offset" field.
+func (_u *ObjectUpdateOne) AddCarriedOffset(v int32) *ObjectUpdateOne {
+	_u.mutation.AddCarriedOffset(v)
+	return _u
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (_u *ObjectUpdateOne) ClearCarriedOffset() *ObjectUpdateOne {
+	_u.mutation.ClearCarriedOffset()
+	return _u
+}
+
 // SetArchive sets the "archive" edge to the Archive entity.
 func (_u *ObjectUpdateOne) SetArchive(v *Archive) *ObjectUpdateOne {
 	return _u.SetArchiveID(v.ID)
@@ -440,6 +566,24 @@ func (_u *ObjectUpdateOne) sqlSave(ctx context.Context) (_node *Object, err erro
 	}
 	if value, ok := _u.mutation.AddedType(); ok {
 		_spec.AddField(object.FieldType, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.CarriedTime(); ok {
+		_spec.SetField(object.FieldCarriedTime, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCarriedTime(); ok {
+		_spec.AddField(object.FieldCarriedTime, field.TypeInt64, value)
+	}
+	if _u.mutation.CarriedTimeCleared() {
+		_spec.ClearField(object.FieldCarriedTime, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CarriedOffset(); ok {
+		_spec.SetField(object.FieldCarriedOffset, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.AddedCarriedOffset(); ok {
+		_spec.AddField(object.FieldCarriedOffset, field.TypeUint32, value)
+	}
+	if _u.mutation.CarriedOffsetCleared() {
+		_spec.ClearField(object.FieldCarriedOffset, field.TypeUint32)
 	}
 	if _u.mutation.ArchiveCleared() {
 		edge := &sqlgraph.EdgeSpec{

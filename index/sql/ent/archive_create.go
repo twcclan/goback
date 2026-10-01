@@ -67,6 +67,20 @@ func (_c *ArchiveCreate) SetNillableOpenedAt(v *time.Time) *ArchiveCreate {
 	return _c
 }
 
+// SetCreatedAt sets the "created_at" field.
+func (_c *ArchiveCreate) SetCreatedAt(v time.Time) *ArchiveCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *ArchiveCreate) SetNillableCreatedAt(v *time.Time) *ArchiveCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *ArchiveCreate) SetID(v string) *ArchiveCreate {
 	_c.mutation.SetID(v)
@@ -182,6 +196,10 @@ func (_c *ArchiveCreate) createSpec() (*Archive, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.OpenedAt(); ok {
 		_spec.SetField(archive.FieldOpenedAt, field.TypeTime, value)
 		_node.OpenedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(archive.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = &value
 	}
 	if nodes := _c.mutation.SessionIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -322,6 +340,24 @@ func (u *ArchiveUpsert) ClearOpenedAt() *ArchiveUpsert {
 	return u
 }
 
+// SetCreatedAt sets the "created_at" field.
+func (u *ArchiveUpsert) SetCreatedAt(v time.Time) *ArchiveUpsert {
+	u.Set(archive.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *ArchiveUpsert) UpdateCreatedAt() *ArchiveUpsert {
+	u.SetExcluded(archive.FieldCreatedAt)
+	return u
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (u *ArchiveUpsert) ClearCreatedAt() *ArchiveUpsert {
+	u.SetNull(archive.FieldCreatedAt)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -430,6 +466,27 @@ func (u *ArchiveUpsertOne) UpdateOpenedAt() *ArchiveUpsertOne {
 func (u *ArchiveUpsertOne) ClearOpenedAt() *ArchiveUpsertOne {
 	return u.Update(func(s *ArchiveUpsert) {
 		s.ClearOpenedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *ArchiveUpsertOne) SetCreatedAt(v time.Time) *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *ArchiveUpsertOne) UpdateCreatedAt() *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (u *ArchiveUpsertOne) ClearCreatedAt() *ArchiveUpsertOne {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.ClearCreatedAt()
 	})
 }
 
@@ -708,6 +765,27 @@ func (u *ArchiveUpsertBulk) UpdateOpenedAt() *ArchiveUpsertBulk {
 func (u *ArchiveUpsertBulk) ClearOpenedAt() *ArchiveUpsertBulk {
 	return u.Update(func(s *ArchiveUpsert) {
 		s.ClearOpenedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *ArchiveUpsertBulk) SetCreatedAt(v time.Time) *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *ArchiveUpsertBulk) UpdateCreatedAt() *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (u *ArchiveUpsertBulk) ClearCreatedAt() *ArchiveUpsertBulk {
+	return u.Update(func(s *ArchiveUpsert) {
+		s.ClearCreatedAt()
 	})
 }
 

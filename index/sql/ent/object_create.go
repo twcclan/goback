@@ -52,6 +52,34 @@ func (_c *ObjectCreate) SetType(v uint32) *ObjectCreate {
 	return _c
 }
 
+// SetCarriedTime sets the "carried_time" field.
+func (_c *ObjectCreate) SetCarriedTime(v int64) *ObjectCreate {
+	_c.mutation.SetCarriedTime(v)
+	return _c
+}
+
+// SetNillableCarriedTime sets the "carried_time" field if the given value is not nil.
+func (_c *ObjectCreate) SetNillableCarriedTime(v *int64) *ObjectCreate {
+	if v != nil {
+		_c.SetCarriedTime(*v)
+	}
+	return _c
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (_c *ObjectCreate) SetCarriedOffset(v uint32) *ObjectCreate {
+	_c.mutation.SetCarriedOffset(v)
+	return _c
+}
+
+// SetNillableCarriedOffset sets the "carried_offset" field if the given value is not nil.
+func (_c *ObjectCreate) SetNillableCarriedOffset(v *uint32) *ObjectCreate {
+	if v != nil {
+		_c.SetCarriedOffset(*v)
+	}
+	return _c
+}
+
 // SetArchive sets the "archive" edge to the Archive entity.
 func (_c *ObjectCreate) SetArchive(v *Archive) *ObjectCreate {
 	return _c.SetArchiveID(v.ID)
@@ -151,6 +179,14 @@ func (_c *ObjectCreate) createSpec() (*Object, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.GetType(); ok {
 		_spec.SetField(object.FieldType, field.TypeUint32, value)
 		_node.Type = value
+	}
+	if value, ok := _c.mutation.CarriedTime(); ok {
+		_spec.SetField(object.FieldCarriedTime, field.TypeInt64, value)
+		_node.CarriedTime = value
+	}
+	if value, ok := _c.mutation.CarriedOffset(); ok {
+		_spec.SetField(object.FieldCarriedOffset, field.TypeUint32, value)
+		_node.CarriedOffset = value
 	}
 	if nodes := _c.mutation.ArchiveIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -299,6 +335,54 @@ func (u *ObjectUpsert) AddType(v uint32) *ObjectUpsert {
 	return u
 }
 
+// SetCarriedTime sets the "carried_time" field.
+func (u *ObjectUpsert) SetCarriedTime(v int64) *ObjectUpsert {
+	u.Set(object.FieldCarriedTime, v)
+	return u
+}
+
+// UpdateCarriedTime sets the "carried_time" field to the value that was provided on create.
+func (u *ObjectUpsert) UpdateCarriedTime() *ObjectUpsert {
+	u.SetExcluded(object.FieldCarriedTime)
+	return u
+}
+
+// AddCarriedTime adds v to the "carried_time" field.
+func (u *ObjectUpsert) AddCarriedTime(v int64) *ObjectUpsert {
+	u.Add(object.FieldCarriedTime, v)
+	return u
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (u *ObjectUpsert) ClearCarriedTime() *ObjectUpsert {
+	u.SetNull(object.FieldCarriedTime)
+	return u
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (u *ObjectUpsert) SetCarriedOffset(v uint32) *ObjectUpsert {
+	u.Set(object.FieldCarriedOffset, v)
+	return u
+}
+
+// UpdateCarriedOffset sets the "carried_offset" field to the value that was provided on create.
+func (u *ObjectUpsert) UpdateCarriedOffset() *ObjectUpsert {
+	u.SetExcluded(object.FieldCarriedOffset)
+	return u
+}
+
+// AddCarriedOffset adds v to the "carried_offset" field.
+func (u *ObjectUpsert) AddCarriedOffset(v uint32) *ObjectUpsert {
+	u.Add(object.FieldCarriedOffset, v)
+	return u
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (u *ObjectUpsert) ClearCarriedOffset() *ObjectUpsert {
+	u.SetNull(object.FieldCarriedOffset)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -427,6 +511,62 @@ func (u *ObjectUpsertOne) AddType(v uint32) *ObjectUpsertOne {
 func (u *ObjectUpsertOne) UpdateType() *ObjectUpsertOne {
 	return u.Update(func(s *ObjectUpsert) {
 		s.UpdateType()
+	})
+}
+
+// SetCarriedTime sets the "carried_time" field.
+func (u *ObjectUpsertOne) SetCarriedTime(v int64) *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.SetCarriedTime(v)
+	})
+}
+
+// AddCarriedTime adds v to the "carried_time" field.
+func (u *ObjectUpsertOne) AddCarriedTime(v int64) *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.AddCarriedTime(v)
+	})
+}
+
+// UpdateCarriedTime sets the "carried_time" field to the value that was provided on create.
+func (u *ObjectUpsertOne) UpdateCarriedTime() *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.UpdateCarriedTime()
+	})
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (u *ObjectUpsertOne) ClearCarriedTime() *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.ClearCarriedTime()
+	})
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (u *ObjectUpsertOne) SetCarriedOffset(v uint32) *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.SetCarriedOffset(v)
+	})
+}
+
+// AddCarriedOffset adds v to the "carried_offset" field.
+func (u *ObjectUpsertOne) AddCarriedOffset(v uint32) *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.AddCarriedOffset(v)
+	})
+}
+
+// UpdateCarriedOffset sets the "carried_offset" field to the value that was provided on create.
+func (u *ObjectUpsertOne) UpdateCarriedOffset() *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.UpdateCarriedOffset()
+	})
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (u *ObjectUpsertOne) ClearCarriedOffset() *ObjectUpsertOne {
+	return u.Update(func(s *ObjectUpsert) {
+		s.ClearCarriedOffset()
 	})
 }
 
@@ -721,6 +861,62 @@ func (u *ObjectUpsertBulk) AddType(v uint32) *ObjectUpsertBulk {
 func (u *ObjectUpsertBulk) UpdateType() *ObjectUpsertBulk {
 	return u.Update(func(s *ObjectUpsert) {
 		s.UpdateType()
+	})
+}
+
+// SetCarriedTime sets the "carried_time" field.
+func (u *ObjectUpsertBulk) SetCarriedTime(v int64) *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.SetCarriedTime(v)
+	})
+}
+
+// AddCarriedTime adds v to the "carried_time" field.
+func (u *ObjectUpsertBulk) AddCarriedTime(v int64) *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.AddCarriedTime(v)
+	})
+}
+
+// UpdateCarriedTime sets the "carried_time" field to the value that was provided on create.
+func (u *ObjectUpsertBulk) UpdateCarriedTime() *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.UpdateCarriedTime()
+	})
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (u *ObjectUpsertBulk) ClearCarriedTime() *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.ClearCarriedTime()
+	})
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (u *ObjectUpsertBulk) SetCarriedOffset(v uint32) *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.SetCarriedOffset(v)
+	})
+}
+
+// AddCarriedOffset adds v to the "carried_offset" field.
+func (u *ObjectUpsertBulk) AddCarriedOffset(v uint32) *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.AddCarriedOffset(v)
+	})
+}
+
+// UpdateCarriedOffset sets the "carried_offset" field to the value that was provided on create.
+func (u *ObjectUpsertBulk) UpdateCarriedOffset() *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.UpdateCarriedOffset()
+	})
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (u *ObjectUpsertBulk) ClearCarriedOffset() *ObjectUpsertBulk {
+	return u.Update(func(s *ObjectUpsert) {
+		s.ClearCarriedOffset()
 	})
 }
 

@@ -58,6 +58,7 @@ type ArchiveMutation struct {
 	state          *int
 	addstate       *int
 	opened_at      *time.Time
+	created_at     *time.Time
 	clearedFields  map[string]struct{}
 	session        *string
 	clearedsession bool
@@ -327,6 +328,55 @@ func (m *ArchiveMutation) ResetOpenedAt() {
 	delete(m.clearedFields, archive.FieldOpenedAt)
 }
 
+// SetCreatedAt sets the "created_at" field.
+func (m *ArchiveMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ArchiveMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the Archive entity.
+// If the Archive object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ArchiveMutation) OldCreatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (m *ArchiveMutation) ClearCreatedAt() {
+	m.created_at = nil
+	m.clearedFields[archive.FieldCreatedAt] = struct{}{}
+}
+
+// CreatedAtCleared returns if the "created_at" field was cleared in this mutation.
+func (m *ArchiveMutation) CreatedAtCleared() bool {
+	_, ok := m.clearedFields[archive.FieldCreatedAt]
+	return ok
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ArchiveMutation) ResetCreatedAt() {
+	m.created_at = nil
+	delete(m.clearedFields, archive.FieldCreatedAt)
+}
+
 // ClearSession clears the "session" edge to the Session entity.
 func (m *ArchiveMutation) ClearSession() {
 	m.clearedsession = true
@@ -442,7 +492,7 @@ func (m *ArchiveMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ArchiveMutation) Fields() []string {
-	fields := make([]string, 0, 3)
+	fields := make([]string, 0, 4)
 	if m.session != nil {
 		fields = append(fields, archive.FieldSessionID)
 	}
@@ -451,6 +501,9 @@ func (m *ArchiveMutation) Fields() []string {
 	}
 	if m.opened_at != nil {
 		fields = append(fields, archive.FieldOpenedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, archive.FieldCreatedAt)
 	}
 	return fields
 }
@@ -466,6 +519,8 @@ func (m *ArchiveMutation) Field(name string) (ent.Value, bool) {
 		return m.State()
 	case archive.FieldOpenedAt:
 		return m.OpenedAt()
+	case archive.FieldCreatedAt:
+		return m.CreatedAt()
 	}
 	return nil, false
 }
@@ -481,6 +536,8 @@ func (m *ArchiveMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldState(ctx)
 	case archive.FieldOpenedAt:
 		return m.OldOpenedAt(ctx)
+	case archive.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown Archive field %s", name)
 }
@@ -510,6 +567,13 @@ func (m *ArchiveMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetOpenedAt(v)
+		return nil
+	case archive.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Archive field %s", name)
@@ -562,6 +626,9 @@ func (m *ArchiveMutation) ClearedFields() []string {
 	if m.FieldCleared(archive.FieldOpenedAt) {
 		fields = append(fields, archive.FieldOpenedAt)
 	}
+	if m.FieldCleared(archive.FieldCreatedAt) {
+		fields = append(fields, archive.FieldCreatedAt)
+	}
 	return fields
 }
 
@@ -582,6 +649,9 @@ func (m *ArchiveMutation) ClearField(name string) error {
 	case archive.FieldOpenedAt:
 		m.ClearOpenedAt()
 		return nil
+	case archive.FieldCreatedAt:
+		m.ClearCreatedAt()
+		return nil
 	}
 	return fmt.Errorf("unknown Archive nullable field %s", name)
 }
@@ -598,6 +668,9 @@ func (m *ArchiveMutation) ResetField(name string) error {
 		return nil
 	case archive.FieldOpenedAt:
 		m.ResetOpenedAt()
+		return nil
+	case archive.FieldCreatedAt:
+		m.ResetCreatedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Archive field %s", name)
@@ -4520,22 +4593,26 @@ func (m *FileMutation) ResetEdge(name string) error {
 // ObjectMutation represents an operation that mutates the Object nodes in the graph.
 type ObjectMutation struct {
 	config
-	op             Op
-	typ            string
-	id             *int
-	ref            *[]byte
-	start          *uint32
-	addstart       *int32
-	length         *uint32
-	addlength      *int32
-	_type          *uint32
-	add_type       *int32
-	clearedFields  map[string]struct{}
-	archive        *string
-	clearedarchive bool
-	done           bool
-	oldValue       func(context.Context) (*Object, error)
-	predicates     []predicate.Object
+	op                Op
+	typ               string
+	id                *int
+	ref               *[]byte
+	start             *uint32
+	addstart          *int32
+	length            *uint32
+	addlength         *int32
+	_type             *uint32
+	add_type          *int32
+	carried_time      *int64
+	addcarried_time   *int64
+	carried_offset    *uint32
+	addcarried_offset *int32
+	clearedFields     map[string]struct{}
+	archive           *string
+	clearedarchive    bool
+	done              bool
+	oldValue          func(context.Context) (*Object, error)
+	predicates        []predicate.Object
 }
 
 var _ ent.Mutation = (*ObjectMutation)(nil)
@@ -4876,6 +4953,146 @@ func (m *ObjectMutation) ResetType() {
 	m.add_type = nil
 }
 
+// SetCarriedTime sets the "carried_time" field.
+func (m *ObjectMutation) SetCarriedTime(i int64) {
+	m.carried_time = &i
+	m.addcarried_time = nil
+}
+
+// CarriedTime returns the value of the "carried_time" field in the mutation.
+func (m *ObjectMutation) CarriedTime() (r int64, exists bool) {
+	v := m.carried_time
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCarriedTime returns the old "carried_time" field's value of the Object entity.
+// If the Object object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectMutation) OldCarriedTime(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCarriedTime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCarriedTime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCarriedTime: %w", err)
+	}
+	return oldValue.CarriedTime, nil
+}
+
+// AddCarriedTime adds i to the "carried_time" field.
+func (m *ObjectMutation) AddCarriedTime(i int64) {
+	if m.addcarried_time != nil {
+		*m.addcarried_time += i
+	} else {
+		m.addcarried_time = &i
+	}
+}
+
+// AddedCarriedTime returns the value that was added to the "carried_time" field in this mutation.
+func (m *ObjectMutation) AddedCarriedTime() (r int64, exists bool) {
+	v := m.addcarried_time
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCarriedTime clears the value of the "carried_time" field.
+func (m *ObjectMutation) ClearCarriedTime() {
+	m.carried_time = nil
+	m.addcarried_time = nil
+	m.clearedFields[object.FieldCarriedTime] = struct{}{}
+}
+
+// CarriedTimeCleared returns if the "carried_time" field was cleared in this mutation.
+func (m *ObjectMutation) CarriedTimeCleared() bool {
+	_, ok := m.clearedFields[object.FieldCarriedTime]
+	return ok
+}
+
+// ResetCarriedTime resets all changes to the "carried_time" field.
+func (m *ObjectMutation) ResetCarriedTime() {
+	m.carried_time = nil
+	m.addcarried_time = nil
+	delete(m.clearedFields, object.FieldCarriedTime)
+}
+
+// SetCarriedOffset sets the "carried_offset" field.
+func (m *ObjectMutation) SetCarriedOffset(u uint32) {
+	m.carried_offset = &u
+	m.addcarried_offset = nil
+}
+
+// CarriedOffset returns the value of the "carried_offset" field in the mutation.
+func (m *ObjectMutation) CarriedOffset() (r uint32, exists bool) {
+	v := m.carried_offset
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCarriedOffset returns the old "carried_offset" field's value of the Object entity.
+// If the Object object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectMutation) OldCarriedOffset(ctx context.Context) (v uint32, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCarriedOffset is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCarriedOffset requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCarriedOffset: %w", err)
+	}
+	return oldValue.CarriedOffset, nil
+}
+
+// AddCarriedOffset adds u to the "carried_offset" field.
+func (m *ObjectMutation) AddCarriedOffset(u int32) {
+	if m.addcarried_offset != nil {
+		*m.addcarried_offset += u
+	} else {
+		m.addcarried_offset = &u
+	}
+}
+
+// AddedCarriedOffset returns the value that was added to the "carried_offset" field in this mutation.
+func (m *ObjectMutation) AddedCarriedOffset() (r int32, exists bool) {
+	v := m.addcarried_offset
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCarriedOffset clears the value of the "carried_offset" field.
+func (m *ObjectMutation) ClearCarriedOffset() {
+	m.carried_offset = nil
+	m.addcarried_offset = nil
+	m.clearedFields[object.FieldCarriedOffset] = struct{}{}
+}
+
+// CarriedOffsetCleared returns if the "carried_offset" field was cleared in this mutation.
+func (m *ObjectMutation) CarriedOffsetCleared() bool {
+	_, ok := m.clearedFields[object.FieldCarriedOffset]
+	return ok
+}
+
+// ResetCarriedOffset resets all changes to the "carried_offset" field.
+func (m *ObjectMutation) ResetCarriedOffset() {
+	m.carried_offset = nil
+	m.addcarried_offset = nil
+	delete(m.clearedFields, object.FieldCarriedOffset)
+}
+
 // ClearArchive clears the "archive" edge to the Archive entity.
 func (m *ObjectMutation) ClearArchive() {
 	m.clearedarchive = true
@@ -4937,7 +5154,7 @@ func (m *ObjectMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ObjectMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 7)
 	if m.ref != nil {
 		fields = append(fields, object.FieldRef)
 	}
@@ -4952,6 +5169,12 @@ func (m *ObjectMutation) Fields() []string {
 	}
 	if m._type != nil {
 		fields = append(fields, object.FieldType)
+	}
+	if m.carried_time != nil {
+		fields = append(fields, object.FieldCarriedTime)
+	}
+	if m.carried_offset != nil {
+		fields = append(fields, object.FieldCarriedOffset)
 	}
 	return fields
 }
@@ -4971,6 +5194,10 @@ func (m *ObjectMutation) Field(name string) (ent.Value, bool) {
 		return m.Length()
 	case object.FieldType:
 		return m.GetType()
+	case object.FieldCarriedTime:
+		return m.CarriedTime()
+	case object.FieldCarriedOffset:
+		return m.CarriedOffset()
 	}
 	return nil, false
 }
@@ -4990,6 +5217,10 @@ func (m *ObjectMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldLength(ctx)
 	case object.FieldType:
 		return m.OldType(ctx)
+	case object.FieldCarriedTime:
+		return m.OldCarriedTime(ctx)
+	case object.FieldCarriedOffset:
+		return m.OldCarriedOffset(ctx)
 	}
 	return nil, fmt.Errorf("unknown Object field %s", name)
 }
@@ -5034,6 +5265,20 @@ func (m *ObjectMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetType(v)
 		return nil
+	case object.FieldCarriedTime:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCarriedTime(v)
+		return nil
+	case object.FieldCarriedOffset:
+		v, ok := value.(uint32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCarriedOffset(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Object field %s", name)
 }
@@ -5051,6 +5296,12 @@ func (m *ObjectMutation) AddedFields() []string {
 	if m.add_type != nil {
 		fields = append(fields, object.FieldType)
 	}
+	if m.addcarried_time != nil {
+		fields = append(fields, object.FieldCarriedTime)
+	}
+	if m.addcarried_offset != nil {
+		fields = append(fields, object.FieldCarriedOffset)
+	}
 	return fields
 }
 
@@ -5065,6 +5316,10 @@ func (m *ObjectMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedLength()
 	case object.FieldType:
 		return m.AddedType()
+	case object.FieldCarriedTime:
+		return m.AddedCarriedTime()
+	case object.FieldCarriedOffset:
+		return m.AddedCarriedOffset()
 	}
 	return nil, false
 }
@@ -5095,6 +5350,20 @@ func (m *ObjectMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddType(v)
 		return nil
+	case object.FieldCarriedTime:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCarriedTime(v)
+		return nil
+	case object.FieldCarriedOffset:
+		v, ok := value.(int32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCarriedOffset(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Object numeric field %s", name)
 }
@@ -5102,7 +5371,14 @@ func (m *ObjectMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *ObjectMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(object.FieldCarriedTime) {
+		fields = append(fields, object.FieldCarriedTime)
+	}
+	if m.FieldCleared(object.FieldCarriedOffset) {
+		fields = append(fields, object.FieldCarriedOffset)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -5115,6 +5391,14 @@ func (m *ObjectMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *ObjectMutation) ClearField(name string) error {
+	switch name {
+	case object.FieldCarriedTime:
+		m.ClearCarriedTime()
+		return nil
+	case object.FieldCarriedOffset:
+		m.ClearCarriedOffset()
+		return nil
+	}
 	return fmt.Errorf("unknown Object nullable field %s", name)
 }
 
@@ -5136,6 +5420,12 @@ func (m *ObjectMutation) ResetField(name string) error {
 		return nil
 	case object.FieldType:
 		m.ResetType()
+		return nil
+	case object.FieldCarriedTime:
+		m.ResetCarriedTime()
+		return nil
+	case object.FieldCarriedOffset:
+		m.ResetCarriedOffset()
 		return nil
 	}
 	return fmt.Errorf("unknown Object field %s", name)

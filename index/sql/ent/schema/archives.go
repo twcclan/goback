@@ -24,6 +24,8 @@ func (Archive) Fields() []ent.Field {
 		// opened_at is when an open archive was claimed, by the index's
 		// clock; it is cleared once the archive is finalized
 		field.Time("opened_at").Optional().Nillable(),
+		// created_at is when the bucket created the archive's index file
+		field.Time("created_at").Optional().Nillable(),
 	}
 }
 
@@ -55,6 +57,10 @@ func (Object) Fields() []ent.Field {
 		field.Uint32("start"),
 		field.Uint32("length"),
 		field.Uint32("type"),
+		// the version a rewrite carried the object over with, unset for
+		// one that has its archive's
+		field.Int64("carried_time").Optional(),
+		field.Uint32("carried_offset").Optional(),
 	}
 }
 

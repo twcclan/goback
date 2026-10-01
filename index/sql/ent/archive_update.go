@@ -91,6 +91,26 @@ func (_u *ArchiveUpdate) ClearOpenedAt() *ArchiveUpdate {
 	return _u
 }
 
+// SetCreatedAt sets the "created_at" field.
+func (_u *ArchiveUpdate) SetCreatedAt(v time.Time) *ArchiveUpdate {
+	_u.mutation.SetCreatedAt(v)
+	return _u
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_u *ArchiveUpdate) SetNillableCreatedAt(v *time.Time) *ArchiveUpdate {
+	if v != nil {
+		_u.SetCreatedAt(*v)
+	}
+	return _u
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (_u *ArchiveUpdate) ClearCreatedAt() *ArchiveUpdate {
+	_u.mutation.ClearCreatedAt()
+	return _u
+}
+
 // SetSession sets the "session" edge to the Session entity.
 func (_u *ArchiveUpdate) SetSession(v *Session) *ArchiveUpdate {
 	return _u.SetSessionID(v.ID)
@@ -190,6 +210,12 @@ func (_u *ArchiveUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.OpenedAtCleared() {
 		_spec.ClearField(archive.FieldOpenedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(archive.FieldCreatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreatedAtCleared() {
+		_spec.ClearField(archive.FieldCreatedAt, field.TypeTime)
 	}
 	if _u.mutation.SessionCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -346,6 +372,26 @@ func (_u *ArchiveUpdateOne) ClearOpenedAt() *ArchiveUpdateOne {
 	return _u
 }
 
+// SetCreatedAt sets the "created_at" field.
+func (_u *ArchiveUpdateOne) SetCreatedAt(v time.Time) *ArchiveUpdateOne {
+	_u.mutation.SetCreatedAt(v)
+	return _u
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_u *ArchiveUpdateOne) SetNillableCreatedAt(v *time.Time) *ArchiveUpdateOne {
+	if v != nil {
+		_u.SetCreatedAt(*v)
+	}
+	return _u
+}
+
+// ClearCreatedAt clears the value of the "created_at" field.
+func (_u *ArchiveUpdateOne) ClearCreatedAt() *ArchiveUpdateOne {
+	_u.mutation.ClearCreatedAt()
+	return _u
+}
+
 // SetSession sets the "session" edge to the Session entity.
 func (_u *ArchiveUpdateOne) SetSession(v *Session) *ArchiveUpdateOne {
 	return _u.SetSessionID(v.ID)
@@ -475,6 +521,12 @@ func (_u *ArchiveUpdateOne) sqlSave(ctx context.Context) (_node *Archive, err er
 	}
 	if _u.mutation.OpenedAtCleared() {
 		_spec.ClearField(archive.FieldOpenedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(archive.FieldCreatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreatedAtCleared() {
+		_spec.ClearField(archive.FieldCreatedAt, field.TypeTime)
 	}
 	if _u.mutation.SessionCleared() {
 		edge := &sqlgraph.EdgeSpec{

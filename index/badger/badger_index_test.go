@@ -1,6 +1,7 @@
 package badger
 
 import (
+	"encoding/binary"
 	"os"
 	"testing"
 	"time"
@@ -78,6 +79,10 @@ func TestBadgerIndexExclusion(t *testing.T) {
 	packtest.TestArchiveIndexExclusion(t, idx)
 }
 
+func TestBadgerArchiveVersions(t *testing.T) {
+	packtest.TestArchiveVersions(t, setupBadger(t))
+}
+
 func TestBadgerIndexCopies(t *testing.T) {
 	packtest.TestArchiveIndexCopies(t, setupBadger(t))
 }
@@ -126,4 +131,24 @@ func TestBadgerIndexSessionsSurviveReopen(t *testing.T) {
 
 	_, err = idx.GetSession("s")
 	require.NoError(t, err)
+}
+
+func TestEntriesWrittenBeforeVersionsDecodeWithoutThem(t *testing.T) {
+	value := badgerIndexEndianness.AppendUint32(nil, 7)
+	value = badgerIndexEndianness.AppendUint32(value, 8)
+	value = badgerIndexEndianness.AppendUint32(value, 9)
+
+	decoded, err := decodeValue(value)
+	require.NoError(t, err)
+	require.Equal(t, pack.IndexRecord{Offset: 7, Length: 8, Type: 9}, decoded.record())
+
+	archive := badgerIndexEndianness.AppendUint64(nil, 42)
+	archive = append(archive, byte(pack.ArchivePending))
+	archive = binary.BigEndian.AppendUint16(archive, 1)
+	archive = append(archive, 's')
+
+	id, info, err := decodeArchive("a", archive)
+	require.NoError(t, err)
+	require.EqualValues(t, 42, id)
+	require.Equal(t, pack.ArchiveInfo{Name: "a", Session: "s", State: pack.ArchivePending}, info)
 }

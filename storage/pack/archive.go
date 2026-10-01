@@ -87,6 +87,9 @@ type archive struct {
 	owner   *writeSession
 	session string
 	state   ArchiveState
+	// created versions the archive's records, zero until its index file
+	// is stored
+	created time.Time
 
 	// rows indexes the objects of a claimed archive as they are written,
 	// nil for an archive no claim was taken on; opened is when the claim
@@ -297,6 +300,28 @@ func (a *archive) indexName() string {
 	return a.name + IndexExt
 }
 
+// indexCreated returns when the storage created the archive's index file,
+// or the archive itself when the index file is gone.
+func (a *archive) indexCreated() (time.Time, error) {
+	file, err := a.storage.Open(a.indexName())
+	if err != nil {
+		file, err = a.storage.Open(a.archiveName())
+	}
+
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// every index keeps it to the microsecond
+	return info.ModTime().Truncate(time.Microsecond), nil
+}
+
 // readRecord returns the raw bytes of one index record.
 func (a *archive) readRecord(loc *IndexRecord) ([]byte, bool, error) {
 	return a.readSpan(int64(loc.Offset), int64(loc.Length))
@@ -438,6 +463,12 @@ func (a *archive) putTombstone(ctx context.Context, ref *proto.Ref, erase bool) 
 }
 
 func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte) error {
+	return a.putVersioned(ctx, hdr, bytes, nil)
+}
+
+// putVersioned writes an object whose record keeps the version carried,
+// or gets the archive's own when carried is nil.
+func (a *archive) putVersioned(ctx context.Context, hdr *proto.ObjectHeader, bytes []byte, carried *Version) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -497,6 +528,10 @@ func (a *archive) putRaw(ctx context.Context, hdr *proto.ObjectHeader, bytes []b
 	}
 
 	copy(record.Sum[:], ref.Hash)
+
+	if carried != nil {
+		*record = record.Carry(*carried)
+	}
 
 	a.writeIndex[string(ref.Hash)] = record
 

@@ -24,6 +24,10 @@ func TestArchiveIndexCopies(t *testing.T) {
 	packtest.TestArchiveIndexCopies(t, openIndex(t, newMemStore()))
 }
 
+func TestArchiveVersions(t *testing.T) {
+	packtest.TestArchiveVersions(t, openIndex(t, newMemStore()))
+}
+
 func TestArchiveIndexSessions(t *testing.T) {
 	packtest.TestArchiveIndexSessions(t, openIndex(t, newMemStore()))
 }

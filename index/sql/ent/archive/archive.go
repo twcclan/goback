@@ -18,6 +18,8 @@ const (
 	FieldState = "state"
 	// FieldOpenedAt holds the string denoting the opened_at field in the database.
 	FieldOpenedAt = "opened_at"
+	// FieldCreatedAt holds the string denoting the created_at field in the database.
+	FieldCreatedAt = "created_at"
 	// EdgeSession holds the string denoting the session edge name in mutations.
 	EdgeSession = "session"
 	// EdgeObjects holds the string denoting the objects edge name in mutations.
@@ -46,6 +48,7 @@ var Columns = []string{
 	FieldSessionID,
 	FieldState,
 	FieldOpenedAt,
+	FieldCreatedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -84,6 +87,11 @@ func ByState(opts ...sql.OrderTermOption) OrderOption {
 // ByOpenedAt orders the results by the opened_at field.
 func ByOpenedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOpenedAt, opts...).ToFunc()
+}
+
+// ByCreatedAt orders the results by the created_at field.
+func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreatedAt, opts...).ToFunc()
 }
 
 // BySessionField orders the results by session field.

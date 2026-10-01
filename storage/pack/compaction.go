@@ -276,7 +276,9 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 
 		copied += uint64(length)
 
-		return ar.putRaw(ctx, hdr, bytes)
+		version := idx[idx.position(hdr.Ref.Hash)].Version(candidate.created)
+
+		return ar.putVersioned(ctx, hdr, bytes, &version)
 	})
 	if err != nil {
 		return err
@@ -343,7 +345,12 @@ func (o *rewriteOutput) finish() error {
 		return errors.Wrap(err, "closing compaction output")
 	}
 
-	if err := ps.index.IndexArchive(ArchiveInfo{Name: a.name}, index); err != nil {
+	a.created, err = a.indexCreated()
+	if err != nil {
+		return errors.Wrap(err, "reading when the compaction output was created")
+	}
+
+	if err := ps.index.IndexArchive(ArchiveInfo{Name: a.name, Created: a.created}, index); err != nil {
 		return err
 	}
 

@@ -61,14 +61,17 @@ func TestClaimIndex(t *testing.T, idx ClaimingIndex) {
 	require.NoError(t, err)
 	require.Empty(t, claims)
 
-	require.ErrorIs(t, idx.FinalizeArchive(open.name, 0), pack.ErrClaimLapsed, "past its claim an archive cannot be finalized")
-	require.NoError(t, idx.FinalizeArchive(open.name, time.Hour))
+	created := time.Unix(1_790_000_000, 456_000)
+
+	require.ErrorIs(t, idx.FinalizeArchive(open.name, 0, created), pack.ErrClaimLapsed, "past its claim an archive cannot be finalized")
+	require.NoError(t, idx.FinalizeArchive(open.name, time.Hour, created))
 	require.ErrorIs(t, idx.AddObjects(open.name, RandomIndexFile(1)), pack.ErrClaimLapsed, "a finalized archive takes no more rows")
 
 	info, known, err := idx.LookupArchive(open.name)
 	require.NoError(t, err)
 	require.True(t, known)
 	require.Equal(t, pack.ArchivePending, info.State)
+	require.True(t, created.Equal(info.Created), "finalizing records when the archive was created")
 
 	_, err = idx.LocateObject(ref, pack.Scope{Session: session.ID})
 	require.NoError(t, err, "once finalized the session reads its archive")
@@ -95,7 +98,7 @@ func TestClaimIndex(t *testing.T, idx ClaimingIndex) {
 	require.False(t, abandoned, "only an open archive is abandoned")
 
 	require.ErrorIs(t, idx.AddObjects(stray.name, RandomIndexFile(1)), pack.ErrClaimLapsed)
-	require.ErrorIs(t, idx.FinalizeArchive(stray.name, time.Hour), pack.ErrClaimLapsed)
+	require.ErrorIs(t, idx.FinalizeArchive(stray.name, time.Hour, created), pack.ErrClaimLapsed)
 
 	strayRef := &proto.Ref{Hash: stray.index[0].Sum[:]}
 

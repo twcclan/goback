@@ -735,11 +735,18 @@ func (ps *PackStorage) finalizeLocked(ws *writeSession) error {
 		return err
 	}
 
+	if err == nil {
+		a.created, err = a.indexCreated()
+	}
+
 	if a.rows != nil {
 		return ps.finalizeClaimed(ws, a, index, err)
 	}
 
-	indexErr := ps.index.IndexArchive(ws.archiveInfo(a.name), index)
+	info := ws.archiveInfo(a.name)
+	info.Created = a.created
+
+	indexErr := ps.index.IndexArchive(info, index)
 	if errors.Is(indexErr, backup.ErrNoSession) {
 		ps.dropArchive(a)
 		return indexErr
@@ -770,7 +777,7 @@ func (ps *PackStorage) finalizeClaimed(ws *writeSession, a *archive, index Index
 		return closeErr
 	}
 
-	err := ps.claims.FinalizeArchive(a.name, ps.claimLimit())
+	err := ps.claims.FinalizeArchive(a.name, ps.claimLimit(), a.created)
 	if lapsed(err) {
 		ps.logger.Warn("finalizing an archive after its claim lapsed; its objects are lost", "archive", a.name)
 		ps.abandon(ws, a)
@@ -953,14 +960,25 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		ps.logger.Warn("ignoring unreadable gc result", "archive", name, "err", err)
 	}
 
-	if !known {
+	if !known || info.Created.IsZero() {
+		created, err := a.indexCreated()
+		if err != nil {
+			return nil, fmt.Errorf("reading when the index of %s was created: %w", name, err)
+		}
+
 		idx, err := a.getIndex()
 		if err != nil {
 			return nil, err
 		}
 
-		ps.logger.Info("indexing archive", "archive", name)
-		info = ArchiveInfo{Name: name}
+		if !known {
+			ps.logger.Info("indexing archive", "archive", name)
+			info = ArchiveInfo{Name: name}
+		}
+
+		info.Created = created
+
+		// an archive the index knows without its creation time gets it
 		err = ps.index.IndexArchive(info, idx)
 		if err != nil {
 			return nil, err
@@ -969,6 +987,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 
 	a.state = info.State
 	a.session = info.Session
+	a.created = info.Created
 
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -1246,6 +1265,8 @@ type ArchiveIndex interface {
 	LocateCopies(refs []*proto.Ref) (map[string][]IndexLocation, error)
 	LookupArchive(archive string) (ArchiveInfo, bool, error)
 	// IndexArchive registers an archive; a pending one needs a live session.
+	// Of an archive it already knows, it only records a creation time the
+	// index lacks.
 	IndexArchive(archive ArchiveInfo, index IndexFile) error
 	DeleteArchive(archive string, index IndexFile) error
 	Close() error

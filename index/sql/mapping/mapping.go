@@ -44,6 +44,7 @@ type Mapper interface {
 
 	// field:Name from:"ID"
 	// field:Session from:"SessionID"
+	// field:Created from:"CreatedAt"
 	Archive(in *ent.Archive) pack.ArchiveInfo
 
 	// field:Archive from:"ArchiveID"

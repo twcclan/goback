@@ -14,6 +14,7 @@ var (
 		{Name: "id", Type: field.TypeString},
 		{Name: "state", Type: field.TypeInt, Default: 0},
 		{Name: "opened_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, Nullable: true},
 		{Name: "session_id", Type: field.TypeString, Nullable: true},
 	}
 	// ArchivesTable holds the schema information for the "archives" table.
@@ -24,7 +25,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "archives_sessions_archives",
-				Columns:    []*schema.Column{ArchivesColumns[3]},
+				Columns:    []*schema.Column{ArchivesColumns[4]},
 				RefColumns: []*schema.Column{SessionsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -33,7 +34,7 @@ var (
 			{
 				Name:    "archives_session",
 				Unique:  false,
-				Columns: []*schema.Column{ArchivesColumns[3]},
+				Columns: []*schema.Column{ArchivesColumns[4]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "session_id IS NOT NULL",
 				},
@@ -207,6 +208,8 @@ var (
 		{Name: "start", Type: field.TypeUint32},
 		{Name: "length", Type: field.TypeUint32},
 		{Name: "type", Type: field.TypeUint32},
+		{Name: "carried_time", Type: field.TypeInt64, Nullable: true},
+		{Name: "carried_offset", Type: field.TypeUint32, Nullable: true},
 		{Name: "archive_id", Type: field.TypeString},
 	}
 	// ObjectsTable holds the schema information for the "objects" table.
@@ -217,7 +220,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "objects_archives_objects",
-				Columns:    []*schema.Column{ObjectsColumns[5]},
+				Columns:    []*schema.Column{ObjectsColumns[7]},
 				RefColumns: []*schema.Column{ArchivesColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -226,12 +229,12 @@ var (
 			{
 				Name:    "object_ref_archive_id",
 				Unique:  true,
-				Columns: []*schema.Column{ObjectsColumns[1], ObjectsColumns[5]},
+				Columns: []*schema.Column{ObjectsColumns[1], ObjectsColumns[7]},
 			},
 			{
 				Name:    "object_archive_id",
 				Unique:  false,
-				Columns: []*schema.Column{ObjectsColumns[5]},
+				Columns: []*schema.Column{ObjectsColumns[7]},
 			},
 		},
 	}

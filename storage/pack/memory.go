@@ -122,7 +122,12 @@ func (i *InMemoryIndex) IndexArchive(archive ArchiveInfo, index IndexFile) error
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 
-	if _, ok := i.archives[archive.Name]; ok {
+	if known, ok := i.archives[archive.Name]; ok {
+		if known.Created.IsZero() {
+			known.Created = archive.Created
+			i.archives[archive.Name] = known
+		}
+
 		return nil
 	}
 
@@ -340,7 +345,7 @@ func (i *InMemoryIndex) AddObjects(archive string, records []IndexRecord) error 
 }
 
 // FinalizeArchive implements ClaimIndex.
-func (i *InMemoryIndex) FinalizeArchive(name string, within time.Duration) error {
+func (i *InMemoryIndex) FinalizeArchive(name string, within time.Duration, created time.Time) error {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 
@@ -350,6 +355,7 @@ func (i *InMemoryIndex) FinalizeArchive(name string, within time.Duration) error
 	}
 
 	info.State = ArchivePending
+	info.Created = created
 	i.archives[name] = info
 	delete(i.claimed, name)
 
