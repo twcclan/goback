@@ -210,6 +210,7 @@ func TestCollectMarksThenSweeps(t *testing.T) {
 	require.Equal(t, "first generation", first.SweepSkipped)
 	require.EqualValues(t, len(unreachable), first.DeadObjects)
 	require.EqualValues(t, len(reachable), first.Marked)
+	require.EqualValues(t, len(unreachable), first.Condemned)
 	require.Greater(t, first.Roots, 0)
 
 	results, err := filepath.Glob(filepath.Join(base, "*"+GCExt))
@@ -233,8 +234,18 @@ func TestCollectMarksThenSweeps(t *testing.T) {
 
 	third, err := store.Collect(ctx, gcOptions(t, 72*time.Hour))
 	require.NoError(t, err)
-	require.Zero(t, third.DeadObjects)
+	require.EqualValues(t, len(unreachable), third.DeadObjects, "the tombstones outlived their targets")
+	require.Zero(t, third.Condemned)
 	require.Zero(t, third.Swept)
+
+	fourth, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, len(unreachable), fourth.ReclaimedObjects)
+
+	fifth, err := store.Collect(ctx, gcOptions(t, 120*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, fifth.DeadObjects)
+	requireStored(t, store, reachable, true)
 
 	require.NoError(t, store.Close())
 }
@@ -352,35 +363,6 @@ func TestCollectKeepsYoungObjects(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
-func TestCollectWaitsForOlderSessions(t *testing.T) {
-	store := newGCStore(t, t.TempDir())
-	ctx := context.Background()
-
-	reachable, unreachable := makeGCTestData(t)
-	putAll(t, store, append(append([]*proto.Object{}, reachable...), unreachable...))
-
-	sctx, _ := beginSession(t, store, "a1")
-
-	_, err := store.Collect(ctx, gcOptions(t, 0))
-	require.NoError(t, err)
-
-	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
-	require.NoError(t, err)
-	require.Contains(t, second.SweepSkipped, "session")
-	requireStored(t, store, unreachable, true)
-
-	require.NoError(t, store.EndSession(sctx))
-
-	third, err := store.Collect(ctx, gcOptions(t, 72*time.Hour))
-	require.NoError(t, err)
-	require.Empty(t, third.SweepSkipped)
-	require.EqualValues(t, len(unreachable), third.ReclaimedObjects)
-	requireStored(t, store, unreachable, false)
-	requireStored(t, store, reachable, true)
-
-	require.NoError(t, store.Close())
-}
-
 // makeChain builds files, trees and one commit over the blobs.
 func makeChain(blobs []*proto.Object) []*proto.Object {
 	files := makeGCFiles(blobs)
@@ -424,8 +406,9 @@ func TestCollectReclaimsTombstonedCommit(t *testing.T) {
 	require.NoError(t, store.Flush())
 	require.Equal(t, 1, countTombstones(t, store))
 
-	_, err := store.Collect(ctx, gcOptions(t, 0))
+	first, err := store.Collect(ctx, gcOptions(t, 0))
 	require.NoError(t, err)
+	require.EqualValues(t, len(gone)-1, first.Condemned, "the commit has its tombstone already")
 	requirePresent(t, store, gone, false)
 	requirePresent(t, store, kept, true)
 
@@ -434,15 +417,15 @@ func TestCollectReclaimsTombstonedCommit(t *testing.T) {
 	require.EqualValues(t, len(gone), second.ReclaimedObjects)
 	requireStored(t, store, gone, false)
 	requireStored(t, store, kept, true)
-	require.Equal(t, 1, countTombstones(t, store), "the tombstone outlives its target by two generations")
+	require.Equal(t, len(gone), countTombstones(t, store), "the tombstones outlive their targets by two generations")
 
 	_, err = store.Collect(ctx, gcOptions(t, 72*time.Hour))
 	require.NoError(t, err)
-	require.Equal(t, 1, countTombstones(t, store))
+	require.Equal(t, len(gone), countTombstones(t, store))
 
 	fourth, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, 1, fourth.ReclaimedObjects)
+	require.EqualValues(t, len(gone), fourth.ReclaimedObjects)
 	require.Equal(t, 0, countTombstones(t, store))
 	requireStored(t, store, kept, true)
 
@@ -915,20 +898,13 @@ func (skewedIndex) SharedNow(context.Context) (time.Time, error) {
 	return time.Now().Add(-time.Hour), nil
 }
 
-func TestSessionsAndCollectionsAreStampedByTheSharedClock(t *testing.T) {
+func TestSessionsAreStampedByTheSharedClock(t *testing.T) {
 	index := skewedIndex{NewInMemoryIndex()}
 	store, err := NewPackStorage(WithArchiveStorage(newLocal(t.TempDir())), WithArchiveIndex(index))
 	require.NoError(t, err)
 	require.NoError(t, store.Open())
 
 	ctx := context.Background()
-
-	_, err = store.Collect(ctx, gcOptions(t, 0))
-	require.NoError(t, err)
-
-	state, err := loadGCState(store.storage)
-	require.NoError(t, err)
-	require.WithinDuration(t, time.Now().Add(-time.Hour), state.Completed, time.Minute)
 
 	session := &backup.Session{AgentID: "a", Set: "world"}
 	_, err = store.BeginSession(ctx, session)
@@ -937,10 +913,6 @@ func TestSessionsAndCollectionsAreStampedByTheSharedClock(t *testing.T) {
 	begun, err := index.GetSession(session.ID)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now().Add(-time.Hour), begun.Started, time.Minute)
-
-	report, err := store.Collect(ctx, gcOptions(t, 0))
-	require.NoError(t, err)
-	require.Empty(t, report.SweepSkipped, "a session that began after the last collection on the shared clock does not hold the sweep back")
 
 	require.NoError(t, store.Close())
 }

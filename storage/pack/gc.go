@@ -126,6 +126,8 @@ type CollectReport struct {
 	// SetDeduplicated is the uncompressed size of the distinct file content
 	// each set's live objects carry, attributed as SetBytes is.
 	SetDeduplicated map[int64]uint64
+	// Condemned counts the unreachable objects the run stored tombstones for.
+	Condemned int
 	// SweepSkipped names the reason when the run marked but did not sweep.
 	SweepSkipped     string
 	Swept            int
@@ -174,19 +176,31 @@ type indexLookup struct {
 
 // position returns the index position of hash, or -1.
 func (l *indexLookup) position(hash []byte) (int, error) {
+	pos, _, err := l.record(hash)
+
+	return pos, err
+}
+
+// record returns the index position and record of hash, or -1.
+func (l *indexLookup) record(hash []byte) (int, *IndexRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if !l.loaded {
 		idx, err := l.a.getIndex()
 		if err != nil {
-			return -1, err
+			return -1, nil, err
 		}
 
 		l.idx, l.loaded = idx, true
 	}
 
-	return l.idx.position(hash), nil
+	pos := l.idx.position(hash)
+	if pos < 0 {
+		return -1, nil, nil
+	}
+
+	return pos, &l.idx[pos], nil
 }
 
 func (l *indexLookup) release() {
@@ -205,7 +219,6 @@ type gcRun struct {
 
 	archives map[string]*gcArchive
 	order    []*gcArchive
-	sessions []*backup.Session
 	erased   []refKey
 	visited  *visitedSet
 	runDir   string
@@ -215,6 +228,15 @@ type gcRun struct {
 	tombstones []gcTombstone
 	// targets maps every tombstone target to whether the snapshot still holds it.
 	targets map[refKey]bool
+	// newestTomb is the version of the newest tombstone of each target in
+	// the snapshot, and condemning that of the newest one the previous
+	// generation's horizon covers.
+	newestTomb  map[refKey]Version
+	condemning  map[refKey]Version
+	condemned   map[refKey]bool
+	condemnedAt map[int64]bool
+	// tombTimes are the versions the snapshot's tombstones carry.
+	tombTimes map[int64]bool
 	// setBytes and setDeduplicated are what the mark attributed to each set.
 	setBytes        map[int64]uint64
 	setDeduplicated map[int64]uint64
@@ -228,8 +250,10 @@ type gcRoot struct {
 
 // Collect marks every object reachable from a live commit or pin, records
 // the result beside each archive and rewrites archives whose dead share
-// justifies it. Objects are dropped only after two consecutive generations
-// found them unreachable. The context must not carry a session.
+// justifies it. An unreachable object gets a tombstone, and a later
+// generation drops it once it is still unreachable and every session that
+// had begun before the tombstone was stored has ended. The context must
+// not carry a session.
 func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*CollectReport, error) {
 	if _, ok := backup.SessionFromContext(ctx); ok {
 		return nil, errors.New("garbage collection runs outside a session")
@@ -251,14 +275,15 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 
 	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(),
 		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool),
+		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
+		condemned: make(map[refKey]bool), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
 		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64)}
 	if prev != nil {
 		run.gen = prev.Generation + 1
-	}
 
-	run.sessions, err = ps.index.ListSessions()
-	if err != nil {
-		return nil, errors.Wrap(err, "listing sessions")
+		for _, t := range prev.Condemned {
+			run.condemnedAt[t.UnixNano()] = true
+		}
 	}
 
 	report := &CollectReport{Generation: run.gen}
@@ -327,12 +352,17 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 	gcDeadBytes.Record(ctx, int64(report.DeadBytes))
 
-	completed, err := ps.now(ctx)
+	if err := run.condemn(ctx); err != nil {
+		return nil, err
+	}
+	report.Condemned = len(run.condemned)
+
+	condemned, horizon, err := run.horizon()
 	if err != nil {
 		return nil, err
 	}
 
-	state := &gcState{Generation: run.gen, Snapshot: run.snapshot, Completed: completed.UTC()}
+	state := &gcState{Generation: run.gen, Snapshot: run.snapshot, Condemned: condemned, Horizon: horizon}
 	if err := storeGCState(ps.storage, state); err != nil {
 		return nil, errors.Wrap(err, "storing gc state")
 	}
@@ -488,6 +518,13 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 			tombstoned[target] = true
 			r.targets[target] = false
 			r.tombstones = append(r.tombstones, gcTombstone{ga: ga, pos: pos, target: target})
+
+			v := ga.a.version(*rec)
+			newestAt(r.newestTomb, target, v)
+			r.tombTimes[v.Time.UnixNano()] = true
+			if r.condemnedAt[v.Time.UnixNano()] {
+				newestAt(r.condemning, target, v)
+			}
 
 			if hdr.Erase {
 				r.erased = append(r.erased, target)
@@ -1088,12 +1125,16 @@ func (r *gcRun) writeResults() error {
 		ga.droppable = 0
 
 		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
-			if next.dead(pos) {
+			if r.droppable(ga, next, pos, rec) {
 				ga.droppable += uint64(rec.Length)
 			}
 
 			if ga.cur.Test(uint(pos)) {
 				return nil
+			}
+
+			if r.uncondemned(ga, rec) {
+				r.condemned[keyOf(rec.Sum[:])] = true
 			}
 
 			next.DeadObjects++
@@ -1136,9 +1177,14 @@ func (r *gcRun) sweepBlocker() string {
 		return "first generation"
 	}
 
-	for _, s := range r.sessions {
-		if s.Started.Before(r.prev.Completed) {
-			return fmt.Sprintf("session %s started before generation %d completed", s.ID, r.prev.Generation)
+	live, err := r.liveSessions()
+	if err != nil {
+		return fmt.Sprintf("listing sessions: %s", err)
+	}
+
+	for _, id := range r.prev.Horizon {
+		if live[id] {
+			return fmt.Sprintf("session %s began before generation %d condemned", id, r.prev.Generation)
 		}
 	}
 
@@ -1200,14 +1246,14 @@ func (r *gcRun) keep(candidate *archive, hdr *proto.ObjectHeader) bool {
 		return true
 	}
 
-	pos, err := ga.lookup.position(hdr.Ref.Hash)
+	pos, rec, err := ga.lookup.record(hdr.Ref.Hash)
 	if err != nil {
 		r.ps.logger.Warn("looking an object up in its index failed, keeping it", "archive", candidate.name, "ref", fmt.Sprintf("%x", hdr.Ref.Hash), "err", err)
 
 		return true
 	}
 
-	if pos < 0 || !ga.next.dead(pos) {
+	if pos < 0 || !r.droppable(ga, ga.next, pos, rec) {
 		return true
 	}
 
@@ -1234,6 +1280,155 @@ func (r *gcRun) marked(loc *IndexLocation) bool {
 	}
 
 	return pos < 0 || ga.cur.Test(uint(pos))
+}
+
+// droppable reports whether a rewrite may drop the record at pos: two
+// generations in a row found it unreachable and, unless it is a tombstone,
+// a tombstone newer than it that no un-tombstone took back was stored
+// before the previous generation's horizon.
+func (r *gcRun) droppable(ga *gcArchive, g *gcFile, pos int, rec *IndexRecord) bool {
+	if !g.dead(pos) {
+		return false
+	}
+
+	if proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
+		return true
+	}
+
+	target := keyOf(rec.Sum[:])
+
+	tomb, ok := r.condemning[target]
+	if !ok || !ga.a.version(*rec).Before(tomb) {
+		return false
+	}
+
+	return !r.revoked(target, tomb)
+}
+
+// uncondemned reports whether an unreachable record still needs a
+// tombstone: none newer than it stands.
+func (r *gcRun) uncondemned(ga *gcArchive, rec *IndexRecord) bool {
+	if proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
+		return false
+	}
+
+	target := keyOf(rec.Sum[:])
+
+	tomb, ok := r.newestTomb[target]
+
+	return !ok || !ga.a.version(*rec).Before(tomb) || r.revoked(target, tomb)
+}
+
+// revoked reports whether an un-tombstone newer than tomb takes the
+// target's tombstones back.
+func (r *gcRun) revoked(target refKey, tomb Version) bool {
+	untomb, ok := r.newestTomb[keyOf(proto.TombstoneRef(&proto.Ref{Hash: target[:]}).Hash)]
+
+	return ok && tomb.Before(untomb)
+}
+
+func newestAt(versions map[refKey]Version, key refKey, v Version) {
+	if old, ok := versions[key]; !ok || old.Before(v) {
+		versions[key] = v
+	}
+}
+
+// condemn stores a tombstone for every unreachable object that has none
+// standing, in archives of their own.
+func (r *gcRun) condemn(ctx context.Context) error {
+	if len(r.condemned) == 0 {
+		return nil
+	}
+
+	for target := range r.condemned {
+		if err := r.ps.Delete(ctx, &proto.Ref{Hash: append([]byte(nil), target[:]...)}); err != nil {
+			return errors.Wrap(err, "condemning an unreachable object")
+		}
+	}
+
+	return r.ps.Flush()
+}
+
+// horizon lists, once the tombstones are stored, the versions of the
+// committed archives there are and the sessions that have begun and not
+// ended.
+func (r *gcRun) horizon() ([]time.Time, []string, error) {
+	if err := r.ps.refreshArchives(); err != nil {
+		return nil, nil, errors.Wrap(err, "catching up with the storage's archives")
+	}
+
+	seen := make(map[int64]bool)
+	var condemned []time.Time
+
+	if r.prev != nil {
+		for _, t := range r.prev.Condemned {
+			if r.tombTimes[t.UnixNano()] && !seen[t.UnixNano()] {
+				seen[t.UnixNano()] = true
+				condemned = append(condemned, t)
+			}
+		}
+	}
+
+	r.ps.mtx.RLock()
+	for _, a := range r.ps.archives {
+		a.mtx.RLock()
+		created, committed := a.created, a.readOnly && a.state == ArchiveCommitted
+		a.mtx.RUnlock()
+
+		if committed && !created.IsZero() && !seen[created.UnixNano()] {
+			seen[created.UnixNano()] = true
+			condemned = append(condemned, created)
+		}
+	}
+	r.ps.mtx.RUnlock()
+
+	sort.Slice(condemned, func(i, j int) bool { return condemned[i].Before(condemned[j]) })
+
+	live, err := r.liveSessions()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	horizon := make([]string, 0, len(live))
+	for id := range live {
+		horizon = append(horizon, id)
+	}
+
+	sort.Strings(horizon)
+
+	return condemned, horizon, nil
+}
+
+// liveSessions are the sessions that began and have not ended, by their
+// markers or by the index, which also knows sessions older than markers.
+func (r *gcRun) liveSessions() (map[string]bool, error) {
+	begun, err := r.ps.markerIDs(SessionBeginExt)
+	if err != nil {
+		return nil, err
+	}
+
+	ended, err := r.ps.markerIDs(SessionEndExt)
+	if err != nil {
+		return nil, err
+	}
+
+	indexed, err := r.ps.index.ListSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range indexed {
+		begun[s.ID] = true
+	}
+
+	live := make(map[string]bool, len(begun))
+	for id := range begun {
+		if !ended[id] {
+			live[id] = true
+		}
+	}
+
+	return live, nil
 }
 
 func prefixOf(hash []byte) uint64 {

@@ -26,8 +26,16 @@ const (
 type gcState struct {
 	Generation uint64    `json:"generation"`
 	Snapshot   time.Time `json:"snapshot"`
-	Completed  time.Time `json:"completed"`
 	Swept      bool      `json:"swept"`
+	// Condemned are the versions of the committed archives there were once
+	// the generation's tombstones were stored, or once an earlier
+	// generation's were; only tombstones of these versions, wherever
+	// compaction moved them, let a later generation drop a copy.
+	Condemned []time.Time `json:"condemned,omitempty"`
+	// Horizon are the sessions that had begun and not ended once the
+	// generation's tombstones were stored. A later generation drops
+	// nothing until every one of them has ended.
+	Horizon []string `json:"horizon,omitempty"`
 }
 
 // gcFile is one archive's mark result: which index positions were reachable

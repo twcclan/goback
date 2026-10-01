@@ -156,8 +156,6 @@ func (ps *PackStorage) SessionLease() time.Duration { return ps.sessionLease }
 // Has reports whether the store holds a copy of the object that the caller
 // may rely on. The newest record of the object decides: a tombstone newer
 // than every copy makes it absent, unless an un-tombstone is newer still.
-// A copy the last completed garbage collection found unreachable does not
-// count, so the caller uploads again instead of relying on it.
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	scope := ScopeOf(ctx)
 
@@ -180,7 +178,7 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 			return false, err
 		}
 
-		if a == nil || a.candidate(ref.Hash) {
+		if a == nil {
 			continue
 		}
 

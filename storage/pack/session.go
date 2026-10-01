@@ -83,7 +83,7 @@ func (ws *writeSession) addPending(a *archive, ref *proto.Ref) {
 	ws.pendingMtx.Unlock()
 }
 
-// now is the time sessions and collections are stamped with: the index's
+// now is the time sessions are stamped with: the index's
 // when every process shares it, this machine's otherwise.
 func (ps *PackStorage) now(ctx context.Context) (time.Time, error) {
 	if clock, ok := ps.index.(SharedClock); ok {
