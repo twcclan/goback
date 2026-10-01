@@ -1354,10 +1354,10 @@ func (r *gcRun) marked(loc *IndexLocation) bool {
 	return pos < 0 || ga.cur.Test(uint(pos))
 }
 
-// droppable reports whether a rewrite may drop the record at pos. A
-// copy goes once two generations in a row found it unreachable and a
-// tombstone newer than it was stored before the previous generation's
-// horizon; what an un-tombstone takes back is marked. A tombstone goes once spent,
+// droppable reports whether a rewrite may drop the record at pos. A copy
+// goes once two generations in a row found it unreachable and a tombstone
+// newer than it was stored before the previous generation's horizon;
+// what an un-tombstone takes back is marked. A tombstone goes once spent,
 // or once its target is gone, the previous horizon covers it and every
 // session of that horizon has ended.
 func (r *gcRun) droppable(ga *gcArchive, g *gcFile, pos int, rec *IndexRecord) bool {
