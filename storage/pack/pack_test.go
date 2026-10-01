@@ -5,7 +5,6 @@ import (
 	"context"
 	"math/rand"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/twcclan/goback/backup"
@@ -168,7 +167,7 @@ func TestCompactionKeepsAnsweringReaders(t *testing.T) {
 	}
 	require.NoError(t, store.Flush())
 
-	before, err := store.storage.List(ArchiveSuffix)
+	before, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Greater(t, len(before), 10)
 
@@ -194,13 +193,12 @@ func TestCompactionKeepsAnsweringReaders(t *testing.T) {
 		}
 	}
 
-	after, err := store.storage.List(ArchiveSuffix)
+	after, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Less(t, len(after), len(before))
 
 	for _, name := range before {
-		name = strings.TrimSuffix(name, ArchiveSuffix)
-		if slices.Contains(after, name+ArchiveSuffix) {
+		if slices.Contains(after, name) {
 			continue
 		}
 
@@ -235,13 +233,13 @@ func TestPackCompaction(t *testing.T) {
 	require.NoError(t, store.Put(context.Background(), objects[0]))
 	require.NoError(t, store.Flush())
 
-	archivesBefore, err := store.storage.List(ArchiveSuffix)
+	archivesBefore, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Greater(t, len(archivesBefore), 1)
 
 	require.NoError(t, store.doCompaction())
 
-	archivesAfter, err := store.storage.List(ArchiveSuffix)
+	archivesAfter, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Less(t, len(archivesAfter), len(archivesBefore))
 
@@ -254,7 +252,7 @@ func TestPackCompaction(t *testing.T) {
 
 		loc, err := index.LocateObject(original.Ref(), Scope{})
 		require.NoError(t, err)
-		require.Contains(t, archivesAfter, loc.Archive+ArchiveSuffix)
+		require.Contains(t, archivesAfter, loc.Archive)
 	}
 
 	require.NoError(t, store.Close())

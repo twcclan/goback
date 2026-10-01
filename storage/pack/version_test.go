@@ -94,12 +94,12 @@ func TestARewriteKeepsTheVersionsOfWhatItMoves(t *testing.T) {
 
 	before := versionsOf(t, store, objects)
 
-	moved, err := store.storage.List(ArchiveSuffix)
+	moved, err := store.archiveNames()
 	require.NoError(t, err)
 
 	require.NoError(t, store.doCompaction())
 
-	after, err := store.storage.List(ArchiveSuffix)
+	after, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Less(t, len(after), len(moved), "the compaction rewrote nothing")
 

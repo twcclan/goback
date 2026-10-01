@@ -510,10 +510,10 @@ func TestCollectCarriesTheErasureClockThroughARewrite(t *testing.T) {
 	_, err = store.Collect(ctx, patient(0))
 	require.NoError(t, err)
 
-	before, err := store.storage.List(ArchiveSuffix)
+	before, err := store.archiveNames()
 	require.NoError(t, err)
 	require.NoError(t, store.doCompaction())
-	after, err := store.storage.List(ArchiveSuffix)
+	after, err := store.archiveNames()
 	require.NoError(t, err)
 	require.NotEqual(t, before, after, "the rewrite replaced the archives")
 

@@ -38,6 +38,9 @@ type CollectOptions struct {
 	MinAge time.Duration
 	// NoSweep stops after the mark.
 	NoSweep bool
+	// Quarantine is how long the files of an archive a rewrite retired
+	// are kept before a collection deletes them (DefaultQuarantine).
+	Quarantine time.Duration
 	// TempDir holds the live-set runs and the checkpoints a crashed run
 	// resumes from (os.TempDir()).
 	TempDir string
@@ -94,6 +97,9 @@ func (o CollectOptions) withDefaults() CollectOptions {
 	if o.MinAge <= 0 {
 		o.MinAge = defaultGCMinAge
 	}
+	if o.Quarantine <= 0 {
+		o.Quarantine = DefaultQuarantine
+	}
 	if o.TempDir == "" {
 		o.TempDir = os.TempDir()
 	}
@@ -133,7 +139,9 @@ type CollectReport struct {
 	Swept            int
 	ReclaimedObjects uint64
 	ReclaimedBytes   uint64
-	Duration         time.Duration
+	// Purged counts the quarantined files the run deleted.
+	Purged   int
+	Duration time.Duration
 }
 
 // Collector is implemented by stores that can garbage collect themselves.
@@ -419,6 +427,11 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		}
 	} else {
 		ps.logger.Info("gc did not sweep", "generation", run.gen, "reason", report.SweepSkipped)
+	}
+
+	report.Purged, err = ps.PurgeQuarantine(opts.Quarantine, opts.Now)
+	if err != nil {
+		return nil, errors.Wrap(err, "purging the quarantine")
 	}
 
 	report.Duration = time.Since(started)

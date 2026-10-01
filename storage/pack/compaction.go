@@ -147,6 +147,12 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 			continue
 		}
 
+		// marked before the index forgets it, so no process loads it again
+		if err := ps.quarantineArchive(archive.name, time.Now()); err != nil {
+			ps.logger.Warn("retiring an obsolete archive failed", "archive", archive.name, "err", err)
+			continue
+		}
+
 		ps.retireArchive(archive)
 
 		if e := archive.Close(); e != nil {
@@ -159,7 +165,18 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		}
 
 		ps.forgetCached(context.Background(), idx)
-		ps.deleteArchiveFiles(archive.name)
+
+		// a restore needs neither: the index file says the archive was
+		// committed
+		for _, ext := range []string{GCExt, CommittedExt} {
+			if err := ps.storage.Delete(archive.name + ext); err != nil && !notExist(err) {
+				ps.logger.Warn("deleting a file of a retired archive failed", "file", archive.name+ext, "err", err)
+			}
+		}
+
+		if ps.observer != nil {
+			ps.observer.ArchiveDeleted(archive.name)
+		}
 	}
 
 	return nil

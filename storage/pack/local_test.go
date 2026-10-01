@@ -116,13 +116,18 @@ func (las *localArchiveStorage) Delete(name string) error {
 		return err
 	}
 
+	las.pruneDirs(name)
+
+	return nil
+}
+
+// pruneDirs removes the directories the named file leaves empty.
+func (las *localArchiveStorage) pruneDirs(name string) {
 	for dir := filepath.Dir(las.path(name)); dir != las.base && strings.HasPrefix(dir, las.base); dir = filepath.Dir(dir) {
 		if os.Remove(dir) != nil {
 			break
 		}
 	}
-
-	return nil
 }
 
 func (las *localArchiveStorage) List(extension string) ([]string, error) {

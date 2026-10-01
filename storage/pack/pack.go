@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -1175,7 +1174,7 @@ func (ps *PackStorage) Close() error {
 
 // Open implements backup.ObjectStore.
 func (ps *PackStorage) Open() error {
-	matches, err := ps.storage.List(ArchiveSuffix)
+	names, err := ps.archiveNames()
 	if err != nil {
 		return errors.Wrap(err, "failed listing archive names")
 	}
@@ -1183,12 +1182,10 @@ func (ps *PackStorage) Open() error {
 	sem := semaphore.NewWeighted(indexOpenerThreads)
 	group, ctx := errgroup.WithContext(context.Background())
 
-	for _, match := range matches {
+	for _, name := range names {
 		if err = sem.Acquire(ctx, 1); err != nil {
 			break
 		}
-
-		name := strings.TrimSuffix(match, ArchiveSuffix)
 
 		group.Go(func() error {
 			defer sem.Release(1)
@@ -1212,14 +1209,14 @@ func (ps *PackStorage) Open() error {
 // commits of archives it loaded while they were pending, and unloads the
 // committed archives whose files are gone.
 func (ps *PackStorage) refreshArchives() error {
-	matches, err := ps.storage.List(ArchiveSuffix)
+	names, err := ps.archiveNames()
 	if err != nil {
 		return errors.Wrap(err, "failed listing archive names")
 	}
 
-	listed := make(map[string]bool, len(matches))
-	for _, match := range matches {
-		listed[strings.TrimSuffix(match, ArchiveSuffix)] = true
+	listed := make(map[string]bool, len(names))
+	for _, name := range names {
+		listed[name] = true
 	}
 
 	ps.mtx.RLock()
