@@ -343,6 +343,7 @@ PMark(m) ==
     IN /\ Pipelined
        /\ gc[m].pc = "idle"
        /\ Holds(m)
+       /\ SkipPlanWait \/ plans = {}
        /\ gc' = [gc EXCEPT ![m].pc = "marked", ![m].m1 = Reachable \cup kept,
                            ![m].snap = {c \in Committed : c.kind = "copy"},
                            ![m].untombs = Untombs]
@@ -407,11 +408,22 @@ PSeal(m) ==
     /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, plans, rw, seen>>
 
 PDelete(m) ==
+    /\ ~Handoff
     /\ gc[m].pc = "sealed"
     /\ records' = records \ gc[m].drop
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
     /\ UNCHANGED <<clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen>>
+
+\* the plan goes to the bucket for a rewriter, as Publish does
+PPublish(m) ==
+    /\ Handoff
+    /\ gc[m].pc = "sealed"
+    /\ Holds(m)
+    /\ plans' = plans \cup {gc[m].drop}
+    /\ gc' = [gc EXCEPT ![m] = Idle]
+    /\ lease' = IF lease = m THEN None ELSE lease
+    /\ UNCHANGED <<records, clock, phase, refs, roots, cycles, dedup, sealed, rw, state, seen>>
 
 \* a maintainer dies anywhere; what it wrote stays, its lease runs out
 Crash(m) ==
@@ -428,7 +440,7 @@ Next ==
     \/ \E m \in Maintainers :
          \/ Acquire(m) \/ Crash(m)
          \/ ~Pipelined /\ (Mark(m) \/ Condemn(m) \/ Horizon(m) \/ Seal(m) \/ Confirm(m) \/ Plan(m) \/ Delete(m) \/ Publish(m))
-         \/ PMark(m) \/ PPlan(m) \/ PCondemn(m) \/ PHorizon(m) \/ PSeal(m) \/ PDelete(m)
+         \/ PMark(m) \/ PPlan(m) \/ PCondemn(m) \/ PHorizon(m) \/ PSeal(m) \/ PDelete(m) \/ PPublish(m)
     \/ \E w \in Rewriters : Rewrite(w) \/ Finish(w) \/ RewriterCrash(w) \/ \E plan \in plans : TakePlan(w, plan)
 
 Spec == Init /\ [][Next]_vars
