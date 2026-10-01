@@ -600,6 +600,90 @@ func (a *archive) foreachReader(reader io.Reader, load loadPredicate, callback f
 	return nil
 }
 
+// foreachOfType calls back for every object of type t the archive's index
+// lists, reading only their records, and with their bytes when load is
+// set. It reports false, having called nothing, when the archive cannot be
+// read that way: it is still being written, or its index does not record
+// types.
+func (a *archive) foreachOfType(t proto.ObjectType, load bool, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) (bool, error) {
+	if !a.readOnlyNow() {
+		return false, nil
+	}
+
+	idx, err := a.getIndex()
+	if err != nil {
+		return false, err
+	}
+
+	var records []*IndexRecord
+	for i := range idx {
+		if idx[i].Type == uint32(proto.ObjectType_INVALID) {
+			return false, nil
+		}
+
+		if idx[i].Type == uint32(t) {
+			records = append(records, &idx[i])
+		}
+	}
+
+	sort.Slice(records, func(i, j int) bool { return records[i].Offset < records[j].Offset })
+
+	for start := 0; start < len(records); {
+		end, span := start+1, int64(records[start].Length)
+		from := int64(records[start].Offset)
+
+		for end < len(records) {
+			previous := int64(records[end-1].Offset) + int64(records[end-1].Length)
+			grown := int64(records[end].Offset) + int64(records[end].Length) - from
+
+			if int64(records[end].Offset)-previous > walkGap || grown > walkSpan {
+				break
+			}
+
+			span = grown
+			end++
+		}
+
+		buf, _, err := a.readSpan(from, span)
+		if err != nil {
+			return true, errors.Wrapf(err, "reading %d bytes at %d of %s", span, from, a.name)
+		}
+
+		for _, rec := range records[start:end] {
+			record := buf[int64(rec.Offset)-from : int64(rec.Offset)-from+int64(rec.Length)]
+			hdrSize, consumed := proto.DecodeVarint(record)
+
+			hdr, err := proto.NewObjectHeaderFromBytes(record[consumed : consumed+int(hdrSize)])
+			if err != nil {
+				return true, errors.Wrapf(err, "parsing a header in %s", a.name)
+			}
+
+			var data []byte
+			if load {
+				data, err = openAtRest(a.atRest, hdr, record[consumed+int(hdrSize):])
+				if err != nil {
+					return true, err
+				}
+			}
+
+			if err := callback(hdr, data, rec.Offset, rec.Length); err != nil {
+				return true, err
+			}
+		}
+
+		start = end
+	}
+
+	return true, nil
+}
+
+// walkGap is how far apart two records of a typed walk may sit and still
+// be read together; walkSpan bounds what one such read covers.
+const (
+	walkGap  = 64 << 10
+	walkSpan = 8 << 20
+)
+
 func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHeader, bytes []byte, offset uint32, length uint32) error) error {
 	file, err := a.storage.Open(a.archiveName())
 	if err != nil {

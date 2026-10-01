@@ -554,7 +554,7 @@ func (ps *PackStorage) WalkHeaders(ctx context.Context, t proto.ObjectType, fn f
 			continue
 		}
 
-		err := archive.foreach(loadNone, func(hdr *proto.ObjectHeader, _ []byte, _, _ uint32) error {
+		visit := func(hdr *proto.ObjectHeader, _ []byte, _, _ uint32) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -564,7 +564,20 @@ func (ps *PackStorage) WalkHeaders(ctx context.Context, t proto.ObjectType, fn f
 			}
 
 			return nil
-		})
+		}
+
+		if t != proto.ObjectType_INVALID {
+			typed, err := archive.foreachOfType(t, false, visit)
+			if err != nil {
+				return err
+			}
+
+			if typed {
+				continue
+			}
+		}
+
+		err := archive.foreach(loadNone, visit)
 		if err != nil {
 			return err
 		}
@@ -598,8 +611,7 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 			continue
 		}
 
-		ps.logger.Debug("reading archive", "archive", archive.name)
-		err := archive.foreach(pred, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+		visit := func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 			if t == proto.ObjectType_INVALID || hdr.Type == t {
 				var obj *proto.Object
 				var err error
@@ -615,8 +627,22 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 			}
 
 			return nil
-		})
+		}
 
+		if t != proto.ObjectType_INVALID {
+			typed, err := archive.foreachOfType(t, load, visit)
+			if err != nil {
+				return err
+			}
+
+			if typed {
+				continue
+			}
+		}
+
+		ps.logger.Debug("reading archive", "archive", archive.name)
+
+		err := archive.foreach(pred, visit)
 		if err != nil {
 			return err
 		}

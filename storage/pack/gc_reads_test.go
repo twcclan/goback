@@ -20,6 +20,7 @@ type countingStorage struct {
 
 	mu    sync.Mutex
 	reads int
+	bytes int64
 }
 
 func (c *countingStorage) Open(name string) (File, error) {
@@ -46,9 +47,20 @@ type countingFile struct {
 func (c *countingFile) ReadAt(p []byte, off int64) (int, error) {
 	c.storage.mu.Lock()
 	c.storage.reads++
+	c.storage.bytes += int64(len(p))
 	c.storage.mu.Unlock()
 
 	return c.File.(io.ReaderAt).ReadAt(p, off)
+}
+
+func (c *countingFile) Read(p []byte) (int, error) {
+	n, err := c.File.Read(p)
+
+	c.storage.mu.Lock()
+	c.storage.bytes += int64(n)
+	c.storage.mu.Unlock()
+
+	return n, err
 }
 
 func TestMarkReadsNeighboursTogether(t *testing.T) {
