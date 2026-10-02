@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -332,28 +331,8 @@ func FetchWAL(ctx context.Context, objects backup.ObjectStore, key *storekey.Key
 		return fmt.Errorf("%w: %s", backup.ErrNotFound, name)
 	}
 
-	content, err := backup.NewBackupReader(objects).WithKey(key).ReadFile(ctx, tree.Nodes[i].Ref)
-	if err != nil {
-		return err
-	}
+	restorer := &backup.Restorer{Store: objects, Key: key}
+	_, err = restorer.RestoreFile(ctx, dst, tree.Nodes[i].Stat, tree.Nodes[i].Ref)
 
-	tmp := dst + partialSuffix
-
-	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(file, content); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-
-	return os.Rename(tmp, dst)
+	return err
 }

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -172,4 +173,67 @@ func TestFetchWALWritesWhatTheCommitHolds(t *testing.T) {
 
 	err = FetchWAL(f.ctx, f.index, nil, wal.Ref, "00000002.history", dst)
 	require.ErrorIs(t, err, backup.ErrNotFound)
+}
+
+// streamingStore serves a file's parts only through ReadParts, like the
+// goback:// client.
+type streamingStore struct {
+	backup.ObjectStore
+}
+
+func (s streamingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	obj, err := s.ObjectStore.Get(ctx, ref)
+	if err == nil && obj.GetBlob() != nil {
+		return nil, backup.ErrNotFound
+	}
+
+	return obj, err
+}
+
+func (s streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
+	obj, err := s.ObjectStore.Get(ctx, file)
+	if err != nil {
+		return err
+	}
+
+	parts, err := backup.FileParts(ctx, s.ObjectStore, obj.GetFile())
+	if err != nil {
+		return err
+	}
+
+	for i, part := range parts {
+		blob, err := s.ObjectStore.Get(ctx, part.Ref)
+		if err != nil {
+			return err
+		}
+
+		if err := fn(i, blob); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func TestFetchWALStreamsFromAStoreThatServesNoParts(t *testing.T) {
+	f := newWALFixture(t)
+
+	name := walName(1, 7)
+	want := append(header(1, 7*segSize, 42), make([]byte, 1<<20)...)
+	_, err := rand.Read(want[len(want)-1<<20:])
+	require.NoError(t, err)
+
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(path, want, 0o600))
+	require.NoError(t, f.spool.Add(path, name))
+
+	wal, err := f.run()
+	require.NoError(t, err)
+
+	dst := filepath.Join(t.TempDir(), "RECOVERYXLOG")
+	require.NoError(t, FetchWAL(f.ctx, streamingStore{f.index}, nil, wal.Ref, name, dst))
+
+	got, err := os.ReadFile(dst)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }
