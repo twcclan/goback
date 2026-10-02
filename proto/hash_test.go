@@ -63,6 +63,11 @@ func TestCanonicalGoldenVectors(t *testing.T) {
 			payload: "0a2610051a220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed1",
 		},
 		{
+			name:    "measured split file",
+			object:  NewObject(&File{Splits: []*Ref{part, tree}, SplitLengths: []uint64{300, 7}, SplitDepth: 2}),
+			payload: "12220a2037a680133bd09342f934afb8dd2c7d9e1b624da5f35e3a38adb103e37c055ed112220a20dc9c5edb8b2d479e697b4b0b8ab874f32b325138598ce9e7b759eb829211062238ac0238074002",
+		},
+		{
 			name:    "inline file",
 			object:  NewObject(&File{Inline: []byte("hi")}),
 			payload: "22026869",
@@ -123,6 +128,10 @@ func TestCanonicalRejects(t *testing.T) {
 		"inline and parts":   NewObject(&File{Parts: []*FilePart{{Length: 1, Ref: good}}, Inline: []byte("x")}),
 		"inline too large":   NewObject(&File{Inline: make([]byte, InlineLimit+1)}),
 		"unknown chunker":    NewObject(&File{Chunker: 99}),
+		"unmeasured split":   NewObject(&File{Splits: []*Ref{good, good}, SplitLengths: []uint64{3}, SplitDepth: 1}),
+		"empty split":        NewObject(&File{Splits: []*Ref{good}, SplitLengths: []uint64{0}, SplitDepth: 1}),
+		"depth unmeasured":   NewObject(&File{Splits: []*Ref{good}, SplitDepth: 1}),
+		"lengths no depth":   NewObject(&File{Splits: []*Ref{good}, SplitLengths: []uint64{3}}),
 		"empty object":       {},
 	}
 

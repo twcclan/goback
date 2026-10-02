@@ -720,6 +720,14 @@ func canonicalFile(f *File) ([]byte, error) {
 		return nil, invalid("file has inline content and parts")
 	}
 
+	if len(f.SplitLengths) > 0 && len(f.SplitLengths) != len(f.Splits) {
+		return nil, invalid("file measures %d of its %d splits", len(f.SplitLengths), len(f.Splits))
+	}
+
+	if (len(f.SplitLengths) > 0) != (f.SplitDepth > 0) {
+		return nil, invalid("file has split lengths without a depth, or a depth without lengths")
+	}
+
 	if len(f.Inline) > InlineLimit {
 		return nil, invalid("inline content of %d bytes exceeds %d", len(f.Inline), InlineLimit)
 	}
@@ -779,6 +787,16 @@ func canonicalFile(f *File) ([]byte, error) {
 	b = appendVarint(b, 3, uint64(f.Chunker))
 	b = appendBytes(b, 4, f.Inline)
 	b = appendVarint(b, 6, uint64(f.InlineEncryption))
+
+	for i, length := range f.SplitLengths {
+		if length == 0 {
+			return nil, invalid("file split %d is empty", i)
+		}
+
+		b = appendVarint(b, 7, length)
+	}
+
+	b = appendVarint(b, 8, uint64(f.SplitDepth))
 
 	return b, nil
 }

@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"sort"
 	"sync"
@@ -22,12 +23,9 @@ import (
 const (
 	maxBlobSize = chunker.MaxSize
 
-	// maxFileParts is the part count above which a file object is split
-	maxFileParts = 25000
-
 	// SplitFileSize is the smallest content size whose file object may be
 	// split into sub-file objects.
-	SplitFileSize = maxFileParts * chunker.MinSize
+	SplitFileSize = 4096 * chunker.MinSize
 
 	inFlightChunks = 80
 
@@ -424,7 +422,6 @@ func (bfw *fileWriter) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-
 func (bfw *fileWriter) object(file *proto.File) *proto.Object {
 	obj := proto.NewObject(file)
 	if bfw.key != nil {
@@ -498,40 +495,129 @@ func PutParts(ctx context.Context, store ObjectStore, key *storekey.Key, parts [
 	return writer.Ref(), nil
 }
 
-// putParts stores the file object over the parts, split into sub-file
+// putParts stores the file object over the parts, as a tree of sub-file
 // objects when there are too many.
-func (bfw *fileWriter) putParts() (err error) {
-	var file *proto.Object
+func (bfw *fileWriter) putParts() error {
+	if uint64(len(bfw.parts)) <= splitMax {
+		file := bfw.object(&proto.File{Parts: bfw.parts})
+		bfw.ref = file.Ref()
 
-	if len(bfw.parts) > maxFileParts {
-		var splits []*proto.Ref
-		for len(bfw.parts) > 0 {
-			max := maxFileParts
-			if max > len(bfw.parts) {
-				max = len(bfw.parts)
-			}
+		return bfw.storeFile(file, bfw.parts)
+	}
 
-			split := bfw.object(&proto.File{Parts: bfw.parts[:max]})
+	var level []splitEntry
 
-			err = bfw.storeFile(split, bfw.parts[:max])
-			if err != nil {
+	for _, run := range cutRuns(len(bfw.parts), func(i int) *proto.Ref { return bfw.parts[i].Ref }) {
+		parts := rebased(bfw.parts[run[0]:run[1]], -int64(bfw.parts[run[0]].Offset))
+
+		leaf := bfw.object(&proto.File{Parts: parts})
+		if err := bfw.storeFile(leaf, parts); err != nil {
+			return err
+		}
+
+		last := parts[len(parts)-1]
+		level = append(level, splitEntry{ref: leaf.Ref(), length: last.Offset + last.Length})
+	}
+
+	for depth := uint32(1); ; depth++ {
+		if uint64(len(level)) <= splitMax {
+			file := bfw.object(splitFile(level, depth))
+			bfw.ref = file.Ref()
+
+			return bfw.store.Put(bfw.ctx, file)
+		}
+
+		var up []splitEntry
+
+		for _, run := range cutRuns(len(level), func(i int) *proto.Ref { return level[i].ref }) {
+			entries := level[run[0]:run[1]]
+
+			node := bfw.object(splitFile(entries, depth))
+			if err := bfw.store.Put(bfw.ctx, node); err != nil {
 				return err
 			}
 
-			bfw.parts = bfw.parts[max:]
-			splits = append(splits, split.Ref())
+			var length uint64
+			for _, entry := range entries {
+				length += entry.length
+			}
+
+			up = append(up, splitEntry{ref: node.Ref(), length: length})
 		}
 
-		file = bfw.object(&proto.File{Splits: splits})
-		bfw.ref = file.Ref()
+		level = up
+	}
+}
 
-		return bfw.store.Put(bfw.ctx, file)
+// A file of more parts than splitMax is held by a tree of file objects.
+// Each level is cut where an entry's ref hashes to a boundary, so an edit
+// leaves the file objects around it as they were. Tests shrink the bounds.
+var (
+	splitMin uint64 = 256
+	splitAvg uint64 = 1024
+	splitMax uint64 = SplitFileSize / chunker.MinSize
+)
+
+// rebased copies parts with their offsets moved by delta. The leaves of a
+// measured split file count from their own start, so the same run of
+// parts is the same object wherever in the file it lands.
+func rebased(parts []*proto.FilePart, delta int64) []*proto.FilePart {
+	out := make([]*proto.FilePart, len(parts))
+	for i, part := range parts {
+		out[i] = &proto.FilePart{Offset: uint64(int64(part.Offset) + delta), Length: part.Length, Ref: part.Ref}
 	}
 
-	file = bfw.object(&proto.File{Parts: bfw.parts})
-	bfw.ref = file.Ref()
+	return out
+}
 
-	return bfw.storeFile(file, bfw.parts)
+// splitEntry is a sub-file object and the content bytes it holds.
+type splitEntry struct {
+	ref    *proto.Ref
+	length uint64
+}
+
+func splitFile(entries []splitEntry, depth uint32) *proto.File {
+	file := &proto.File{SplitDepth: depth}
+	for _, entry := range entries {
+		file.Splits = append(file.Splits, entry.ref)
+		file.SplitLengths = append(file.SplitLengths, entry.length)
+	}
+
+	return file
+}
+
+// cutRuns cuts n entries into runs of splitMin to splitMax, ending a run
+// at an entry whose ref is a boundary, and returns each run as [start, end).
+func cutRuns(n int, ref func(i int) *proto.Ref) [][2]int {
+	var (
+		runs  [][2]int
+		start int
+	)
+
+	for i := range n {
+		size := uint64(i - start + 1)
+		if size < splitMin {
+			continue
+		}
+
+		if size >= splitMax || splitBoundary(ref(i)) {
+			runs = append(runs, [2]int{start, i + 1})
+			start = i + 1
+		}
+	}
+
+	if start < n {
+		runs = append(runs, [2]int{start, n})
+	}
+
+	return runs
+}
+
+func splitBoundary(ref *proto.Ref) bool {
+	h := fnv.New64a()
+	h.Write(ref.GetHash())
+
+	return h.Sum64()%splitAvg == 0
 }
 
 var _ io.WriteCloser = new(fileWriter)
@@ -543,21 +629,84 @@ func FileParts(ctx context.Context, store Getter, file *proto.File) ([]*proto.Fi
 		return file.GetParts(), nil
 	}
 
-	var parts []*proto.FilePart
+	subFiles := make([]*proto.File, len(file.GetSplits()))
+	grp, grpCtx := errgroup.WithContext(ctx)
+	grp.SetLimit(splitFetchers)
+
 	for i, split := range file.GetSplits() {
-		obj, err := store.Get(ctx, split)
+		grp.Go(func() error {
+			sub, err := loadSplit(grpCtx, store, i, split)
+			subFiles[i] = sub
+
+			return err
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	var (
+		parts []*proto.FilePart
+		start uint64
+	)
+
+	for i, sub := range subFiles {
+		held, err := FileParts(ctx, store, sub)
 		if err != nil {
-			return nil, errors.Wrapf(err, "split %d (%x) of file", i, split.GetHash())
+			return nil, err
 		}
 
-		if obj.GetFile() == nil {
-			return nil, errors.Errorf("split %d (%x) of file is not a file object", i, split.GetHash())
+		if file.GetSplitDepth() > 0 {
+			held = rebased(held, int64(start))
+			start += file.GetSplitLengths()[i]
 		}
 
-		parts = append(parts, obj.GetFile().GetParts()...)
+		parts = append(parts, held...)
 	}
 
 	return parts, nil
+}
+
+// splitFetchers bounds the sub-file objects loaded at once.
+const splitFetchers = 16
+
+func loadSplit(ctx context.Context, store Getter, i int, split *proto.Ref) (*proto.File, error) {
+	obj, err := store.Get(ctx, split)
+	if err != nil {
+		return nil, errors.Wrapf(err, "split %d (%x) of file", i, split.GetHash())
+	}
+
+	if obj.GetFile() == nil {
+		return nil, errors.Errorf("split %d (%x) of file is not a file object", i, split.GetHash())
+	}
+
+	return obj.GetFile(), nil
+}
+
+// SubFiles calls visit with every file object of a split file's tree
+// below file, loading only the ones that are split themselves.
+func SubFiles(ctx context.Context, store Getter, file *proto.File, visit func(ref *proto.Ref) error) error {
+	for i, split := range file.GetSplits() {
+		if err := visit(split); err != nil {
+			return err
+		}
+
+		if file.GetSplitDepth() <= 1 {
+			continue
+		}
+
+		sub, err := loadSplit(ctx, store, i, split)
+		if err != nil {
+			return err
+		}
+
+		if err := SubFiles(ctx, store, sub, visit); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func newFileReader(ctx context.Context, store ObjectStore, file *proto.File, key *storekey.Key) *fileReader {
@@ -566,18 +715,24 @@ func newFileReader(ctx context.Context, store ObjectStore, file *proto.File, key
 		file:  file,
 		key:   key,
 		ctx:   ctx,
+		total: -1,
 	}
 }
 
 type fileReader struct {
-	store     ObjectStore
-	file      *proto.File
-	key       *storekey.Key
+	store ObjectStore
+	file  *proto.File
+	key   *storekey.Key
+	// all is every part, once something needed them all
+	all    []*proto.FilePart
+	inline []byte
+	// parts is the run of parts a read is in: one sub-file object's of a
+	// measured split file, all of them otherwise
 	parts     []*proto.FilePart
-	inline    []byte
-	blob      *proto.Object
 	partIndex int
+	blob      *proto.Object
 	offset    int64
+	total     int64
 	ctx       context.Context
 }
 
@@ -587,15 +742,95 @@ func (bfr *fileReader) search(index int) bool {
 	return bfr.offset <= int64(part.Offset+part.Length-1)
 }
 
+// size is the file's length, known once measure or getFileParts ran.
 func (bfr *fileReader) size() int64 {
-	parts := bfr.parts
-	length := len(parts)
-	if length > 0 {
-		last := parts[length-1]
-		return int64(last.Offset + last.Length)
+	return bfr.total
+}
+
+// measure learns the file's length, without loading any sub-file object
+// when the file records their lengths.
+func (bfr *fileReader) measure(ctx context.Context) error {
+	if bfr.total >= 0 {
+		return nil
 	}
 
-	return 0
+	if bfr.file.GetSplitDepth() > 0 {
+		var total uint64
+		for _, length := range bfr.file.GetSplitLengths() {
+			total += length
+		}
+
+		bfr.total = int64(total)
+
+		return nil
+	}
+
+	_, err := bfr.getFileParts(ctx)
+
+	return err
+}
+
+// locate makes parts the run holding offset, loading the one sub-file
+// object on the way down to it.
+func (bfr *fileReader) locate(ctx context.Context) error {
+	if bfr.partIndex < len(bfr.parts) {
+		part := bfr.parts[bfr.partIndex]
+		if bfr.offset >= int64(part.Offset) && bfr.offset < int64(part.Offset+part.Length) {
+			return nil
+		}
+	}
+
+	bfr.blob = nil
+
+	if !runHolds(bfr.parts, bfr.offset) {
+		parts, err := bfr.partsAt(ctx, uint64(bfr.offset))
+		if err != nil {
+			return err
+		}
+
+		bfr.parts = parts
+	}
+
+	bfr.partIndex = sort.Search(len(bfr.parts), bfr.search)
+
+	return nil
+}
+
+func runHolds(parts []*proto.FilePart, offset int64) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	last := parts[len(parts)-1]
+
+	return offset >= int64(parts[0].Offset) && offset < int64(last.Offset+last.Length)
+}
+
+func (bfr *fileReader) partsAt(ctx context.Context, offset uint64) ([]*proto.FilePart, error) {
+	if bfr.file.GetSplitDepth() == 0 {
+		return bfr.getFileParts(ctx)
+	}
+
+	file := bfr.file
+	var start uint64
+
+	for file.GetSplitDepth() > 0 {
+		lengths := file.GetSplitLengths()
+
+		i := 0
+		for ; i < len(lengths)-1 && offset >= start+lengths[i]; i++ {
+			start += lengths[i]
+		}
+
+		sub, err := loadSplit(ctx, bfr.store, i, file.GetSplits()[i])
+		if err != nil {
+			return nil, errors.Wrapf(err, "file %x", bfr.fileRef())
+		}
+
+		file = sub
+	}
+
+	return rebased(file.GetParts(), int64(start)), nil
 }
 
 type partResponse struct {
@@ -664,10 +899,33 @@ func (bfr *fileReader) openPart(index int, part *proto.FilePart, obj *proto.Obje
 	return data, nil
 }
 
+// getFileParts loads every part of the file and makes them the run reads
+// work through.
 func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, error) {
-	if bfr.parts != nil {
-		return bfr.parts, nil
+	if bfr.all != nil {
+		return bfr.all, nil
 	}
+
+	parts, err := bfr.loadParts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bfr.all = parts
+	bfr.parts = parts
+	bfr.partIndex = 0
+	bfr.blob = nil
+	bfr.total = 0
+
+	if len(parts) > 0 {
+		last := parts[len(parts)-1]
+		bfr.total = int64(last.Offset + last.Length)
+	}
+
+	return parts, nil
+}
+
+func (bfr *fileReader) loadParts(ctx context.Context) ([]*proto.FilePart, error) {
 
 	switch {
 	case len(bfr.file.Inline) > 0:
@@ -686,48 +944,14 @@ func (bfr *fileReader) getFileParts(ctx context.Context) ([]*proto.FilePart, err
 			bfr.inline = inline
 		}
 
-		bfr.parts = []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.inline))}}
-	case bfr.file.Splits != nil:
-		subFiles := make([]*proto.File, len(bfr.file.Splits))
-		grp, grpCtx := errgroup.WithContext(ctx)
-
-		for i := range bfr.file.Splits {
-			index := i
-
-			grp.Go(func() error {
-				ref := bfr.file.Splits[index]
-
-				obj, err := bfr.store.Get(grpCtx, ref)
-				if err != nil {
-					return errors.Wrapf(err, "split %d (%x) of file", index, ref.Hash)
-				}
-
-				if obj.GetFile() == nil {
-					return errors.Errorf("split %d (%x) of file is not a file object", index, ref.Hash)
-				}
-
-				subFiles[index] = obj.GetFile()
-				return nil
-			})
-		}
-
-		err := grp.Wait()
-		if err != nil {
-			return nil, err
-		}
-
-		bfr.parts = make([]*proto.FilePart, 0)
-		for _, subFile := range subFiles {
-			bfr.parts = append(bfr.parts, subFile.GetParts()...)
-		}
+		return []*proto.FilePart{{Offset: 0, Length: uint64(len(bfr.inline))}}, nil
+	case len(bfr.file.Splits) > 0:
+		return FileParts(ctx, bfr.store, bfr.file)
+	case bfr.file.Parts != nil:
+		return bfr.file.Parts, nil
 	default:
-		bfr.parts = bfr.file.Parts
-		if bfr.parts == nil {
-			bfr.parts = []*proto.FilePart{}
-		}
+		return []*proto.FilePart{}, nil
 	}
-
-	return bfr.parts, nil
 }
 
 // WriteTo streams the file, fetching a window of parts ahead of the
@@ -784,8 +1008,7 @@ func (bfr *fileReader) WriteTo(writer io.Writer) (int64, error) {
 }
 
 func (bfr *fileReader) Read(b []byte) (n int, err error) {
-	fileParts, err := bfr.getFileParts(bfr.ctx)
-	if err != nil {
+	if err := bfr.measure(bfr.ctx); err != nil {
 		return 0, err
 	}
 
@@ -793,9 +1016,13 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 
+	if err := bfr.locate(bfr.ctx); err != nil {
+		return 0, err
+	}
+
 	n = len(b)
 
-	part := fileParts[bfr.partIndex]
+	part := bfr.parts[bfr.partIndex]
 
 	relativeOffset := bfr.offset - int64(part.Offset)
 
@@ -832,8 +1059,7 @@ func (bfr *fileReader) Read(b []byte) (n int, err error) {
 }
 
 func (bfr *fileReader) Seek(offset int64, whence int) (int64, error) {
-	fileParts, err := bfr.getFileParts(bfr.ctx)
-	if err != nil {
+	if err := bfr.measure(bfr.ctx); err != nil {
 		return 0, err
 	}
 
@@ -850,11 +1076,6 @@ func (bfr *fileReader) Seek(offset int64, whence int) (int64, error) {
 
 	if bfr.offset < 0 || bfr.offset > bfr.size() {
 		return bfr.offset, ErrIllegalOffset
-	}
-
-	if i := sort.Search(len(fileParts), bfr.search); i != bfr.partIndex {
-		bfr.partIndex = i
-		bfr.blob = nil
 	}
 
 	return bfr.offset, nil

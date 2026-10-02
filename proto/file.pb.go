@@ -226,7 +226,8 @@ type File struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// an ordered list of file parts
 	Parts []*FilePart `protobuf:"bytes,1,rep,name=parts,proto3" json:"parts,omitempty"`
-	// an ordered list of references to other file objects
+	// an ordered list of references to other file objects, which together
+	// hold the file's parts
 	Splits []*Ref `protobuf:"bytes,2,rep,name=splits,proto3" json:"splits,omitempty"`
 	// the chunker that cut the parts
 	Chunker Chunker `protobuf:"varint,3,opt,name=chunker,proto3,enum=proto.Chunker" json:"chunker,omitempty"`
@@ -235,8 +236,15 @@ type File struct {
 	Inline []byte `protobuf:"bytes,4,opt,name=inline,proto3" json:"inline,omitempty"`
 	// how inline is stored
 	InlineEncryption Encryption `protobuf:"varint,6,opt,name=inline_encryption,json=inlineEncryption,proto3,enum=proto.Encryption" json:"inline_encryption,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// the content bytes under each split, in order, so a read finds the
+	// split holding an offset without loading the others; absent in a file
+	// written before splits were measured
+	SplitLengths []uint64 `protobuf:"varint,7,rep,packed,name=split_lengths,json=splitLengths,proto3" json:"split_lengths,omitempty"`
+	// how many levels of splits lie below this one: 1 when the splits hold
+	// parts, more when they are split themselves; 0 without split_lengths
+	SplitDepth    uint32 `protobuf:"varint,8,opt,name=split_depth,json=splitDepth,proto3" json:"split_depth,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *File) Reset() {
@@ -302,6 +310,20 @@ func (x *File) GetInlineEncryption() Encryption {
 		return x.InlineEncryption
 	}
 	return Encryption_PLAINTEXT
+}
+
+func (x *File) GetSplitLengths() []uint64 {
+	if x != nil {
+		return x.SplitLengths
+	}
+	return nil
+}
+
+func (x *File) GetSplitDepth() uint32 {
+	if x != nil {
+		return x.SplitDepth
+	}
+	return 0
 }
 
 type FilePart struct {
@@ -380,14 +402,17 @@ const file_file_proto_rawDesc = "" +
 	"\x04type\x18\t \x01(\x0e2\x0f.proto.NodeTypeR\x04type\x12\x1f\n" +
 	"\vlink_target\x18\n" +
 	" \x01(\fR\n" +
-	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\xdf\x01\n" +
+	"linkTargetJ\x04\b\x05\x10\x06J\x04\b\a\x10\bR\ttimestampR\x04tree\"\xa5\x02\n" +
 	"\x04File\x12%\n" +
 	"\x05parts\x18\x01 \x03(\v2\x0f.proto.FilePartR\x05parts\x12\"\n" +
 	"\x06splits\x18\x02 \x03(\v2\n" +
 	".proto.RefR\x06splits\x12(\n" +
 	"\achunker\x18\x03 \x01(\x0e2\x0e.proto.ChunkerR\achunker\x12\x16\n" +
 	"\x06inline\x18\x04 \x01(\fR\x06inline\x12>\n" +
-	"\x11inline_encryption\x18\x06 \x01(\x0e2\x11.proto.EncryptionR\x10inlineEncryptionJ\x04\b\x05\x10\x06R\x04keys\"X\n" +
+	"\x11inline_encryption\x18\x06 \x01(\x0e2\x11.proto.EncryptionR\x10inlineEncryption\x12#\n" +
+	"\rsplit_lengths\x18\a \x03(\x04R\fsplitLengths\x12\x1f\n" +
+	"\vsplit_depth\x18\b \x01(\rR\n" +
+	"splitDepthJ\x04\b\x05\x10\x06R\x04keys\"X\n" +
 	"\bFilePart\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x04R\x06offset\x12\x16\n" +
 	"\x06length\x18\x02 \x01(\x04R\x06length\x12\x1c\n" +

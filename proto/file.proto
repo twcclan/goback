@@ -45,7 +45,8 @@ message File {
 	// an ordered list of file parts
 	repeated FilePart parts = 1;
 
-	// an ordered list of references to other file objects
+	// an ordered list of references to other file objects, which together
+	// hold the file's parts
 	repeated Ref splits = 2;
 
 	// the chunker that cut the parts
@@ -61,6 +62,15 @@ message File {
 
 	// how inline is stored
 	Encryption inline_encryption = 6;
+
+	// the content bytes under each split, in order, so a read finds the
+	// split holding an offset without loading the others; absent in a file
+	// written before splits were measured
+	repeated uint64 split_lengths = 7;
+
+	// how many levels of splits lie below this one: 1 when the splits hold
+	// parts, more when they are split themselves; 0 without split_lengths
+	uint32 split_depth = 8;
 }
 
 message FilePart {

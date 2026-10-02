@@ -406,14 +406,15 @@ func (d *treeDiff) refFile(ctx context.Context, path string, node *proto.TreeNod
 		return err
 	}
 
-	for _, split := range obj.GetFile().GetSplits() {
-		err = d.ref(ctx, split.GetHash())
-		if err != nil {
-			return err
-		}
+	err = backup.SubFiles(ctx, d.store, obj.GetFile(), func(split *proto.Ref) error {
+		return d.ref(ctx, split.GetHash())
+	})
+	if d.missing(err) {
+		d.gaps = append(d.gaps, path)
+		return nil
 	}
 
-	return nil
+	return err
 }
 
 // sameFile reports whether an open row still describes the node, so its

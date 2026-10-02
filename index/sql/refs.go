@@ -149,8 +149,12 @@ func (x *Index) walkRefs(ctx context.Context, tree *proto.Ref, visited map[strin
 				return err
 			}
 
-			for _, split := range obj.GetFile().GetSplits() {
+			err = backup.SubFiles(ctx, x.ObjectStore, obj.GetFile(), func(split *proto.Ref) error {
 				visit(split.GetHash())
+				return nil
+			})
+			if err != nil {
+				return err
 			}
 		}
 	}

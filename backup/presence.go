@@ -119,9 +119,9 @@ func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*
 		refs = map[string]struct{}{}
 	)
 
-	collect := func(file *proto.File) {
+	collect := func(parts []*proto.FilePart) {
 		mtx.Lock()
-		for _, part := range file.GetParts() {
+		for _, part := range parts {
 			refs[string(part.GetRef().GetHash())] = struct{}{}
 		}
 		mtx.Unlock()
@@ -142,16 +142,12 @@ func CollectPresence(ctx context.Context, store ObjectStore, tree *proto.Ref) (*
 			return fmt.Errorf("object %x is not a file", node.Ref.Hash)
 		}
 
-		collect(file)
-
-		for _, split := range file.GetSplits() {
-			obj, err := store.Get(ctx, split)
-			if err != nil {
-				return fmt.Errorf("split %x: %w", split.Hash, err)
-			}
-
-			collect(obj.GetFile())
+		parts, err := FileParts(ctx, store, file)
+		if err != nil {
+			return fmt.Errorf("file %x: %w", node.Ref.Hash, err)
 		}
+
+		collect(parts)
 
 		return nil
 	})
