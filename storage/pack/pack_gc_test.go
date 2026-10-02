@@ -992,3 +992,22 @@ func TestACollectionCoversWhatAnotherProcessCommittedAfterItLoadedIt(t *testing.
 	require.NoError(t, writer.Close())
 	require.NoError(t, collector.Close())
 }
+
+func TestCollectKeepsPoliciesWithoutWhatTheyName(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	reachable, unreachable := makeGCTestData(t)
+	named := unreachable[len(unreachable)-1]
+	policy := proto.NewObject(&proto.Policy{Sequence: 1, Scope: &proto.Policy_Commit{Commit: &proto.CommitScope{Commit: named.Ref(), DeletedAtNs: 1}}})
+	putAll(t, store, append(append([]*proto.Object{policy}, reachable...), unreachable...))
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+	_, err = store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	require.NoError(t, err)
+
+	requireStored(t, store, []*proto.Object{policy}, true)
+	requireStored(t, store, []*proto.Object{named}, false)
+	require.NoError(t, store.Close())
+}

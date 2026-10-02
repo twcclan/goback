@@ -86,6 +86,12 @@ func (s *Store) Put(ctx context.Context, up Upload) (*Receipt, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
 
+	// a policy rules every set of the store once reindexed, so only the
+	// store itself writes one
+	if object.Type() == proto.ObjectType_POLICY {
+		return nil, fmt.Errorf("%w: policies are written by the store", ErrInvalidRequest)
+	}
+
 	stamped := object.GetCommit() != nil || object.GetPin() != nil
 
 	if !stamped && up.Ref != nil && !object.Ref().Equal(up.Ref) {

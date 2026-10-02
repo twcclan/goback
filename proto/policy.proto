@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/twcclan/goback/proto";
+
+import "ref.proto";
+
+// Policy is the full state of one scope as the store's index last set it,
+// so that a reindex brings it back: of the scopes sharing a key, the one
+// with the highest sequence wins. Only the store writes these.
+message Policy {
+  // increases with every policy the store writes
+  uint64 sequence = 1;
+
+  oneof scope {
+    StoreScope store = 2;
+    SetScope set = 3;
+    CommitScope commit = 4;
+  }
+}
+
+// StoreScope is the store's settings.
+message StoreScope {
+  // the write policy as JSON, empty for the default
+  string write_policy = 1;
+  uint32 write_policy_version = 2;
+  // when the operator confirmed saving the store key; 0 for never
+  int64 key_acknowledged_at_ns = 3;
+  // the default retention policy as JSON, empty for the built-in one
+  string default_retention = 4;
+  uint32 hold_days = 5;
+  uint32 trash_days = 6;
+}
+
+enum SetState {
+  SET_ACTIVE = 0;
+  SET_CLOSING = 1;
+  SET_DELETED = 2;
+}
+
+// SetScope is one set's retention and lifecycle.
+message SetScope {
+  uint64 set_id = 1;
+  string name = 2;
+  // the set's own retention policy as JSON, empty to inherit the default
+  string retention = 3;
+  bool retention_paused = 4;
+  SetState state = 5;
+  bool erase = 6;
+}
+
+// CommitScope is whether a commit is in the trash.
+message CommitScope {
+  Ref commit = 1;
+  // when it was moved to the trash; 0 when it is not there
+  int64 deleted_at_ns = 2;
+}

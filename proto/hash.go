@@ -47,6 +47,8 @@ func typeTag(t ObjectType) (string, bool) {
 		return "tombstone", true
 	case ObjectType_PIN:
 		return "pin", true
+	case ObjectType_POLICY:
+		return "policy", true
 	default:
 		return "", false
 	}
@@ -267,6 +269,8 @@ func (o *Object) Canonical() ([]byte, error) {
 		return canonicalFile(t.File)
 	case *Object_Pin:
 		return canonicalPin(t.Pin)
+	case *Object_Policy:
+		return canonicalPolicy(t.Policy)
 	default:
 		return nil, invalid("empty object")
 	}
@@ -288,6 +292,9 @@ func NewObjectFromPayload(payload []byte, t ObjectType) (*Object, error) {
 		return NewObject(f), pb.Unmarshal(payload, f)
 	case ObjectType_PIN:
 		p := new(Pin)
+		return NewObject(p), pb.Unmarshal(payload, p)
+	case ObjectType_POLICY:
+		p := new(Policy)
 		return NewObject(p), pb.Unmarshal(payload, p)
 	default:
 		return nil, invalid("cannot decode object type %s", t)
@@ -488,6 +495,114 @@ func canonicalPin(p *Pin) ([]byte, error) {
 	b = appendVarint(b, 3, uint64(p.ReceivedAtNs))
 
 	return appendMap(b, 4, p.Metadata)
+}
+
+func canonicalPolicy(p *Policy) ([]byte, error) {
+	if err := noUnknown(p); err != nil {
+		return nil, err
+	}
+
+	b := appendVarint(nil, 1, p.Sequence)
+
+	var (
+		scope []byte
+		err   error
+	)
+
+	switch s := p.Scope.(type) {
+	case *Policy_Store:
+		scope, err = canonicalStoreScope(s.Store)
+		b = appendMessage(b, 2, scope)
+	case *Policy_Set:
+		scope, err = canonicalSetScope(s.Set)
+		b = appendMessage(b, 3, scope)
+	case *Policy_Commit:
+		scope, err = canonicalCommitScope(s.Commit)
+		b = appendMessage(b, 4, scope)
+	default:
+		return nil, invalid("policy without a scope")
+	}
+
+	return b, err
+}
+
+func canonicalStoreScope(s *StoreScope) ([]byte, error) {
+	if s == nil {
+		return nil, invalid("empty store scope")
+	}
+
+	if err := noUnknown(s); err != nil {
+		return nil, err
+	}
+
+	b, err := appendString(nil, 1, s.WritePolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	b = appendVarint(b, 2, uint64(s.WritePolicyVersion))
+	b = appendVarint(b, 3, uint64(s.KeyAcknowledgedAtNs))
+
+	b, err = appendString(b, 4, s.DefaultRetention)
+	if err != nil {
+		return nil, err
+	}
+
+	b = appendVarint(b, 5, uint64(s.HoldDays))
+
+	return appendVarint(b, 6, uint64(s.TrashDays)), nil
+}
+
+func canonicalSetScope(s *SetScope) ([]byte, error) {
+	if s == nil {
+		return nil, invalid("empty set scope")
+	}
+
+	if err := noUnknown(s); err != nil {
+		return nil, err
+	}
+
+	if s.SetId == 0 {
+		return nil, invalid("set scope without a set id")
+	}
+
+	b := appendVarint(nil, 1, s.SetId)
+
+	b, err := appendString(b, 2, s.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	b, err = appendString(b, 3, s.Retention)
+	if err != nil {
+		return nil, err
+	}
+
+	b = appendBool(b, 4, s.RetentionPaused)
+	b = appendVarint(b, 5, uint64(s.State))
+
+	return appendBool(b, 6, s.Erase), nil
+}
+
+func canonicalCommitScope(s *CommitScope) ([]byte, error) {
+	if s == nil {
+		return nil, invalid("empty commit scope")
+	}
+
+	if err := noUnknown(s); err != nil {
+		return nil, err
+	}
+
+	if s.Commit == nil {
+		return nil, invalid("commit scope without a commit")
+	}
+
+	b, err := appendRef(nil, 1, s.Commit)
+	if err != nil {
+		return nil, err
+	}
+
+	return appendVarint(b, 2, uint64(s.DeletedAtNs)), nil
 }
 
 func canonicalFileInfo(info *FileInfo) ([]byte, error) {

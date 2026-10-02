@@ -32,6 +32,7 @@ const (
 	ObjectType_BLOB      ObjectType = 4
 	ObjectType_TOMBSTONE ObjectType = 5
 	ObjectType_PIN       ObjectType = 6
+	ObjectType_POLICY    ObjectType = 7
 )
 
 // Enum value maps for ObjectType.
@@ -44,6 +45,7 @@ var (
 		4: "BLOB",
 		5: "TOMBSTONE",
 		6: "PIN",
+		7: "POLICY",
 	}
 	ObjectType_value = map[string]int32{
 		"INVALID":   0,
@@ -53,6 +55,7 @@ var (
 		"BLOB":      4,
 		"TOMBSTONE": 5,
 		"PIN":       6,
+		"POLICY":    7,
 	}
 )
 
@@ -365,6 +368,7 @@ type Object struct {
 	//	*Object_Blob
 	//	*Object_Sealed
 	//	*Object_Pin
+	//	*Object_Policy
 	Object isObject_Object `protobuf_oneof:"object"`
 	// the store key under which a tree's names or a file's part keys are
 	// encrypted; transport only, never part of the hashed payload
@@ -464,6 +468,15 @@ func (x *Object) GetPin() *Pin {
 	return nil
 }
 
+func (x *Object) GetPolicy() *Policy {
+	if x != nil {
+		if x, ok := x.Object.(*Object_Policy); ok {
+			return x.Policy
+		}
+	}
+	return nil
+}
+
 func (x *Object) GetKeyId() []byte {
 	if x != nil {
 		return x.KeyId
@@ -499,6 +512,10 @@ type Object_Pin struct {
 	Pin *Pin `protobuf:"bytes,6,opt,name=pin,proto3,oneof"`
 }
 
+type Object_Policy struct {
+	Policy *Policy `protobuf:"bytes,7,opt,name=policy,proto3,oneof"`
+}
+
 func (*Object_Commit) isObject_Object() {}
 
 func (*Object_Tree) isObject_Object() {}
@@ -511,6 +528,8 @@ func (*Object_Sealed) isObject_Object() {}
 
 func (*Object_Pin) isObject_Object() {}
 
+func (*Object_Policy) isObject_Object() {}
+
 var File_object_proto protoreflect.FileDescriptor
 
 const file_object_proto_rawDesc = "" +
@@ -518,7 +537,7 @@ const file_object_proto_rawDesc = "" +
 	"\fobject.proto\x12\x05proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\n" +
 	"tree.proto\x1a\fcommit.proto\x1a\n" +
 	"blob.proto\x1a\n" +
-	"file.proto\x1a\tpin.proto\x1a\tref.proto\x1a\x10encryption.proto\"\xdc\x03\n" +
+	"file.proto\x1a\tpin.proto\x1a\fpolicy.proto\x1a\tref.proto\x1a\x10encryption.proto\"\xdc\x03\n" +
 	"\fObjectHeader\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12,\n" +
@@ -548,7 +567,7 @@ const file_object_proto_rawDesc = "" +
 	"\n" +
 	"encryption\x18\x05 \x01(\x0e2\x11.proto.EncryptionR\n" +
 	"encryption\x12\x15\n" +
-	"\x06key_id\x18\x06 \x01(\fR\x05keyId\"\x84\x02\n" +
+	"\x06key_id\x18\x06 \x01(\fR\x05keyId\"\xad\x02\n" +
 	"\x06Object\x12'\n" +
 	"\x06commit\x18\x01 \x01(\v2\r.proto.CommitH\x00R\x06commit\x12!\n" +
 	"\x04tree\x18\x02 \x01(\v2\v.proto.TreeH\x00R\x04tree\x12!\n" +
@@ -556,10 +575,11 @@ const file_object_proto_rawDesc = "" +
 	"\x04blob\x18\x04 \x01(\v2\v.proto.BlobH\x00R\x04blob\x12'\n" +
 	"\x06sealed\x18\x05 \x01(\v2\r.proto.SealedH\x00R\x06sealed\x12\x1e\n" +
 	"\x03pin\x18\x06 \x01(\v2\n" +
-	".proto.PinH\x00R\x03pin\x12\x15\n" +
+	".proto.PinH\x00R\x03pin\x12'\n" +
+	"\x06policy\x18\a \x01(\v2\r.proto.PolicyH\x00R\x06policy\x12\x15\n" +
 	"\x06key_id\x18\n" +
 	" \x01(\fR\x05keyIdB\b\n" +
-	"\x06object*[\n" +
+	"\x06object*g\n" +
 	"\n" +
 	"ObjectType\x12\v\n" +
 	"\aINVALID\x10\x00\x12\n" +
@@ -569,7 +589,9 @@ const file_object_proto_rawDesc = "" +
 	"\x04FILE\x10\x03\x12\b\n" +
 	"\x04BLOB\x10\x04\x12\r\n" +
 	"\tTOMBSTONE\x10\x05\x12\a\n" +
-	"\x03PIN\x10\x06*'\n" +
+	"\x03PIN\x10\x06\x12\n" +
+	"\n" +
+	"\x06POLICY\x10\a*'\n" +
 	"\vCompression\x12\b\n" +
 	"\x04NONE\x10\x00\x12\b\n" +
 	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
@@ -602,6 +624,7 @@ var file_object_proto_goTypes = []any{
 	(*File)(nil),                  // 10: proto.File
 	(*Blob)(nil),                  // 11: proto.Blob
 	(*Pin)(nil),                   // 12: proto.Pin
+	(*Policy)(nil),                // 13: proto.Policy
 }
 var file_object_proto_depIdxs = []int32{
 	5,  // 0: proto.ObjectHeader.ref:type_name -> proto.Ref
@@ -621,11 +644,12 @@ var file_object_proto_depIdxs = []int32{
 	11, // 14: proto.Object.blob:type_name -> proto.Blob
 	3,  // 15: proto.Object.sealed:type_name -> proto.Sealed
 	12, // 16: proto.Object.pin:type_name -> proto.Pin
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	13, // 17: proto.Object.policy:type_name -> proto.Policy
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_object_proto_init() }
@@ -638,6 +662,7 @@ func file_object_proto_init() {
 	file_blob_proto_init()
 	file_file_proto_init()
 	file_pin_proto_init()
+	file_policy_proto_init()
 	file_ref_proto_init()
 	file_encryption_proto_init()
 	file_object_proto_msgTypes[2].OneofWrappers = []any{
@@ -647,6 +672,7 @@ func file_object_proto_init() {
 		(*Object_Blob)(nil),
 		(*Object_Sealed)(nil),
 		(*Object_Pin)(nil),
+		(*Object_Policy)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

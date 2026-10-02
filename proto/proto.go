@@ -1,6 +1,6 @@
 package proto
 
-//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto encryption.proto file.proto object.proto pin.proto presence.proto ref.proto tree.proto
+//go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto encryption.proto file.proto object.proto pin.proto policy.proto presence.proto ref.proto tree.proto
 //go:generate protoc -I . --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. --grpc-gateway_out=paths=source_relative,grpc_api_configuration=admin/admin_gateway.yaml:. admin/admin.proto
 
 import (
@@ -48,6 +48,8 @@ func (o *Object) Type() ObjectType {
 		return t.Sealed.GetType()
 	case *Object_Pin:
 		return ObjectType_PIN
+	case *Object_Policy:
+		return ObjectType_POLICY
 	default:
 		return ObjectType_INVALID
 	}
@@ -59,7 +61,7 @@ func (o *Object) Bytes() []byte {
 	return Bytes(o)
 }
 
-// NewObject wraps a Commit, Tree, Blob, File, Sealed or Pin; it panics on
+// NewObject wraps a Commit, Tree, Blob, File, Sealed, Pin or Policy; it panics on
 // anything else.
 func NewObject(in interface{}) *Object {
 	var out isObject_Object
@@ -77,6 +79,8 @@ func NewObject(in interface{}) *Object {
 		out = &Object_Sealed{t}
 	case *Pin:
 		out = &Object_Pin{t}
+	case *Policy:
+		out = &Object_Policy{t}
 	default:
 		panic("Unsupported object type")
 	}

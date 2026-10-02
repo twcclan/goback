@@ -100,3 +100,16 @@ func TestStoreIsALibrary(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, withSessions.EndSession(first, session.ID))
 }
+
+func TestStoreRefusesAPolicyFromAClient(t *testing.T) {
+	store := NewStore(newMemIndex(), nil)
+	ctx := auth.WithPrincipal(context.Background(), &auth.Principal{AgentID: "node-1"})
+
+	policy := proto.NewObject(&proto.Policy{Sequence: 1, Scope: &proto.Policy_Store{Store: &proto.StoreScope{}}})
+	sealed := proto.NewObject(&proto.Sealed{Ref: policy.Ref(), Type: proto.ObjectType_POLICY, Data: []byte("x"), Encryption: proto.Encryption_SEALED})
+
+	for _, obj := range []*proto.Object{policy, sealed} {
+		_, err := store.Put(ctx, Upload{Object: obj})
+		require.ErrorIs(t, err, ErrInvalidRequest)
+	}
+}

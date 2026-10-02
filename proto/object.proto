@@ -11,6 +11,7 @@ import "commit.proto";
 import "blob.proto";
 import "file.proto";
 import "pin.proto";
+import "policy.proto";
 import "ref.proto";
 import "encryption.proto";
 
@@ -22,6 +23,7 @@ enum ObjectType {
   BLOB = 4;
   TOMBSTONE = 5;
   PIN = 6;
+  POLICY = 7;
 }
 
 enum Compression {
@@ -73,6 +75,7 @@ message Object {
     Blob blob = 4;
     Sealed sealed = 5;
     Pin pin = 6;
+    Policy policy = 7;
   }
 
   // the store key under which a tree's names or a file's part keys are

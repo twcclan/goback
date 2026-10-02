@@ -682,7 +682,7 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 				oldestAt(r.oldestCopy, keyOf(rec.Sum[:]), ga.a.version(*rec))
 			}
 
-			if t != proto.ObjectType_COMMIT && t != proto.ObjectType_PIN {
+			if t != proto.ObjectType_COMMIT && t != proto.ObjectType_PIN && t != proto.ObjectType_POLICY {
 				return nil
 			}
 
