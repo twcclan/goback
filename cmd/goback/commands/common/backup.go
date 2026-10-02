@@ -163,7 +163,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		}
 	}
 
-	file, err := fileblob.OpenBucket(archiveLocation, nil)
+	file, err := fileblob.OpenBucket(archiveLocation, &fileblob.Options{NoTempDir: true})
 	if err != nil {
 		return nil, err
 	}
