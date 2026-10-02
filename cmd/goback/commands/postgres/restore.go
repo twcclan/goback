@@ -1,0 +1,192 @@
+package postgres
+
+import (
+	"context"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/postgres"
+	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
+
+	"github.com/urfave/cli"
+)
+
+var restoreCmd = cli.Command{
+	Name:      "restore",
+	Usage:     "write a base backup into an empty data directory, set up to recover from the WAL set when Postgres starts on it",
+	ArgsUsage: "<data directory>",
+	Description: "restore_command runs goback again for every WAL file Postgres asks for: this binary with the\n" +
+		"global flags given here, unless --goback names another command. Flags end up in\n" +
+		"postgresql.auto.conf; settings from the environment have to be in Postgres's environment.",
+	Flags: []cli.Flag{
+		baseSetFlag,
+		cli.StringFlag{
+			Name:  "wal-set",
+			Usage: "set the cluster's WAL goes to",
+		},
+		cli.StringFlag{
+			Name:  "at",
+			Usage: "moment to recover to, as RFC 3339 (2026-10-02T14:30:00Z); the end of the WAL set when empty",
+		},
+		cli.StringFlag{
+			Name:  "goback",
+			Usage: "command restore_command runs goback as, global flags included",
+		},
+	},
+	Action: restoreAction,
+}
+
+func restoreAction(c *cli.Context) error {
+	if c.NArg() != 1 || c.String("base-set") == "" || c.String("wal-set") == "" {
+		return cli.NewExitError("--base-set, --wal-set and the data directory are required", 2)
+	}
+
+	var at time.Time
+	if s := c.String("at"); s != "" {
+		var err error
+		if at, err = time.Parse(time.RFC3339Nano, s); err != nil {
+			return cli.NewExitError(fmt.Sprintf("--at: %v", err), 2)
+		}
+	}
+
+	goback := c.String("goback")
+	if goback == "" {
+		var err error
+		if goback, err = invocation(); err != nil {
+			return err
+		}
+	}
+
+	store := common.GetObjectStore(c)
+	index := common.OpenIndex(c, store)
+
+	defer func() {
+		index.Close()
+		common.CloseStore(store)
+	}()
+
+	r := &postgres.Restore{
+		Objects: store,
+		Key:     common.StoreKey(c, store),
+		Latest:  latest(index, store),
+		BaseSet: c.String("base-set"),
+		WALSet:  c.String("wal-set"),
+		At:      at,
+		RestoreCommand: func(wal *proto.Ref) string {
+			return strings.ReplaceAll(goback, "%", "%%") + " postgres wal-get --commit " + hex.EncodeToString(wal.Hash) + " %f %p"
+		},
+	}
+
+	result, err := r.Run(common.Context(c), c.Args().First())
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Restored the base backup of %s (commit %x)", time.Unix(result.Base.GetTimestamp(), 0).UTC().Format(time.RFC3339), result.BaseRef.Hash)
+
+	if result.WAL == nil {
+		log.Printf("The WAL set %s has no commits: Postgres recovers to the end of the base backup", r.WALSet)
+	} else {
+		log.Printf("Postgres recovers from WAL commit %x when it starts", result.WAL.Hash)
+	}
+
+	return nil
+}
+
+// latest finds a set's newest commit through the index, and through the
+// heads the store keeps when the index has none.
+func latest(index backup.Index, store backup.ObjectStore) func(context.Context, string) (*proto.Ref, error) {
+	return func(ctx context.Context, set string) (*proto.Ref, error) {
+		ref, err := index.LatestCommit(ctx, set)
+		if !errors.Is(err, backup.ErrNotFound) {
+			return ref, err
+		}
+
+		ps, ok := common.Unwrap(store).(*pack.PackStorage)
+		if !ok {
+			return nil, err
+		}
+
+		heads, herr := ps.Heads()
+		if herr != nil {
+			return nil, herr
+		}
+
+		var newest *pack.Head
+		for i, head := range heads {
+			if head.Set == set && (newest == nil || head.ReceivedAtNs > newest.ReceivedAtNs) {
+				newest = &heads[i]
+			}
+		}
+
+		if newest == nil {
+			return nil, err
+		}
+
+		return &proto.Ref{Hash: newest.Commit}, nil
+	}
+}
+
+// invocation is this binary with the global flags it was started with, quoted
+// for the shell restore_command runs in.
+func invocation() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
+	end := slices.Index(os.Args, "postgres")
+	if end < 0 {
+		end = 1
+	}
+
+	words := []string{shellQuote(exe)}
+	for _, arg := range os.Args[1:end] {
+		words = append(words, shellQuote(arg))
+	}
+
+	return strings.Join(words, " "), nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+var walGetCmd = cli.Command{
+	Name:      "wal-get",
+	Usage:     "write a WAL file of a WAL commit to a path, as restore_command",
+	ArgsUsage: "<%f> <%p>",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "commit",
+			Usage: "the WAL commit, in hex",
+		},
+	},
+	Action: walGetAction,
+}
+
+func walGetAction(c *cli.Context) error {
+	hash, err := hex.DecodeString(c.String("commit"))
+	if c.NArg() != 2 || err != nil || len(hash) == 0 {
+		return cli.NewExitError("--commit and the file's name and destination are required", 2)
+	}
+
+	store := common.GetObjectStore(c)
+	defer common.CloseStore(store)
+
+	err = postgres.FetchWAL(common.Context(c), store, common.StoreKey(c, store), &proto.Ref{Hash: hash}, c.Args().Get(0), c.Args().Get(1))
+	if errors.Is(err, backup.ErrNotFound) {
+		return cli.NewExitError("", 1)
+	}
+
+	return err
+}

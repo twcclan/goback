@@ -19,6 +19,8 @@ var Command = cli.Command{
 	Subcommands: []cli.Command{
 		archiveCmd,
 		baseCmd,
+		restoreCmd,
 		walCmd,
+		walGetCmd,
 	},
 }

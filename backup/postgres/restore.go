@@ -1,0 +1,372 @@
+package postgres
+
+import (
+	"archive/tar"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/proto"
+)
+
+// ErrNoBase is returned when no base backup can be restored to the moment
+// asked for.
+var ErrNoBase = errors.New("no base backup to restore from")
+
+// Restore writes a base backup into a data directory and sets the cluster up
+// to recover from the WAL set when Postgres starts on it.
+type Restore struct {
+	Objects backup.ObjectStore
+	Key     *storekey.Key
+	// Latest finds a set's newest complete commit; it returns
+	// backup.ErrNotFound for a set without one.
+	Latest  func(ctx context.Context, set string) (*proto.Ref, error)
+	BaseSet string
+	WALSet  string
+	// At, when set, is the moment recovery stops at; zero recovers to the
+	// end of the WAL set.
+	At time.Time
+	// RestoreCommand is the restore_command that fetches the WAL commit's
+	// files, with %f and %p for Postgres to fill in.
+	RestoreCommand func(walCommit *proto.Ref) string
+}
+
+// RestoreResult says what a restore chose.
+type RestoreResult struct {
+	Base    *proto.Commit
+	BaseRef *proto.Ref
+	// WAL is the WAL commit recovery reads from; nil when the WAL set has
+	// none, and then the cluster recovers only to the end of its base.
+	WAL *proto.Ref
+}
+
+// Run restores into dir, which must be empty or missing.
+func (r *Restore) Run(ctx context.Context, dir string) (*RestoreResult, error) {
+	if err := emptyDir(dir); err != nil {
+		return nil, err
+	}
+
+	walRef, wal, err := r.wal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	baseRef, base, err := r.chooseBase(ctx, wal)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.untar(ctx, base, dir); err != nil {
+		return nil, err
+	}
+
+	result := &RestoreResult{Base: base, BaseRef: baseRef}
+	if wal == nil {
+		return result, nil
+	}
+
+	result.WAL = walRef
+
+	return result, r.configureRecovery(dir, walRef)
+}
+
+type walCommit struct {
+	commit   *proto.Commit
+	systemID uint64
+	first    string
+}
+
+func (r *Restore) wal(ctx context.Context) (*proto.Ref, *walCommit, error) {
+	ref, err := r.Latest(ctx, r.WALSet)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, nil, nil
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	commit, err := r.commit(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	systemID, err := commitSystemID(commit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ref, &walCommit{commit: commit, systemID: systemID, first: commit.GetMetadata()[MetaFirstWALFile]}, nil
+}
+
+// chooseBase picks the newest base backup of the WAL set's cluster that
+// ended before At and whose WAL from its start on the WAL commit holds.
+func (r *Restore) chooseBase(ctx context.Context, wal *walCommit) (*proto.Ref, *proto.Commit, error) {
+	ref, err := r.Latest(ctx, r.BaseSet)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, nil, fmt.Errorf("%w: the set %s has no commits", ErrNoBase, r.BaseSet)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var refused []string
+
+	for ref != nil && len(ref.Hash) > 0 {
+		commit, err := r.commit(ctx, ref)
+		if errors.Is(err, backup.ErrNotFound) {
+			break
+		}
+
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if reason := r.unusable(commit, wal); reason != "" {
+			refused = append(refused, fmt.Sprintf("%s: %s", time.Unix(commit.GetTimestamp(), 0).UTC().Format(time.RFC3339), reason))
+		} else {
+			return ref, commit, nil
+		}
+
+		ref = commit.GetParent()
+	}
+
+	if len(refused) == 0 {
+		return nil, nil, ErrNoBase
+	}
+
+	return nil, nil, fmt.Errorf("%w; refused:\n  %s", ErrNoBase, strings.Join(refused, "\n  "))
+}
+
+func (r *Restore) unusable(base *proto.Commit, wal *walCommit) string {
+	if !r.At.IsZero() && time.Unix(base.GetTimestamp()+1, 0).After(r.At) {
+		return "ended after the moment asked for"
+	}
+
+	start := base.GetMetadata()[MetaStartWALFile]
+	if _, ok := walPosition(start); !ok {
+		return "records no start WAL file"
+	}
+
+	if wal == nil {
+		return ""
+	}
+
+	systemID, err := commitSystemID(base)
+	if err != nil {
+		return err.Error()
+	}
+
+	if wal.systemID != 0 && systemID != wal.systemID {
+		return fmt.Sprintf("of cluster %d, the WAL set of %d", systemID, wal.systemID)
+	}
+
+	if !Carry(wal.first)(start) {
+		return fmt.Sprintf("starts in %s, before the WAL set's first file %s", start, wal.first)
+	}
+
+	return ""
+}
+
+func (r *Restore) commit(ctx context.Context, ref *proto.Ref) (*proto.Commit, error) {
+	obj, err := r.Objects.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	if obj.GetCommit() == nil {
+		return nil, fmt.Errorf("object %x is not a commit", ref.Hash)
+	}
+
+	return obj.GetCommit(), nil
+}
+
+func commitSystemID(commit *proto.Commit) (uint64, error) {
+	id, ok := commit.GetMetadata()[MetaSystemID]
+	if !ok {
+		return 0, nil
+	}
+
+	systemID, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("system id %q: %w", id, err)
+	}
+
+	return systemID, nil
+}
+
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return os.MkdirAll(dir, 0o700)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if len(entries) > 0 {
+		return fmt.Errorf("%s is not empty", dir)
+	}
+
+	return os.Chmod(dir, 0o700)
+}
+
+// untar writes the base's tar into dir.
+func (r *Restore) untar(ctx context.Context, base *proto.Commit, dir string) error {
+	tree, err := backup.OpenTree(ctx, r.Objects, base.GetTree(), r.Key, nil)
+	if err != nil {
+		return err
+	}
+
+	i := slices.IndexFunc(tree.Nodes, func(n *proto.TreeNode) bool { return string(n.Stat.Name) == BaseTar })
+	if i < 0 {
+		return fmt.Errorf("the base backup holds no %s", BaseTar)
+	}
+
+	content, err := backup.NewBackupReader(r.Objects).WithKey(r.Key).ReadFile(ctx, tree.Nodes[i].Ref)
+	if err != nil {
+		return err
+	}
+
+	entries := tar.NewReader(content)
+	for {
+		hdr, err := entries.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", BaseTar, err)
+		}
+
+		if err := writeEntry(dir, hdr, entries); err != nil {
+			return err
+		}
+	}
+}
+
+func writeEntry(dir string, hdr *tar.Header, content io.Reader) error {
+	name := filepath.Clean(filepath.FromSlash(hdr.Name))
+	if !filepath.IsLocal(name) {
+		return fmt.Errorf("%s: the base backup holds %q, outside the data directory", BaseTar, hdr.Name)
+	}
+
+	path := filepath.Join(dir, name)
+	mode := os.FileMode(hdr.Mode).Perm()
+
+	switch hdr.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(path, mode|0o700)
+	case tar.TypeReg:
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode|0o600)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(file, content); err != nil {
+			_ = file.Close()
+			return err
+		}
+
+		return file.Close()
+	case tar.TypeSymlink:
+		return os.Symlink(hdr.Linkname, path)
+	default:
+		return fmt.Errorf("%s: %s is of a type a restore does not write (%c)", BaseTar, hdr.Name, hdr.Typeflag)
+	}
+}
+
+// configureRecovery makes Postgres recover from the WAL commit when it
+// starts on dir.
+func (r *Restore) configureRecovery(dir string, walRef *proto.Ref) error {
+	settings := []string{
+		"restore_command = " + confString(r.RestoreCommand(walRef)),
+		"recovery_target_action = 'promote'",
+	}
+
+	if !r.At.IsZero() {
+		settings = append(settings, "recovery_target_time = "+confString(r.At.UTC().Format("2006-01-02 15:04:05.999999+00")))
+	}
+
+	conf, err := os.OpenFile(filepath.Join(dir, "postgresql.auto.conf"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(conf, "\n# written by goback postgres restore\n%s\n", strings.Join(settings, "\n")); err != nil {
+		_ = conf.Close()
+		return err
+	}
+
+	if err := conf.Close(); err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(dir, "recovery.signal"), nil, 0o600)
+}
+
+// confString quotes s as a postgresql.conf string.
+func confString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// FetchWAL writes the file name of the WAL commit at ref to dst, as
+// restore_command does with %f and %p. It returns backup.ErrNotFound for a
+// file the commit does not hold, which Postgres asks for as a matter of
+// course.
+func FetchWAL(ctx context.Context, objects backup.ObjectStore, key *storekey.Key, ref *proto.Ref, name, dst string) error {
+	obj, err := objects.Get(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	tree, err := backup.OpenTree(ctx, objects, obj.GetCommit().GetTree(), key, nil)
+	if err != nil {
+		return err
+	}
+
+	i := slices.IndexFunc(tree.Nodes, func(n *proto.TreeNode) bool { return string(n.Stat.Name) == name })
+	if i < 0 {
+		return fmt.Errorf("%w: %s", backup.ErrNotFound, name)
+	}
+
+	content, err := backup.NewBackupReader(objects).WithKey(key).ReadFile(ctx, tree.Nodes[i].Ref)
+	if err != nil {
+		return err
+	}
+
+	tmp := dst + partialSuffix
+
+	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(file, content); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+
+	return os.Rename(tmp, dst)
+}
