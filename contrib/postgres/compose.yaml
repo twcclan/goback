@@ -27,6 +27,9 @@ services:
       - archive_mode=on
       - -c
       - archive_command=/opt/goback/goback postgres archive %p %f
+      # a quiet cluster still ships its last minute
+      - -c
+      - archive_timeout=60
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-credentials

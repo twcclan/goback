@@ -2,3 +2,6 @@
 
 # atlas checksums cover the exact bytes of the migration files
 index/sql/migrations/** text eol=lf
+
+# shell scripts run in Linux containers
+*.sh text eol=lf
