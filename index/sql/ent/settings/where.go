@@ -79,6 +79,11 @@ func TrashDays(v int) predicate.Settings {
 	return predicate.Settings(sql.FieldEQ(FieldTrashDays, v))
 }
 
+// PolicySequence applies equality check predicate on the "policy_sequence" field. It's identical to PolicySequenceEQ.
+func PolicySequence(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldEQ(FieldPolicySequence, v))
+}
+
 // PolicyEQ applies the EQ predicate on the "policy" field.
 func PolicyEQ(v string) predicate.Settings {
 	return predicate.Settings(sql.FieldEQ(FieldPolicy, v))
@@ -397,6 +402,46 @@ func TrashDaysLT(v int) predicate.Settings {
 // TrashDaysLTE applies the LTE predicate on the "trash_days" field.
 func TrashDaysLTE(v int) predicate.Settings {
 	return predicate.Settings(sql.FieldLTE(FieldTrashDays, v))
+}
+
+// PolicySequenceEQ applies the EQ predicate on the "policy_sequence" field.
+func PolicySequenceEQ(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldEQ(FieldPolicySequence, v))
+}
+
+// PolicySequenceNEQ applies the NEQ predicate on the "policy_sequence" field.
+func PolicySequenceNEQ(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldNEQ(FieldPolicySequence, v))
+}
+
+// PolicySequenceIn applies the In predicate on the "policy_sequence" field.
+func PolicySequenceIn(vs ...uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldIn(FieldPolicySequence, vs...))
+}
+
+// PolicySequenceNotIn applies the NotIn predicate on the "policy_sequence" field.
+func PolicySequenceNotIn(vs ...uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldNotIn(FieldPolicySequence, vs...))
+}
+
+// PolicySequenceGT applies the GT predicate on the "policy_sequence" field.
+func PolicySequenceGT(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldGT(FieldPolicySequence, v))
+}
+
+// PolicySequenceGTE applies the GTE predicate on the "policy_sequence" field.
+func PolicySequenceGTE(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldGTE(FieldPolicySequence, v))
+}
+
+// PolicySequenceLT applies the LT predicate on the "policy_sequence" field.
+func PolicySequenceLT(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldLT(FieldPolicySequence, v))
+}
+
+// PolicySequenceLTE applies the LTE predicate on the "policy_sequence" field.
+func PolicySequenceLTE(v uint64) predicate.Settings {
+	return predicate.Settings(sql.FieldLTE(FieldPolicySequence, v))
 }
 
 // And groups predicates with the AND operator between them.

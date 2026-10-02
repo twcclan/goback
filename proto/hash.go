@@ -503,6 +503,7 @@ func canonicalPolicy(p *Policy) ([]byte, error) {
 	}
 
 	b := appendVarint(nil, 1, p.Sequence)
+	b = appendVarint(b, 2, uint64(p.WrittenAtNs))
 
 	var (
 		scope []byte
@@ -512,13 +513,13 @@ func canonicalPolicy(p *Policy) ([]byte, error) {
 	switch s := p.Scope.(type) {
 	case *Policy_Store:
 		scope, err = canonicalStoreScope(s.Store)
-		b = appendMessage(b, 2, scope)
+		b = appendMessage(b, 3, scope)
 	case *Policy_Set:
 		scope, err = canonicalSetScope(s.Set)
-		b = appendMessage(b, 3, scope)
+		b = appendMessage(b, 4, scope)
 	case *Policy_Commit:
 		scope, err = canonicalCommitScope(s.Commit)
-		b = appendMessage(b, 4, scope)
+		b = appendMessage(b, 5, scope)
 	default:
 		return nil, invalid("policy without a scope")
 	}
@@ -580,8 +581,9 @@ func canonicalSetScope(s *SetScope) ([]byte, error) {
 
 	b = appendBool(b, 4, s.RetentionPaused)
 	b = appendVarint(b, 5, uint64(s.State))
+	b = appendBool(b, 6, s.Erase)
 
-	return appendBool(b, 6, s.Erase), nil
+	return appendVarint(b, 7, uint64(s.ClosedAtNs)), nil
 }
 
 func canonicalCommitScope(s *CommitScope) ([]byte, error) {

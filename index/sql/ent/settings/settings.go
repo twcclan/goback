@@ -23,6 +23,8 @@ const (
 	FieldHoldDays = "hold_days"
 	// FieldTrashDays holds the string denoting the trash_days field in the database.
 	FieldTrashDays = "trash_days"
+	// FieldPolicySequence holds the string denoting the policy_sequence field in the database.
+	FieldPolicySequence = "policy_sequence"
 	// Table holds the table name of the settings in the database.
 	Table = "settings"
 )
@@ -36,6 +38,7 @@ var Columns = []string{
 	FieldRetentionPolicy,
 	FieldHoldDays,
 	FieldTrashDays,
+	FieldPolicySequence,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -55,6 +58,8 @@ var (
 	DefaultHoldDays int
 	// DefaultTrashDays holds the default value on creation for the "trash_days" field.
 	DefaultTrashDays int
+	// DefaultPolicySequence holds the default value on creation for the "policy_sequence" field.
+	DefaultPolicySequence uint64
 )
 
 // OrderOption defines the ordering options for the Settings queries.
@@ -93,4 +98,9 @@ func ByHoldDays(opts ...sql.OrderTermOption) OrderOption {
 // ByTrashDays orders the results by the trash_days field.
 func ByTrashDays(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTrashDays, opts...).ToFunc()
+}
+
+// ByPolicySequence orders the results by the policy_sequence field.
+func ByPolicySequence(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPolicySequence, opts...).ToFunc()
 }

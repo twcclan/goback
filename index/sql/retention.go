@@ -192,24 +192,34 @@ func (x *Index) GetPolicy(ctx context.Context, name string) (index.SetRetention,
 // clamped by the limits, and re-evaluates the set. Setting a policy also
 // resumes retention paused by a rebuild.
 func (x *Index) SetPolicy(ctx context.Context, name string, p *retention.Policy) error {
-	setID, err := findSet(ctx, x.client, name)
-	if err != nil {
-		return err
-	}
-
 	raw, err := x.encodePolicy(p)
 	if err != nil {
 		return err
 	}
 
-	update := x.client.Set.UpdateOneID(setID).SetRetentionPaused(false)
-	if raw == nil {
-		update.ClearRetentionPolicy()
-	} else {
-		update.SetRetentionPolicy(*raw)
-	}
+	var setID int64
 
-	if err := update.Exec(ctx); err != nil {
+	err = x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
+		setID, err = findSet(ctx, tx.Client(), name)
+		if err != nil {
+			return nil, err
+		}
+
+		update := tx.Set.UpdateOneID(setID).SetRetentionPaused(false)
+		if raw == nil {
+			update.ClearRetentionPolicy()
+		} else {
+			update.SetRetentionPolicy(*raw)
+		}
+
+		s, err := update.Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return setScope(s, time.Time{}), nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -270,69 +280,82 @@ func (x *Index) lockOwnCommit(ctx context.Context, tx *ent.Tx, ref *proto.Ref) (
 
 // DeleteCommit implements backup.Retention.
 func (x *Index) DeleteCommit(ctx context.Context, ref *proto.Ref) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+	return x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
 		c, err := x.lockOwnCommit(ctx, tx, ref)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if c.tombstoned {
-			return fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.GetHash())
+			return nil, fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.GetHash())
 		}
 
 		if c.cfg.state == set.StateActive {
 			newest, err := tx.CommitRow.Query().Where(commitrow.SetID(c.row.SetID), liveCommit()).Order(ent.Desc(commitrow.FieldReceivedAt)).Select(commitrow.FieldRef).First(ctx)
 			if err != nil && !ent.IsNotFound(err) {
-				return err
+				return nil, err
 			}
 
 			if newest != nil && ref.Equal(&proto.Ref{Hash: newest.Ref}) {
-				return fmt.Errorf("%w: %x", backup.ErrNewestCommit, ref.GetHash())
+				return nil, fmt.Errorf("%w: %x", backup.ErrNewestCommit, ref.GetHash())
 			}
 		}
 
 		pinned, err := tx.Pin.Query().Where(pin.Target(ref.GetHash()), pin.DeletedAtIsNil()).Exist(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if pinned {
-			return fmt.Errorf("%w: %x", backup.ErrPinned, ref.GetHash())
+			return nil, fmt.Errorf("%w: %x", backup.ErrPinned, ref.GetHash())
 		}
 
 		now := x.now()
-		expires := now.Add(c.cfg.trash)
-		if c.row.ExpiresAt != nil && c.row.ExpiresAt.Before(expires) {
-			expires = *c.row.ExpiresAt
-		}
 
-		return tx.CommitRow.Update().Where(commitrow.Ref(ref.GetHash())).SetDeletedAt(now).SetRetainedBy("").SetExpiresAt(expires).Exec(ctx)
+		return commitScope(ref.GetHash(), now), trashCommit(ctx, tx, c.row, c.cfg.trash, now)
 	})
+}
+
+// trashCommit moves a commit to the trash at now, expiring a trash window
+// later unless retention already lets it go sooner.
+func trashCommit(ctx context.Context, tx *ent.Tx, row *ent.CommitRow, trash time.Duration, now time.Time) error {
+	expires := now.Add(trash)
+	if row.ExpiresAt != nil && row.ExpiresAt.Before(expires) {
+		expires = *row.ExpiresAt
+	}
+
+	return tx.CommitRow.Update().Where(commitrow.Ref(row.Ref)).SetDeletedAt(now).SetRetainedBy("").SetExpiresAt(expires).Exec(ctx)
 }
 
 // UndeleteCommit implements backup.Retention.
 func (x *Index) UndeleteCommit(ctx context.Context, ref *proto.Ref) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+	return x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
 		c, err := x.lockOwnCommit(ctx, tx, ref)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if c.tombstoned {
-			return fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.GetHash())
+			return nil, fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.GetHash())
 		}
 
 		if c.cfg.state != set.StateActive {
-			return fmt.Errorf("%w: set %q", backup.ErrSetClosed, c.cfg.name)
+			return nil, fmt.Errorf("%w: set %q", backup.ErrSetClosed, c.cfg.name)
 		}
 
-		err = tx.CommitRow.Update().Where(commitrow.Ref(ref.GetHash())).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
+		err = untrashCommit(ctx, tx, ref.GetHash())
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return x.evaluateSet(ctx, tx, c.row.SetID, x.now())
+		return commitScope(ref.GetHash(), time.Time{}), x.evaluateSet(ctx, tx, c.row.SetID, x.now())
 	})
+}
+
+// untrashCommit takes a commit out of the trash, for retention to decide
+// on again.
+func untrashCommit(ctx context.Context, tx *ent.Tx, ref []byte) error {
+	return tx.CommitRow.Update().Where(commitrow.Ref(ref)).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
 }
 
 func (x *Index) lockOwnSet(ctx context.Context, tx *ent.Tx, name string) (int64, *setConfig, error) {
@@ -352,71 +375,90 @@ func (x *Index) lockOwnSet(ctx context.Context, tx *ent.Tx, name string) (int64,
 
 // DeleteSet implements backup.Retention.
 func (x *Index) DeleteSet(ctx context.Context, name string, erase bool) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+	return x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
 		setID, cfg, err := x.lockOwnSet(ctx, tx, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if cfg.state == set.StateDeleted {
-			return fmt.Errorf("%w: set %q", backup.ErrTombstoned, name)
+			return nil, fmt.Errorf("%w: set %q", backup.ErrTombstoned, name)
 		}
 
 		now := x.now()
-		expires := now.Add(cfg.trash)
-		if erase {
-			expires = now
-		}
 
-		update := tx.Set.UpdateOneID(setID).SetState(set.StateClosing)
-		if erase {
-			update.SetErase(true)
-		}
-
-		if err := update.Exec(ctx); err != nil {
-			return err
-		}
-
-		live := []predicate.CommitRow{commitrow.SetID(setID), commitrow.TombstonedAtIsNil()}
-
-		err = tx.CommitRow.Update().Where(append(live, commitrow.DeletedAtIsNil())...).SetDeletedAt(now).Exec(ctx)
+		s, err := closeSet(ctx, tx, setID, cfg.trash, now, erase)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		err = tx.CommitRow.Update().Where(append(live, commitrow.Or(commitrow.ExpiresAtIsNil(), commitrow.ExpiresAtGT(expires)))...).SetExpiresAt(expires).Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		return tx.CommitRow.Update().Where(live...).SetRetainedBy("").Exec(ctx)
+		return setScope(s, now), nil
 	})
+}
+
+// closeSet closes a set at now and moves its live commits to the trash,
+// expiring a trash window later, or at once for an erasure.
+func closeSet(ctx context.Context, tx *ent.Tx, setID int64, trash time.Duration, now time.Time, erase bool) (*ent.Set, error) {
+	expires := now.Add(trash)
+	if erase {
+		expires = now
+	}
+
+	update := tx.Set.UpdateOneID(setID).SetState(set.StateClosing)
+	if erase {
+		update.SetErase(true)
+	}
+
+	s, err := update.Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	live := []predicate.CommitRow{commitrow.SetID(setID), commitrow.TombstonedAtIsNil()}
+
+	err = tx.CommitRow.Update().Where(append(live, commitrow.DeletedAtIsNil())...).SetDeletedAt(now).Exec(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.CommitRow.Update().Where(append(live, commitrow.Or(commitrow.ExpiresAtIsNil(), commitrow.ExpiresAtGT(expires)))...).SetExpiresAt(expires).Exec(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s, tx.CommitRow.Update().Where(live...).SetRetainedBy("").Exec(ctx)
 }
 
 // UndeleteSet implements backup.Retention.
 func (x *Index) UndeleteSet(ctx context.Context, name string) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+	return x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
 		setID, cfg, err := x.lockOwnSet(ctx, tx, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if cfg.state == set.StateDeleted {
-			return fmt.Errorf("%w: set %q", backup.ErrTombstoned, name)
+			return nil, fmt.Errorf("%w: set %q", backup.ErrTombstoned, name)
 		}
 
-		err = tx.Set.UpdateOneID(setID).SetState(set.StateActive).SetErase(false).Exec(ctx)
+		s, err := reopenSet(ctx, tx, setID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		err = tx.CommitRow.Update().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		return x.evaluateSet(ctx, tx, setID, x.now())
+		return setScope(s, time.Time{}), x.evaluateSet(ctx, tx, setID, x.now())
 	})
+}
+
+// reopenSet makes a closing set active again with every commit it still
+// holds taken out of the trash.
+func reopenSet(ctx context.Context, tx *ent.Tx, setID int64) (*ent.Set, error) {
+	s, err := tx.Set.UpdateOneID(setID).SetState(set.StateActive).SetErase(false).Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s, tx.CommitRow.Update().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
 }
 
 // inVisibleSets keeps the pins whose commit belongs to a set the query

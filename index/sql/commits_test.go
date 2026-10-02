@@ -171,12 +171,13 @@ func TestRetentionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n, "nothing is past its window yet")
 
+	flushed := f.store.flushed
 	n, err = f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 	require.True(t, f.store.tombstoned(a))
 	require.False(t, f.store.tombstoned(b))
-	require.Equal(t, 1, f.store.flushed)
+	require.Equal(t, flushed+1, f.store.flushed)
 
 	require.NotNil(t, f.commitRow(a).TombstonedAt)
 
@@ -534,12 +535,10 @@ func TestDeleteSetAndRebuild(t *testing.T) {
 	require.True(t, f.deleted(y, worldB))
 	require.False(t, f.deleted(y, logs))
 
-	// a resubmitted commit is stamped afresh: a new commit, not the tombstoned one
+	// the deletion outlives the database it was made in
 	obj, err := f.store.Get(f.ctx, worldA)
 	require.NoError(t, err)
-	require.NoError(t, y.Put(f.ctx, obj))
-	require.False(t, obj.Ref().Equal(worldA))
-	require.False(t, f.deleted(y, obj.Ref()))
+	require.ErrorIs(t, y.Put(f.ctx, obj), backup.ErrSetClosed)
 
 	count, err = y.client.Pin.Query().Where(pin.DeletedAtIsNil()).Count(f.ctx)
 	require.NoError(t, err)

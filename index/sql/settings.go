@@ -10,7 +10,7 @@ import (
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/ent/settings"
+	"github.com/twcclan/goback/proto"
 )
 
 // settingsID is the id of the one settings row.
@@ -55,21 +55,17 @@ func (x *Index) GetStorePolicy(ctx context.Context) (index.StorePolicy, error) {
 func (x *Index) SetStorePolicy(ctx context.Context, policy storekey.Policy, acknowledge bool, now time.Time) (index.StorePolicy, error) {
 	var acknowledged *time.Time
 
-	err := x.tx(ctx, func(tx *ent.Tx) error {
-		if _, err := loadSettings(ctx, tx.Client()); err != nil {
-			return err
-		}
-
-		s, err := forUpdate(x, tx.Settings.Query().Where(settings.ID(settingsID))).Only(ctx)
+	err := x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
+		s, err := tx.Settings.Get(ctx, settingsID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		policy.Version = s.PolicyVersion + 1
 
 		encoded, err := json.Marshal(policy)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		acknowledged = s.KeyAcknowledgedAt
@@ -77,7 +73,12 @@ func (x *Index) SetStorePolicy(ctx context.Context, policy storekey.Policy, ackn
 			acknowledged = ptr(now.UTC())
 		}
 
-		return tx.Settings.UpdateOneID(settingsID).SetPolicy(string(encoded)).SetPolicyVersion(policy.Version).SetNillableKeyAcknowledgedAt(acknowledged).Exec(ctx)
+		s, err = tx.Settings.UpdateOneID(settingsID).SetPolicy(string(encoded)).SetPolicyVersion(policy.Version).SetNillableKeyAcknowledgedAt(acknowledged).Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return storeScope(s), nil
 	})
 	if err != nil {
 		return index.StorePolicy{}, err
@@ -135,18 +136,22 @@ func (x *Index) SetDefaultPolicy(ctx context.Context, p *retention.Policy) error
 		return err
 	}
 
-	if _, err := loadSettings(ctx, x.client); err != nil {
-		return err
-	}
+	err = x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
+		update := tx.Settings.UpdateOneID(settingsID)
+		if raw == nil {
+			update.ClearRetentionPolicy()
+		} else {
+			update.SetRetentionPolicy(*raw)
+		}
 
-	update := x.client.Settings.UpdateOneID(settingsID)
-	if raw == nil {
-		update.ClearRetentionPolicy()
-	} else {
-		update.SetRetentionPolicy(*raw)
-	}
+		s, err := update.Save(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	if err := update.Exec(ctx); err != nil {
+		return storeScope(s), nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -170,11 +175,14 @@ func (x *Index) SetWindows(ctx context.Context, w index.Windows) error {
 		return fmt.Errorf("%w: a window cannot be negative", retention.ErrInvalidPolicy)
 	}
 
-	if _, err := loadSettings(ctx, x.client); err != nil {
-		return err
-	}
+	err := x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
+		s, err := tx.Settings.UpdateOneID(settingsID).SetHoldDays(w.HoldDays).SetTrashDays(w.TrashDays).Save(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	err := x.client.Settings.UpdateOneID(settingsID).SetHoldDays(w.HoldDays).SetTrashDays(w.TrashDays).Exec(ctx)
+		return storeScope(s), nil
+	})
 	if err != nil {
 		return err
 	}

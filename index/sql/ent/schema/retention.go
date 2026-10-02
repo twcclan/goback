@@ -9,7 +9,8 @@ import (
 )
 
 // Settings is the one row of store settings: the write policy with its
-// version and key acknowledgement, and the retention defaults.
+// version and key acknowledgement, the retention defaults, and the
+// sequence policy objects are numbered by.
 type Settings struct {
 	ent.Schema
 }
@@ -24,6 +25,8 @@ func (Settings) Fields() []ent.Field {
 		field.String("retention_policy").Optional().Nillable(),
 		field.Int("hold_days").Default(14),
 		field.Int("trash_days").Default(14),
+		// the sequence of the last policy object the store wrote
+		field.Uint64("policy_sequence").Default(0),
 	}
 }
 

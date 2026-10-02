@@ -28,8 +28,10 @@ type Settings struct {
 	// HoldDays holds the value of the "hold_days" field.
 	HoldDays int `json:"hold_days,omitempty"`
 	// TrashDays holds the value of the "trash_days" field.
-	TrashDays    int `json:"trash_days,omitempty"`
-	selectValues sql.SelectValues
+	TrashDays int `json:"trash_days,omitempty"`
+	// PolicySequence holds the value of the "policy_sequence" field.
+	PolicySequence uint64 `json:"policy_sequence,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -37,7 +39,7 @@ func (*Settings) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case settings.FieldID, settings.FieldPolicyVersion, settings.FieldHoldDays, settings.FieldTrashDays:
+		case settings.FieldID, settings.FieldPolicyVersion, settings.FieldHoldDays, settings.FieldTrashDays, settings.FieldPolicySequence:
 			values[i] = new(sql.NullInt64)
 		case settings.FieldPolicy, settings.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -103,6 +105,12 @@ func (_m *Settings) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TrashDays = int(value.Int64)
 			}
+		case settings.FieldPolicySequence:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field policy_sequence", values[i])
+			} else if value.Valid {
+				_m.PolicySequence = uint64(value.Int64)
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -162,6 +170,9 @@ func (_m *Settings) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("trash_days=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TrashDays))
+	builder.WriteString(", ")
+	builder.WriteString("policy_sequence=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PolicySequence))
 	builder.WriteByte(')')
 	return builder.String()
 }

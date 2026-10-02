@@ -349,6 +349,7 @@ var (
 		{Name: "retention_policy", Type: field.TypeString, Nullable: true},
 		{Name: "hold_days", Type: field.TypeInt, Default: 14},
 		{Name: "trash_days", Type: field.TypeInt, Default: 14},
+		{Name: "policy_sequence", Type: field.TypeUint64, Default: 0},
 	}
 	// SettingsTable holds the schema information for the "settings" table.
 	SettingsTable = &schema.Table{

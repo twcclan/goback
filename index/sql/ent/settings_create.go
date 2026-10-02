@@ -106,6 +106,20 @@ func (_c *SettingsCreate) SetNillableTrashDays(v *int) *SettingsCreate {
 	return _c
 }
 
+// SetPolicySequence sets the "policy_sequence" field.
+func (_c *SettingsCreate) SetPolicySequence(v uint64) *SettingsCreate {
+	_c.mutation.SetPolicySequence(v)
+	return _c
+}
+
+// SetNillablePolicySequence sets the "policy_sequence" field if the given value is not nil.
+func (_c *SettingsCreate) SetNillablePolicySequence(v *uint64) *SettingsCreate {
+	if v != nil {
+		_c.SetPolicySequence(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SettingsCreate) SetID(v int) *SettingsCreate {
 	_c.mutation.SetID(v)
@@ -159,6 +173,10 @@ func (_c *SettingsCreate) defaults() {
 		v := settings.DefaultTrashDays
 		_c.mutation.SetTrashDays(v)
 	}
+	if _, ok := _c.mutation.PolicySequence(); !ok {
+		v := settings.DefaultPolicySequence
+		_c.mutation.SetPolicySequence(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -171,6 +189,9 @@ func (_c *SettingsCreate) check() error {
 	}
 	if _, ok := _c.mutation.TrashDays(); !ok {
 		return &ValidationError{Name: "trash_days", err: errors.New(`ent: missing required field "Settings.trash_days"`)}
+	}
+	if _, ok := _c.mutation.PolicySequence(); !ok {
+		return &ValidationError{Name: "policy_sequence", err: errors.New(`ent: missing required field "Settings.policy_sequence"`)}
 	}
 	return nil
 }
@@ -228,6 +249,10 @@ func (_c *SettingsCreate) createSpec() (*Settings, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TrashDays(); ok {
 		_spec.SetField(settings.FieldTrashDays, field.TypeInt, value)
 		_node.TrashDays = value
+	}
+	if value, ok := _c.mutation.PolicySequence(); ok {
+		_spec.SetField(settings.FieldPolicySequence, field.TypeUint64, value)
+		_node.PolicySequence = value
 	}
 	return _node, _spec
 }
@@ -386,6 +411,24 @@ func (u *SettingsUpsert) UpdateTrashDays() *SettingsUpsert {
 // AddTrashDays adds v to the "trash_days" field.
 func (u *SettingsUpsert) AddTrashDays(v int) *SettingsUpsert {
 	u.Add(settings.FieldTrashDays, v)
+	return u
+}
+
+// SetPolicySequence sets the "policy_sequence" field.
+func (u *SettingsUpsert) SetPolicySequence(v uint64) *SettingsUpsert {
+	u.Set(settings.FieldPolicySequence, v)
+	return u
+}
+
+// UpdatePolicySequence sets the "policy_sequence" field to the value that was provided on create.
+func (u *SettingsUpsert) UpdatePolicySequence() *SettingsUpsert {
+	u.SetExcluded(settings.FieldPolicySequence)
+	return u
+}
+
+// AddPolicySequence adds v to the "policy_sequence" field.
+func (u *SettingsUpsert) AddPolicySequence(v uint64) *SettingsUpsert {
+	u.Add(settings.FieldPolicySequence, v)
 	return u
 }
 
@@ -560,6 +603,27 @@ func (u *SettingsUpsertOne) AddTrashDays(v int) *SettingsUpsertOne {
 func (u *SettingsUpsertOne) UpdateTrashDays() *SettingsUpsertOne {
 	return u.Update(func(s *SettingsUpsert) {
 		s.UpdateTrashDays()
+	})
+}
+
+// SetPolicySequence sets the "policy_sequence" field.
+func (u *SettingsUpsertOne) SetPolicySequence(v uint64) *SettingsUpsertOne {
+	return u.Update(func(s *SettingsUpsert) {
+		s.SetPolicySequence(v)
+	})
+}
+
+// AddPolicySequence adds v to the "policy_sequence" field.
+func (u *SettingsUpsertOne) AddPolicySequence(v uint64) *SettingsUpsertOne {
+	return u.Update(func(s *SettingsUpsert) {
+		s.AddPolicySequence(v)
+	})
+}
+
+// UpdatePolicySequence sets the "policy_sequence" field to the value that was provided on create.
+func (u *SettingsUpsertOne) UpdatePolicySequence() *SettingsUpsertOne {
+	return u.Update(func(s *SettingsUpsert) {
+		s.UpdatePolicySequence()
 	})
 }
 
@@ -900,6 +964,27 @@ func (u *SettingsUpsertBulk) AddTrashDays(v int) *SettingsUpsertBulk {
 func (u *SettingsUpsertBulk) UpdateTrashDays() *SettingsUpsertBulk {
 	return u.Update(func(s *SettingsUpsert) {
 		s.UpdateTrashDays()
+	})
+}
+
+// SetPolicySequence sets the "policy_sequence" field.
+func (u *SettingsUpsertBulk) SetPolicySequence(v uint64) *SettingsUpsertBulk {
+	return u.Update(func(s *SettingsUpsert) {
+		s.SetPolicySequence(v)
+	})
+}
+
+// AddPolicySequence adds v to the "policy_sequence" field.
+func (u *SettingsUpsertBulk) AddPolicySequence(v uint64) *SettingsUpsertBulk {
+	return u.Update(func(s *SettingsUpsert) {
+		s.AddPolicySequence(v)
+	})
+}
+
+// UpdatePolicySequence sets the "policy_sequence" field to the value that was provided on create.
+func (u *SettingsUpsertBulk) UpdatePolicySequence() *SettingsUpsertBulk {
+	return u.Update(func(s *SettingsUpsert) {
+		s.UpdatePolicySequence()
 	})
 }
 

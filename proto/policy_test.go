@@ -9,13 +9,13 @@ import (
 
 func TestPolicyRoundTripsEveryScope(t *testing.T) {
 	cases := map[string]*Policy{
-		"store": {Sequence: 3, Scope: &Policy_Store{Store: &StoreScope{
+		"store": {Sequence: 3, WrittenAtNs: 99, Scope: &Policy_Store{Store: &StoreScope{
 			WritePolicy: `{"encryption":"required"}`, WritePolicyVersion: 2, KeyAcknowledgedAtNs: 5,
 			DefaultRetention: `{"keep_last":3}`, HoldDays: 14, TrashDays: 7,
 		}}},
 		"default store": {Sequence: 1, Scope: &Policy_Store{Store: &StoreScope{}}},
 		"set": {Sequence: 9, Scope: &Policy_Set{Set: &SetScope{
-			SetId: 4, Name: "world", Retention: `{"keep_last":1}`, RetentionPaused: true, State: SetState_SET_CLOSING, Erase: true,
+			SetId: 4, Name: "world", Retention: `{"keep_last":1}`, RetentionPaused: true, State: SetState_SET_CLOSING, Erase: true, ClosedAtNs: 8,
 		}}},
 		"commit": {Sequence: 12, Scope: &Policy_Commit{Commit: &CommitScope{Commit: refOf("commit"), DeletedAtNs: 77}}},
 	}

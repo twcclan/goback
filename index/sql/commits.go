@@ -859,6 +859,16 @@ func (x *Index) ReIndex(ctx context.Context) error {
 		}
 	}
 
+	err = x.replayPolicies(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = x.evaluateAll(ctx)
+	if err != nil {
+		return err
+	}
+
 	err = x.resetSetSequence(ctx)
 	if err != nil {
 		return err

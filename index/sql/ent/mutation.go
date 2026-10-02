@@ -8386,6 +8386,8 @@ type SettingsMutation struct {
 	addhold_days        *int
 	trash_days          *int
 	addtrash_days       *int
+	policy_sequence     *uint64
+	addpolicy_sequence  *int64
 	clearedFields       map[string]struct{}
 	done                bool
 	oldValue            func(context.Context) (*Settings, error)
@@ -8811,6 +8813,62 @@ func (m *SettingsMutation) ResetTrashDays() {
 	m.addtrash_days = nil
 }
 
+// SetPolicySequence sets the "policy_sequence" field.
+func (m *SettingsMutation) SetPolicySequence(u uint64) {
+	m.policy_sequence = &u
+	m.addpolicy_sequence = nil
+}
+
+// PolicySequence returns the value of the "policy_sequence" field in the mutation.
+func (m *SettingsMutation) PolicySequence() (r uint64, exists bool) {
+	v := m.policy_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPolicySequence returns the old "policy_sequence" field's value of the Settings entity.
+// If the Settings object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SettingsMutation) OldPolicySequence(ctx context.Context) (v uint64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPolicySequence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPolicySequence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPolicySequence: %w", err)
+	}
+	return oldValue.PolicySequence, nil
+}
+
+// AddPolicySequence adds u to the "policy_sequence" field.
+func (m *SettingsMutation) AddPolicySequence(u int64) {
+	if m.addpolicy_sequence != nil {
+		*m.addpolicy_sequence += u
+	} else {
+		m.addpolicy_sequence = &u
+	}
+}
+
+// AddedPolicySequence returns the value that was added to the "policy_sequence" field in this mutation.
+func (m *SettingsMutation) AddedPolicySequence() (r int64, exists bool) {
+	v := m.addpolicy_sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPolicySequence resets all changes to the "policy_sequence" field.
+func (m *SettingsMutation) ResetPolicySequence() {
+	m.policy_sequence = nil
+	m.addpolicy_sequence = nil
+}
+
 // Where appends a list predicates to the SettingsMutation builder.
 func (m *SettingsMutation) Where(ps ...predicate.Settings) {
 	m.predicates = append(m.predicates, ps...)
@@ -8845,7 +8903,7 @@ func (m *SettingsMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SettingsMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.policy != nil {
 		fields = append(fields, settings.FieldPolicy)
 	}
@@ -8863,6 +8921,9 @@ func (m *SettingsMutation) Fields() []string {
 	}
 	if m.trash_days != nil {
 		fields = append(fields, settings.FieldTrashDays)
+	}
+	if m.policy_sequence != nil {
+		fields = append(fields, settings.FieldPolicySequence)
 	}
 	return fields
 }
@@ -8884,6 +8945,8 @@ func (m *SettingsMutation) Field(name string) (ent.Value, bool) {
 		return m.HoldDays()
 	case settings.FieldTrashDays:
 		return m.TrashDays()
+	case settings.FieldPolicySequence:
+		return m.PolicySequence()
 	}
 	return nil, false
 }
@@ -8905,6 +8968,8 @@ func (m *SettingsMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldHoldDays(ctx)
 	case settings.FieldTrashDays:
 		return m.OldTrashDays(ctx)
+	case settings.FieldPolicySequence:
+		return m.OldPolicySequence(ctx)
 	}
 	return nil, fmt.Errorf("unknown Settings field %s", name)
 }
@@ -8956,6 +9021,13 @@ func (m *SettingsMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTrashDays(v)
 		return nil
+	case settings.FieldPolicySequence:
+		v, ok := value.(uint64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPolicySequence(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Settings field %s", name)
 }
@@ -8973,6 +9045,9 @@ func (m *SettingsMutation) AddedFields() []string {
 	if m.addtrash_days != nil {
 		fields = append(fields, settings.FieldTrashDays)
 	}
+	if m.addpolicy_sequence != nil {
+		fields = append(fields, settings.FieldPolicySequence)
+	}
 	return fields
 }
 
@@ -8987,6 +9062,8 @@ func (m *SettingsMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedHoldDays()
 	case settings.FieldTrashDays:
 		return m.AddedTrashDays()
+	case settings.FieldPolicySequence:
+		return m.AddedPolicySequence()
 	}
 	return nil, false
 }
@@ -9016,6 +9093,13 @@ func (m *SettingsMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTrashDays(v)
+		return nil
+	case settings.FieldPolicySequence:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPolicySequence(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Settings numeric field %s", name)
@@ -9082,6 +9166,9 @@ func (m *SettingsMutation) ResetField(name string) error {
 		return nil
 	case settings.FieldTrashDays:
 		m.ResetTrashDays()
+		return nil
+	case settings.FieldPolicySequence:
+		m.ResetPolicySequence()
 		return nil
 	}
 	return fmt.Errorf("unknown Settings field %s", name)

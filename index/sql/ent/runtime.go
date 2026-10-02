@@ -89,4 +89,8 @@ func init() {
 	settingsDescTrashDays := settingsFields[6].Descriptor()
 	// settings.DefaultTrashDays holds the default value on creation for the trash_days field.
 	settings.DefaultTrashDays = settingsDescTrashDays.Default.(int)
+	// settingsDescPolicySequence is the schema descriptor for policy_sequence field.
+	settingsDescPolicySequence := settingsFields[7].Descriptor()
+	// settings.DefaultPolicySequence holds the default value on creation for the policy_sequence field.
+	settings.DefaultPolicySequence = settingsDescPolicySequence.Default.(uint64)
 }

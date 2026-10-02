@@ -70,13 +70,14 @@ func (SetState) EnumDescriptor() ([]byte, []int) {
 	return file_policy_proto_rawDescGZIP(), []int{0}
 }
 
-// Policy is the full state of one scope as the store's index last set it,
-// so that a reindex brings it back: of the scopes sharing a key, the one
-// with the highest sequence wins. Only the store writes these.
+// Policy is the full state of one scope after a change the store's index
+// made to it. A reindex replays a store's policies in order of sequence,
+// then of written_at. Only the store writes these.
 type Policy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// increases with every policy the store writes
-	Sequence uint64 `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// increases with every change the store makes
+	Sequence    uint64 `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	WrittenAtNs int64  `protobuf:"varint,2,opt,name=written_at_ns,json=writtenAtNs,proto3" json:"written_at_ns,omitempty"`
 	// Types that are valid to be assigned to Scope:
 	//
 	//	*Policy_Store
@@ -124,6 +125,13 @@ func (x *Policy) GetSequence() uint64 {
 	return 0
 }
 
+func (x *Policy) GetWrittenAtNs() int64 {
+	if x != nil {
+		return x.WrittenAtNs
+	}
+	return 0
+}
+
 func (x *Policy) GetScope() isPolicy_Scope {
 	if x != nil {
 		return x.Scope
@@ -163,15 +171,15 @@ type isPolicy_Scope interface {
 }
 
 type Policy_Store struct {
-	Store *StoreScope `protobuf:"bytes,2,opt,name=store,proto3,oneof"`
+	Store *StoreScope `protobuf:"bytes,3,opt,name=store,proto3,oneof"`
 }
 
 type Policy_Set struct {
-	Set *SetScope `protobuf:"bytes,3,opt,name=set,proto3,oneof"`
+	Set *SetScope `protobuf:"bytes,4,opt,name=set,proto3,oneof"`
 }
 
 type Policy_Commit struct {
-	Commit *CommitScope `protobuf:"bytes,4,opt,name=commit,proto3,oneof"`
+	Commit *CommitScope `protobuf:"bytes,5,opt,name=commit,proto3,oneof"`
 }
 
 func (*Policy_Store) isPolicy_Scope() {}
@@ -278,8 +286,11 @@ type SetScope struct {
 	RetentionPaused bool     `protobuf:"varint,4,opt,name=retention_paused,json=retentionPaused,proto3" json:"retention_paused,omitempty"`
 	State           SetState `protobuf:"varint,5,opt,name=state,proto3,enum=proto.SetState" json:"state,omitempty"`
 	Erase           bool     `protobuf:"varint,6,opt,name=erase,proto3" json:"erase,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// when the set was deleted, which moved its live commits to the trash;
+	// 0 unless it is closing
+	ClosedAtNs    int64 `protobuf:"varint,7,opt,name=closed_at_ns,json=closedAtNs,proto3" json:"closed_at_ns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetScope) Reset() {
@@ -354,6 +365,13 @@ func (x *SetScope) GetErase() bool {
 	return false
 }
 
+func (x *SetScope) GetClosedAtNs() int64 {
+	if x != nil {
+		return x.ClosedAtNs
+	}
+	return 0
+}
+
 // CommitScope is whether a commit is in the trash.
 type CommitScope struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
@@ -412,12 +430,13 @@ var File_policy_proto protoreflect.FileDescriptor
 
 const file_policy_proto_rawDesc = "" +
 	"\n" +
-	"\fpolicy.proto\x12\x05proto\x1a\tref.proto\"\xab\x01\n" +
+	"\fpolicy.proto\x12\x05proto\x1a\tref.proto\"\xcf\x01\n" +
 	"\x06Policy\x12\x1a\n" +
-	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12)\n" +
-	"\x05store\x18\x02 \x01(\v2\x11.proto.StoreScopeH\x00R\x05store\x12#\n" +
-	"\x03set\x18\x03 \x01(\v2\x0f.proto.SetScopeH\x00R\x03set\x12,\n" +
-	"\x06commit\x18\x04 \x01(\v2\x12.proto.CommitScopeH\x00R\x06commitB\a\n" +
+	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\"\n" +
+	"\rwritten_at_ns\x18\x02 \x01(\x03R\vwrittenAtNs\x12)\n" +
+	"\x05store\x18\x03 \x01(\v2\x11.proto.StoreScopeH\x00R\x05store\x12#\n" +
+	"\x03set\x18\x04 \x01(\v2\x0f.proto.SetScopeH\x00R\x03set\x12,\n" +
+	"\x06commit\x18\x05 \x01(\v2\x12.proto.CommitScopeH\x00R\x06commitB\a\n" +
 	"\x05scope\"\xff\x01\n" +
 	"\n" +
 	"StoreScope\x12!\n" +
@@ -427,14 +446,16 @@ const file_policy_proto_rawDesc = "" +
 	"\x11default_retention\x18\x04 \x01(\tR\x10defaultRetention\x12\x1b\n" +
 	"\thold_days\x18\x05 \x01(\rR\bholdDays\x12\x1d\n" +
 	"\n" +
-	"trash_days\x18\x06 \x01(\rR\ttrashDays\"\xbb\x01\n" +
+	"trash_days\x18\x06 \x01(\rR\ttrashDays\"\xdd\x01\n" +
 	"\bSetScope\x12\x15\n" +
 	"\x06set_id\x18\x01 \x01(\x04R\x05setId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
 	"\tretention\x18\x03 \x01(\tR\tretention\x12)\n" +
 	"\x10retention_paused\x18\x04 \x01(\bR\x0fretentionPaused\x12%\n" +
 	"\x05state\x18\x05 \x01(\x0e2\x0f.proto.SetStateR\x05state\x12\x14\n" +
-	"\x05erase\x18\x06 \x01(\bR\x05erase\"U\n" +
+	"\x05erase\x18\x06 \x01(\bR\x05erase\x12 \n" +
+	"\fclosed_at_ns\x18\a \x01(\x03R\n" +
+	"closedAtNs\"U\n" +
 	"\vCommitScope\x12\"\n" +
 	"\x06commit\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x06commit\x12\"\n" +
