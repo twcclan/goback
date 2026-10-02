@@ -95,6 +95,7 @@ func NewPackStorage(options ...PackOption) (*PackStorage, error) {
 		maxSize:          opts.maxSize,
 		closeBeforeRead:  opts.closeBeforeRead,
 		cache:            opts.cache,
+		owned:            opts.owned,
 		index:            opts.index,
 		idleFinalize:     opts.idleFinalize,
 		sessionLease:     opts.sessionLease,
@@ -116,6 +117,7 @@ type PackStorage struct {
 	maxSize          uint64
 	closeBeforeRead  bool
 	cache            backup.ObjectStore
+	owned            []io.Closer
 	index            ArchiveIndex
 	idleFinalize     time.Duration
 	sessionLease     time.Duration
@@ -1230,6 +1232,12 @@ func (ps *PackStorage) Close() error {
 	if ps.cache != nil {
 		if cls, ok := ps.cache.(io.Closer); ok {
 			cls.Close()
+		}
+	}
+
+	for _, owned := range ps.owned {
+		if err := owned.Close(); err != nil {
+			return err
 		}
 	}
 

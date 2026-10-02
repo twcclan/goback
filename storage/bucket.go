@@ -443,6 +443,7 @@ func NewBucketObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra 
 	options := []pack.PackOption{
 		pack.WithArchiveStorage(NewBucketStore(bucket)),
 		pack.WithArchiveIndex(idx),
+		pack.WithOwned(idx),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
 		pack.WithMaxSize(1024 * 1024 * 1024),

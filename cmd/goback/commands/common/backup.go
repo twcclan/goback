@@ -28,6 +28,7 @@ import (
 	"gocloud.dev/blob"
 	"gocloud.dev/blob/fileblob"
 	_ "gocloud.dev/blob/gcsblob"
+	_ "gocloud.dev/blob/s3blob"
 )
 
 // Opener is implemented by stores that must be opened before use.
@@ -176,6 +177,7 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return pack.NewPackStorage(append(options,
 		pack.WithArchiveStorage(storage.NewBucketStore(file)),
 		pack.WithArchiveIndex(idx),
+		pack.WithOwned(idx),
 		pack.WithMaxParallel(1),
 		pack.WithMaxSize(1024*1024*1024),
 		pack.WithSessionLease(10*time.Minute),
@@ -211,6 +213,28 @@ func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	}
 
 	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
+}
+
+// initS3 opens an S3-compatible bucket. The query takes index and cache as
+// gcs:// does; every other parameter (endpoint, region, use_path_style,
+// ...) goes to the S3 client.
+func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	query := u.Query()
+	index, cache := query.Get("index"), query.Get("cache")
+	query.Del("index")
+	query.Del("cache")
+
+	bucket, err := blob.OpenBucket(context.Background(), (&url.URL{Scheme: "s3", Host: u.Host, RawQuery: query.Encode()}).String())
+	if err != nil {
+		return nil, err
+	}
+
+	options, err := atRest(c)
+	if err != nil {
+		return nil, err
+	}
+
+	return storage.NewBucketObjectStore(bucket, index, cache, options...)
 }
 
 // insecureScheme names a store server reached without TLS, which puts the
@@ -351,6 +375,7 @@ func indexDialect(scheme string) string {
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":                initPack,
 	"gcs":             initGCS,
+	"s3":              initS3,
 	"goback":          initRemote,
 	"goback+insecure": initRemote,
 }

@@ -51,7 +51,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:   "storage",
-			Usage:  "where the objects live: a directory, gcs://bucket, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it",
+			Usage:  "where the objects live: a directory, gcs://bucket, s3://bucket?endpoint=…, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it",
 			Value:  "storage",
 			EnvVar: "GOBACK_STORAGE",
 		},

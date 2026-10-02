@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"io"
 	"log/slog"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 )
 
 type packOptions struct {
+	owned           []io.Closer
 	compaction      CompactionConfig
 	maxParallel     uint
 	maxSize         uint64
@@ -143,6 +145,14 @@ func WithCloseBeforeRead(do bool) PackOption {
 func WithMetadataCache(cache backup.ObjectStore) PackOption {
 	return func(p *packOptions) {
 		p.cache = cache
+	}
+}
+
+// WithOwned hands the store things it closes after itself, such as an
+// archive index nobody else holds.
+func WithOwned(closers ...io.Closer) PackOption {
+	return func(p *packOptions) {
+		p.owned = append(p.owned, closers...)
 	}
 }
 
