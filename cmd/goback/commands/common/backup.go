@@ -242,12 +242,15 @@ var remoteParams = map[string]string{
 	"key-file": "a file holding the api key, for when the url itself would show it",
 }
 
-// remoteAddress is the address a goback:// URL dials, defaulting to the
-// store server's port.
+// remoteAddress is the address a goback:// URL dials: without a port,
+// goback:// dials 443 and goback+insecure:// the store server's own port.
 func remoteAddress(u *url.URL) string {
 	port := u.Port()
 	if port == "" {
-		port = "6060"
+		port = "443"
+		if u.Scheme == insecureScheme {
+			port = "6060"
+		}
 	}
 
 	return net.JoinHostPort(u.Hostname(), port)
