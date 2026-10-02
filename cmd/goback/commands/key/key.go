@@ -61,6 +61,12 @@ var Command = cli.Command{
 			},
 		},
 		{
+			Name:        "id",
+			Description: "Print the id of a store key, which names it in the store and in its escrowed copies",
+			Action:      idAction,
+			Flags:       []cli.Flag{cli.StringFlag{Name: "key", Usage: "key file", Value: "store.key"}},
+		},
+		{
 			Name:        "recover",
 			Description: "Rebuild a key file from an escrowed key and its passphrase",
 			Action:      recoverAction,
@@ -265,6 +271,17 @@ func upload(c *cli.Context, server, keyID string, escrowed []byte) error {
 	fmt.Printf("the store keeps key %s escrowed; start agents with GOBACK_PASSPHRASE and no --store-key\n", keyID)
 
 	return nil
+}
+
+func idAction(c *cli.Context) error {
+	key, err := storekey.Load(c.String("key"))
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(c.App.Writer, key.IDString())
+
+	return err
 }
 
 func recoverAction(c *cli.Context) error {
