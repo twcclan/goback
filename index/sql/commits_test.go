@@ -20,6 +20,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIndexKeepsSealedOwnerNames(t *testing.T) {
+	f := newFixture(t)
+
+	user, group := []byte{0xd7, 0xd2, 0x00, 0x01}, []byte("=wheel")
+	file := f.file("a.txt", "one")
+	file.Stat.User, file.Stat.Group = user, group
+	f.commit("world", f.tree(file), false)
+
+	versions, err := f.x.FileInfo(f.ctx, "world", "a.txt", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	require.Equal(t, user, versions[0].Stat.User)
+	require.Equal(t, group, versions[0].Stat.Group)
+}
+
 func TestIndexerRangesFollowVersions(t *testing.T) {
 	f := newFixture(t)
 

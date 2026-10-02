@@ -236,6 +236,7 @@ func TestPostgres(t *testing.T) {
 
 	for name, test := range map[string]func(*testing.T){
 		"RangesFollowVersions":             TestIndexerRangesFollowVersions,
+		"KeepsSealedOwnerNames":            TestIndexKeepsSealedOwnerNames,
 		"KeepsOrderAndRefusesClosedSets":   TestIndexerKeepsOrderAndRefusesClosedSets,
 		"RetentionLifecycle":               TestRetentionLifecycle,
 		"RetireMarksRowsOnlyAfterFlush":    TestRetireMarksRowsOnlyAfterFlush,

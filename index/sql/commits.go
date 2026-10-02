@@ -540,7 +540,7 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		}
 
 		err = d.c.File.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(node.GetRef().GetHash()).
-			SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(string(info.GetUser())).SetGroup(string(info.GetGroup())).SetSize(info.GetSize()).
+			SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(proto.PathComponent(info.GetUser())).SetGroup(proto.PathComponent(info.GetGroup())).SetSize(info.GetSize()).
 			SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget()).Exec(ctx)
 		if err != nil {
 			return err

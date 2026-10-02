@@ -67,8 +67,8 @@ func (m MapperImpl) FileInfo(in *ent.File) *proto.FileInfo {
 	return &proto.FileInfo{
 		Name:       mapping.Base(in.Path),
 		Mode:       in.Mode,
-		User:       []byte(in.User),
-		Group:      []byte(in.Group),
+		User:       mapping.Owner(in.User),
+		Group:      mapping.Owner(in.Group),
 		Size:       in.Size,
 		MtimeNs:    in.MtimeNs,
 		Type:       mapping.NodeType(in.Type),

@@ -29,6 +29,8 @@ type Mapper interface {
 	TreeNode(in *ent.File) *proto.TreeNode
 
 	// field:Name from:"Path" using:"Base"
+	// field:User using:"Owner"
+	// field:Group using:"Owner"
 	// field:Type using:"NodeType"
 	FileInfo(in *ent.File) *proto.FileInfo
 
@@ -81,6 +83,12 @@ func Sum(hash []byte) [proto.HashSize]byte {
 // NodeType is a stored node type.
 func NodeType(t uint32) proto.NodeType {
 	return proto.NodeType(t)
+}
+
+// Owner is a stored user or group name, which an encrypted store keeps
+// sealed.
+func Owner(stored string) []byte {
+	return proto.NameFromComponent(stored)
 }
 
 // Base is the name component of a stored path.
