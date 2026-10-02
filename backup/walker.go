@@ -56,6 +56,11 @@ type Walker struct {
 	// interprets it.
 	Metadata map[string]string
 
+	// Stream, when set, is backed up instead of Root: the commit's tree
+	// holds one file read from it to its end. A stream cannot be read
+	// again, so a run with one does not retry a lost session.
+	Stream *Stream
+
 	// Carry, when set, keeps every entry of the previous commit's root that
 	// is gone from the disk and for which it returns true, so a set can
 	// accumulate files that leave the disk once committed.
@@ -304,7 +309,7 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 
 	for retry := 0; ; retry++ {
 		result, err := w.walk(ctx)
-		if !errors.Is(err, ErrSessionLost) || retry >= w.LostRetries {
+		if !errors.Is(err, ErrSessionLost) || retry >= w.LostRetries || w.Stream != nil {
 			return result, err
 		}
 
@@ -343,9 +348,23 @@ func (w *Walker) walk(ctx context.Context) (*WalkResult, error) {
 		return nil, err
 	}
 
-	nodes, changed, err := w.walkDir(ctx, w.Root, "", nil, baseNodes, true)
-	if err != nil {
-		return nil, err
+	var (
+		nodes   []*proto.TreeNode
+		changed = true
+	)
+
+	if w.Stream != nil {
+		node, err := w.putStream(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		nodes = []*proto.TreeNode{node}
+	} else {
+		nodes, changed, err = w.walkDir(ctx, w.Root, "", nil, baseNodes, true)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var root *proto.Ref

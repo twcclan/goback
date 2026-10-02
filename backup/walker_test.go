@@ -1,10 +1,12 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -538,6 +540,27 @@ func TestWalkerCarriesWhatLeftTheDiskWhileCarryAllows(t *testing.T) {
 	require.Len(t, after, 2)
 	require.Contains(t, after, "3")
 	require.True(t, after["2"].Ref.Equal(f.tree(first.Commit.Tree)["2"].Ref))
+}
+
+func TestWalkerCommitsAStreamAsItsOneFile(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("ignored.txt", []byte("not walked"))
+
+	content := f.random(3 << 20)
+	f.walker.Stream = &Stream{Name: "base.tar", Content: bytes.NewReader(content)}
+
+	result := f.run()
+
+	tree := f.tree(result.Commit.Tree)
+	require.Len(t, tree, 1)
+	require.EqualValues(t, len(content), tree["base.tar"].Stat.Size)
+
+	obj, err := f.store.Get(context.Background(), tree["base.tar"].Ref)
+	require.NoError(t, err)
+
+	read, err := io.ReadAll(newFileReader(context.Background(), f.store, obj.GetFile(), nil))
+	require.NoError(t, err)
+	require.Equal(t, content, read)
 }
 
 func TestWalkerIncludeFilter(t *testing.T) {
