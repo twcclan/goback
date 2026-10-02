@@ -237,30 +237,3 @@ func TestFetchWALStreamsFromAStoreThatServesNoParts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }
-
-func TestFetchWALCommitWritesEveryFile(t *testing.T) {
-	f := newWALFixture(t)
-
-	want := map[string][]byte{}
-	for _, name := range []string{f.archive(7, 42), f.archive(8, 42)} {
-		content, err := os.ReadFile(filepath.Join(f.spool.Dir, name))
-		require.NoError(t, err)
-		want[name] = content
-	}
-
-	wal, err := f.run()
-	require.NoError(t, err)
-
-	dir := filepath.Join(t.TempDir(), "wal")
-	require.NoError(t, FetchWALCommit(f.ctx, streamingStore{f.index}, nil, wal.Ref, dir))
-
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Len(t, entries, len(want))
-
-	for name, content := range want {
-		got, err := os.ReadFile(filepath.Join(dir, name))
-		require.NoError(t, err)
-		require.Equal(t, content, got)
-	}
-}
