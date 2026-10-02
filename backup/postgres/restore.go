@@ -277,6 +277,25 @@ func (r *Restore) writeTree(ctx context.Context, base *proto.Commit, dir string)
 	return err
 }
 
+// FetchWALCommit writes every file of a WAL commit into dir, so that
+// recovery can read the WAL with a plain copy, without the store.
+func FetchWALCommit(ctx context.Context, objects backup.ObjectStore, key *storekey.Key, ref *proto.Ref, dir string) error {
+	obj, err := objects.Get(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	if obj.GetCommit() == nil {
+		return fmt.Errorf("object %x is not a commit", ref.GetHash())
+	}
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+
+	return (&Restore{Objects: objects, Key: key}).writeTree(ctx, obj.GetCommit(), dir)
+}
+
 // configureRecovery makes Postgres recover from the WAL commit when it
 // starts on dir.
 func (r *Restore) configureRecovery(dir string, walRef *proto.Ref) error {
