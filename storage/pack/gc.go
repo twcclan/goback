@@ -135,6 +135,10 @@ type CollectReport struct {
 	// SetDeduplicated is the uncompressed size of the distinct file content
 	// each set's live objects carry, attributed as SetBytes is.
 	SetDeduplicated map[int64]uint64
+	// SetAlone is what each set's live objects would take up were it the
+	// only set of its group, and SetExclusive what of that no other set of
+	// the group reaches: what deleting the set would free.
+	SetAlone, SetExclusive map[int64]uint64
 	// Condemned counts the unreachable objects the run stored tombstones for.
 	Condemned int
 	// Waiting is the generation whose published plan has not been
@@ -270,6 +274,9 @@ type gcRun struct {
 	// setBytes and setDeduplicated are what the mark attributed to each set.
 	setBytes        map[int64]uint64
 	setDeduplicated map[int64]uint64
+	// setAlone and setExclusive are what each set reaches, and what only
+	// it reaches within its group.
+	setAlone, setExclusive map[int64]uint64
 }
 
 // gcRoot is a root with what it belongs to, zero when nothing names it.
@@ -317,7 +324,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
 		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
 		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
-		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64)}
+		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
+		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64)}
 	if prev != nil {
 		run.gen = prev.Generation + 1
 
@@ -378,6 +386,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	mergeStart := time.Now()
 	report.SetBytes = run.setBytes
 	report.SetDeduplicated = run.setDeduplicated
+	report.SetAlone, report.SetExclusive = run.setAlone, run.setExclusive
 	report.Marked, err = run.merge(live)
 	if err != nil {
 		return nil, err
@@ -734,31 +743,66 @@ func oldestAt(versions map[refKey]Version, key refKey, v Version) {
 	}
 }
 
+// visitedSet remembers, for each object of a group, the bits of the sets
+// that reached it, so a set walks into what another set already walked
+// and its run holds everything it reaches. A group of more than 64 sets
+// shares the last bit among the rest, which then do not walk into what
+// one of them reached.
 type visitedSet struct {
 	shards [256]struct {
 		mtx  sync.Mutex
-		seen map[refKey]struct{}
+		seen map[refKey]uint64
 	}
+	bits map[int64]uint64
 }
 
 func newVisitedSet() *visitedSet {
-	v := &visitedSet{}
+	v := &visitedSet{bits: make(map[int64]uint64)}
 	for i := range v.shards {
-		v.shards[i].seen = make(map[refKey]struct{})
+		v.shards[i].seen = make(map[refKey]uint64)
 	}
 
 	return v
 }
 
-// claim returns the keys not seen before and remembers them.
-func (v *visitedSet) claim(keys []refKey) []refKey {
+// bit is the set's bit in the group, given out in the order sets come.
+func (v *visitedSet) bit(set int64) uint64 {
+	if b, ok := v.bits[set]; ok {
+		return b
+	}
+
+	b := uint64(1) << min(len(v.bits), 63)
+	v.bits[set] = b
+
+	return b
+}
+
+// claim returns the keys the set with that bit has not reached before,
+// and remembers that it has.
+func (v *visitedSet) claim(keys []refKey, bit uint64) []refKey {
 	fresh := keys[:0]
 	for _, key := range keys {
 		shard := &v.shards[key[0]]
 		shard.mtx.Lock()
-		_, seen := shard.seen[key]
-		if !seen {
-			shard.seen[key] = struct{}{}
+		if seen := shard.seen[key]; seen&bit == 0 {
+			shard.seen[key] = seen | bit
+			fresh = append(fresh, key)
+		}
+		shard.mtx.Unlock()
+	}
+
+	return fresh
+}
+
+// claimUnreached returns the keys no set has reached, and marks them
+// reached by all.
+func (v *visitedSet) claimUnreached(keys []refKey) []refKey {
+	fresh := keys[:0]
+	for _, key := range keys {
+		shard := &v.shards[key[0]]
+		shard.mtx.Lock()
+		if shard.seen[key] == 0 {
+			shard.seen[key] = ^uint64(0)
 			fresh = append(fresh, key)
 		}
 		shard.mtx.Unlock()
@@ -869,7 +913,10 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 
 		live.begin(batchPrefix(batch), roots[0].owner)
 
-		err := r.markBatch(ctx, visited.claim(keysOf(roots)), visited, live)
+		bit := visited.bit(roots[0].owner.Set)
+		claim := func(keys []refKey) []refKey { return visited.claim(keys, bit) }
+
+		err := r.markBatch(ctx, claim(keysOf(roots)), claim, live)
 		if err != nil {
 			return nil, err
 		}
@@ -888,7 +935,7 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	return live, nil
 }
 
-func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visitedSet, live *liveRuns) error {
+func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]refKey) []refKey, live *liveRuns) error {
 	for len(frontier) > 0 {
 		var next []refKey
 		var nextMtx sync.Mutex
@@ -917,7 +964,7 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, visited *visit
 					return err
 				}
 
-				fresh := visited.claim(children)
+				fresh := claim(children)
 				if len(fresh) > 0 {
 					nextMtx.Lock()
 					next = append(next, fresh...)
@@ -1163,6 +1210,8 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 				r.setDeduplicated[owner.Set] += size
 			}
 		}
+
+		r.share(owners, uint64(rec.Length))
 	}, func(sum refKey) {
 		if _, isTarget := r.targets[sum]; isTarget {
 			r.targets[sum] = true
@@ -1180,6 +1229,30 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 	}
 
 	return marked, nil
+}
+
+// share counts a record for every set that reached it, and for the one
+// set of a group that alone reached it.
+func (r *gcRun) share(owners []Attribution, length uint64) {
+	for start := 0; start < len(owners); {
+		end, reached := start, 0
+		for ; end < len(owners) && owners[end].Group == owners[start].Group; end++ {
+			if owners[end].Set != 0 {
+				r.setAlone[owners[end].Set] += length
+				reached++
+			}
+		}
+
+		if reached == 1 {
+			for _, owner := range owners[start:end] {
+				if owner.Set != 0 {
+					r.setExclusive[owner.Set] += length
+				}
+			}
+		}
+
+		start = end
+	}
 }
 
 // scan walks every index record of the snapshot in ref order alongside the
@@ -1274,7 +1347,7 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 	runs.begin("erased-", Attribution{})
 	defer runs.close()
 
-	if err := r.markBatch(ctx, r.visited.claim(roots), r.visited, runs); err != nil {
+	if err := r.markBatch(ctx, r.visited.claimUnreached(roots), r.visited.claimUnreached, runs); err != nil {
 		return err
 	}
 

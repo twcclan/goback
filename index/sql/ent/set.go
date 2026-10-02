@@ -32,6 +32,10 @@ type Set struct {
 	PhysicalSize *int64 `json:"physical_size,omitempty"`
 	// DeduplicatedSize holds the value of the "deduplicated_size" field.
 	DeduplicatedSize *int64 `json:"deduplicated_size,omitempty"`
+	// AloneSize holds the value of the "alone_size" field.
+	AloneSize *int64 `json:"alone_size,omitempty"`
+	// ExclusiveSize holds the value of the "exclusive_size" field.
+	ExclusiveSize *int64 `json:"exclusive_size,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SetQuery when eager-loading is set.
 	Edges        SetEdges `json:"edges"`
@@ -96,7 +100,7 @@ func (*Set) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case set.FieldRetentionPaused, set.FieldErase, set.FieldRescan:
 			values[i] = new(sql.NullBool)
-		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize:
+		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize, set.FieldAloneSize, set.FieldExclusiveSize:
 			values[i] = new(sql.NullInt64)
 		case set.FieldName, set.FieldState, set.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -171,6 +175,20 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DeduplicatedSize = new(int64)
 				*_m.DeduplicatedSize = value.Int64
+			}
+		case set.FieldAloneSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field alone_size", values[i])
+			} else if value.Valid {
+				_m.AloneSize = new(int64)
+				*_m.AloneSize = value.Int64
+			}
+		case set.FieldExclusiveSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field exclusive_size", values[i])
+			} else if value.Valid {
+				_m.ExclusiveSize = new(int64)
+				*_m.ExclusiveSize = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -255,6 +273,16 @@ func (_m *Set) String() string {
 	builder.WriteString(", ")
 	if v := _m.DeduplicatedSize; v != nil {
 		builder.WriteString("deduplicated_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AloneSize; v != nil {
+		builder.WriteString("alone_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.ExclusiveSize; v != nil {
+		builder.WriteString("exclusive_size=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteByte(')')

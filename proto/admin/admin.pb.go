@@ -35,8 +35,12 @@ type BackupSet struct {
 	// the size of the distinct content the set's objects carry before
 	// compression, as of the last garbage collection
 	DeduplicatedSize int64 `protobuf:"varint,7,opt,name=deduplicated_size,json=deduplicatedSize,proto3" json:"deduplicated_size,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// what the set would take up were it the only set, and what of that
+	// no other set holds, as of the last garbage collection
+	AloneSize     int64 `protobuf:"varint,8,opt,name=alone_size,json=aloneSize,proto3" json:"alone_size,omitempty"`
+	ExclusiveSize int64 `protobuf:"varint,9,opt,name=exclusive_size,json=exclusiveSize,proto3" json:"exclusive_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BackupSet) Reset() {
@@ -100,6 +104,20 @@ func (x *BackupSet) GetPhysicalSize() int64 {
 func (x *BackupSet) GetDeduplicatedSize() int64 {
 	if x != nil {
 		return x.DeduplicatedSize
+	}
+	return 0
+}
+
+func (x *BackupSet) GetAloneSize() int64 {
+	if x != nil {
+		return x.AloneSize
+	}
+	return 0
+}
+
+func (x *BackupSet) GetExclusiveSize() int64 {
+	if x != nil {
+		return x.ExclusiveSize
 	}
 	return 0
 }
@@ -1107,13 +1125,16 @@ var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc0\x01\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\x02\n" +
 	"\tBackupSet\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
 	"\flogical_size\x18\x05 \x01(\x03R\vlogicalSize\x12#\n" +
 	"\rphysical_size\x18\x06 \x01(\x03R\fphysicalSize\x12+\n" +
-	"\x11deduplicated_size\x18\a \x01(\x03R\x10deduplicatedSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
+	"\x11deduplicated_size\x18\a \x01(\x03R\x10deduplicatedSize\x12\x1d\n" +
+	"\n" +
+	"alone_size\x18\b \x01(\x03R\taloneSize\x12%\n" +
+	"\x0eexclusive_size\x18\t \x01(\x03R\rexclusiveSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
 	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"<\n" +

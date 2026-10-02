@@ -842,6 +842,49 @@ func TestCollectCountsASharedObjectInEveryGroup(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
+func TestCollectCountsWhatEachSetHoldsAloneAndWhatOnlyItHolds(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	shared := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("s"), 512)})
+	mine := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("m"), 1024)})
+
+	sharedFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Ref: shared.Ref(), Length: 512}}})
+	myFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Ref: mine.Ref(), Length: 1024}}})
+	sharedTree := treeOf([]*proto.Object{sharedFile})
+	myTree := treeOf([]*proto.Object{myFile, sharedTree})
+
+	myCommit := proto.NewObject(&proto.Commit{Tree: myTree.Ref(), Timestamp: 1, BackupSet: "mine"})
+	yourCommit := proto.NewObject(&proto.Commit{Tree: sharedTree.Ref(), Timestamp: 2, BackupSet: "yours"})
+
+	putAll(t, store, []*proto.Object{shared, mine, sharedFile, myFile, sharedTree, myTree, myCommit, yourCommit})
+
+	opts := gcOptions(t, 0)
+	opts.Owner = func(root []byte) Attribution {
+		switch {
+		case bytes.Equal(root, myCommit.Ref().Hash):
+			return Attribution{Group: 1, Set: 7}
+		case bytes.Equal(root, yourCommit.Ref().Hash):
+			return Attribution{Group: 1, Set: 9}
+		}
+
+		return Attribution{}
+	}
+
+	report, err := store.Collect(ctx, opts)
+	require.NoError(t, err)
+
+	sharedBytes := storedBytes(t, store, sharedTree, sharedFile, shared)
+	require.EqualValues(t, storedBytes(t, store, myCommit, myTree, myFile, mine)+sharedBytes, report.SetAlone[7])
+	require.EqualValues(t, storedBytes(t, store, yourCommit)+sharedBytes, report.SetAlone[9], "the second set walks into the subtree the first reached")
+	require.EqualValues(t, storedBytes(t, store, myCommit, myTree, myFile, mine), report.SetExclusive[7])
+	require.EqualValues(t, storedBytes(t, store, yourCommit), report.SetExclusive[9])
+	require.EqualValues(t, report.SetAlone[7], report.SetBytes[7], "the first set still carries what both hold")
+	require.EqualValues(t, storedBytes(t, store, yourCommit), report.SetBytes[9])
+
+	require.NoError(t, store.Close())
+}
+
 func TestCollectAttributesNothingWithoutAnOwner(t *testing.T) {
 	store := newGCStore(t, t.TempDir())
 

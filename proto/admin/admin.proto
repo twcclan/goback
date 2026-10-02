@@ -49,6 +49,10 @@ message BackupSet {
     // the size of the distinct content the set's objects carry before
     // compression, as of the last garbage collection
     int64 deduplicated_size = 7;
+    // what the set would take up were it the only set, and what of that
+    // no other set holds, as of the last garbage collection
+    int64 alone_size = 8;
+    int64 exclusive_size = 9;
 }
 
 message ListSetsRequest {}

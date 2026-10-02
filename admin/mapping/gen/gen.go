@@ -32,6 +32,8 @@ func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 		LogicalSize:      in.LogicalSize,
 		PhysicalSize:     in.PhysicalSize,
 		DeduplicatedSize: in.DeduplicatedSize,
+		AloneSize:        in.AloneSize,
+		ExclusiveSize:    in.ExclusiveSize,
 	}
 }
 

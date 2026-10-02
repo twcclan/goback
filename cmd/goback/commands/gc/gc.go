@@ -55,7 +55,7 @@ var Command = cli.Command{
 // collection can record what each set's objects take up.
 type attributer interface {
 	RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error)
-	RecordSetSizes(ctx context.Context, physical, deduplicated map[int64]uint64) error
+	RecordSetSizes(ctx context.Context, report *pack.CollectReport) error
 }
 
 func gcAction(c *cli.Context) {
@@ -96,7 +96,7 @@ func gcAction(c *cli.Context) {
 	}
 
 	if sizes != nil {
-		if err := sizes.RecordSetSizes(ctx, report.SetBytes, report.SetDeduplicated); err != nil {
+		if err := sizes.RecordSetSizes(ctx, report); err != nil {
 			log.Fatal(err)
 		}
 	}

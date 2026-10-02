@@ -472,18 +472,25 @@ func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, sets[0].PhysicalSize, "nothing has collected yet")
 
-	require.NoError(t, f.x.RecordSetSizes(f.ctx, map[int64]uint64{sets[0].ID: 4096}, map[int64]uint64{sets[0].ID: 10000}))
+	id := sets[0].ID
+	require.NoError(t, f.x.RecordSetSizes(f.ctx, &pack.CollectReport{
+		SetBytes: map[int64]uint64{id: 4096}, SetDeduplicated: map[int64]uint64{id: 10000},
+		SetAlone: map[int64]uint64{id: 5000}, SetExclusive: map[int64]uint64{id: 3000},
+	}))
 
 	sets, err = f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 4096, sets[0].PhysicalSize)
 	require.EqualValues(t, 10000, sets[0].DeduplicatedSize)
+	require.EqualValues(t, 5000, sets[0].AloneSize)
+	require.EqualValues(t, 3000, sets[0].ExclusiveSize)
 
 	// a run that reaches nothing of the set's own leaves it holding nothing
-	require.NoError(t, f.x.RecordSetSizes(f.ctx, map[int64]uint64{}, map[int64]uint64{}))
+	require.NoError(t, f.x.RecordSetSizes(f.ctx, &pack.CollectReport{}))
 
 	sets, err = f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.Zero(t, sets[0].PhysicalSize)
 	require.Zero(t, sets[0].DeduplicatedSize)
+	require.Zero(t, sets[0].AloneSize)
 }

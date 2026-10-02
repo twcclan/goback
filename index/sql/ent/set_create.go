@@ -129,6 +129,34 @@ func (_c *SetCreate) SetNillableDeduplicatedSize(v *int64) *SetCreate {
 	return _c
 }
 
+// SetAloneSize sets the "alone_size" field.
+func (_c *SetCreate) SetAloneSize(v int64) *SetCreate {
+	_c.mutation.SetAloneSize(v)
+	return _c
+}
+
+// SetNillableAloneSize sets the "alone_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableAloneSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetAloneSize(*v)
+	}
+	return _c
+}
+
+// SetExclusiveSize sets the "exclusive_size" field.
+func (_c *SetCreate) SetExclusiveSize(v int64) *SetCreate {
+	_c.mutation.SetExclusiveSize(v)
+	return _c
+}
+
+// SetNillableExclusiveSize sets the "exclusive_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableExclusiveSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetExclusiveSize(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SetCreate) SetID(v int64) *SetCreate {
 	_c.mutation.SetID(v)
@@ -334,6 +362,14 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DeduplicatedSize(); ok {
 		_spec.SetField(set.FieldDeduplicatedSize, field.TypeInt64, value)
 		_node.DeduplicatedSize = &value
+	}
+	if value, ok := _c.mutation.AloneSize(); ok {
+		_spec.SetField(set.FieldAloneSize, field.TypeInt64, value)
+		_node.AloneSize = &value
+	}
+	if value, ok := _c.mutation.ExclusiveSize(); ok {
+		_spec.SetField(set.FieldExclusiveSize, field.TypeInt64, value)
+		_node.ExclusiveSize = &value
 	}
 	if nodes := _c.mutation.FilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -577,6 +613,54 @@ func (u *SetUpsert) ClearDeduplicatedSize() *SetUpsert {
 	return u
 }
 
+// SetAloneSize sets the "alone_size" field.
+func (u *SetUpsert) SetAloneSize(v int64) *SetUpsert {
+	u.Set(set.FieldAloneSize, v)
+	return u
+}
+
+// UpdateAloneSize sets the "alone_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateAloneSize() *SetUpsert {
+	u.SetExcluded(set.FieldAloneSize)
+	return u
+}
+
+// AddAloneSize adds v to the "alone_size" field.
+func (u *SetUpsert) AddAloneSize(v int64) *SetUpsert {
+	u.Add(set.FieldAloneSize, v)
+	return u
+}
+
+// ClearAloneSize clears the value of the "alone_size" field.
+func (u *SetUpsert) ClearAloneSize() *SetUpsert {
+	u.SetNull(set.FieldAloneSize)
+	return u
+}
+
+// SetExclusiveSize sets the "exclusive_size" field.
+func (u *SetUpsert) SetExclusiveSize(v int64) *SetUpsert {
+	u.Set(set.FieldExclusiveSize, v)
+	return u
+}
+
+// UpdateExclusiveSize sets the "exclusive_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateExclusiveSize() *SetUpsert {
+	u.SetExcluded(set.FieldExclusiveSize)
+	return u
+}
+
+// AddExclusiveSize adds v to the "exclusive_size" field.
+func (u *SetUpsert) AddExclusiveSize(v int64) *SetUpsert {
+	u.Add(set.FieldExclusiveSize, v)
+	return u
+}
+
+// ClearExclusiveSize clears the value of the "exclusive_size" field.
+func (u *SetUpsert) ClearExclusiveSize() *SetUpsert {
+	u.SetNull(set.FieldExclusiveSize)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -769,6 +853,62 @@ func (u *SetUpsertOne) UpdateDeduplicatedSize() *SetUpsertOne {
 func (u *SetUpsertOne) ClearDeduplicatedSize() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearDeduplicatedSize()
+	})
+}
+
+// SetAloneSize sets the "alone_size" field.
+func (u *SetUpsertOne) SetAloneSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetAloneSize(v)
+	})
+}
+
+// AddAloneSize adds v to the "alone_size" field.
+func (u *SetUpsertOne) AddAloneSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddAloneSize(v)
+	})
+}
+
+// UpdateAloneSize sets the "alone_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateAloneSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateAloneSize()
+	})
+}
+
+// ClearAloneSize clears the value of the "alone_size" field.
+func (u *SetUpsertOne) ClearAloneSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearAloneSize()
+	})
+}
+
+// SetExclusiveSize sets the "exclusive_size" field.
+func (u *SetUpsertOne) SetExclusiveSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetExclusiveSize(v)
+	})
+}
+
+// AddExclusiveSize adds v to the "exclusive_size" field.
+func (u *SetUpsertOne) AddExclusiveSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddExclusiveSize(v)
+	})
+}
+
+// UpdateExclusiveSize sets the "exclusive_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateExclusiveSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateExclusiveSize()
+	})
+}
+
+// ClearExclusiveSize clears the value of the "exclusive_size" field.
+func (u *SetUpsertOne) ClearExclusiveSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearExclusiveSize()
 	})
 }
 
@@ -1130,6 +1270,62 @@ func (u *SetUpsertBulk) UpdateDeduplicatedSize() *SetUpsertBulk {
 func (u *SetUpsertBulk) ClearDeduplicatedSize() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearDeduplicatedSize()
+	})
+}
+
+// SetAloneSize sets the "alone_size" field.
+func (u *SetUpsertBulk) SetAloneSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetAloneSize(v)
+	})
+}
+
+// AddAloneSize adds v to the "alone_size" field.
+func (u *SetUpsertBulk) AddAloneSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddAloneSize(v)
+	})
+}
+
+// UpdateAloneSize sets the "alone_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateAloneSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateAloneSize()
+	})
+}
+
+// ClearAloneSize clears the value of the "alone_size" field.
+func (u *SetUpsertBulk) ClearAloneSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearAloneSize()
+	})
+}
+
+// SetExclusiveSize sets the "exclusive_size" field.
+func (u *SetUpsertBulk) SetExclusiveSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetExclusiveSize(v)
+	})
+}
+
+// AddExclusiveSize adds v to the "exclusive_size" field.
+func (u *SetUpsertBulk) AddExclusiveSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddExclusiveSize(v)
+	})
+}
+
+// UpdateExclusiveSize sets the "exclusive_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateExclusiveSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateExclusiveSize()
+	})
+}
+
+// ClearExclusiveSize clears the value of the "exclusive_size" field.
+func (u *SetUpsertBulk) ClearExclusiveSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearExclusiveSize()
 	})
 }
 

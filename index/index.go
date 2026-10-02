@@ -29,6 +29,10 @@ type SetInfo struct {
 	LogicalSize      int64
 	PhysicalSize     int64
 	DeduplicatedSize int64
+	// AloneSize is what the set would take up were it the only set, and
+	// ExclusiveSize what of that no other set holds, as of the last
+	// garbage collection.
+	AloneSize, ExclusiveSize int64
 }
 
 // StorePolicy is the store's write policy with its acknowledgement state.

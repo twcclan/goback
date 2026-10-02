@@ -294,6 +294,8 @@ var (
 		{Name: "rescan", Type: field.TypeBool, Default: false},
 		{Name: "physical_size", Type: field.TypeInt64, Nullable: true},
 		{Name: "deduplicated_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "alone_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "exclusive_size", Type: field.TypeInt64, Nullable: true},
 	}
 	// SetsTable holds the schema information for the "sets" table.
 	SetsTable = &schema.Table{
