@@ -3,10 +3,22 @@ steps:
     entrypoint: 'bash'
     args: ['-c', 'docker login --username=$${_DOCKER_HUB_USERNAME} --password=$${_DOCKER_HUB_PASSWORD}']
     secretEnv: ['_DOCKER_HUB_USERNAME', '_DOCKER_HUB_PASSWORD']
-  # a tag build pushes the tag's name, a branch build pushes latest
+  # a branch pushes latest; a release tag v1.2.3 pushes v1.2.3, v1.2 and v1;
+  # a prerelease tag pushes only itself
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
-    args: ['-c', 'docker build -t twcclan/goback:$${TAG:-latest} . && docker push twcclan/goback:$${TAG:-latest}']
+    args:
+      - '-c'
+      - |
+        set -e
+        tags=$${TAG:-latest}
+        if [[ $$TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$$ ]]; then
+          minor=$${TAG%.*}
+          tags="$$TAG $$minor $${minor%.*}"
+        fi
+        for t in $$tags; do args="$$args -t twcclan/goback:$$t"; done
+        docker build $$args .
+        for t in $$tags; do docker push twcclan/goback:$$t; done
     env: ['TAG=$TAG_NAME']
 secrets:
 - kmsKeyName: projects/admin-181512/locations/global/keyRings/cloud-build/cryptoKeys/env-secrets
