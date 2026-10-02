@@ -47,6 +47,23 @@ func baseAction(c *cli.Context) error {
 		common.CloseStore(store)
 	}()
 
+	// everything that can exit the process comes before pg_basebackup starts:
+	// an orphaned pg_basebackup is reparented to PID 1, which in the Postgres
+	// container is the postmaster, and its death restarts the cluster
+	sessions, _ := store.(backup.SessionStore)
+
+	run := &postgres.BaseBackup{
+		Walker: &backup.Walker{
+			Index:    index,
+			Objects:  index,
+			Sessions: sessions,
+			Set:      c.GlobalString("set"),
+			AgentID:  common.AgentID(c),
+			Key:      common.StoreKey(c, store),
+			Workers:  4,
+		},
+	}
+
 	ctx := common.Context(c)
 
 	args := []string{"-D", "-", "-Ft", "-X", "fetch", "--checkpoint=fast"}
@@ -74,20 +91,6 @@ func baseAction(c *cli.Context) error {
 		}
 
 		return nil
-	}
-
-	sessions, _ := store.(backup.SessionStore)
-
-	run := &postgres.BaseBackup{
-		Walker: &backup.Walker{
-			Index:    index,
-			Objects:  index,
-			Sessions: sessions,
-			Set:      c.GlobalString("set"),
-			AgentID:  common.AgentID(c),
-			Key:      common.StoreKey(c, store),
-			Workers:  4,
-		},
 	}
 
 	result, err := run.Run(ctx, stdout, wait)
