@@ -26,15 +26,64 @@ Details:
 
 ## Restore
 
-Restore into an empty directory, then start Postgres on it:
+`goback postgres restore` writes a base backup into an empty data directory. It sets the directory up to recover from the WAL set when Postgres starts on it:
+
+- **Choosing the base.** It picks the newest base backup that ended before `--at` (or the newest overall, without `--at`) and that the WAL set continues.
+- **Fetching WAL.** It writes `restore_command` into `postgresql.auto.conf`. Postgres then fetches each WAL file it needs with `goback postgres wal-get`, using the global flags given to `restore`, so they must be valid where Postgres runs.
+- **Finishing.** It writes `recovery.signal`. Postgres promotes once recovery reaches `--at`, or the end of the WAL set.
+- **Finding the sets.** It finds them through the index, or through the set heads in the bucket when the index has none, as on a new host.
+
+### Disaster recovery
+
+The host and its volumes are gone. You need three things:
+- the bucket;
+- the copy of `goback.key`;
+- credentials for the bucket.
+
+1. On the new host, put `compose.yaml`, `goback.key`, `gcp-credentials.json` and `postgres-password` in one directory.
+2. Copy goback into its volume, without starting Postgres:
+
+   ```sh
+   docker compose up goback-bin
+   ```
+
+3. Restore into the fresh, empty data volume. Add `--at <RFC 3339 time>` to stop before a bad change:
+
+   ```sh
+   docker compose run --rm --no-deps -u postgres --entrypoint /opt/goback/goback postgres \
+     --storage 'gcs://BUCKET?index=/var/lib/goback/archives-restore' \
+     --index /var/lib/goback/index --store-key /run/secrets/goback-key \
+     postgres restore --base-set db-base --wal-set db-wal /var/lib/postgresql/data
+   ```
+
+4. Start everything. Postgres finds a data directory, so it skips initdb, replays the WAL and promotes:
+
+   ```sh
+   docker compose up -d
+   docker compose logs -f postgres   # until "database system is ready to accept connections"
+   ```
+
+5. Take a base backup on the new timeline right away, instead of waiting for the daily one:
+
+   ```sh
+   docker compose exec -u postgres postgres \
+     /opt/goback/goback --storage 'gcs://BUCKET?index=/var/lib/goback/archives-base' \
+     --index /var/lib/goback/index --store-key /run/secrets/goback-key --agent-id db \
+     --set db-base postgres base
+   ```
+
+From then on the scheduled jobs carry on in the same sets. The WAL set holds both timelines, and a later restore follows the timeline history to the newest one.
+
+### Restoring next to a running cluster
+
+To look at an earlier state without touching the live cluster, restore into any empty directory, then start a second Postgres on it on another port:
 
 ```sh
-docker compose exec -u postgres postgres \
-  /opt/goback/goback --storage 'gcs://BUCKET?index=/var/lib/goback/archives-restore' \
+docker compose exec -u postgres postgres sh -c '
+  /opt/goback/goback --storage "gcs://BUCKET?index=/var/lib/goback/archives-restore" \
     --index /var/lib/goback/index --store-key /run/secrets/goback-key \
-    postgres restore --base-set db-base --wal-set db-wal --at 2026-10-02T14:30:00Z /var/lib/goback/restored
+    postgres restore --base-set db-base --wal-set db-wal --at 2026-10-02T14:30:00Z /var/lib/goback/restored &&
+  pg_ctl -D /var/lib/goback/restored -o "-p 5433 -c archive_mode=off" -l /var/lib/goback/restored.log start'
 ```
 
-- Leave out `--at` to recover to the end of the WAL set.
-- On start, Postgres fetches each WAL file it needs with `goback postgres wal-get`, which `restore` writes into `postgresql.auto.conf` as `restore_command`. When recovery reaches the target, Postgres promotes.
-- The command finds the sets through the index, or through the set heads in the bucket when the index has none.
+`archive_mode=off` keeps the copy from archiving into the live cluster's spool.
