@@ -75,6 +75,10 @@ func (x *Index) lockSet(ctx context.Context, tx *ent.Tx, setID int64) (*ent.Set,
 // BeginCommit implements backup.CommitGate: the set is created if needed,
 // it must be active, and the grant carries the store policy.
 func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGrant, error) {
+	if _, ok := backup.SetID(name); ok {
+		return nil, fmt.Errorf("%w: %q", backup.ErrSetName, name)
+	}
+
 	setID, err := ensureSet(ctx, x.client, name, 0)
 	if err != nil {
 		return nil, err

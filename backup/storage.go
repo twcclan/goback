@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/twcclan/goback/proto"
 )
@@ -36,10 +38,29 @@ var (
 	// run, with the reason.
 	ErrCommitDenied = errors.New("commit refused")
 
+	// ErrSetName refuses a set name that reads as a set id.
+	ErrSetName = errors.New("a set name cannot be only digits, which name a set by id")
+
 	// ErrSessionLost is returned for a commit whose session lost objects it
 	// had already been told were stored; backing up again stores them anew.
 	ErrSessionLost = errors.New("the session lost objects it had stored")
 )
+
+// SetID reads s as a set id, which a set given by digits alone is; ok is
+// false for a set name. Digits too many for an id give id 0, which no set
+// has.
+func SetID(s string) (id uint64, ok bool) {
+	if s == "" || strings.Trim(s, "0123456789") != "" {
+		return 0, false
+	}
+
+	id, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, true
+	}
+
+	return id, true
+}
 
 // HeadKeeper is a store that keeps each set's latest complete commit
 // beside its objects, so a restore finds the set without an index.

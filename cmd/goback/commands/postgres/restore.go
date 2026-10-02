@@ -28,10 +28,13 @@ var restoreCmd = cli.Command{
 		"global flags given here, unless --goback names another command. Flags end up in\n" +
 		"postgresql.auto.conf; settings from the environment have to be in Postgres's environment.",
 	Flags: []cli.Flag{
-		baseSetFlag,
+		cli.StringFlag{
+			Name:  "base-set",
+			Usage: "set the cluster's base backups go to; digits name it by id, from the set's head rather than the index",
+		},
 		cli.StringFlag{
 			Name:  "wal-set",
-			Usage: "set the cluster's WAL goes to",
+			Usage: "set the cluster's WAL goes to; digits name it by id, as --base-set",
 		},
 		cli.StringFlag{
 			Name:  "at",
@@ -105,10 +108,15 @@ func restoreAction(c *cli.Context) error {
 	return nil
 }
 
-// latest finds a set's newest commit through the index, and through the
+// latest finds a set's newest commit: by id from the set's head, by name
+// through the index, and through the
 // heads the store keeps when the index has none.
 func latest(index backup.Index, store backup.ObjectStore) func(context.Context, string) (*proto.Ref, error) {
 	return func(ctx context.Context, set string) (*proto.Ref, error) {
+		if id, ok := backup.SetID(set); ok {
+			return headOf(store, id)
+		}
+
 		ref, err := index.LatestCommit(ctx, set)
 		if !errors.Is(err, backup.ErrNotFound) {
 			return ref, err
@@ -137,6 +145,27 @@ func latest(index backup.Index, store backup.ObjectStore) func(context.Context, 
 
 		return &proto.Ref{Hash: newest.Commit}, nil
 	}
+}
+
+// headOf is the newest commit of the set with id.
+func headOf(store backup.ObjectStore, id uint64) (*proto.Ref, error) {
+	ps, ok := common.Unwrap(store).(*pack.PackStorage)
+	if !ok {
+		return nil, fmt.Errorf("store %T keeps no set heads to find set %d in", store, id)
+	}
+
+	heads, err := ps.Heads()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, head := range heads {
+		if head.SetID == id {
+			return &proto.Ref{Hash: head.Commit}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: set %d has no head", backup.ErrNotFound, id)
 }
 
 // invocation is this binary with the global flags it was started with, quoted

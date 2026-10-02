@@ -667,7 +667,7 @@ func ToStatus(err error) error {
 	case errors.Is(err, auth.ErrForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject),
-		errors.Is(err, backup.ErrInvalidEscrow):
+		errors.Is(err, backup.ErrInvalidEscrow), errors.Is(err, backup.ErrSetName):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetClosed),
 		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit),

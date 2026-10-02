@@ -151,6 +151,8 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 	var wantID int64
 	if !strict {
 		wantID = int64(commit.GetSetId())
+	} else if _, ok := backup.SetID(commit.GetBackupSet()); ok {
+		return 0, fmt.Errorf("%w: %q", backup.ErrSetName, commit.GetBackupSet())
 	}
 
 	setID, err := ensureSet(ctx, c, commit.GetBackupSet(), wantID)
