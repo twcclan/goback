@@ -56,9 +56,8 @@ type Walker struct {
 	// interprets it.
 	Metadata map[string]string
 
-	// Stream, when set, is backed up instead of Root: the commit's tree
-	// holds one file read from it to its end. A stream cannot be read
-	// again, so a run with one does not retry a lost session.
+	// Stream, when set, is backed up instead of Root. A stream cannot be
+	// read again, so a run with one does not retry a lost session.
 	Stream *Stream
 
 	// Carry, when set, keeps every entry of the previous commit's root that
@@ -121,8 +120,8 @@ type Walker struct {
 	confirmer Confirmer
 	// rescan and damaged come from the commit grant: what the store lost
 	// and needs read again rather than assumed unchanged
-	rescan  bool
-	damaged map[string]bool
+	rescan    bool
+	damaged   map[string]bool
 	window    *chunkWindow
 	gate      *syncutil.Gate
 	scan      *scanner
@@ -354,12 +353,10 @@ func (w *Walker) walk(ctx context.Context) (*WalkResult, error) {
 	)
 
 	if w.Stream != nil {
-		node, err := w.putStream(ctx)
+		nodes, err = w.putStream(ctx)
 		if err != nil {
 			return nil, err
 		}
-
-		nodes = []*proto.TreeNode{node}
 	} else {
 		nodes, changed, err = w.walkDir(ctx, w.Root, "", nil, baseNodes, true)
 		if err != nil {

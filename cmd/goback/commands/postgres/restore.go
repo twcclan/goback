@@ -81,8 +81,11 @@ func restoreAction(c *cli.Context) error {
 		BaseSet: c.String("base-set"),
 		WALSet:  c.String("wal-set"),
 		At:      at,
+		Hold: func(ctx context.Context, set string, ref *proto.Ref) (context.Context, func(), error) {
+			return common.RestoreSession(ctx, store, set, ref)
+		},
 		RestoreCommand: func(wal *proto.Ref) string {
-			return strings.ReplaceAll(goback, "%", "%%") + " postgres wal-get --commit " + hex.EncodeToString(wal.Hash) + " %f %p"
+			return strings.ReplaceAll(goback, "%", "%%") + " postgres wal-get --wal-set " + shellQuote(c.String("wal-set")) + " --commit " + hex.EncodeToString(wal.Hash) + " %f %p"
 		},
 	}
 
@@ -167,6 +170,10 @@ var walGetCmd = cli.Command{
 	ArgsUsage: "<%f> <%p>",
 	Flags: []cli.Flag{
 		cli.StringFlag{
+			Name:  "wal-set",
+			Usage: "set the WAL commit belongs to",
+		},
+		cli.StringFlag{
 			Name:  "commit",
 			Usage: "the WAL commit, in hex",
 		},
@@ -176,14 +183,22 @@ var walGetCmd = cli.Command{
 
 func walGetAction(c *cli.Context) error {
 	hash, err := hex.DecodeString(c.String("commit"))
-	if c.NArg() != 2 || err != nil || len(hash) == 0 {
-		return cli.NewExitError("--commit and the file's name and destination are required", 2)
+	if c.NArg() != 2 || err != nil || len(hash) == 0 || c.String("wal-set") == "" {
+		return cli.NewExitError("--wal-set, --commit and the file's name and destination are required", 2)
 	}
 
 	store := common.GetObjectStore(c)
 	defer common.CloseStore(store)
 
-	err = postgres.FetchWAL(common.Context(c), store, common.StoreKey(c, store), &proto.Ref{Hash: hash}, c.Args().Get(0), c.Args().Get(1))
+	ref := &proto.Ref{Hash: hash}
+
+	ctx, done, err := common.RestoreSession(common.Context(c), store, c.String("wal-set"), ref)
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	err = postgres.FetchWAL(ctx, store, common.StoreKey(c, store), ref, c.Args().Get(0), c.Args().Get(1))
 	if errors.Is(err, backup.ErrNotFound) {
 		return cli.NewExitError("", 1)
 	}

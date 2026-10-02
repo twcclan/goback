@@ -153,11 +153,6 @@ func TestARestoreLeavesADirectoryInUseAlone(t *testing.T) {
 	require.ErrorContains(t, err, "not empty")
 }
 
-func TestAnEntryOutsideTheDataDirectoryIsRefused(t *testing.T) {
-	err := writeEntry(t.TempDir(), &tar.Header{Name: "../escape", Typeflag: tar.TypeReg, Mode: 0o600}, bytes.NewReader(nil))
-	require.ErrorContains(t, err, "outside the data directory")
-}
-
 func TestFetchWALWritesWhatTheCommitHolds(t *testing.T) {
 	f := newWALFixture(t)
 

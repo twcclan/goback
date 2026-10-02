@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -542,25 +543,66 @@ func TestWalkerCarriesWhatLeftTheDiskWhileCarryAllows(t *testing.T) {
 	require.True(t, after["2"].Ref.Equal(f.tree(first.Commit.Tree)["2"].Ref))
 }
 
-func TestWalkerCommitsAStreamAsItsOneFile(t *testing.T) {
+func TestWalkerCommitsATarStreamAsATree(t *testing.T) {
 	f := newWalkerFixture(t)
 	f.write("ignored.txt", []byte("not walked"))
 
 	content := f.random(3 << 20)
-	f.walker.Stream = &Stream{Name: "base.tar", Content: bytes.NewReader(content)}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "base/5/16384", Typeflag: tar.TypeReg, Mode: 0o600, Size: int64(len(content))}))
+	_, err := tw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "base/", Typeflag: tar.TypeDir, Mode: 0o750}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "pg_wal", Typeflag: tar.TypeSymlink, Linkname: "/wal"}))
+	require.NoError(t, tw.Close())
+
+	var seen []string
+	f.walker.Stream = &Stream{
+		Tar: bytes.NewReader(buf.Bytes()),
+		Inspect: func(hdr *tar.Header) io.Writer {
+			seen = append(seen, hdr.Name)
+			return nil
+		},
+	}
 
 	result := f.run()
+	require.Equal(t, []string{"base/5/16384", "base/", "pg_wal"}, seen)
 
-	tree := f.tree(result.Commit.Tree)
-	require.Len(t, tree, 1)
-	require.EqualValues(t, len(content), tree["base.tar"].Stat.Size)
+	root := f.tree(result.Commit.Tree)
+	require.Len(t, root, 2)
+	require.Equal(t, "/wal", string(root["pg_wal"].Stat.LinkTarget))
+	require.Equal(t, os.ModeDir|0o750, os.FileMode(root["base"].Stat.Mode), "a directory listed after its contents keeps its own mode")
 
-	obj, err := f.store.Get(context.Background(), tree["base.tar"].Ref)
+	base, err := OpenTree(context.Background(), f.store, root["base"].Ref, nil, NameToken(nil, nil, []byte("base")))
 	require.NoError(t, err)
+	require.Len(t, base.Nodes, 1)
+	require.Equal(t, os.ModeDir|0o700, os.FileMode(base.Nodes[0].Stat.Mode), "a directory the stream never lists")
 
-	read, err := io.ReadAll(newFileReader(context.Background(), f.store, obj.GetFile(), nil))
+	five, err := OpenTree(context.Background(), f.store, base.Nodes[0].Ref, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, content, read)
+	require.EqualValues(t, len(content), five.Nodes[0].Stat.Size)
+
+	read, err := NewBackupReader(f.store).ReadFile(context.Background(), five.Nodes[0].Ref)
+	require.NoError(t, err)
+	got, err := io.ReadAll(read)
+	require.NoError(t, err)
+	require.Equal(t, content, got)
+}
+
+func TestWalkerRefusesAStreamEntryOutsideItsRoot(t *testing.T) {
+	f := newWalkerFixture(t)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "../escape", Typeflag: tar.TypeReg, Mode: 0o600}))
+	require.NoError(t, tw.Close())
+
+	f.walker.Stream = &Stream{Tar: &buf}
+
+	_, err := f.walker.Run(context.Background())
+	require.ErrorContains(t, err, "outside its root")
 }
 
 func TestWalkerIncludeFilter(t *testing.T) {

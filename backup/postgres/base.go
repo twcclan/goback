@@ -1,7 +1,8 @@
 package postgres
 
 import (
-	"archive/tar"
+	archive "archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,10 +11,6 @@ import (
 
 	"github.com/twcclan/goback/backup"
 )
-
-// BaseTar is the file a base backup's commit holds: the tar pg_basebackup
-// writes with -D - -Ft.
-const BaseTar = "base.tar"
 
 // ErrForeignCluster is returned for a base backup of another cluster than
 // the set's.
@@ -27,9 +24,10 @@ type BaseBackup struct {
 }
 
 // Run stores tar, the output of pg_basebackup -D - -Ft -X fetch, as the
-// set's next commit, together with what the backup records about itself.
-// wait, when set, is called once tar is read to its end and reports how its
-// writer ended; an error from it leaves the set without a commit.
+// set's next commit: the data directory as a tree, together with what the
+// backup records about itself. wait, when set, is called once tar is read to
+// its end and reports how its writer ended; an error from it leaves the set
+// without a commit.
 func (b *BaseBackup) Run(ctx context.Context, tar io.Reader, wait func() error) (*backup.WalkResult, error) {
 	w := b.Walker
 
@@ -38,48 +36,46 @@ func (b *BaseBackup) Run(ctx context.Context, tar io.Reader, wait func() error) 
 		return nil, err
 	}
 
-	pr, pw := io.Pipe()
-	parsed := make(chan parseResult, 1)
-
-	go func() {
-		info, err := parseBase(pr)
-		// the tee writes everything it reads into the pipe, so the parse has
-		// to drain it even once it has given up
-		_, _ = io.Copy(io.Discard, pr)
-		parsed <- parseResult{info, err}
-	}()
+	described := map[string]*bytes.Buffer{
+		"backup_label":      nil,
+		"backup_manifest":   nil,
+		"global/pg_control": nil,
+	}
 
 	w.Stream = &backup.Stream{
-		Name:    BaseTar,
-		Content: io.TeeReader(tar, pw),
-		Finish: func() error {
-			_ = pw.Close()
-			result := <-parsed
+		Tar: tar,
+		Inspect: func(hdr *archive.Header) io.Writer {
+			if _, ok := described[hdr.Name]; !ok {
+				return nil
+			}
 
+			described[hdr.Name] = &bytes.Buffer{}
+
+			return described[hdr.Name]
+		},
+		Finish: func() error {
 			if wait != nil {
 				if err := wait(); err != nil {
 					return err
 				}
 			}
 
-			if result.err != nil {
-				return result.err
+			info, err := describe(described)
+			if err != nil {
+				return err
 			}
 
-			if systemID != 0 && result.info.SystemID != systemID {
-				return fmt.Errorf("%w: the backup is of %d, the set of %d", ErrForeignCluster, result.info.SystemID, systemID)
+			if systemID != 0 && info.SystemID != systemID {
+				return fmt.Errorf("%w: the backup is of %d, the set of %d", ErrForeignCluster, info.SystemID, systemID)
 			}
 
-			w.Metadata = result.info.Metadata()
+			w.Metadata = info.Metadata()
 
 			return nil
 		},
 	}
 
-	result, err := w.Run(ctx)
-	_ = pw.CloseWithError(errors.New("the base backup ended"))
-
-	return result, err
+	return w.Run(ctx)
 }
 
 // previous names the cluster the set's latest commit belongs to; zero for a
@@ -114,51 +110,24 @@ func (b *BaseBackup) previous(ctx context.Context) (uint64, error) {
 	return systemID, nil
 }
 
-type parseResult struct {
-	info BaseInfo
-	err  error
-}
+// describe reads what a base backup records about itself out of the files
+// that hold it.
+func describe(files map[string]*bytes.Buffer) (BaseInfo, error) {
+	var info BaseInfo
 
-// parseBase reads what a base backup's tar records about it.
-func parseBase(r io.Reader) (BaseInfo, error) {
-	var (
-		info                         BaseInfo
-		label, manifest, controlFile bool
-	)
-
-	entries := tar.NewReader(r)
-	for {
-		hdr, err := entries.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if err != nil {
-			return info, fmt.Errorf("reading the base backup: %w", err)
-		}
-
-		switch hdr.Name {
-		case "backup_label":
-			err, label = info.readBackupLabel(entries), true
-		case "backup_manifest":
-			err, manifest = info.readManifest(entries), true
-		case "global/pg_control":
-			err, controlFile = info.readControl(entries), true
-		}
-
-		if err != nil {
-			return info, err
+	for name, content := range files {
+		if content == nil {
+			return info, fmt.Errorf("the base backup holds no %s", name)
 		}
 	}
 
-	switch {
-	case !label:
-		return info, errors.New("the base backup holds no backup_label")
-	case !manifest:
-		return info, errors.New("the base backup holds no backup_manifest")
-	case !controlFile:
-		return info, errors.New("the base backup holds no global/pg_control")
+	if err := info.readBackupLabel(files["backup_label"]); err != nil {
+		return info, err
 	}
 
-	return info, nil
+	if err := info.readManifest(files["backup_manifest"]); err != nil {
+		return info, err
+	}
+
+	return info, info.readControl(files["global/pg_control"])
 }

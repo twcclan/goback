@@ -73,10 +73,14 @@ func TestABaseBackupCommitsItsTarAndWhatItRecords(t *testing.T) {
 
 	tree, err := backup.OpenTree(f.ctx, f.index, result.Commit.Tree, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, tree.Nodes, 1)
-	require.Equal(t, BaseTar, string(tree.Nodes[0].Stat.Name))
-	require.Equal(t, proto.NodeType_NODE_FILE, tree.Nodes[0].Stat.Type)
-	require.EqualValues(t, len(content), tree.Nodes[0].Stat.Size)
+
+	var names []string
+	for _, node := range tree.Nodes {
+		names = append(names, string(node.Stat.Name))
+	}
+
+	require.Equal(t, []string{"backup_label", "backup_manifest", "base", "global", "pg_wal"}, names, "the data directory as a tree")
+	require.Equal(t, proto.NodeType_NODE_DIRECTORY, tree.Nodes[2].Stat.Type)
 }
 
 func TestABaseBackupWhoseWriterFailedCommitsNothing(t *testing.T) {
@@ -122,12 +126,12 @@ func TestABaseBackupWhoseStreamBreaksCommitsNothing(t *testing.T) {
 	require.ErrorIs(t, err, backup.ErrNotFound)
 }
 
-func TestABaseBackupThatIsNoTarIsReadToItsEndAndRefused(t *testing.T) {
+func TestABaseBackupThatIsNoTarIsRefused(t *testing.T) {
 	f := newWALFixture(t)
 
 	garbage := make([]byte, 4<<20)
 	_, _ = rand.Read(garbage)
 
 	_, err := f.runBase(garbage, nil)
-	require.ErrorContains(t, err, "reading the base backup")
+	require.ErrorContains(t, err, "reading the stream")
 }
