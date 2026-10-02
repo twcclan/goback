@@ -1,9 +1,4 @@
 steps:
-  - name: 'gcr.io/$PROJECT_ID/cancelot'
-    args: [
-      '--current_build_id', '$BUILD_ID',
-      '--branch_name', '$BRANCH_NAME'
-    ]
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '.']
 timeout: 1200s

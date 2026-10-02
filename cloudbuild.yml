@@ -1,24 +1,16 @@
 steps:
-  - name: 'gcr.io/$PROJECT_ID/cancelot'
-    args: [
-        '--current_build_id', '$BUILD_ID',
-        '--branch_name', '$BRANCH_NAME'
-      ]
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args: ['-c', 'docker login --username=$${_DOCKER_HUB_USERNAME} --password=$${_DOCKER_HUB_PASSWORD}']
     secretEnv: ['_DOCKER_HUB_USERNAME', '_DOCKER_HUB_PASSWORD']
+  # a tag build pushes the tag's name, a branch build pushes latest
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
-    args: ['-c', 'docker pull eu.gcr.io/$PROJECT_ID/goback-builder || true']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'eu.gcr.io/$PROJECT_ID/goback-builder', '--cache-from', 'eu.gcr.io/$PROJECT_ID/goback-builder', '--target', 'builder', '.']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'twcclan/goback', '--cache-from', 'eu.gcr.io/$PROJECT_ID/goback-builder', '.']
+    args: ['-c', 'docker build -t twcclan/goback:$${TAG:-latest} . && docker push twcclan/goback:$${TAG:-latest}']
+    env: ['TAG=$TAG_NAME']
 secrets:
 - kmsKeyName: projects/admin-181512/locations/global/keyRings/cloud-build/cryptoKeys/env-secrets
   secretEnv:
     _DOCKER_HUB_PASSWORD: CiQAeqcjw5dh4s71U3MdwBLmDK0ro/ltiv60UhQpkN514Lq4SNkSPQDtxcT58g8Qc5YkAuYFahQouD6Q8u+8Znopa+Klb6mAQRTJamroObphwBdwDreYSwbxme7XL94SWIAG4YA=
     _DOCKER_HUB_USERNAME: CiQAeqcjw/lb2S82g76EQ7rNsLo4GAAyyt0VrHi11Yuq2PLNP1kSMwDtxcT5/EwTFlrbpzAwLQiDyptttzuItghaVj5bDPavuhz+IdiEqThAwuHvm4DLgHL1DQ==
-images: ['eu.gcr.io/$PROJECT_ID/goback-builder', 'twcclan/goback']
 timeout: 1200s
