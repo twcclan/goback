@@ -30,7 +30,13 @@ func headName(setID uint64) string {
 
 // Heads lists the head of every set that has committed.
 func (ps *PackStorage) Heads() ([]Head, error) {
-	names, err := ps.storage.List(HeadExt)
+	return HeadsOf(ps.storage)
+}
+
+// HeadsOf lists the heads a store's storage holds, without opening the
+// store.
+func HeadsOf(storage ArchiveStorage) ([]Head, error) {
+	names, err := storage.List(HeadExt)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +48,7 @@ func (ps *PackStorage) Heads() ([]Head, error) {
 			continue
 		}
 
-		head, ok, err := ps.readHead(id)
+		head, ok, err := readHead(storage, id)
 		if err != nil {
 			return nil, err
 		}
@@ -55,8 +61,8 @@ func (ps *PackStorage) Heads() ([]Head, error) {
 	return heads, nil
 }
 
-func (ps *PackStorage) readHead(setID uint64) (Head, bool, error) {
-	file, err := ps.storage.Open(headName(setID))
+func readHead(storage ArchiveStorage, setID uint64) (Head, bool, error) {
+	file, err := storage.Open(headName(setID))
 	if notExist(err) {
 		return Head{}, false, nil
 	}
@@ -84,7 +90,7 @@ func (ps *PackStorage) AdvanceHead(object *proto.Object) error {
 		return nil
 	}
 
-	current, ok, err := ps.readHead(commit.GetSetId())
+	current, ok, err := readHead(ps.storage, commit.GetSetId())
 	if err != nil {
 		return err
 	}

@@ -201,30 +201,24 @@ func atRest(c *cli.Context) ([]pack.PackOption, error) {
 	return []pack.PackOption{pack.WithAtRestKey(key)}, nil
 }
 
+// initGCS opens a Cloud Storage bucket, initS3 an S3-compatible one. The
+// query takes index and cache; every other parameter (prefix, endpoint,
+// region, ...) goes to the bucket.
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
-	bucket, err := blob.OpenBucket(context.Background(), "gs://"+u.Host)
-	if err != nil {
-		return nil, err
-	}
-
-	options, err := atRest(c)
-	if err != nil {
-		return nil, err
-	}
-
-	return storage.NewBucketObjectStore(bucket, u.Query().Get("index"), u.Query().Get("cache"), options...)
+	return initBucket("gs", u, c)
 }
 
-// initS3 opens an S3-compatible bucket. The query takes index and cache as
-// gcs:// does; every other parameter (endpoint, region, use_path_style,
-// ...) goes to the S3 client.
 func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
+	return initBucket("s3", u, c)
+}
+
+func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	query := u.Query()
 	index, cache := query.Get("index"), query.Get("cache")
 	query.Del("index")
 	query.Del("cache")
 
-	bucket, err := blob.OpenBucket(context.Background(), (&url.URL{Scheme: "s3", Host: u.Host, RawQuery: query.Encode()}).String())
+	bucket, err := blob.OpenBucket(context.Background(), (&url.URL{Scheme: scheme, Host: u.Host, RawQuery: query.Encode()}).String())
 	if err != nil {
 		return nil, err
 	}
@@ -375,6 +369,7 @@ func indexDialect(scheme string) string {
 var storageDrivers = map[string]func(*url.URL, *cli.Context) (backup.ObjectStore, error){
 	"":                initPack,
 	"gcs":             initGCS,
+	"gs":              initGCS,
 	"s3":              initS3,
 	"goback":          initRemote,
 	"goback+insecure": initRemote,
