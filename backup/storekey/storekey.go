@@ -1,8 +1,8 @@
 // Package storekey implements the client-held store key: its key file,
 // deterministic sealing of blobs, name tokens and inline content, the
 // digest blobs are named by, and passphrase escrow. The server never sees
-// the key. It carries none of the object format, so the console's
-// WebAssembly module can take it without the rest of goback.
+// the key. It carries none of the object format, so a WebAssembly build
+// can take it without the rest of goback.
 package storekey
 
 import (
