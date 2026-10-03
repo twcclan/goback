@@ -537,16 +537,15 @@ func (x *SetStorePolicyRequest) GetAcknowledgeKey() bool {
 	return false
 }
 
-// RetentionBracket keeps one commit per period over a stretch of a set's
-// past. Brackets run consecutively, each starting where the one before
-// it ended, so "for" is how long this bracket lasts rather than how old
-// its commits may be.
+// RetentionBracket keeps the last commit of each of count UTC calendar
+// periods. Brackets run consecutively back from now, each starting with
+// the period the one before it ended in.
 type RetentionBracket struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// hourly, daily, weekly or monthly
 	Period string `protobuf:"bytes,1,opt,name=period,proto3" json:"period,omitempty"`
-	// seconds; zero is the tail, which lasts forever and so must be last
-	ForSeconds    int64 `protobuf:"varint,2,opt,name=for_seconds,json=forSeconds,proto3" json:"for_seconds,omitempty"`
+	// zero is the tail, which keeps every older period and so must be last
+	Count         int32 `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -588,9 +587,9 @@ func (x *RetentionBracket) GetPeriod() string {
 	return ""
 }
 
-func (x *RetentionBracket) GetForSeconds() int64 {
+func (x *RetentionBracket) GetCount() int32 {
 	if x != nil {
-		return x.ForSeconds
+		return x.Count
 	}
 	return 0
 }
@@ -1154,11 +1153,10 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x15SetStorePolicyRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12%\n" +
 	"\x0epresence_scope\x18\x05 \x01(\tR\rpresenceScope\x12'\n" +
-	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKeyJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\a\"K\n" +
+	"\x0facknowledge_key\x18\a \x01(\bR\x0eacknowledgeKeyJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\a\"F\n" +
 	"\x10RetentionBracket\x12\x16\n" +
-	"\x06period\x18\x01 \x01(\tR\x06period\x12\x1f\n" +
-	"\vfor_seconds\x18\x02 \x01(\x03R\n" +
-	"forSeconds\"\x84\x01\n" +
+	"\x06period\x18\x01 \x01(\tR\x06period\x12\x14\n" +
+	"\x05count\x18\x03 \x01(\x05R\x05countJ\x04\b\x02\x10\x03\"\x84\x01\n" +
 	"\x0fRetentionPolicy\x12\x1b\n" +
 	"\tkeep_last\x18\x01 \x01(\x05R\bkeepLast\x12\x1f\n" +
 	"\vkeep_within\x18\x06 \x01(\x03R\n" +

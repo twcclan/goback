@@ -252,8 +252,8 @@ func toPolicy(p retention.Policy) *pb.RetentionPolicy {
 
 	for _, b := range p.Brackets {
 		out.Brackets = append(out.Brackets, &pb.RetentionBracket{
-			Period:     string(b.Period),
-			ForSeconds: int64(b.For / time.Second),
+			Period: string(b.Period),
+			Count:  int32(b.Count),
 		})
 	}
 
@@ -269,7 +269,7 @@ func fromPolicy(p *pb.RetentionPolicy) retention.Policy {
 	for _, b := range p.Brackets {
 		out.Brackets = append(out.Brackets, retention.Bracket{
 			Period: retention.Period(b.Period),
-			For:    time.Duration(b.ForSeconds) * time.Second,
+			Count:  int(b.Count),
 		})
 	}
 

@@ -65,11 +65,12 @@ goback --storage /backups --store-key store.key --set home \
 
 ## Retention
 
-A set keeps its commits by brackets, newest first:
+A set keeps the last commit of each calendar hour, day, week or month, by
+brackets counted back from now, newest first:
 
 ```sh
 goback --storage /backups set retention home \
-  --keep hourly=14d --keep daily=60d --keep weekly=12w --keep monthly
+  --keep hourly=336 --keep daily=60 --keep weekly=12 --keep monthly
 ```
 
 Commits the policy lets go are retired, then tombstoned after a hold window.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,7 +40,7 @@ var Command = cli.Command{
 			ArgsUsage:   "[<name>]",
 			Flags: []cli.Flag{
 				cli.IntFlag{Name: "keep-last"},
-				cli.StringSliceFlag{Name: "keep", Usage: "a bracket as <period>=<length>, newest first, repeated; the last may drop its length to keep forever (--keep hourly=14d --keep daily=60d --keep weekly=12w --keep monthly)"},
+				cli.StringSliceFlag{Name: "keep", Usage: "a bracket as <period>=<count> calendar periods, newest first, repeated; the last may drop its count to keep forever (--keep hourly=336 --keep daily=60 --keep weekly=12 --keep monthly)"},
 				cli.DurationFlag{Name: "keep-within"},
 				cli.BoolFlag{Name: "inherit", Usage: "drop the policy: a set inherits the store's, the store uses the built-in"},
 				cli.IntFlag{Name: "hold-days", Value: -1, Usage: "store only: days a commit retired by policy waits for its tombstone"},
@@ -180,21 +181,17 @@ type policyView struct {
 	Flags      string        `json:"flags"`
 }
 
+// bracketView's count is zero for the tail, which keeps forever.
 type bracketView struct {
 	Period string `json:"period"`
-	For    string `json:"for"`
+	Count  int    `json:"count"`
 }
 
 func viewPolicy(p retention.Policy) policyView {
 	out := policyView{KeepLast: p.KeepLast, Keep: []bracketView{}, Flags: describe(p)}
 
 	for _, b := range p.Brackets {
-		length := "forever"
-		if b.For != 0 {
-			length = b.For.String()
-		}
-
-		out.Keep = append(out.Keep, bracketView{Period: string(b.Period), For: length})
+		out.Keep = append(out.Keep, bracketView{Period: string(b.Period), Count: b.Count})
 	}
 
 	switch {
@@ -208,20 +205,20 @@ func viewPolicy(p retention.Policy) policyView {
 }
 
 // brackets reads the --keep flags as the stretches of a set's past,
-// newest first. A bracket without a length keeps its period forever.
+// newest first. A bracket without a count keeps its period forever.
 func brackets(flags []string) []retention.Bracket {
 	var read []retention.Bracket
 
 	for _, flag := range flags {
-		period, length, hasLength := strings.Cut(flag, "=")
+		period, count, hasCount := strings.Cut(flag, "=")
 
 		bracket := retention.Bracket{Period: retention.Period(period)}
-		if hasLength {
+		if hasCount {
 			var err error
 
-			bracket.For, err = retention.ParseFor(length)
-			if err != nil {
-				common.Fatalf("--keep %s: %v", flag, err)
+			bracket.Count, err = strconv.Atoi(count)
+			if err != nil || bracket.Count < 1 {
+				common.Fatalf("--keep %s: %q is not a number of periods", flag, count)
 			}
 		}
 
@@ -239,13 +236,13 @@ func describe(p retention.Policy) string {
 	}
 
 	for _, b := range p.Brackets {
-		if b.For == 0 {
+		if b.Count == 0 {
 			parts = append(parts, fmt.Sprintf("keep=%s", b.Period))
 
 			continue
 		}
 
-		parts = append(parts, fmt.Sprintf("keep=%s=%s", b.Period, b.For))
+		parts = append(parts, fmt.Sprintf("keep=%s=%d", b.Period, b.Count))
 	}
 
 	if p.KeepWithin > 0 {

@@ -33,8 +33,8 @@ func TestEvaluateThinsDailiesToWeekliesToMonthlies(t *testing.T) {
 	commits := daily(now, 120)
 
 	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
-		{Period: Daily, For: 7 * 24 * time.Hour},
-		{Period: Weekly, For: 4 * 7 * 24 * time.Hour},
+		{Period: Daily, Count: 7},
+		{Period: Weekly, Count: 4},
 		{Period: Monthly},
 	}}, now)
 
@@ -74,7 +74,7 @@ func TestASetThatStoppedIsThinnedByItsAgeAndNotByWhatItHas(t *testing.T) {
 	commits := daily(now.AddDate(0, -6, 0), 3)
 
 	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
-		{Period: Daily, For: 7 * 24 * time.Hour},
+		{Period: Daily, Count: 7},
 		{Period: Monthly},
 	}}, now)
 
@@ -155,16 +155,16 @@ func TestEvaluateInputOrderIsPreserved(t *testing.T) {
 
 func TestPolicyValidate(t *testing.T) {
 	require.ErrorIs(t, Policy{}.Validate(), ErrInvalidPolicy, "keep-all by zeros is rejected")
-	require.ErrorIs(t, Policy{KeepLast: 1, Brackets: []Bracket{{Period: Daily, For: -time.Hour}}}.Validate(), ErrInvalidPolicy)
+	require.ErrorIs(t, Policy{KeepLast: 1, Brackets: []Bracket{{Period: Daily, Count: -1}}}.Validate(), ErrInvalidPolicy)
 	require.NoError(t, Policy{KeepLast: 1}.Validate())
 }
 
 func TestPolicyJSON(t *testing.T) {
-	p := Policy{KeepLast: 2, KeepWithin: 36 * time.Hour, Brackets: []Bracket{{Period: Daily, For: 7 * 24 * time.Hour}}}
+	p := Policy{KeepLast: 2, KeepWithin: 36 * time.Hour, Brackets: []Bracket{{Period: Daily, Count: 7}}}
 
 	data, err := json.Marshal(p)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"keep_last":2,"keep_within":"36h0m0s","brackets":[{"period":"daily","for":"168h0m0s"}]}`, string(data))
+	require.JSONEq(t, `{"keep_last":2,"keep_within":"36h0m0s","brackets":[{"period":"daily","count":7}]}`, string(data))
 
 	back, err := Parse(data)
 	require.NoError(t, err)
@@ -193,9 +193,9 @@ func theirPolicy() Policy {
 	return Policy{
 		KeepLast: 1,
 		Brackets: []Bracket{
-			{Period: Hourly, For: 14 * 24 * time.Hour},
-			{Period: Daily, For: 60 * 24 * time.Hour},
-			{Period: Weekly, For: 12 * 7 * 24 * time.Hour},
+			{Period: Hourly, Count: 14 * 24},
+			{Period: Daily, Count: 60},
+			{Period: Weekly, Count: 12},
 			{Period: Monthly},
 		},
 	}
@@ -274,7 +274,7 @@ func TestABracketKeepsOnePerPeriodAndTheNewestOfThem(t *testing.T) {
 func TestAMonthKeepsItsLastCommitThroughTheWeeksBeforeIt(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	policy := Policy{KeepLast: 1, Brackets: []Bracket{
-		{Period: Weekly, For: 8 * 7 * 24 * time.Hour},
+		{Period: Weekly, Count: 8},
 		{Period: Monthly},
 	}}
 
@@ -302,7 +302,7 @@ func TestTheTailKeepsEverythingOlderThanTheBracketsBeforeIt(t *testing.T) {
 	}
 
 	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
-		{Period: Daily, For: 30 * 24 * time.Hour},
+		{Period: Daily, Count: 30},
 		{Period: Monthly},
 	}}, now)
 
@@ -316,7 +316,7 @@ func TestCommitsOlderThanTheLastBracketAreNotKept(t *testing.T) {
 
 	commits := daily(now, 60)
 	got := Evaluate(commits, Policy{KeepLast: 1, Brackets: []Bracket{
-		{Period: Daily, For: 30 * 24 * time.Hour},
+		{Period: Daily, Count: 30},
 	}}, now)
 
 	require.True(t, got[29].Keep)
@@ -327,8 +327,8 @@ func TestABracketPolicyRoundTrips(t *testing.T) {
 	encoded, err := json.Marshal(theirPolicy())
 	require.NoError(t, err)
 
-	require.Contains(t, string(encoded), `"period":"hourly","for":"336h0m0s"`)
-	require.Contains(t, string(encoded), `{"period":"monthly"}`, "the tail carries no duration")
+	require.Contains(t, string(encoded), `"period":"hourly","count":336`)
+	require.Contains(t, string(encoded), `{"period":"monthly"}`, "the tail carries no count")
 
 	read, err := Parse(encoded)
 	require.NoError(t, err)
@@ -338,7 +338,7 @@ func TestABracketPolicyRoundTrips(t *testing.T) {
 func TestAPolicyThatKeepsForeverBeforeItsLastBracketIsRefused(t *testing.T) {
 	err := Policy{KeepLast: 1, Brackets: []Bracket{
 		{Period: Monthly},
-		{Period: Daily, For: time.Hour},
+		{Period: Daily, Count: 1},
 	}}.Validate()
 
 	require.ErrorIs(t, err, ErrInvalidPolicy)
@@ -346,7 +346,7 @@ func TestAPolicyThatKeepsForeverBeforeItsLastBracketIsRefused(t *testing.T) {
 }
 
 func TestABracketKeepingByNothingRecognisedIsRefused(t *testing.T) {
-	err := Policy{KeepLast: 1, Brackets: []Bracket{{Period: "fortnightly", For: time.Hour}}}.Validate()
+	err := Policy{KeepLast: 1, Brackets: []Bracket{{Period: "fortnightly", Count: 1}}}.Validate()
 
 	require.ErrorIs(t, err, ErrInvalidPolicy)
 	require.ErrorContains(t, err, "fortnightly")
@@ -359,4 +359,14 @@ func TestAPolicyWrittenWhenPeriodsWereCountedIsRefused(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrInvalidPolicy)
 	require.ErrorContains(t, err, "keep_daily")
+}
+
+func TestAPolicyWrittenWithDurationsIsReadAsCounts(t *testing.T) {
+	read, err := Parse([]byte(`{"keep_last":1,"brackets":[{"period":"hourly","for":"336h0m0s"},{"period":"daily","for":"1440h0m0s"},{"period":"weekly","for":"2016h0m0s"},{"period":"monthly","for":"1000h"}]}`))
+	require.NoError(t, err)
+	require.Equal(t, []Bracket{{Hourly, 336}, {Daily, 60}, {Weekly, 12}, {Monthly, 2}}, read.Brackets, "rounded up")
+
+	written, err := json.Marshal(read)
+	require.NoError(t, err)
+	require.NotContains(t, string(written), `"for"`)
 }

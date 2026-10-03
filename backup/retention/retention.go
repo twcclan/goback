@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -24,15 +23,13 @@ const (
 	Monthly Period = "monthly"
 )
 
-// A Bracket keeps the last commit of each Period (by UTC calendar) over a
-// stretch of a set's past.
-// Brackets run consecutively, each starting where the one before it
-// ended, so For is how long this one lasts rather than how old its
-// commits may be. A For of zero is the tail: everything older than the
-// brackets before it, kept forever.
+// A Bracket keeps the last commit of each of Count UTC calendar periods.
+// Brackets run consecutively back from now, each starting with the
+// period the one before it ended in. A Count of zero is the tail: every
+// period older than the brackets before it, kept forever.
 type Bracket struct {
 	Period Period
-	For    time.Duration
+	Count  int
 }
 
 // Policy is what a set keeps. Brackets divide its past into consecutive
@@ -47,9 +44,9 @@ type Policy struct {
 
 // Default is the policy a store applies until it sets its own.
 var Default = Policy{KeepLast: 1, Brackets: []Bracket{
-	{Period: Hourly, For: 14 * 24 * time.Hour},
-	{Period: Daily, For: 60 * 24 * time.Hour},
-	{Period: Weekly, For: 12 * 7 * 24 * time.Hour},
+	{Period: Hourly, Count: 14 * 24},
+	{Period: Daily, Count: 60},
+	{Period: Weekly, Count: 12},
 	{Period: Monthly},
 }}
 
@@ -76,11 +73,11 @@ func (p Policy) Validate() error {
 				ErrInvalidPolicy, i, b.Period)
 		}
 
-		if b.For < 0 {
-			return fmt.Errorf("%w: bracket %d lasts a negative time", ErrInvalidPolicy, i)
+		if b.Count < 0 {
+			return fmt.Errorf("%w: bracket %d keeps a negative count", ErrInvalidPolicy, i)
 		}
 
-		if b.For == 0 && i != len(p.Brackets)-1 {
+		if b.Count == 0 && i != len(p.Brackets)-1 {
 			return fmt.Errorf("%w: bracket %d keeps %s forever, so the brackets after it never begin",
 				ErrInvalidPolicy, i, b.Period)
 		}
@@ -102,37 +99,68 @@ var periods = map[Period]func(time.Time) string{
 	Monthly: func(t time.Time) string { return t.UTC().Format("2006-01") },
 }
 
-// ParseFor reads how long a bracket lasts. It takes Go's duration
-// syntax and, because retention is written in longer units than that
-// spells well, a whole number of days or weeks: "14d", "12w", "36h30m".
-func ParseFor(text string) (time.Duration, error) {
-	if len(text) > 1 {
-		unit := map[byte]time.Duration{'d': 24 * time.Hour, 'w': 7 * 24 * time.Hour}[text[len(text)-1]]
-		if unit > 0 {
-			n, err := strconv.Atoi(text[:len(text)-1])
-			if err != nil {
-				return 0, fmt.Errorf("%q is not a number of %s", text, map[byte]string{'d': "days", 'w': "weeks"}[text[len(text)-1]])
-			}
+// startOf is when the period holding t began.
+func startOf(period Period, t time.Time) time.Time {
+	t = t.UTC()
 
-			return time.Duration(n) * unit, nil
-		}
+	switch period {
+	case Hourly:
+		return t.Truncate(time.Hour)
+	case Daily:
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	case Weekly:
+		day := startOf(Daily, t)
+
+		return day.AddDate(0, 0, -(int(day.Weekday())+6)%7)
+	default:
+		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 	}
-
-	return time.ParseDuration(text)
 }
 
-// bracketAt is the bracket a commit of this age falls in, and whether
-// the brackets reach that far back at all.
-func (p Policy) bracketAt(age time.Duration) (int, bool) {
-	var until time.Duration
+// back is the start of the period n before the one starting at start.
+func back(period Period, start time.Time, n int) time.Time {
+	switch period {
+	case Hourly:
+		return start.Add(-time.Duration(n) * time.Hour)
+	case Daily:
+		return start.AddDate(0, 0, -n)
+	case Weekly:
+		return start.AddDate(0, 0, -7*n)
+	default:
+		return start.AddDate(0, -n, 0)
+	}
+}
+
+// bounds is where each bracket begins, walking back from now: bracket i
+// holds the commits at or after bounds[i] and before bounds[i-1]. The
+// tail begins at the zero time.
+func (p Policy) bounds(now time.Time) []time.Time {
+	out := make([]time.Time, len(p.Brackets))
+	until := now
 
 	for i, b := range p.Brackets {
-		if b.For == 0 {
-			return i, true
+		if b.Count == 0 {
+			break
 		}
 
-		until += b.For
-		if age < until {
+		// the period holding the newest moment this bracket covers
+		newest := startOf(b.Period, until.Add(-time.Nanosecond))
+		if i == 0 {
+			newest = startOf(b.Period, now)
+		}
+
+		until = back(b.Period, newest, b.Count-1)
+		out[i] = until
+	}
+
+	return out
+}
+
+// bracketAt is the bracket a commit received at t falls in, and whether
+// the brackets reach that far back at all.
+func bracketAt(bounds []time.Time, t time.Time) (int, bool) {
+	for i, from := range bounds {
+		if !t.Before(from) {
 			return i, true
 		}
 	}
@@ -143,7 +171,18 @@ func (p Policy) bracketAt(age time.Duration) (int, bool) {
 type bracketJSON struct {
 	Period Period `json:"period"`
 	// absent for the tail, which lasts forever
+	Count int `json:"count,omitempty"`
+	// For is how long a bracket lasted in policies written before brackets
+	// were counted; reading turns it into a count. Never written.
 	For string `json:"for,omitempty"`
+}
+
+// spans is about how long one period lasts, to count a For in.
+var spans = map[Period]time.Duration{
+	Hourly:  time.Hour,
+	Daily:   24 * time.Hour,
+	Weekly:  7 * 24 * time.Hour,
+	Monthly: 30 * 24 * time.Hour,
 }
 
 type policyJSON struct {
@@ -152,7 +191,7 @@ type policyJSON struct {
 	KeepWithin string        `json:"keep_within,omitempty"`
 }
 
-// MarshalJSON writes every duration as a duration string.
+// MarshalJSON writes keep_within as a duration string.
 func (p Policy) MarshalJSON() ([]byte, error) {
 	out := policyJSON{KeepLast: p.KeepLast}
 	if p.KeepWithin > 0 {
@@ -160,18 +199,13 @@ func (p Policy) MarshalJSON() ([]byte, error) {
 	}
 
 	for _, b := range p.Brackets {
-		written := bracketJSON{Period: b.Period}
-		if b.For > 0 {
-			written.For = b.For.String()
-		}
-
-		out.Brackets = append(out.Brackets, written)
+		out.Brackets = append(out.Brackets, bracketJSON{Period: b.Period, Count: b.Count})
 	}
 
 	return json.Marshal(out)
 }
 
-// UnmarshalJSON reads every duration as a duration string. A policy
+// UnmarshalJSON reads keep_within as a duration string. A policy
 // written when periods were counted rather than bracketed is refused
 // rather than read as the brackets it has none of, which would retire
 // everything the counts were holding.
@@ -204,13 +238,16 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	}
 
 	for i, read := range in.Brackets {
-		bracket := Bracket{Period: read.Period}
+		bracket := Bracket{Period: read.Period, Count: read.Count}
 
-		if read.For != "" {
-			bracket.For, err = ParseFor(read.For)
+		if read.For != "" && read.Count == 0 && spans[read.Period] > 0 {
+			lasted, err := time.ParseDuration(read.For)
 			if err != nil {
 				return fmt.Errorf("%w: bracket %d: %v", ErrInvalidPolicy, i, err)
 			}
+
+			span := spans[read.Period]
+			bracket.Count = int((lasted + span - 1) / span)
 		}
 
 		p.Brackets = append(p.Brackets, bracket)
@@ -275,6 +312,8 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 		last = 1
 	}
 
+	bounds := p.bounds(now)
+
 	// lastOf says whether a commit is the last complete one of its hour,
 	// day, week or month; walking newest first, that is the first seen
 	seen := map[Period]map[string]bool{}
@@ -323,7 +362,7 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 
 		// a bracket also holds what a later, coarser one will keep, so a
 		// month's last commit survives the weeks it ages through
-		if b, ok := p.bracketAt(now.Sub(c.ReceivedAt)); ok {
+		if b, ok := bracketAt(bounds, c.ReceivedAt); ok {
 			for _, later := range p.Brackets[b:] {
 				if lastOf[i][later.Period] {
 					keep(i, string(later.Period))

@@ -94,15 +94,15 @@ message SetStorePolicyRequest {
     bool acknowledge_key = 7;
 }
 
-// RetentionBracket keeps one commit per period over a stretch of a set's
-// past. Brackets run consecutively, each starting where the one before
-// it ended, so "for" is how long this bracket lasts rather than how old
-// its commits may be.
+// RetentionBracket keeps the last commit of each of count UTC calendar
+// periods. Brackets run consecutively back from now, each starting with
+// the period the one before it ended in.
 message RetentionBracket {
     // hourly, daily, weekly or monthly
     string period = 1;
-    // seconds; zero is the tail, which lasts forever and so must be last
-    int64 for_seconds = 2;
+    reserved 2;
+    // zero is the tail, which keeps every older period and so must be last
+    int32 count = 3;
 }
 
 // RetentionPolicy keeps a commit while a bracket holds it, it is one of
