@@ -21,7 +21,9 @@ func deleteAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Commit %s retired; undelete it within the trash window", c.Args().First())
+	common.Result(common.Done{Action: "retired", Ref: c.Args().First()}, func() {
+		log.Printf("Commit %s retired; undelete it within the trash window", c.Args().First())
+	})
 	index.Close()
 }
 
@@ -38,7 +40,9 @@ func undeleteAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Commit %s is live again", c.Args().First())
+	common.Result(common.Done{Action: "undeleted", Ref: c.Args().First()}, func() {
+		log.Printf("Commit %s is live again", c.Args().First())
+	})
 	index.Close()
 }
 

@@ -196,13 +196,15 @@ func runNew(c *cli.Context) error {
 		return walkErr
 	}
 
-	log.Printf("Commit %x: %d files, %d reused, %d read, %d checkpoints", result.Ref.Hash, result.Files, result.Reused, result.Read, result.Checkpoints)
-
 	common.SweepBlobCache(walker.BlobCache)
 
-	if result.Torn > 0 || result.Unreadable > 0 || result.Skipped > 0 {
-		log.Printf("%d files changed while being read, %d could not be read, %d irregular entries skipped", result.Torn, result.Unreadable, result.Skipped)
-	}
+	common.Result(common.ViewWalk(result), func() {
+		log.Printf("Commit %x: %d files, %d reused, %d read, %d checkpoints", result.Ref.Hash, result.Files, result.Reused, result.Read, result.Checkpoints)
+
+		if result.Torn > 0 || result.Unreadable > 0 || result.Skipped > 0 {
+			log.Printf("%d files changed while being read, %d could not be read, %d irregular entries skipped", result.Torn, result.Unreadable, result.Skipped)
+		}
+	})
 
 	if result.Dirty() {
 		return errDirty

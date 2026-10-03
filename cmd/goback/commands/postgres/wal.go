@@ -71,11 +71,14 @@ func walAction(c *cli.Context) error {
 	}
 
 	if result == nil {
-		log.Print("The spool is empty")
+		common.Result(struct {
+			Files int64 `json:"files"`
+		}{}, func() { log.Print("The spool is empty") })
+
 		return nil
 	}
 
-	log.Printf("Commit %x: %d spooled files", result.Ref.Hash, result.Files)
+	common.Result(common.ViewWalk(result), func() { log.Printf("Commit %x: %d spooled files", result.Ref.Hash, result.Files) })
 
 	return nil
 }

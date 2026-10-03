@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 
@@ -109,8 +110,11 @@ func main() {
 	app.ExitErrHandler = func(_ *cli.Context, err error) {
 		var coded cli.ExitCoder
 		if errors.As(err, &coded) {
-			if err.Error() != "" {
+			switch {
+			case err.Error() != "":
 				common.Fail(err.Error())
+			case common.JSON():
+				common.Fail(fmt.Sprintf("exit status %d", coded.ExitCode()))
 			}
 
 			os.Exit(coded.ExitCode())

@@ -136,7 +136,14 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 			source = "stored"
 		}
 
-		fmt.Printf("store default: %s (%s)\nhold %d days, trash %d days\n", describe(policy), source, w.HoldDays, w.TrashDays)
+		common.Result(struct {
+			Policy    policyView `json:"policy"`
+			Source    string     `json:"source"`
+			HoldDays  int        `json:"hold_days"`
+			TrashDays int        `json:"trash_days"`
+		}{viewPolicy(policy), source, w.HoldDays, w.TrashDays}, func() {
+			fmt.Printf("store default: %s (%s)\nhold %d days, trash %d days\n", describe(policy), source, w.HoldDays, w.TrashDays)
+		})
 
 		return
 	}
@@ -151,10 +158,53 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 		source = "own"
 	}
 
-	fmt.Printf("set %s: %s (%s)\n", name, describe(ret.Effective), source)
-	if ret.Paused {
-		fmt.Println("retirement is paused since the rebuild; set a policy to resume it")
+	common.Result(struct {
+		Set    string     `json:"set"`
+		Policy policyView `json:"policy"`
+		Source string     `json:"source"`
+		Paused bool       `json:"paused"`
+	}{name, viewPolicy(ret.Effective), source, ret.Paused}, func() {
+		fmt.Printf("set %s: %s (%s)\n", name, describe(ret.Effective), source)
+		if ret.Paused {
+			fmt.Println("retirement is paused since the rebuild; set a policy to resume it")
+		}
+	})
+}
+
+// policyView is a retention policy as JSON output shows it; a duration of
+// "forever" never ends.
+type policyView struct {
+	KeepLast   int           `json:"keep_last"`
+	Keep       []bracketView `json:"keep"`
+	KeepWithin string        `json:"keep_within,omitempty"`
+	Flags      string        `json:"flags"`
+}
+
+type bracketView struct {
+	Period string `json:"period"`
+	For    string `json:"for"`
+}
+
+func viewPolicy(p retention.Policy) policyView {
+	out := policyView{KeepLast: p.KeepLast, Keep: []bracketView{}, Flags: describe(p)}
+
+	for _, b := range p.Brackets {
+		length := "forever"
+		if b.For != 0 {
+			length = b.For.String()
+		}
+
+		out.Keep = append(out.Keep, bracketView{Period: string(b.Period), For: length})
 	}
+
+	switch {
+	case p.KeepWithin == time.Duration(1<<63-1):
+		out.KeepWithin = "forever"
+	case p.KeepWithin > 0:
+		out.KeepWithin = p.KeepWithin.String()
+	}
+
+	return out
 }
 
 // brackets reads the --keep flags as the stretches of a set's past,
@@ -227,7 +277,7 @@ func deleteAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Set %s closed", c.Args().First())
+	common.Result(common.Done{Action: "closed", Name: c.Args().First()}, func() { log.Printf("Set %s closed", c.Args().First()) })
 	index.Close()
 }
 
@@ -244,6 +294,6 @@ func undeleteAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Set %s reopened", c.Args().First())
+	common.Result(common.Done{Action: "reopened", Name: c.Args().First()}, func() { log.Printf("Set %s reopened", c.Args().First()) })
 	index.Close()
 }

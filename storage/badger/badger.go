@@ -17,7 +17,8 @@ import (
 // New opens or creates a Store at path.
 func New(path string) (*Store, error) {
 	opts := badger.DefaultOptions(path).
-		WithCompression(options.Snappy)
+		WithCompression(options.Snappy).
+		WithLogger(Logger)
 
 	db, err := badger.Open(opts)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"runtime"
@@ -23,6 +24,10 @@ var (
 // stdout. Output of the log package goes through the same handler.
 func SetOutput(json bool) {
 	jsonMode = json
+
+	// slog takes over the log package, and keeps its callers only if the
+	// log package was asked for them when it does
+	log.SetFlags(log.Lshortfile)
 
 	opts := &slog.HandlerOptions{AddSource: true}
 	if json {

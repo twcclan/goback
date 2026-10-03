@@ -97,13 +97,18 @@ func restoreAction(c *cli.Context) error {
 		return err
 	}
 
-	log.Printf("Restored the base backup of %s (commit %x)", time.Unix(result.Base.GetTimestamp(), 0).UTC().Format(time.RFC3339), result.BaseRef.Hash)
+	common.Result(struct {
+		Base common.CommitView `json:"base"`
+		WAL  string            `json:"wal,omitempty"`
+	}{common.ViewCommit(result.Base), common.Hex(result.WAL)}, func() {
+		log.Printf("Restored the base backup of %s (commit %x)", time.Unix(result.Base.GetTimestamp(), 0).UTC().Format(time.RFC3339), result.BaseRef.Hash)
 
-	if result.WAL == nil {
-		log.Printf("The WAL set %s has no commits: Postgres recovers to the end of the base backup", r.WALSet)
-	} else {
-		log.Printf("Postgres recovers from WAL commit %x when it starts", result.WAL.Hash)
-	}
+		if result.WAL == nil {
+			log.Printf("The WAL set %s has no commits: Postgres recovers to the end of the base backup", r.WALSet)
+		} else {
+			log.Printf("Postgres recovers from WAL commit %x when it starts", result.WAL.Hash)
+		}
+	})
 
 	return nil
 }
@@ -232,5 +237,11 @@ func walGetAction(c *cli.Context) error {
 		return cli.NewExitError("", 1)
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	common.Result(common.Done{Action: "fetched", Name: c.Args().Get(0)}, func() {})
+
+	return nil
 }

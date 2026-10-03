@@ -23,6 +23,17 @@ func (f *file) list() error {
 		return err
 	}
 
+	views := make([]common.NodeView, len(entries))
+	for i, entry := range entries {
+		views[i] = common.ViewNode(entry)
+	}
+
+	if common.JSON() {
+		common.Result(views, nil)
+
+		return nil
+	}
+
 	if len(entries) == 0 {
 		log.Print("Nothing there at that time")
 

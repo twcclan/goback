@@ -14,6 +14,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
+	store "github.com/twcclan/goback/storage/badger"
 )
 
 var (
@@ -32,7 +33,8 @@ var ErrIndexVersion = errors.New("badger index was written by another format ver
 // in another format version fails with ErrIndexVersion.
 func NewBadgerIndex(path string) (*BadgerIndex, error) {
 	opts := badger.DefaultOptions(path).
-		WithCompression(options.Snappy)
+		WithCompression(options.Snappy).
+		WithLogger(store.Logger)
 
 	db, err := badger.Open(opts)
 	if err != nil {

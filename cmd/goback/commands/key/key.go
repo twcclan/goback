@@ -14,6 +14,7 @@ import (
 
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/backup/storekey/master"
+	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -137,9 +138,19 @@ func write(c *cli.Context, key *storekey.Key, verb string) error {
 		return err
 	}
 
-	fmt.Printf("%s key %s for store %s to %s\n", verb, key.IDString(), key.Name, out)
+	common.Result(keyWritten{Action: verb, KeyID: key.IDString(), Store: key.Name, Path: out}, func() {
+		fmt.Printf("%s key %s for store %s to %s\n", verb, key.IDString(), key.Name, out)
+	})
 
 	return nil
+}
+
+// keyWritten is a key a command saved, as JSON output shows it.
+type keyWritten struct {
+	Action string `json:"action"`
+	KeyID  string `json:"key_id,omitempty"`
+	Store  string `json:"store,omitempty"`
+	Path   string `json:"path"`
 }
 
 func newAction(c *cli.Context) error {
@@ -172,7 +183,7 @@ func masterAction(c *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("wrote master key to %s\n", out)
+	common.Result(keyWritten{Action: "wrote", Path: out}, func() { fmt.Printf("wrote master key to %s\n", out) })
 
 	return nil
 }
@@ -225,6 +236,15 @@ func escrowAction(c *cli.Context) error {
 		return upload(c, server, key.IDString(), escrowed)
 	}
 
+	if common.JSON() {
+		common.Result(struct {
+			KeyID    string `json:"key_id"`
+			Escrowed string `json:"escrowed"`
+		}{key.IDString(), string(escrowed)}, nil)
+
+		return nil
+	}
+
 	_, err = os.Stdout.Write(escrowed)
 
 	return err
@@ -268,7 +288,12 @@ func upload(c *cli.Context, server, keyID string, escrowed []byte) error {
 		return fmt.Errorf("the store refused the escrowed key: %s: %s", response.Status, strings.TrimSpace(string(reply)))
 	}
 
-	fmt.Printf("the store keeps key %s escrowed; start agents with GOBACK_PASSPHRASE and no --store-key\n", keyID)
+	common.Result(struct {
+		Action string `json:"action"`
+		KeyID  string `json:"key_id"`
+	}{"uploaded", keyID}, func() {
+		fmt.Printf("the store keeps key %s escrowed; start agents with GOBACK_PASSPHRASE and no --store-key\n", keyID)
+	})
 
 	return nil
 }
@@ -277,6 +302,15 @@ func idAction(c *cli.Context) error {
 	key, err := storekey.Load(c.String("key"))
 	if err != nil {
 		return err
+	}
+
+	if common.JSON() {
+		common.Result(struct {
+			KeyID string `json:"key_id"`
+			Store string `json:"store"`
+		}{key.IDString(), key.Name}, nil)
+
+		return nil
 	}
 
 	_, err = fmt.Fprintln(c.App.Writer, key.IDString())
@@ -327,7 +361,9 @@ func atRestAction(c *cli.Context) error {
 			return err
 		}
 
-		fmt.Printf("wrote at-rest key %x to %s\n", key.ID(), out)
+		common.Result(keyWritten{Action: "wrote", KeyID: fmt.Sprintf("%x", key.ID()), Path: out}, func() {
+			fmt.Printf("wrote at-rest key %x to %s\n", key.ID(), out)
+		})
 
 		return nil
 	}
@@ -347,7 +383,9 @@ func atRestAction(c *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("rotated %s: records are sealed under %x from now on; a compaction re-seals the older ones\n", out, rotated.ID())
+	common.Result(keyWritten{Action: "rotated", KeyID: fmt.Sprintf("%x", rotated.ID()), Path: out}, func() {
+		fmt.Printf("rotated %s: records are sealed under %x from now on; a compaction re-seals the older ones\n", out, rotated.ID())
+	})
 
 	return nil
 }

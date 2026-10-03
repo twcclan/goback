@@ -25,4 +25,6 @@ func fixAction(c *cli.Context) {
 	index.Close()
 
 	common.CloseStore(store)
+
+	common.Result(common.Done{Action: "reindexed"}, func() {})
 }

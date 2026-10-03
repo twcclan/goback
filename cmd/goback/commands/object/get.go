@@ -18,16 +18,24 @@ func (o *object) get() {
 		common.Fatal(err)
 	}
 
-	log.Printf("Found object %s", obj.Type())
-
-	if obj.Type() == proto.ObjectType_FILE {
-		log.Printf("%d parts", len(obj.GetFile().Parts))
-	}
-
 	err = os.WriteFile(o.out, obj.Bytes(), 0666)
 	if err != nil {
 		common.Fatal(err)
 	}
+
+	common.Result(struct {
+		Ref   string `json:"ref"`
+		Type  string `json:"type"`
+		Parts int    `json:"parts,omitempty"`
+		Path  string `json:"path"`
+		Bytes int    `json:"bytes"`
+	}{common.Hex(o.ref), obj.Type().String(), len(obj.GetFile().GetParts()), o.out, len(obj.Bytes())}, func() {
+		log.Printf("Found object %s", obj.Type())
+
+		if obj.Type() == proto.ObjectType_FILE {
+			log.Printf("%d parts", len(obj.GetFile().Parts))
+		}
+	})
 }
 
 func getAction(c *cli.Context) {

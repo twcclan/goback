@@ -21,7 +21,10 @@ var Command = cli.Command{
 		{
 			Name:   "sweep",
 			Usage:  "Finalize idle archives and end sessions whose lease ran out",
-			Action: action(func(m *members) { m.store().Sweep(time.Now()) }),
+			Action: action(func(m *members) {
+				m.store().Sweep(time.Now())
+				common.Result(common.Done{Action: "swept"}, func() {})
+			}),
 		},
 		{
 			Name:  "compact",
@@ -30,6 +33,8 @@ var Command = cli.Command{
 				if err := m.store().Compact(); err != nil {
 					common.Fatal(err)
 				}
+
+				common.Result(common.Done{Action: "compacted"}, func() {})
 			}),
 		},
 		{
@@ -46,7 +51,7 @@ var Command = cli.Command{
 					common.Fatalf("Retirement failed after %d commits: %v", n, err)
 				}
 
-				log.Printf("Retired %d commits", n)
+				common.Result(counted{"retired", n}, func() { log.Printf("Retired %d commits", n) })
 			}),
 		},
 		{
@@ -63,7 +68,7 @@ var Command = cli.Command{
 					common.Fatal(err)
 				}
 
-				log.Printf("Built %d presence filters", n)
+				common.Result(counted{"built_presence", n}, func() { log.Printf("Built %d presence filters", n) })
 			}),
 		},
 		{
@@ -80,10 +85,16 @@ var Command = cli.Command{
 					common.Fatal(err)
 				}
 
-				log.Printf("Filled %d commit sizes", n)
+				common.Result(counted{"filled_sizes", n}, func() { log.Printf("Filled %d commit sizes", n) })
 			}),
 		},
 	},
+}
+
+// counted is what a maintenance operation did, and to how many things.
+type counted struct {
+	Action string `json:"action"`
+	Count  int    `json:"count"`
 }
 
 // sizeFiller is an index that can work out the size of a commit it

@@ -154,11 +154,20 @@ func (c *commit) restore() error {
 		}
 	}
 
-	logStats(c.restorer.Stats())
+	stats, missed := c.restorer.Stats(), unrestored.Load()
 
-	if missed := unrestored.Load(); missed > 0 {
-		log.Printf("%d files could not be restored at all", missed)
-	}
+	common.Result(struct {
+		Commit     common.CommitView       `json:"commit"`
+		DryRun     bool                    `json:"dry_run"`
+		Stats      common.RestoreStatsView `json:"stats"`
+		Unrestored int64                   `json:"unrestored"`
+	}{common.ViewCommit(commit), c.restorer.DryRun, common.ViewRestoreStats(stats), int64(missed)}, func() {
+		logStats(stats)
+
+		if missed > 0 {
+			log.Printf("%d files could not be restored at all", missed)
+		}
+	})
 
 	return nil
 }

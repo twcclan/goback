@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/twcclan/goback/backup/postgres"
+	"github.com/twcclan/goback/cmd/goback/commands/common"
 
 	"github.com/urfave/cli"
 )
@@ -30,6 +31,8 @@ func archiveAction(c *cli.Context) error {
 	if err := (postgres.Spool{Dir: dir}).Add(c.Args().Get(0), c.Args().Get(1)); err != nil {
 		return cli.NewExitError(fmt.Sprintf("archiving %s: %v", c.Args().Get(1), err), 1)
 	}
+
+	common.Result(common.Done{Action: "spooled", Name: c.Args().Get(1)}, func() {})
 
 	return nil
 }

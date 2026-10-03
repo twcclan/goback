@@ -16,6 +16,17 @@ func (f *file) show() error {
 		return err
 	}
 
+	if common.JSON() {
+		views := make([]common.NodeView, len(nodes))
+		for i, node := range nodes {
+			views[i] = common.ViewNode(node)
+		}
+
+		common.Result(views, nil)
+
+		return nil
+	}
+
 	if len(nodes) == 0 {
 		log.Print("File not found in index")
 

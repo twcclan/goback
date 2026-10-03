@@ -45,10 +45,17 @@ func (f *file) restore() error {
 		return err
 	}
 
-	log.Printf("%s: %s", outcome, f.dst)
-
 	stats := f.restorer.Stats()
-	log.Printf("bytes from destination %d, seeds %d, cache %d, store %d", stats.BytesFromDestination, stats.BytesFromSeeds, stats.BytesFromCache, stats.BytesFromStore)
+
+	common.Result(struct {
+		File    common.NodeView         `json:"file"`
+		Outcome string                  `json:"outcome"`
+		Path    string                  `json:"path"`
+		Stats   common.RestoreStatsView `json:"stats"`
+	}{common.ViewNode(files[0]), outcome.String(), f.dst, common.ViewRestoreStats(stats)}, func() {
+		log.Printf("%s: %s", outcome, f.dst)
+		log.Printf("bytes from destination %d, seeds %d, cache %d, store %d", stats.BytesFromDestination, stats.BytesFromSeeds, stats.BytesFromCache, stats.BytesFromStore)
+	})
 
 	return nil
 }

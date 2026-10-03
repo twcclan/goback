@@ -38,16 +38,35 @@ func scrubAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Scrubbed %d objects (%s) in %d archives, %d corrupt", report.Objects, humanize.Bytes(report.Bytes), report.Archives, len(report.Corrupt))
-
-	for _, id := range sortedKeys(report.Sealed) {
-		if id == "" {
-			log.Printf("%d objects stored in the clear", report.Sealed[id])
-			continue
-		}
-
-		log.Printf("%d objects sealed under key %s", report.Sealed[id], id)
+	type corrupt struct {
+		Archive string `json:"archive"`
+		Ref     string `json:"ref"`
+		Error   string `json:"error"`
 	}
+
+	corrupted := make([]corrupt, len(report.Corrupt))
+	for i, f := range report.Corrupt {
+		corrupted[i] = corrupt{f.Archive, common.Hex(f.Ref), f.Err.Error()}
+	}
+
+	common.Result(struct {
+		Archives uint64            `json:"archives"`
+		Objects  uint64            `json:"objects"`
+		Bytes    uint64            `json:"bytes"`
+		Corrupt  []corrupt         `json:"corrupt"`
+		Sealed   map[string]uint64 `json:"sealed"`
+	}{report.Archives, report.Objects, report.Bytes, corrupted, report.Sealed}, func() {
+		log.Printf("Scrubbed %d objects (%s) in %d archives, %d corrupt", report.Objects, humanize.Bytes(report.Bytes), report.Archives, len(report.Corrupt))
+
+		for _, id := range sortedKeys(report.Sealed) {
+			if id == "" {
+				log.Printf("%d objects stored in the clear", report.Sealed[id])
+				continue
+			}
+
+			log.Printf("%d objects sealed under key %s", report.Sealed[id], id)
+		}
+	})
 
 	common.CloseStore(store)
 

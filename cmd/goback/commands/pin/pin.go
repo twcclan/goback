@@ -53,7 +53,10 @@ func addAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Pinned %s as %x", c.Args().First(), pin.Ref().Hash)
+	common.Result(struct {
+		Pin    string `json:"pin"`
+		Target string `json:"target"`
+	}{common.Hex(pin.Ref()), c.Args().First()}, func() { log.Printf("Pinned %s as %x", c.Args().First(), pin.Ref().Hash) })
 	index.Close()
 }
 
@@ -66,9 +69,23 @@ func listAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	for _, pin := range pins {
-		log.Printf("%x -> %x (%s)", pin.Ref.Hash, pin.Target.Hash, time.Unix(0, pin.ReceivedAtNs).Format(time.RFC3339))
+	type view struct {
+		Pin      string            `json:"pin"`
+		Target   string            `json:"target"`
+		Received time.Time         `json:"received"`
+		Metadata map[string]string `json:"metadata,omitempty"`
 	}
+
+	views := make([]view, len(pins))
+	for i, pin := range pins {
+		views[i] = view{common.Hex(pin.Ref), common.Hex(pin.Target), time.Unix(0, pin.ReceivedAtNs).UTC(), pin.Metadata}
+	}
+
+	common.Result(views, func() {
+		for _, pin := range pins {
+			log.Printf("%x -> %x (%s)", pin.Ref.Hash, pin.Target.Hash, time.Unix(0, pin.ReceivedAtNs).Format(time.RFC3339))
+		}
+	})
 
 	index.Close()
 }
@@ -86,6 +103,6 @@ func removeAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	log.Printf("Pin %s removed", c.Args().First())
+	common.Result(common.Done{Action: "removed", Ref: c.Args().First()}, func() { log.Printf("Pin %s removed", c.Args().First()) })
 	index.Close()
 }

@@ -25,7 +25,11 @@ func (o *object) list() {
 		common.Fatal(err)
 	}
 
+	var count int
+
 	err = o.store.Walk(context.Background(), true, o.objectType, func(obj *proto.Object) error {
+		count++
+
 		return writer.Write(
 			[]string{
 				fmt.Sprintf("%x", obj.Ref().Hash),
@@ -48,6 +52,11 @@ func (o *object) list() {
 	if err != nil {
 		common.Fatal(err)
 	}
+
+	common.Result(struct {
+		Path    string `json:"path"`
+		Objects int    `json:"objects"`
+	}{out.Name(), count}, func() {})
 }
 
 func listAction(c *cli.Context) {

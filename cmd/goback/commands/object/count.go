@@ -17,7 +17,11 @@ func (o *object) count() {
 	if counter, ok := o.store.(backup.Counter); ok {
 		total, unique, err := counter.Count()
 		if err == nil {
-			log.Printf("Counted %d total and %d unique objects", total, unique)
+			common.Result(struct {
+				Total  uint64 `json:"total"`
+				Unique uint64 `json:"unique"`
+			}{total, unique}, func() { log.Printf("Counted %d total and %d unique objects", total, unique) })
+
 			return
 		}
 
@@ -36,7 +40,9 @@ func (o *object) count() {
 		common.Fatal(err)
 	}
 
-	log.Printf("Counted %d objects", count)
+	common.Result(struct {
+		Total uint64 `json:"total"`
+	}{count}, func() { log.Printf("Counted %d objects", count) })
 }
 
 func countAction(c *cli.Context) {

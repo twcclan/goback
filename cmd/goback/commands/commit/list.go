@@ -16,14 +16,21 @@ func (c *commit) list() {
 		common.Fatal(errors.Wrap(err, "Failed reading commit info"))
 	}
 
-	for _, commit := range commits {
-		note := ""
-		if commit.Consistent {
-			note = " consistent"
-		}
-
-		log.Printf("%s %x%s", time.Unix(commit.Timestamp, 0), commit.Tree.Hash, note)
+	views := make([]common.CommitView, len(commits))
+	for i, commit := range commits {
+		views[i] = common.ViewCommit(commit)
 	}
+
+	common.Result(views, func() {
+		for _, commit := range commits {
+			note := ""
+			if commit.Consistent {
+				note = " consistent"
+			}
+
+			log.Printf("%s %x%s", time.Unix(commit.Timestamp, 0), commit.Tree.Hash, note)
+		}
+	})
 }
 
 func listAction(c *cli.Context) {

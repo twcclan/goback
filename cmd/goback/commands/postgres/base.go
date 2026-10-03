@@ -103,7 +103,12 @@ func baseAction(c *cli.Context) error {
 		return err
 	}
 
-	log.Printf("Commit %x: base backup of %d bytes, WAL from %s", result.Ref.Hash, result.Bytes, result.Commit.Metadata[postgres.MetaStartWALFile])
+	common.Result(struct {
+		common.WalkView
+		WALStart string `json:"wal_start"`
+	}{common.ViewWalk(result), result.Commit.Metadata[postgres.MetaStartWALFile]}, func() {
+		log.Printf("Commit %x: base backup of %d bytes, WAL from %s", result.Ref.Hash, result.Bytes, result.Commit.Metadata[postgres.MetaStartWALFile])
+	})
 
 	return nil
 }
