@@ -40,12 +40,12 @@ func repairAction(c *cli.Context) {
 
 	repairer, ok := common.Unwrap(store).(Repairer)
 	if !ok {
-		log.Fatalf("storage %s cannot be repaired", c.GlobalString("storage"))
+		common.Fatalf("storage %s cannot be repaired", c.GlobalString("storage"))
 	}
 
 	report, err := repairer.Repair(ctx)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Scrubbed %d objects in %d archives, rewrote %d", report.Scrub.Objects, report.Scrub.Archives, report.Archives)
@@ -78,7 +78,7 @@ func markDamage(ctx context.Context, idx backup.Index, lost []*proto.Ref) {
 
 	sets, err := lister.ListSets(ctx)
 	if err != nil {
-		log.Fatalf("Listing the sets failed: %v", err)
+		common.Fatalf("Listing the sets failed: %v", err)
 	}
 
 	ids := make([]int64, 0, len(sets))
@@ -90,7 +90,7 @@ func markDamage(ctx context.Context, idx backup.Index, lost []*proto.Ref) {
 
 	result, err := backup.ReportDamage(ctx, idx, damage, ids, lost)
 	if err != nil {
-		log.Fatalf("Recording the damage failed: %v", err)
+		common.Fatalf("Recording the damage failed: %v", err)
 	}
 
 	for set, paths := range result.Paths {

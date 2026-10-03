@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -17,13 +16,13 @@ import (
 func (o *object) list() {
 	out, err := os.Create("objects.csv")
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	writer := csv.NewWriter(out)
 	err = writer.Write([]string{"ref", "timestamp", "set"})
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	err = o.store.Walk(context.Background(), true, o.objectType, func(obj *proto.Object) error {
@@ -36,18 +35,18 @@ func (o *object) list() {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	writer.Flush()
 	err = writer.Error()
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	err = out.Close()
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 }
 

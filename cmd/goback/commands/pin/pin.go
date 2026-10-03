@@ -40,7 +40,7 @@ var Command = cli.Command{
 
 func addAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: pin add <ref>")
+		common.Fatal("usage: pin add <ref>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -50,7 +50,7 @@ func addAction(c *cli.Context) {
 
 	err := index.Put(common.Context(c), pin)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Pinned %s as %x", c.Args().First(), pin.Ref().Hash)
@@ -63,7 +63,7 @@ func listAction(c *cli.Context) {
 
 	pins, err := common.GetRetention(index).Pins(common.Context(c))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	for _, pin := range pins {
@@ -75,7 +75,7 @@ func listAction(c *cli.Context) {
 
 func removeAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: pin remove <pin-ref>")
+		common.Fatal("usage: pin remove <pin-ref>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -83,7 +83,7 @@ func removeAction(c *cli.Context) {
 
 	err := common.GetRetention(index).Unpin(common.Context(c), common.ParseRef(c.Args().First()))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Pin %s removed", c.Args().First())

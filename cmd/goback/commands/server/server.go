@@ -99,12 +99,12 @@ var Command = cli.Command{
 func serverAction(ctx *cli.Context) {
 	secret, err := sharedSecret(ctx)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	creds, tlsConfig, err := transportCredentials(ctx)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	s := common.GetObjectStore(ctx)
@@ -112,11 +112,11 @@ func serverAction(ctx *cli.Context) {
 
 	listener, err := net.Listen("tcp", ctx.String("address"))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	if _, err := telemetry.Setup(context.Background(), "goback"); err != nil {
-		log.Fatalf("failed setting up telemetry: %s", err)
+		common.Fatalf("failed setting up telemetry: %s", err)
 	}
 
 	sessions, _ := s.(backup.SessionStore)
@@ -172,7 +172,7 @@ func serverAction(ctx *cli.Context) {
 	}
 
 	log.Println("Listening on", listener.Addr().String())
-	log.Fatal(srv.Serve(listener))
+	common.Fatal(srv.Serve(listener))
 }
 
 // sharedSecret reads --secret or --secret-file; the server accepts no
@@ -233,12 +233,12 @@ func transportCredentials(ctx *cli.Context) (credentials.TransportCredentials, *
 // TLS material.
 func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, idx backup.Index, retirer backup.Retirer, collector pack.Collector) {
 	if token == "" {
-		log.Fatal("--admin-token is required with --admin-address")
+		common.Fatal("--admin-token is required with --admin-address")
 	}
 
 	x, ok := idx.(*sql.Index)
 	if !ok {
-		log.Fatalf("Index %T keeps no sets or policy; the admin surface needs one that does", idx)
+		common.Fatalf("Index %T keeps no sets or policy; the admin surface needs one that does", idx)
 	}
 
 	server := &admin.Server{Index: x, Escrow: x}
@@ -262,7 +262,7 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, 
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	if tlsConfig != nil {
@@ -274,6 +274,6 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, 
 	log.Println("Admin surface listening on", listener.Addr().String())
 
 	go func() {
-		log.Fatal(admin.NewHTTPServer(probe.Handler(admin.Handler(token, server))).Serve(listener))
+		common.Fatal(admin.NewHTTPServer(probe.Handler(admin.Handler(token, server))).Serve(listener))
 	}()
 }

@@ -68,11 +68,11 @@ func lsAction(c *cli.Context) error {
 	}
 
 	if err := f.list(); err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	if err := idx.Close(); err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	return nil

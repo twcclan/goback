@@ -1,8 +1,6 @@
 package fix
 
 import (
-	"log"
-
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 
 	"github.com/urfave/cli"
@@ -21,7 +19,7 @@ func fixAction(c *cli.Context) {
 
 	err := index.ReIndex(common.Context(c))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	index.Close()

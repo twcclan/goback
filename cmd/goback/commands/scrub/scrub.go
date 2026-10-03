@@ -30,12 +30,12 @@ func scrubAction(c *cli.Context) {
 
 	scrubber, ok := common.Unwrap(store).(Scrubber)
 	if !ok {
-		log.Fatalf("storage %s cannot be scrubbed", c.GlobalString("storage"))
+		common.Fatalf("storage %s cannot be scrubbed", c.GlobalString("storage"))
 	}
 
 	report, err := scrubber.Scrub(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Scrubbed %d objects (%s) in %d archives, %d corrupt", report.Objects, humanize.Bytes(report.Bytes), report.Archives, len(report.Corrupt))

@@ -22,7 +22,7 @@ func BlobCache(c *cli.Context, key *storekey.Key) *blobcache.Cache {
 
 	limit, err := humanize.ParseBytes(c.GlobalString("blob-cache-size"))
 	if err != nil {
-		log.Fatalf("invalid --blob-cache-size: %v", err)
+		Fatalf("invalid --blob-cache-size: %v", err)
 	}
 
 	storeID := ""
@@ -35,7 +35,7 @@ func BlobCache(c *cli.Context, key *storekey.Key) *blobcache.Cache {
 
 	cache, err := blobcache.Open(dir, storeID, int64(limit))
 	if err != nil {
-		log.Fatalf("opening blob cache: %v", err)
+		Fatalf("opening blob cache: %v", err)
 	}
 
 	return cache

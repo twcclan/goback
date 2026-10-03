@@ -1,12 +1,12 @@
 package main
 
 import (
-	"log"
-	"log/slog"
+	"errors"
 	"os"
 	"runtime"
 
 	"github.com/twcclan/goback/cmd/goback/commands/commit"
+	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/gc"
@@ -25,9 +25,6 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
-
 	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 
 	app := cli.NewApp()
@@ -49,6 +46,11 @@ func main() {
 		set.Command,
 	}
 	app.Flags = []cli.Flag{
+		cli.BoolFlag{
+			Name:   "json",
+			Usage:  "print results and errors as JSON on stdout, and logs as JSON lines on stderr",
+			EnvVar: "GOBACK_JSON",
+		},
 		cli.StringFlag{
 			Name:   "storage",
 			Usage:  "where the objects live: a directory, gcs://bucket, s3://bucket?endpoint=…, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it",
@@ -98,9 +100,27 @@ func main() {
 		},
 	}
 
+	app.Before = func(c *cli.Context) error {
+		common.SetOutput(c.GlobalBool("json"))
+
+		return nil
+	}
+
+	app.ExitErrHandler = func(_ *cli.Context, err error) {
+		var coded cli.ExitCoder
+		if errors.As(err, &coded) {
+			if err.Error() != "" {
+				common.Fail(err.Error())
+			}
+
+			os.Exit(coded.ExitCode())
+		}
+	}
+
+	common.SetOutput(false)
+
 	err := app.Run(os.Args)
 	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
+		common.Fatal(err)
 	}
 }

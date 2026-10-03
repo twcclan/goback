@@ -64,7 +64,7 @@ func StoreKey(c *cli.Context, store backup.ObjectStore) *storekey.Key {
 	if path != "" {
 		key, err := storekey.Load(path)
 		if err != nil {
-			log.Fatalf("Could not load store key: %v", err)
+			Fatalf("Could not load store key: %v", err)
 		}
 
 		return key
@@ -77,7 +77,7 @@ func StoreKey(c *cli.Context, store backup.ObjectStore) *storekey.Key {
 
 	key, err := escrowedKey(context.Background(), Unwrap(store), passphrase)
 	if err != nil {
-		log.Fatalf("Could not open the escrowed store key: %v", err)
+		Fatalf("Could not open the escrowed store key: %v", err)
 	}
 
 	return key
@@ -438,26 +438,26 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 	u, err := url.Parse(location)
 
 	if err != nil {
-		log.Fatalf("Invalid storage location %s: %v", location, err)
+		Fatalf("Invalid storage location %s: %v", location, err)
 	}
 
 	if driver, ok := storageDrivers[u.Scheme]; ok {
 		store, err := driver(u, c)
 		if err != nil {
-			log.Fatalf("Could not initialise storage driver %s: %v", u.Scheme, err)
+			Fatalf("Could not initialise storage driver %s: %v", u.Scheme, err)
 		}
 
 		if op, ok := store.(Opener); ok {
 			err := op.Open()
 			if err != nil {
-				log.Fatalf("Could not open object store %s: %v", u.Scheme, err)
+				Fatalf("Could not open object store %s: %v", u.Scheme, err)
 			}
 		}
 
 		return store
 	}
 
-	log.Fatalf("No driver for storage location %s", u.String())
+	Fatalf("No driver for storage location %s", u.String())
 	return nil
 }
 
@@ -473,7 +473,7 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	u, err := url.Parse(location)
 
 	if err != nil {
-		log.Fatalf("Invalid index location %s: %v", location, err)
+		Fatalf("Invalid index location %s: %v", location, err)
 	}
 
 	log.Printf("Loading %s index driver", u.Scheme)
@@ -481,18 +481,18 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	if driver, ok := indexDrivers[u.Scheme]; ok {
 		idx, err := driver(u, c, store)
 		if err != nil {
-			log.Fatalf("Could not initialise index driver %s: %v", u.Scheme, err)
+			Fatalf("Could not initialise index driver %s: %v", u.Scheme, err)
 		}
 
 		err = idx.Open()
 		if err != nil {
-			log.Fatalf("Could not open object index %s: %v", u.Scheme, err)
+			Fatalf("Could not open object index %s: %v", u.Scheme, err)
 		}
 
 		return idx
 	}
 
-	log.Fatalf("No driver for storage location %s", u.String())
+	Fatalf("No driver for storage location %s", u.String())
 	return nil
 }
 

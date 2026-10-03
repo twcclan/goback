@@ -71,7 +71,7 @@ func newAction(c *cli.Context) {
 	}
 
 	if err != nil {
-		log.Fatalf("%+v", err)
+		common.Fatalf("%+v", err)
 	}
 }
 

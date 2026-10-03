@@ -286,7 +286,7 @@ func overwriteMode(name string) backup.OverwriteMode {
 		return backup.OverwriteIfChanged
 	}
 
-	log.Fatalf("unknown --overwrite mode %q: use always or if-changed", name)
+	common.Fatalf("unknown --overwrite mode %q: use always or if-changed", name)
 
 	return backup.OverwriteAlways
 }
@@ -301,7 +301,7 @@ func restoreAction(c *cli.Context) {
 
 	d, err := time.ParseDuration(age)
 	if err != nil {
-		log.Fatalf("Failed parsing <age> parameter: %v", err)
+		common.Fatalf("Failed parsing <age> parameter: %v", err)
 	}
 
 	when := time.Now().Add(-d)
@@ -310,17 +310,17 @@ func restoreAction(c *cli.Context) {
 	if !c.Bool("force") {
 		held, err := backup.LiveMarkers(base)
 		if err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 
 		if len(held) > 0 {
-			log.Fatalf("%s looks live: %s is held by another process; stop the server or pass --force", base, held[0])
+			common.Fatalf("%s looks live: %s is held by another process; stop the server or pass --force", base, held[0])
 		}
 	}
 
 	if !c.Bool("dry-run") {
 		if err := os.MkdirAll(base, 0775); err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 	}
 
@@ -345,7 +345,7 @@ func restoreAction(c *cli.Context) {
 		restorer.Seeds = backup.NewSeedMap(key)
 		for _, seed := range seeds {
 			if err := restorer.Seeds.Add(seed); err != nil {
-				log.Fatalf("indexing seed %s: %v", seed, err)
+				common.Fatalf("indexing seed %s: %v", seed, err)
 			}
 		}
 
@@ -367,7 +367,7 @@ func restoreAction(c *cli.Context) {
 
 	err = s.restore()
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	common.SweepBlobCache(restorer.Cache)

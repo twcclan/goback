@@ -13,7 +13,7 @@ import (
 func (c *commit) list() {
 	commits, err := c.index.CommitInfo(c.ctx, c.set, time.Now(), 10)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "Failed reading commit info"))
+		common.Fatal(errors.Wrap(err, "Failed reading commit info"))
 	}
 
 	for _, commit := range commits {

@@ -10,7 +10,7 @@ import (
 
 func deleteAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: commit delete <ref>")
+		common.Fatal("usage: commit delete <ref>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -18,7 +18,7 @@ func deleteAction(c *cli.Context) {
 
 	err := common.GetRetention(index).DeleteCommit(common.Context(c), common.ParseRef(c.Args().First()))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Commit %s retired; undelete it within the trash window", c.Args().First())
@@ -27,7 +27,7 @@ func deleteAction(c *cli.Context) {
 
 func undeleteAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: commit undelete <ref>")
+		common.Fatal("usage: commit undelete <ref>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -35,7 +35,7 @@ func undeleteAction(c *cli.Context) {
 
 	err := common.GetRetention(index).UndeleteCommit(common.Context(c), common.ParseRef(c.Args().First()))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Commit %s is live again", c.Args().First())

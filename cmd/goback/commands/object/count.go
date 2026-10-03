@@ -33,7 +33,7 @@ func (o *object) count() {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Counted %d objects", count)

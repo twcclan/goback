@@ -63,7 +63,7 @@ func restoreAction(c *cli.Context) {
 
 	d, err := time.ParseDuration(age)
 	if err != nil {
-		log.Fatalf("Failed parsing <age> parameter: %v", err)
+		common.Fatalf("Failed parsing <age> parameter: %v", err)
 	}
 
 	when := time.Now().Add(-d)
@@ -93,7 +93,7 @@ func restoreAction(c *cli.Context) {
 		restorer.Seeds = backup.NewSeedMap(key)
 		for _, seed := range seeds {
 			if err := restorer.Seeds.Add(seed); err != nil {
-				log.Fatalf("indexing seed %s: %v", seed, err)
+				common.Fatalf("indexing seed %s: %v", seed, err)
 			}
 		}
 	}
@@ -112,13 +112,13 @@ func restoreAction(c *cli.Context) {
 	}
 
 	if err := f.restore(); err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	common.SweepBlobCache(restorer.Cache)
 
 	if err := idx.Close(); err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 }
 

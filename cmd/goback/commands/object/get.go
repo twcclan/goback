@@ -15,7 +15,7 @@ import (
 func (o *object) get() {
 	obj, err := o.store.Get(context.Background(), o.ref)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Found object %s", obj.Type())
@@ -26,7 +26,7 @@ func (o *object) get() {
 
 	err = os.WriteFile(o.out, obj.Bytes(), 0666)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 }
 
@@ -35,7 +35,7 @@ func getAction(c *cli.Context) {
 	out := c.Args().Get(1)
 
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	store := common.GetObjectStore(c)

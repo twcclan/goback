@@ -64,7 +64,7 @@ func gcAction(c *cli.Context) {
 
 	collector, ok := common.Unwrap(store).(pack.Collector)
 	if !ok {
-		log.Fatalf("storage %s cannot be garbage collected", c.GlobalString("storage"))
+		common.Fatalf("storage %s cannot be garbage collected", c.GlobalString("storage"))
 	}
 
 	index := common.OpenIndex(c, store)
@@ -84,7 +84,7 @@ func gcAction(c *cli.Context) {
 	if sizes != nil {
 		owner, err := sizes.RootOwner(ctx)
 		if err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 
 		opts.Owner = owner
@@ -92,12 +92,12 @@ func gcAction(c *cli.Context) {
 
 	report, err := collector.Collect(ctx, opts)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	if sizes != nil {
 		if err := sizes.RecordSetSizes(ctx, report); err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 	}
 

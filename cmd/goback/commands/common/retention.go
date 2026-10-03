@@ -2,7 +2,6 @@ package common
 
 import (
 	"encoding/hex"
-	"log"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/proto"
@@ -12,7 +11,7 @@ import (
 func ParseRef(s string) *proto.Ref {
 	hash, err := hex.DecodeString(s)
 	if err != nil || len(hash) != proto.HashSize {
-		log.Fatalf("%q is not a ref: want %d hex bytes", s, proto.HashSize)
+		Fatalf("%q is not a ref: want %d hex bytes", s, proto.HashSize)
 	}
 
 	return &proto.Ref{Hash: hash}
@@ -22,7 +21,7 @@ func ParseRef(s string) *proto.Ref {
 func GetRetention(index backup.Index) backup.Retention {
 	ret, ok := index.(backup.Retention)
 	if !ok {
-		log.Fatalf("Index %T keeps no retention state", index)
+		Fatalf("Index %T keeps no retention state", index)
 	}
 
 	return ret

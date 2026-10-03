@@ -54,7 +54,7 @@ var keepFlags = []string{"keep-last", "keep", "keep-within"}
 
 func retentionAction(c *cli.Context) {
 	if c.NArg() > 1 {
-		log.Fatal("usage: set retention [<name>] [--keep-... | --inherit] [--hold-days N] [--trash-days N]")
+		common.Fatal("usage: set retention [<name>] [--keep-... | --inherit] [--hold-days N] [--trash-days N]")
 	}
 
 	store := common.GetObjectStore(c)
@@ -63,7 +63,7 @@ func retentionAction(c *cli.Context) {
 
 	x, ok := idx.(admin.Index)
 	if !ok {
-		log.Fatalf("Index %T keeps no retention settings", idx)
+		common.Fatalf("Index %T keeps no retention settings", idx)
 	}
 
 	ctx := common.Context(c)
@@ -89,18 +89,18 @@ func retentionAction(c *cli.Context) {
 			err = x.SetPolicy(ctx, name, policy)
 		}
 		if err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 	}
 
 	if c.Int("hold-days") >= 0 || c.Int("trash-days") >= 0 {
 		if name != "" {
-			log.Fatal("the hold and trash windows belong to the store; leave the set name out")
+			common.Fatal("the hold and trash windows belong to the store; leave the set name out")
 		}
 
 		w, err := x.Windows(ctx)
 		if err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 
 		if days := c.Int("hold-days"); days >= 0 {
@@ -112,7 +112,7 @@ func retentionAction(c *cli.Context) {
 		}
 
 		if err := x.SetWindows(ctx, w); err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 	}
 
@@ -122,13 +122,13 @@ func retentionAction(c *cli.Context) {
 func showRetention(ctx context.Context, x admin.Index, name string) {
 	w, err := x.Windows(ctx)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	if name == "" {
 		policy, stored, err := x.GetDefaultPolicy(ctx)
 		if err != nil {
-			log.Fatal(err)
+			common.Fatal(err)
 		}
 
 		source := "built-in"
@@ -143,7 +143,7 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 
 	ret, err := x.GetPolicy(ctx, name)
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	source := "inherited"
@@ -171,7 +171,7 @@ func brackets(flags []string) []retention.Bracket {
 
 			bracket.For, err = retention.ParseFor(length)
 			if err != nil {
-				log.Fatalf("--keep %s: %v", flag, err)
+				common.Fatalf("--keep %s: %v", flag, err)
 			}
 		}
 
@@ -216,7 +216,7 @@ func describe(p retention.Policy) string {
 
 func deleteAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: set delete [--erase] <name>")
+		common.Fatal("usage: set delete [--erase] <name>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -224,7 +224,7 @@ func deleteAction(c *cli.Context) {
 
 	err := common.GetRetention(index).DeleteSet(common.Context(c), c.Args().First(), c.Bool("erase"))
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Set %s closed", c.Args().First())
@@ -233,7 +233,7 @@ func deleteAction(c *cli.Context) {
 
 func undeleteAction(c *cli.Context) {
 	if c.NArg() != 1 {
-		log.Fatal("usage: set undelete <name>")
+		common.Fatal("usage: set undelete <name>")
 	}
 
 	store := common.GetObjectStore(c)
@@ -241,7 +241,7 @@ func undeleteAction(c *cli.Context) {
 
 	err := common.GetRetention(index).UndeleteSet(common.Context(c), c.Args().First())
 	if err != nil {
-		log.Fatal(err)
+		common.Fatal(err)
 	}
 
 	log.Printf("Set %s reopened", c.Args().First())

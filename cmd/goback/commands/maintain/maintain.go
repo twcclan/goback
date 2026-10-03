@@ -28,7 +28,7 @@ var Command = cli.Command{
 			Usage: "Rewrite small archives into full-sized ones",
 			Action: action(func(m *members) {
 				if err := m.store().Compact(); err != nil {
-					log.Fatal(err)
+					common.Fatal(err)
 				}
 			}),
 		},
@@ -38,12 +38,12 @@ var Command = cli.Command{
 			Action: action(func(m *members) {
 				retirer, ok := m.index.(backup.Retirer)
 				if !ok {
-					log.Fatalf("Index %T keeps no retention state", m.index)
+					common.Fatalf("Index %T keeps no retention state", m.index)
 				}
 
 				n, err := retirer.Retire(common.Context(m.c), time.Now())
 				if err != nil {
-					log.Fatalf("Retirement failed after %d commits: %v", n, err)
+					common.Fatalf("Retirement failed after %d commits: %v", n, err)
 				}
 
 				log.Printf("Retired %d commits", n)
@@ -55,12 +55,12 @@ var Command = cli.Command{
 			Action: action(func(m *members) {
 				presence, ok := m.index.(maintenance.Presence)
 				if !ok {
-					log.Fatalf("Index %T keeps no presence filters", m.index)
+					common.Fatalf("Index %T keeps no presence filters", m.index)
 				}
 
 				n, err := presence.BuildPendingPresence(common.Context(m.c))
 				if err != nil {
-					log.Fatal(err)
+					common.Fatal(err)
 				}
 
 				log.Printf("Built %d presence filters", n)
@@ -72,12 +72,12 @@ var Command = cli.Command{
 			Action: action(func(m *members) {
 				sizer, ok := m.index.(sizeFiller)
 				if !ok {
-					log.Fatalf("Index %T keeps no commit sizes", m.index)
+					common.Fatalf("Index %T keeps no commit sizes", m.index)
 				}
 
 				n, err := sizer.FillMissingSizes(common.Context(m.c))
 				if err != nil {
-					log.Fatal(err)
+					common.Fatal(err)
 				}
 
 				log.Printf("Filled %d commit sizes", n)
@@ -101,7 +101,7 @@ type members struct {
 func (m *members) store() maintenance.Store {
 	store, ok := common.Unwrap(m.objects).(maintenance.Store)
 	if !ok {
-		log.Fatalf("storage %s has no archives to maintain", m.c.GlobalString("storage"))
+		common.Fatalf("storage %s has no archives to maintain", m.c.GlobalString("storage"))
 	}
 
 	return store
