@@ -264,13 +264,32 @@ func TestABracketKeepsOnePerPeriodAndTheNewestOfThem(t *testing.T) {
 		hours[commits[i].ReceivedAt.UTC().Hour()]++
 	}
 
-	require.Equal(t, 27, kept, "one a day over the 26 days between a fortnight old and forty days old, plus the day the fortnight ended partway through")
+	require.Equal(t, 26, kept, "one a day over the 26 days between a fortnight old and forty days old")
+	require.Equal(t, 26, hours[23], "the last hour of each day, even of the one the fortnight ended partway through")
+}
 
-	// the last hour of a day is its newest commit, and so the one the
-	// bracket reaches first walking back; the odd one out is the day the
-	// fortnight ended partway through
-	require.Equal(t, 26, hours[23])
-	require.Equal(t, 1, hours[12])
+// A month's last commit is kept once the month reaches the monthly
+// bracket, though the weekly one it aged through ends that week in the
+// month after.
+func TestAMonthKeepsItsLastCommitThroughTheWeeksBeforeIt(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	policy := Policy{KeepLast: 1, Brackets: []Bracket{
+		{Period: Weekly, For: 8 * 7 * 24 * time.Hour},
+		{Period: Monthly},
+	}}
+
+	// one commit a day; 31 May 2026 is a Sunday, but 30 June a Tuesday
+	commits := daily(now, 200)
+	got := Evaluate(commits, policy, now)
+
+	for i, c := range commits {
+		day := c.ReceivedAt
+		if day.AddDate(0, 0, 1).Month() == day.Month() {
+			continue
+		}
+
+		require.True(t, got[i].Keep, "the last day of %s", day.Month())
+	}
 }
 
 func TestTheTailKeepsEverythingOlderThanTheBracketsBeforeIt(t *testing.T) {

@@ -24,7 +24,8 @@ const (
 	Monthly Period = "monthly"
 )
 
-// A Bracket keeps one commit per Period over a stretch of a set's past.
+// A Bracket keeps the last commit of each Period (by UTC calendar) over a
+// stretch of a set's past.
 // Brackets run consecutively, each starting where the one before it
 // ended, so For is how long this one lasts rather than how old its
 // commits may be. A For of zero is the tail: everything older than the
@@ -274,9 +275,27 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 		last = 1
 	}
 
-	// one per bracket, because a commit is only ever weighed against the
-	// bracket its own age falls in
-	lastBracket := make([]string, len(p.Brackets))
+	// lastOf says whether a commit is the last complete one of its hour,
+	// day, week or month; walking newest first, that is the first seen
+	seen := map[Period]map[string]bool{}
+	lastOf := make([]map[Period]bool, len(commits))
+	for _, i := range order {
+		if commits[i].Partial {
+			continue
+		}
+
+		lastOf[i] = map[Period]bool{}
+		for period, name := range periods {
+			if seen[period] == nil {
+				seen[period] = map[string]bool{}
+			}
+
+			if at := name(commits[i].ReceivedAt); !seen[period][at] {
+				seen[period][at] = true
+				lastOf[i][period] = true
+			}
+		}
+	}
 
 	for n, i := range order {
 		c := commits[i]
@@ -302,11 +321,14 @@ func Evaluate(commits []Commit, p Policy, now time.Time) []Decision {
 			keep(i, "within")
 		}
 
+		// a bracket also holds what a later, coarser one will keep, so a
+		// month's last commit survives the weeks it ages through
 		if b, ok := p.bracketAt(now.Sub(c.ReceivedAt)); ok {
-			period := periods[p.Brackets[b].Period](c.ReceivedAt)
-			if period != lastBracket[b] {
-				lastBracket[b] = period
-				keep(i, string(p.Brackets[b].Period))
+			for _, later := range p.Brackets[b:] {
+				if lastOf[i][later.Period] {
+					keep(i, string(later.Period))
+					break
+				}
 			}
 		}
 	}
