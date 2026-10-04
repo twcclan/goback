@@ -73,7 +73,8 @@ goback --storage /backups set retention home \
   --keep hourly=336 --keep daily=60 --keep weekly=12 --keep monthly
 ```
 
-Commits the policy lets go are retired, then tombstoned after a hold window.
+Commits the policy lets go are tombstoned by the next retirement; a commit
+deleted by hand waits in the trash first, where it can be taken back.
 Once no live commit or pin reaches an object, garbage collection drops it.
 
 ## A server for several agents

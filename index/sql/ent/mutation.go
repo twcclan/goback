@@ -8596,8 +8596,6 @@ type SettingsMutation struct {
 	addpolicy_version   *int32
 	key_acknowledged_at *time.Time
 	retention_policy    *string
-	hold_days           *int
-	addhold_days        *int
 	trash_days          *int
 	addtrash_days       *int
 	policy_sequence     *uint64
@@ -8915,62 +8913,6 @@ func (m *SettingsMutation) ResetRetentionPolicy() {
 	delete(m.clearedFields, settings.FieldRetentionPolicy)
 }
 
-// SetHoldDays sets the "hold_days" field.
-func (m *SettingsMutation) SetHoldDays(i int) {
-	m.hold_days = &i
-	m.addhold_days = nil
-}
-
-// HoldDays returns the value of the "hold_days" field in the mutation.
-func (m *SettingsMutation) HoldDays() (r int, exists bool) {
-	v := m.hold_days
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldHoldDays returns the old "hold_days" field's value of the Settings entity.
-// If the Settings object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SettingsMutation) OldHoldDays(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldHoldDays is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldHoldDays requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldHoldDays: %w", err)
-	}
-	return oldValue.HoldDays, nil
-}
-
-// AddHoldDays adds i to the "hold_days" field.
-func (m *SettingsMutation) AddHoldDays(i int) {
-	if m.addhold_days != nil {
-		*m.addhold_days += i
-	} else {
-		m.addhold_days = &i
-	}
-}
-
-// AddedHoldDays returns the value that was added to the "hold_days" field in this mutation.
-func (m *SettingsMutation) AddedHoldDays() (r int, exists bool) {
-	v := m.addhold_days
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetHoldDays resets all changes to the "hold_days" field.
-func (m *SettingsMutation) ResetHoldDays() {
-	m.hold_days = nil
-	m.addhold_days = nil
-}
-
 // SetTrashDays sets the "trash_days" field.
 func (m *SettingsMutation) SetTrashDays(i int) {
 	m.trash_days = &i
@@ -9117,7 +9059,7 @@ func (m *SettingsMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SettingsMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 6)
 	if m.policy != nil {
 		fields = append(fields, settings.FieldPolicy)
 	}
@@ -9129,9 +9071,6 @@ func (m *SettingsMutation) Fields() []string {
 	}
 	if m.retention_policy != nil {
 		fields = append(fields, settings.FieldRetentionPolicy)
-	}
-	if m.hold_days != nil {
-		fields = append(fields, settings.FieldHoldDays)
 	}
 	if m.trash_days != nil {
 		fields = append(fields, settings.FieldTrashDays)
@@ -9155,8 +9094,6 @@ func (m *SettingsMutation) Field(name string) (ent.Value, bool) {
 		return m.KeyAcknowledgedAt()
 	case settings.FieldRetentionPolicy:
 		return m.RetentionPolicy()
-	case settings.FieldHoldDays:
-		return m.HoldDays()
 	case settings.FieldTrashDays:
 		return m.TrashDays()
 	case settings.FieldPolicySequence:
@@ -9178,8 +9115,6 @@ func (m *SettingsMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldKeyAcknowledgedAt(ctx)
 	case settings.FieldRetentionPolicy:
 		return m.OldRetentionPolicy(ctx)
-	case settings.FieldHoldDays:
-		return m.OldHoldDays(ctx)
 	case settings.FieldTrashDays:
 		return m.OldTrashDays(ctx)
 	case settings.FieldPolicySequence:
@@ -9221,13 +9156,6 @@ func (m *SettingsMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRetentionPolicy(v)
 		return nil
-	case settings.FieldHoldDays:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetHoldDays(v)
-		return nil
 	case settings.FieldTrashDays:
 		v, ok := value.(int)
 		if !ok {
@@ -9253,9 +9181,6 @@ func (m *SettingsMutation) AddedFields() []string {
 	if m.addpolicy_version != nil {
 		fields = append(fields, settings.FieldPolicyVersion)
 	}
-	if m.addhold_days != nil {
-		fields = append(fields, settings.FieldHoldDays)
-	}
 	if m.addtrash_days != nil {
 		fields = append(fields, settings.FieldTrashDays)
 	}
@@ -9272,8 +9197,6 @@ func (m *SettingsMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case settings.FieldPolicyVersion:
 		return m.AddedPolicyVersion()
-	case settings.FieldHoldDays:
-		return m.AddedHoldDays()
 	case settings.FieldTrashDays:
 		return m.AddedTrashDays()
 	case settings.FieldPolicySequence:
@@ -9293,13 +9216,6 @@ func (m *SettingsMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddPolicyVersion(v)
-		return nil
-	case settings.FieldHoldDays:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddHoldDays(v)
 		return nil
 	case settings.FieldTrashDays:
 		v, ok := value.(int)
@@ -9374,9 +9290,6 @@ func (m *SettingsMutation) ResetField(name string) error {
 		return nil
 	case settings.FieldRetentionPolicy:
 		m.ResetRetentionPolicy()
-		return nil
-	case settings.FieldHoldDays:
-		m.ResetHoldDays()
 		return nil
 	case settings.FieldTrashDays:
 		m.ResetTrashDays()

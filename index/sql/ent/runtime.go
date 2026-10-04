@@ -81,16 +81,12 @@ func init() {
 	settingsDescPolicyVersion := settingsFields[2].Descriptor()
 	// settings.DefaultPolicyVersion holds the default value on creation for the policy_version field.
 	settings.DefaultPolicyVersion = settingsDescPolicyVersion.Default.(uint32)
-	// settingsDescHoldDays is the schema descriptor for hold_days field.
-	settingsDescHoldDays := settingsFields[5].Descriptor()
-	// settings.DefaultHoldDays holds the default value on creation for the hold_days field.
-	settings.DefaultHoldDays = settingsDescHoldDays.Default.(int)
 	// settingsDescTrashDays is the schema descriptor for trash_days field.
-	settingsDescTrashDays := settingsFields[6].Descriptor()
+	settingsDescTrashDays := settingsFields[5].Descriptor()
 	// settings.DefaultTrashDays holds the default value on creation for the trash_days field.
 	settings.DefaultTrashDays = settingsDescTrashDays.Default.(int)
 	// settingsDescPolicySequence is the schema descriptor for policy_sequence field.
-	settingsDescPolicySequence := settingsFields[7].Descriptor()
+	settingsDescPolicySequence := settingsFields[6].Descriptor()
 	// settings.DefaultPolicySequence holds the default value on creation for the policy_sequence field.
 	settings.DefaultPolicySequence = settingsDescPolicySequence.Default.(uint64)
 }

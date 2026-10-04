@@ -186,21 +186,8 @@ func (s *Server) SetRetention(ctx context.Context, request *pb.SetRetentionReque
 		}
 	}
 
-	if request.Set == "" && (request.HoldDays != nil || request.TrashDays != nil) {
-		w, err := s.Index.Windows(ctx)
-		if err != nil {
-			return nil, Status(err)
-		}
-
-		if request.HoldDays != nil {
-			w.HoldDays = int(*request.HoldDays)
-		}
-
-		if request.TrashDays != nil {
-			w.TrashDays = int(*request.TrashDays)
-		}
-
-		if err := s.Index.SetWindows(ctx, w); err != nil {
+	if request.Set == "" && request.TrashDays != nil {
+		if err := s.Index.SetWindows(ctx, index.Windows{TrashDays: int(*request.TrashDays)}); err != nil {
 			return nil, Status(err)
 		}
 	}
@@ -214,7 +201,7 @@ func (s *Server) retention(ctx context.Context, set string) (*pb.Retention, erro
 		return nil, Status(err)
 	}
 
-	resp := &pb.Retention{Set: set, HoldDays: int32(w.HoldDays), TrashDays: int32(w.TrashDays)}
+	resp := &pb.Retention{Set: set, TrashDays: int32(w.TrashDays)}
 
 	if set == "" {
 		policy, stored, err := s.Index.GetDefaultPolicy(ctx)

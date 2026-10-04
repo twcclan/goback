@@ -19,8 +19,6 @@ const (
 	FieldKeyAcknowledgedAt = "key_acknowledged_at"
 	// FieldRetentionPolicy holds the string denoting the retention_policy field in the database.
 	FieldRetentionPolicy = "retention_policy"
-	// FieldHoldDays holds the string denoting the hold_days field in the database.
-	FieldHoldDays = "hold_days"
 	// FieldTrashDays holds the string denoting the trash_days field in the database.
 	FieldTrashDays = "trash_days"
 	// FieldPolicySequence holds the string denoting the policy_sequence field in the database.
@@ -36,7 +34,6 @@ var Columns = []string{
 	FieldPolicyVersion,
 	FieldKeyAcknowledgedAt,
 	FieldRetentionPolicy,
-	FieldHoldDays,
 	FieldTrashDays,
 	FieldPolicySequence,
 }
@@ -54,8 +51,6 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultPolicyVersion holds the default value on creation for the "policy_version" field.
 	DefaultPolicyVersion uint32
-	// DefaultHoldDays holds the default value on creation for the "hold_days" field.
-	DefaultHoldDays int
 	// DefaultTrashDays holds the default value on creation for the "trash_days" field.
 	DefaultTrashDays int
 	// DefaultPolicySequence holds the default value on creation for the "policy_sequence" field.
@@ -88,11 +83,6 @@ func ByKeyAcknowledgedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByRetentionPolicy orders the results by the retention_policy field.
 func ByRetentionPolicy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRetentionPolicy, opts...).ToFunc()
-}
-
-// ByHoldDays orders the results by the hold_days field.
-func ByHoldDays(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldHoldDays, opts...).ToFunc()
 }
 
 // ByTrashDays orders the results by the trash_days field.

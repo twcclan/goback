@@ -143,7 +143,7 @@ func TestRetentionLifecycle(t *testing.T) {
 	row := f.commitRow(a)
 	require.Empty(t, row.RetainedBy)
 	require.NotNil(t, row.RetireAt, "a is beyond keep_last 2")
-	sameInstant(t, row.ExpiresAt, f.clock.Add(14*24*time.Hour))
+	sameInstant(t, row.ExpiresAt, f.clock)
 
 	row = f.commitRow(c)
 	require.Equal(t, "latest,last", row.RetainedBy)
@@ -167,14 +167,10 @@ func TestRetentionLifecycle(t *testing.T) {
 	require.NoError(t, f.x.UndeleteCommit(f.ctx, b))
 	require.Nil(t, f.commitRow(b).DeletedAt)
 
+	flushed := f.store.flushed
 	n, err := f.x.Retire(f.ctx, f.clock)
 	require.NoError(t, err)
-	require.Zero(t, n, "nothing is past its window yet")
-
-	flushed := f.store.flushed
-	n, err = f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
-	require.NoError(t, err)
-	require.Equal(t, 1, n)
+	require.Equal(t, 1, n, "what retention retired goes at once")
 	require.True(t, f.store.tombstoned(a))
 	require.False(t, f.store.tombstoned(b))
 	require.Equal(t, flushed+1, f.store.flushed)
@@ -282,18 +278,18 @@ func TestRebuiltSetKeepsEverythingWhilePaused(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, commits, 3, "no policy applies while retention is paused")
 
-	// the operator takes longer than the hold window to set a policy; the
-	// commit it retires still gets a full window from then
+	// the policy the operator sets once the set is rebuilt retires what it
+	// does not keep from then, not from when the commits were taken
 	f.advance(20 * 24 * time.Hour)
 	require.NoError(t, y.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 2}))
 
 	row := f.commitRowIn(y, refs[0])
 	sameInstant(t, row.RetireAt, f.clock)
-	sameInstant(t, row.ExpiresAt, f.clock.Add(14*24*time.Hour))
+	sameInstant(t, row.ExpiresAt, f.clock)
 
 	n, err := y.Retire(f.ctx, f.clock)
 	require.NoError(t, err)
-	require.Zero(t, n)
+	require.Equal(t, 1, n)
 }
 
 func TestDeletedSetProceedsWhilePaused(t *testing.T) {

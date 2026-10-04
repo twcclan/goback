@@ -69,11 +69,6 @@ func RetentionPolicy(v string) predicate.Settings {
 	return predicate.Settings(sql.FieldEQ(FieldRetentionPolicy, v))
 }
 
-// HoldDays applies equality check predicate on the "hold_days" field. It's identical to HoldDaysEQ.
-func HoldDays(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldEQ(FieldHoldDays, v))
-}
-
 // TrashDays applies equality check predicate on the "trash_days" field. It's identical to TrashDaysEQ.
 func TrashDays(v int) predicate.Settings {
 	return predicate.Settings(sql.FieldEQ(FieldTrashDays, v))
@@ -322,46 +317,6 @@ func RetentionPolicyEqualFold(v string) predicate.Settings {
 // RetentionPolicyContainsFold applies the ContainsFold predicate on the "retention_policy" field.
 func RetentionPolicyContainsFold(v string) predicate.Settings {
 	return predicate.Settings(sql.FieldContainsFold(FieldRetentionPolicy, v))
-}
-
-// HoldDaysEQ applies the EQ predicate on the "hold_days" field.
-func HoldDaysEQ(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldEQ(FieldHoldDays, v))
-}
-
-// HoldDaysNEQ applies the NEQ predicate on the "hold_days" field.
-func HoldDaysNEQ(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldNEQ(FieldHoldDays, v))
-}
-
-// HoldDaysIn applies the In predicate on the "hold_days" field.
-func HoldDaysIn(vs ...int) predicate.Settings {
-	return predicate.Settings(sql.FieldIn(FieldHoldDays, vs...))
-}
-
-// HoldDaysNotIn applies the NotIn predicate on the "hold_days" field.
-func HoldDaysNotIn(vs ...int) predicate.Settings {
-	return predicate.Settings(sql.FieldNotIn(FieldHoldDays, vs...))
-}
-
-// HoldDaysGT applies the GT predicate on the "hold_days" field.
-func HoldDaysGT(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldGT(FieldHoldDays, v))
-}
-
-// HoldDaysGTE applies the GTE predicate on the "hold_days" field.
-func HoldDaysGTE(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldGTE(FieldHoldDays, v))
-}
-
-// HoldDaysLT applies the LT predicate on the "hold_days" field.
-func HoldDaysLT(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldLT(FieldHoldDays, v))
-}
-
-// HoldDaysLTE applies the LTE predicate on the "hold_days" field.
-func HoldDaysLTE(v int) predicate.Settings {
-	return predicate.Settings(sql.FieldLTE(FieldHoldDays, v))
 }
 
 // TrashDaysEQ applies the EQ predicate on the "trash_days" field.

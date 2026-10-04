@@ -78,20 +78,6 @@ func (_c *SettingsCreate) SetNillableRetentionPolicy(v *string) *SettingsCreate 
 	return _c
 }
 
-// SetHoldDays sets the "hold_days" field.
-func (_c *SettingsCreate) SetHoldDays(v int) *SettingsCreate {
-	_c.mutation.SetHoldDays(v)
-	return _c
-}
-
-// SetNillableHoldDays sets the "hold_days" field if the given value is not nil.
-func (_c *SettingsCreate) SetNillableHoldDays(v *int) *SettingsCreate {
-	if v != nil {
-		_c.SetHoldDays(*v)
-	}
-	return _c
-}
-
 // SetTrashDays sets the "trash_days" field.
 func (_c *SettingsCreate) SetTrashDays(v int) *SettingsCreate {
 	_c.mutation.SetTrashDays(v)
@@ -165,10 +151,6 @@ func (_c *SettingsCreate) defaults() {
 		v := settings.DefaultPolicyVersion
 		_c.mutation.SetPolicyVersion(v)
 	}
-	if _, ok := _c.mutation.HoldDays(); !ok {
-		v := settings.DefaultHoldDays
-		_c.mutation.SetHoldDays(v)
-	}
 	if _, ok := _c.mutation.TrashDays(); !ok {
 		v := settings.DefaultTrashDays
 		_c.mutation.SetTrashDays(v)
@@ -183,9 +165,6 @@ func (_c *SettingsCreate) defaults() {
 func (_c *SettingsCreate) check() error {
 	if _, ok := _c.mutation.PolicyVersion(); !ok {
 		return &ValidationError{Name: "policy_version", err: errors.New(`ent: missing required field "Settings.policy_version"`)}
-	}
-	if _, ok := _c.mutation.HoldDays(); !ok {
-		return &ValidationError{Name: "hold_days", err: errors.New(`ent: missing required field "Settings.hold_days"`)}
 	}
 	if _, ok := _c.mutation.TrashDays(); !ok {
 		return &ValidationError{Name: "trash_days", err: errors.New(`ent: missing required field "Settings.trash_days"`)}
@@ -241,10 +220,6 @@ func (_c *SettingsCreate) createSpec() (*Settings, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RetentionPolicy(); ok {
 		_spec.SetField(settings.FieldRetentionPolicy, field.TypeString, value)
 		_node.RetentionPolicy = &value
-	}
-	if value, ok := _c.mutation.HoldDays(); ok {
-		_spec.SetField(settings.FieldHoldDays, field.TypeInt, value)
-		_node.HoldDays = value
 	}
 	if value, ok := _c.mutation.TrashDays(); ok {
 		_spec.SetField(settings.FieldTrashDays, field.TypeInt, value)
@@ -375,24 +350,6 @@ func (u *SettingsUpsert) UpdateRetentionPolicy() *SettingsUpsert {
 // ClearRetentionPolicy clears the value of the "retention_policy" field.
 func (u *SettingsUpsert) ClearRetentionPolicy() *SettingsUpsert {
 	u.SetNull(settings.FieldRetentionPolicy)
-	return u
-}
-
-// SetHoldDays sets the "hold_days" field.
-func (u *SettingsUpsert) SetHoldDays(v int) *SettingsUpsert {
-	u.Set(settings.FieldHoldDays, v)
-	return u
-}
-
-// UpdateHoldDays sets the "hold_days" field to the value that was provided on create.
-func (u *SettingsUpsert) UpdateHoldDays() *SettingsUpsert {
-	u.SetExcluded(settings.FieldHoldDays)
-	return u
-}
-
-// AddHoldDays adds v to the "hold_days" field.
-func (u *SettingsUpsert) AddHoldDays(v int) *SettingsUpsert {
-	u.Add(settings.FieldHoldDays, v)
 	return u
 }
 
@@ -561,27 +518,6 @@ func (u *SettingsUpsertOne) UpdateRetentionPolicy() *SettingsUpsertOne {
 func (u *SettingsUpsertOne) ClearRetentionPolicy() *SettingsUpsertOne {
 	return u.Update(func(s *SettingsUpsert) {
 		s.ClearRetentionPolicy()
-	})
-}
-
-// SetHoldDays sets the "hold_days" field.
-func (u *SettingsUpsertOne) SetHoldDays(v int) *SettingsUpsertOne {
-	return u.Update(func(s *SettingsUpsert) {
-		s.SetHoldDays(v)
-	})
-}
-
-// AddHoldDays adds v to the "hold_days" field.
-func (u *SettingsUpsertOne) AddHoldDays(v int) *SettingsUpsertOne {
-	return u.Update(func(s *SettingsUpsert) {
-		s.AddHoldDays(v)
-	})
-}
-
-// UpdateHoldDays sets the "hold_days" field to the value that was provided on create.
-func (u *SettingsUpsertOne) UpdateHoldDays() *SettingsUpsertOne {
-	return u.Update(func(s *SettingsUpsert) {
-		s.UpdateHoldDays()
 	})
 }
 
@@ -922,27 +858,6 @@ func (u *SettingsUpsertBulk) UpdateRetentionPolicy() *SettingsUpsertBulk {
 func (u *SettingsUpsertBulk) ClearRetentionPolicy() *SettingsUpsertBulk {
 	return u.Update(func(s *SettingsUpsert) {
 		s.ClearRetentionPolicy()
-	})
-}
-
-// SetHoldDays sets the "hold_days" field.
-func (u *SettingsUpsertBulk) SetHoldDays(v int) *SettingsUpsertBulk {
-	return u.Update(func(s *SettingsUpsert) {
-		s.SetHoldDays(v)
-	})
-}
-
-// AddHoldDays adds v to the "hold_days" field.
-func (u *SettingsUpsertBulk) AddHoldDays(v int) *SettingsUpsertBulk {
-	return u.Update(func(s *SettingsUpsert) {
-		s.AddHoldDays(v)
-	})
-}
-
-// UpdateHoldDays sets the "hold_days" field to the value that was provided on create.
-func (u *SettingsUpsertBulk) UpdateHoldDays() *SettingsUpsertBulk {
-	return u.Update(func(s *SettingsUpsert) {
-		s.UpdateHoldDays()
 	})
 }
 

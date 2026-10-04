@@ -30,6 +30,7 @@ message StoreScope {
   int64 key_acknowledged_at_ns = 3;
   // the default retention policy as JSON, empty for the built-in one
   string default_retention = 4;
+  // ignored: policies stored with it keep their hash
   uint32 hold_days = 5;
   uint32 trash_days = 6;
 }

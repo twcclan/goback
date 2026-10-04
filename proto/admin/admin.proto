@@ -124,9 +124,8 @@ message Retention {
     RetentionPolicy effective = 3;
     // a rebuilt set keeps everything until a policy is set
     bool paused = 4;
-    // the store's windows before a retired or deleted commit is
-    // tombstoned
-    int32 hold_days = 5;
+    // the store's window before a deleted commit is tombstoned
+    reserved 5;
     int32 trash_days = 6;
 }
 
@@ -140,8 +139,8 @@ message SetRetentionRequest {
     RetentionPolicy policy = 2;
     // drops the policy: the set inherits, the store uses the built-in
     bool inherit = 3;
-    // the store's windows, ignored for a set
-    optional int32 hold_days = 4;
+    // the store's trash window, ignored for a set
+    reserved 4;
     optional int32 trash_days = 5;
 }
 

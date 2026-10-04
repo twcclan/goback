@@ -667,10 +667,7 @@ type Retention struct {
 	// the policy in force after inheritance
 	Effective *RetentionPolicy `protobuf:"bytes,3,opt,name=effective,proto3" json:"effective,omitempty"`
 	// a rebuilt set keeps everything until a policy is set
-	Paused bool `protobuf:"varint,4,opt,name=paused,proto3" json:"paused,omitempty"`
-	// the store's windows before a retired or deleted commit is
-	// tombstoned
-	HoldDays      int32 `protobuf:"varint,5,opt,name=hold_days,json=holdDays,proto3" json:"hold_days,omitempty"`
+	Paused        bool  `protobuf:"varint,4,opt,name=paused,proto3" json:"paused,omitempty"`
 	TrashDays     int32 `protobuf:"varint,6,opt,name=trash_days,json=trashDays,proto3" json:"trash_days,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -734,13 +731,6 @@ func (x *Retention) GetPaused() bool {
 	return false
 }
 
-func (x *Retention) GetHoldDays() int32 {
-	if x != nil {
-		return x.HoldDays
-	}
-	return 0
-}
-
 func (x *Retention) GetTrashDays() int32 {
 	if x != nil {
 		return x.TrashDays
@@ -798,9 +788,7 @@ type SetRetentionRequest struct {
 	// replaces the policy when set
 	Policy *RetentionPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
 	// drops the policy: the set inherits, the store uses the built-in
-	Inherit bool `protobuf:"varint,3,opt,name=inherit,proto3" json:"inherit,omitempty"`
-	// the store's windows, ignored for a set
-	HoldDays      *int32 `protobuf:"varint,4,opt,name=hold_days,json=holdDays,proto3,oneof" json:"hold_days,omitempty"`
+	Inherit       bool   `protobuf:"varint,3,opt,name=inherit,proto3" json:"inherit,omitempty"`
 	TrashDays     *int32 `protobuf:"varint,5,opt,name=trash_days,json=trashDays,proto3,oneof" json:"trash_days,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -855,13 +843,6 @@ func (x *SetRetentionRequest) GetInherit() bool {
 		return x.Inherit
 	}
 	return false
-}
-
-func (x *SetRetentionRequest) GetHoldDays() int32 {
-	if x != nil && x.HoldDays != nil {
-		return *x.HoldDays
-	}
-	return 0
 }
 
 func (x *SetRetentionRequest) GetTrashDays() int32 {
@@ -1161,27 +1142,23 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\tkeep_last\x18\x01 \x01(\x05R\bkeepLast\x12\x1f\n" +
 	"\vkeep_within\x18\x06 \x01(\x03R\n" +
 	"keepWithin\x123\n" +
-	"\bbrackets\x18\a \x03(\v2\x17.admin.RetentionBracketR\bbrackets\"\xd7\x01\n" +
+	"\bbrackets\x18\a \x03(\v2\x17.admin.RetentionBracketR\bbrackets\"\xc0\x01\n" +
 	"\tRetention\x12\x10\n" +
 	"\x03set\x18\x01 \x01(\tR\x03set\x12.\n" +
 	"\x06policy\x18\x02 \x01(\v2\x16.admin.RetentionPolicyR\x06policy\x124\n" +
 	"\teffective\x18\x03 \x01(\v2\x16.admin.RetentionPolicyR\teffective\x12\x16\n" +
-	"\x06paused\x18\x04 \x01(\bR\x06paused\x12\x1b\n" +
-	"\thold_days\x18\x05 \x01(\x05R\bholdDays\x12\x1d\n" +
+	"\x06paused\x18\x04 \x01(\bR\x06paused\x12\x1d\n" +
 	"\n" +
-	"trash_days\x18\x06 \x01(\x05R\ttrashDays\"'\n" +
+	"trash_days\x18\x06 \x01(\x05R\ttrashDaysJ\x04\b\x05\x10\x06\"'\n" +
 	"\x13GetRetentionRequest\x12\x10\n" +
-	"\x03set\x18\x01 \x01(\tR\x03set\"\xd4\x01\n" +
+	"\x03set\x18\x01 \x01(\tR\x03set\"\xaa\x01\n" +
 	"\x13SetRetentionRequest\x12\x10\n" +
 	"\x03set\x18\x01 \x01(\tR\x03set\x12.\n" +
 	"\x06policy\x18\x02 \x01(\v2\x16.admin.RetentionPolicyR\x06policy\x12\x18\n" +
-	"\ainherit\x18\x03 \x01(\bR\ainherit\x12 \n" +
-	"\thold_days\x18\x04 \x01(\x05H\x00R\bholdDays\x88\x01\x01\x12\"\n" +
+	"\ainherit\x18\x03 \x01(\bR\ainherit\x12\"\n" +
 	"\n" +
-	"trash_days\x18\x05 \x01(\x05H\x01R\ttrashDays\x88\x01\x01B\f\n" +
-	"\n" +
-	"_hold_daysB\r\n" +
-	"\v_trash_days\"\x0f\n" +
+	"trash_days\x18\x05 \x01(\x05H\x00R\ttrashDays\x88\x01\x01B\r\n" +
+	"\v_trash_daysJ\x04\b\x04\x10\x05\"\x0f\n" +
 	"\rRetireRequest\"*\n" +
 	"\x0eRetireResponse\x12\x18\n" +
 	"\aretired\x18\x01 \x01(\x03R\aretired\"\x17\n" +

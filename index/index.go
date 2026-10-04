@@ -50,10 +50,8 @@ type SetRetention struct {
 	Paused    bool
 }
 
-// Windows are the store's hold and trash windows in days: how long a
-// commit retired by policy, or deleted by hand, waits before its
-// tombstone.
+// Windows are the store's trash window in days: how long a commit deleted
+// by hand waits before its tombstone.
 type Windows struct {
-	HoldDays  int
 	TrashDays int
 }

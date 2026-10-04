@@ -63,12 +63,12 @@ func TestOperatorRetentionSurface(t *testing.T) {
 
 	w, err := x.Windows(ctx)
 	require.NoError(t, err)
-	require.Equal(t, index.Windows{HoldDays: 14, TrashDays: 14}, w)
+	require.Equal(t, index.Windows{TrashDays: 14}, w)
 
-	require.NoError(t, x.SetWindows(ctx, index.Windows{HoldDays: 7, TrashDays: 3}))
+	require.NoError(t, x.SetWindows(ctx, index.Windows{TrashDays: 3}))
 	w, err = x.Windows(ctx)
 	require.NoError(t, err)
-	require.Equal(t, index.Windows{HoldDays: 7, TrashDays: 3}, w)
+	require.Equal(t, index.Windows{TrashDays: 3}, w)
 
-	require.ErrorIs(t, x.SetWindows(ctx, index.Windows{HoldDays: -1}), retention.ErrInvalidPolicy)
+	require.ErrorIs(t, x.SetWindows(ctx, index.Windows{TrashDays: -1}), retention.ErrInvalidPolicy)
 }

@@ -109,27 +109,6 @@ func (_u *SettingsUpdate) ClearRetentionPolicy() *SettingsUpdate {
 	return _u
 }
 
-// SetHoldDays sets the "hold_days" field.
-func (_u *SettingsUpdate) SetHoldDays(v int) *SettingsUpdate {
-	_u.mutation.ResetHoldDays()
-	_u.mutation.SetHoldDays(v)
-	return _u
-}
-
-// SetNillableHoldDays sets the "hold_days" field if the given value is not nil.
-func (_u *SettingsUpdate) SetNillableHoldDays(v *int) *SettingsUpdate {
-	if v != nil {
-		_u.SetHoldDays(*v)
-	}
-	return _u
-}
-
-// AddHoldDays adds value to the "hold_days" field.
-func (_u *SettingsUpdate) AddHoldDays(v int) *SettingsUpdate {
-	_u.mutation.AddHoldDays(v)
-	return _u
-}
-
 // SetTrashDays sets the "trash_days" field.
 func (_u *SettingsUpdate) SetTrashDays(v int) *SettingsUpdate {
 	_u.mutation.ResetTrashDays()
@@ -236,12 +215,6 @@ func (_u *SettingsUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.RetentionPolicyCleared() {
 		_spec.ClearField(settings.FieldRetentionPolicy, field.TypeString)
-	}
-	if value, ok := _u.mutation.HoldDays(); ok {
-		_spec.SetField(settings.FieldHoldDays, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedHoldDays(); ok {
-		_spec.AddField(settings.FieldHoldDays, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.TrashDays(); ok {
 		_spec.SetField(settings.FieldTrashDays, field.TypeInt, value)
@@ -353,27 +326,6 @@ func (_u *SettingsUpdateOne) SetNillableRetentionPolicy(v *string) *SettingsUpda
 // ClearRetentionPolicy clears the value of the "retention_policy" field.
 func (_u *SettingsUpdateOne) ClearRetentionPolicy() *SettingsUpdateOne {
 	_u.mutation.ClearRetentionPolicy()
-	return _u
-}
-
-// SetHoldDays sets the "hold_days" field.
-func (_u *SettingsUpdateOne) SetHoldDays(v int) *SettingsUpdateOne {
-	_u.mutation.ResetHoldDays()
-	_u.mutation.SetHoldDays(v)
-	return _u
-}
-
-// SetNillableHoldDays sets the "hold_days" field if the given value is not nil.
-func (_u *SettingsUpdateOne) SetNillableHoldDays(v *int) *SettingsUpdateOne {
-	if v != nil {
-		_u.SetHoldDays(*v)
-	}
-	return _u
-}
-
-// AddHoldDays adds value to the "hold_days" field.
-func (_u *SettingsUpdateOne) AddHoldDays(v int) *SettingsUpdateOne {
-	_u.mutation.AddHoldDays(v)
 	return _u
 }
 
@@ -513,12 +465,6 @@ func (_u *SettingsUpdateOne) sqlSave(ctx context.Context) (_node *Settings, err 
 	}
 	if _u.mutation.RetentionPolicyCleared() {
 		_spec.ClearField(settings.FieldRetentionPolicy, field.TypeString)
-	}
-	if value, ok := _u.mutation.HoldDays(); ok {
-		_spec.SetField(settings.FieldHoldDays, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedHoldDays(); ok {
-		_spec.AddField(settings.FieldHoldDays, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.TrashDays(); ok {
 		_spec.SetField(settings.FieldTrashDays, field.TypeInt, value)

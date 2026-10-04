@@ -246,7 +246,6 @@ func TestRetentionSurface(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/retention", nil, &ret))
 	require.Nil(t, ret.Policy, "no default was stored")
 	require.EqualValues(t, 1, ret.Effective.KeepLast)
-	require.EqualValues(t, 14, ret.HoldDays)
 	require.EqualValues(t, 14, ret.TrashDays)
 
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 3, "keep_within": 3600}}, &ret))
@@ -258,10 +257,9 @@ func TestRetentionSurface(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets/world/retention", nil, &ret))
 	require.EqualValues(t, 3, ret.Policy.KeepLast)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 2}, "hold_days": 7}, &ret))
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 2}, "trash_days": 7}, &ret))
 	require.EqualValues(t, 2, ret.Policy.KeepLast)
-	require.EqualValues(t, 7, ret.HoldDays)
-	require.EqualValues(t, 14, ret.TrashDays, "a window not sent stays")
+	require.EqualValues(t, 7, ret.TrashDays)
 
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"inherit": true}, &ret))
 	require.Nil(t, ret.Policy)

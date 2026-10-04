@@ -12,6 +12,7 @@ import (
 	"github.com/twcclan/goback/admin"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/index"
 
 	"github.com/urfave/cli"
 )
@@ -43,7 +44,6 @@ var Command = cli.Command{
 				cli.StringSliceFlag{Name: "keep", Usage: "a bracket as <period>=<count> calendar periods, newest first, repeated; the last may drop its count to keep forever (--keep hourly=336 --keep daily=60 --keep weekly=12 --keep monthly)"},
 				cli.DurationFlag{Name: "keep-within"},
 				cli.BoolFlag{Name: "inherit", Usage: "drop the policy: a set inherits the store's, the store uses the built-in"},
-				cli.IntFlag{Name: "hold-days", Value: -1, Usage: "store only: days a commit retired by policy waits for its tombstone"},
 				cli.IntFlag{Name: "trash-days", Value: -1, Usage: "store only: days a deleted commit waits for its tombstone"},
 			},
 			Action: retentionAction,
@@ -55,7 +55,7 @@ var keepFlags = []string{"keep-last", "keep", "keep-within"}
 
 func retentionAction(c *cli.Context) {
 	if c.NArg() > 1 {
-		common.Fatal("usage: set retention [<name>] [--keep-... | --inherit] [--hold-days N] [--trash-days N]")
+		common.Fatal("usage: set retention [<name>] [--keep-... | --inherit] [--trash-days N]")
 	}
 
 	store := common.GetObjectStore(c)
@@ -94,25 +94,12 @@ func retentionAction(c *cli.Context) {
 		}
 	}
 
-	if c.Int("hold-days") >= 0 || c.Int("trash-days") >= 0 {
+	if days := c.Int("trash-days"); days >= 0 {
 		if name != "" {
-			common.Fatal("the hold and trash windows belong to the store; leave the set name out")
+			common.Fatal("the trash window belongs to the store; leave the set name out")
 		}
 
-		w, err := x.Windows(ctx)
-		if err != nil {
-			common.Fatal(err)
-		}
-
-		if days := c.Int("hold-days"); days >= 0 {
-			w.HoldDays = days
-		}
-
-		if days := c.Int("trash-days"); days >= 0 {
-			w.TrashDays = days
-		}
-
-		if err := x.SetWindows(ctx, w); err != nil {
+		if err := x.SetWindows(ctx, index.Windows{TrashDays: days}); err != nil {
 			common.Fatal(err)
 		}
 	}
@@ -140,10 +127,9 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 		common.Result(struct {
 			Policy    policyView `json:"policy"`
 			Source    string     `json:"source"`
-			HoldDays  int        `json:"hold_days"`
 			TrashDays int        `json:"trash_days"`
-		}{viewPolicy(policy), source, w.HoldDays, w.TrashDays}, func() {
-			fmt.Printf("store default: %s (%s)\nhold %d days, trash %d days\n", describe(policy), source, w.HoldDays, w.TrashDays)
+		}{viewPolicy(policy), source, w.TrashDays}, func() {
+			fmt.Printf("store default: %s (%s)\ntrash %d days\n", describe(policy), source, w.TrashDays)
 		})
 
 		return

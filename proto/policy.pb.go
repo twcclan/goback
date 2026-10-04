@@ -198,10 +198,11 @@ type StoreScope struct {
 	KeyAcknowledgedAtNs int64 `protobuf:"varint,3,opt,name=key_acknowledged_at_ns,json=keyAcknowledgedAtNs,proto3" json:"key_acknowledged_at_ns,omitempty"`
 	// the default retention policy as JSON, empty for the built-in one
 	DefaultRetention string `protobuf:"bytes,4,opt,name=default_retention,json=defaultRetention,proto3" json:"default_retention,omitempty"`
-	HoldDays         uint32 `protobuf:"varint,5,opt,name=hold_days,json=holdDays,proto3" json:"hold_days,omitempty"`
-	TrashDays        uint32 `protobuf:"varint,6,opt,name=trash_days,json=trashDays,proto3" json:"trash_days,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// ignored: policies stored with it keep their hash
+	HoldDays      uint32 `protobuf:"varint,5,opt,name=hold_days,json=holdDays,proto3" json:"hold_days,omitempty"`
+	TrashDays     uint32 `protobuf:"varint,6,opt,name=trash_days,json=trashDays,proto3" json:"trash_days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StoreScope) Reset() {

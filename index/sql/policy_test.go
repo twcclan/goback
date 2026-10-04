@@ -38,7 +38,7 @@ func (f *fixture) policyState(x *Index) policyState {
 	state := policyState{
 		Settings: map[string]any{
 			"policy": s.Policy, "version": s.PolicyVersion, "acknowledged": instant(s.KeyAcknowledgedAt),
-			"retention": s.RetentionPolicy, "hold": s.HoldDays, "trash": s.TrashDays,
+			"retention": s.RetentionPolicy, "trash": s.TrashDays,
 		},
 		Sets:    map[string]map[string]any{},
 		Commits: map[string]map[string]any{},
@@ -78,7 +78,7 @@ func TestRebuildRestoresWhatOperatorsChanged(t *testing.T) {
 	_, err := f.x.SetStorePolicy(f.ctx, storekey.DefaultPolicy(), true, f.clock)
 	require.NoError(t, err)
 	require.NoError(t, f.x.SetDefaultPolicy(f.ctx, &retention.Policy{KeepLast: 50}))
-	require.NoError(t, f.x.SetWindows(f.ctx, index.Windows{HoldDays: 3, TrashDays: 5}))
+	require.NoError(t, f.x.SetWindows(f.ctx, index.Windows{TrashDays: 5}))
 	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 20}))
 	f.advance(time.Hour)
 

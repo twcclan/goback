@@ -25,8 +25,6 @@ type Settings struct {
 	KeyAcknowledgedAt *time.Time `json:"key_acknowledged_at,omitempty"`
 	// RetentionPolicy holds the value of the "retention_policy" field.
 	RetentionPolicy *string `json:"retention_policy,omitempty"`
-	// HoldDays holds the value of the "hold_days" field.
-	HoldDays int `json:"hold_days,omitempty"`
 	// TrashDays holds the value of the "trash_days" field.
 	TrashDays int `json:"trash_days,omitempty"`
 	// PolicySequence holds the value of the "policy_sequence" field.
@@ -39,7 +37,7 @@ func (*Settings) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case settings.FieldID, settings.FieldPolicyVersion, settings.FieldHoldDays, settings.FieldTrashDays, settings.FieldPolicySequence:
+		case settings.FieldID, settings.FieldPolicyVersion, settings.FieldTrashDays, settings.FieldPolicySequence:
 			values[i] = new(sql.NullInt64)
 		case settings.FieldPolicy, settings.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -92,12 +90,6 @@ func (_m *Settings) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RetentionPolicy = new(string)
 				*_m.RetentionPolicy = value.String
-			}
-		case settings.FieldHoldDays:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field hold_days", values[i])
-			} else if value.Valid {
-				_m.HoldDays = int(value.Int64)
 			}
 		case settings.FieldTrashDays:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -164,9 +156,6 @@ func (_m *Settings) String() string {
 		builder.WriteString("retention_policy=")
 		builder.WriteString(*v)
 	}
-	builder.WriteString(", ")
-	builder.WriteString("hold_days=")
-	builder.WriteString(fmt.Sprintf("%v", _m.HoldDays))
 	builder.WriteString(", ")
 	builder.WriteString("trash_days=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TrashDays))

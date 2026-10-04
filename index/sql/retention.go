@@ -31,7 +31,6 @@ type setConfig struct {
 	state  set.State
 	paused bool
 	policy retention.Policy
-	hold   time.Duration
 	trash  time.Duration
 }
 
@@ -55,7 +54,6 @@ func (x *Index) loadSetConfig(ctx context.Context, c *ent.Client, setID int64) (
 		state:  s.State,
 		paused: s.RetentionPaused,
 		policy: retention.Default,
-		hold:   time.Duration(defaults.HoldDays) * 24 * time.Hour,
 		trash:  time.Duration(defaults.TrashDays) * 24 * time.Hour,
 	}
 
@@ -80,8 +78,8 @@ func (x *Index) loadSetConfig(ctx context.Context, c *ent.Client, setID int64) (
 }
 
 // evaluateSet applies the set's policy to its un-tombstoned, un-deleted
-// commits: kept ones record their reasons, the rest are retired into the
-// hold window (none for a superseded checkpoint). A set whose retention
+// commits: kept ones record their reasons, the rest are retired, for the
+// next retirement to tombstone. A set whose retention
 // is paused keeps everything until a policy is set.
 func (x *Index) evaluateSet(ctx context.Context, tx *ent.Tx, setID int64, now time.Time) error {
 	c := tx.Client()
@@ -131,12 +129,7 @@ func (x *Index) evaluateSet(ctx context.Context, tx *ent.Tx, setID int64, now ti
 		case rows[i].RetireAt != nil:
 			continue
 		default:
-			expires := now.Add(cfg.hold)
-			if commits[i].Partial {
-				expires = now
-			}
-
-			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy("").SetRetireAt(now).SetExpiresAt(expires).Exec(ctx)
+			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy("").SetRetireAt(now).SetExpiresAt(now).Exec(ctx)
 		}
 
 		if err != nil {

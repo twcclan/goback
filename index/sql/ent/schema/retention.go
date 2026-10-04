@@ -23,7 +23,6 @@ func (Settings) Fields() []ent.Field {
 		field.Uint32("policy_version").Default(0),
 		field.Time("key_acknowledged_at").Optional().Nillable(),
 		field.String("retention_policy").Optional().Nillable(),
-		field.Int("hold_days").Default(14),
 		field.Int("trash_days").Default(14),
 		// the sequence of the last policy object the store wrote
 		field.Uint64("policy_sequence").Default(0),

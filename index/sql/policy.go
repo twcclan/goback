@@ -63,7 +63,6 @@ func (x *Index) policyTx(ctx context.Context, change func(tx *ent.Tx) (*proto.Po
 func storeScope(s *ent.Settings) *proto.Policy {
 	scope := &proto.StoreScope{
 		WritePolicyVersion: s.PolicyVersion,
-		HoldDays:           uint32(s.HoldDays),
 		TrashDays:          uint32(s.TrashDays),
 	}
 
@@ -187,7 +186,6 @@ func applyStoreScope(ctx context.Context, tx *ent.Tx, s *proto.StoreScope) error
 		SetNillablePolicy(nilIfZero(s.WritePolicy)).
 		SetPolicyVersion(s.WritePolicyVersion).
 		SetNillableRetentionPolicy(nilIfZero(s.DefaultRetention)).
-		SetHoldDays(int(s.HoldDays)).
 		SetTrashDays(int(s.TrashDays))
 
 	if s.WritePolicy == "" {

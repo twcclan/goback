@@ -349,7 +349,6 @@ var (
 		{Name: "policy_version", Type: field.TypeUint32, Default: 0},
 		{Name: "key_acknowledged_at", Type: field.TypeTime, Nullable: true},
 		{Name: "retention_policy", Type: field.TypeString, Nullable: true},
-		{Name: "hold_days", Type: field.TypeInt, Default: 14},
 		{Name: "trash_days", Type: field.TypeInt, Default: 14},
 		{Name: "policy_sequence", Type: field.TypeUint64, Default: 0},
 	}

@@ -92,7 +92,7 @@ type PartReader interface {
 }
 
 // Retention is implemented by indexes that keep the commit lifecycle: live,
-// then retired for a hold window, then tombstoned.
+// then retired, or deleted into a trash window, then tombstoned.
 type Retention interface {
 	// DeleteCommit retires a commit into its trash window; the newest
 	// live commit of a set is refused with ErrNewestCommit.

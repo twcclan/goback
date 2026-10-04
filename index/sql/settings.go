@@ -158,25 +158,25 @@ func (x *Index) SetDefaultPolicy(ctx context.Context, p *retention.Policy) error
 	return x.evaluateAll(ctx)
 }
 
-// Windows returns the store's hold and trash windows.
+// Windows returns the store's trash window.
 func (x *Index) Windows(ctx context.Context) (index.Windows, error) {
 	defaults, err := loadSettings(ctx, x.client)
 	if err != nil {
 		return index.Windows{}, err
 	}
 
-	return index.Windows{HoldDays: defaults.HoldDays, TrashDays: defaults.TrashDays}, nil
+	return index.Windows{TrashDays: defaults.TrashDays}, nil
 }
 
-// SetWindows stores the hold and trash windows and re-evaluates every
-// set; a negative window is refused.
+// SetWindows stores the trash window and re-evaluates every set; a
+// negative window is refused.
 func (x *Index) SetWindows(ctx context.Context, w index.Windows) error {
-	if w.HoldDays < 0 || w.TrashDays < 0 {
+	if w.TrashDays < 0 {
 		return fmt.Errorf("%w: a window cannot be negative", retention.ErrInvalidPolicy)
 	}
 
 	err := x.policyTx(ctx, func(tx *ent.Tx) (*proto.Policy, error) {
-		s, err := tx.Settings.UpdateOneID(settingsID).SetHoldDays(w.HoldDays).SetTrashDays(w.TrashDays).Save(ctx)
+		s, err := tx.Settings.UpdateOneID(settingsID).SetTrashDays(w.TrashDays).Save(ctx)
 		if err != nil {
 			return nil, err
 		}
