@@ -67,6 +67,14 @@ func (ps *PackStorage) doCompaction() error {
 	return nil
 }
 
+// compactionChunk is how many candidates a rewrite takes at a time unless
+// configured otherwise. A chunk's inputs are retired as soon as it is
+// done, so a rewrite that is stopped keeps what it finished.
+const compactionChunk = 1000
+
+// lookupBatch is how many objects one lookup of a rewrite asks for.
+const lookupBatch = 1000
+
 // compactGroup rewrites the group's candidates, several at once. An object
 // with a usable copy committed outside the group is dropped; the rest is
 // copied into root archives with its timestamp kept.
@@ -82,20 +90,68 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 	workers := ps.compaction.Workers
 	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
+		workers = 4 * runtime.GOMAXPROCS(0)
+	}
+
+	size := ps.compaction.Chunk
+	if size <= 0 {
+		size = compactionChunk
 	}
 
 	span.SetAttributes(attribute.Int("candidates", len(group.candidates)), attribute.Int("workers", workers))
 
-	queue := make(chan *archive)
+	for start := 0; start < len(group.candidates); start += size {
+		chunk := group.candidates[start:min(start+size, len(group.candidates))]
+
+		if err := rw.chunk(ctx, chunk, workers); err != nil {
+			span.RecordError(err)
+			return err
+		}
+	}
+
+	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(rw.copied)))
+
+	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
+		"copied", humanize.Bytes(rw.copied), "took", time.Since(rw.started).Round(time.Second))
+
+	return nil
+}
+
+// rewrite is the state the workers of one compactGroup share.
+type rewrite struct {
+	ps      *PackStorage
+	group   *compactionGroup
+	inGroup map[string]bool
+
+	started time.Time
+
+	mtx      sync.Mutex
+	written  map[string]bool
+	outputs  []*archive
+	obsolete []*archive
+	done     int
+	copied   uint64
+	// unmarked names the copied objects their input's last mark result
+	// left unreachable, and that result's generation
+	unmarked map[string]uint64
+}
+
+// chunk rewrites some of the group's candidates and retires them.
+func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) error {
+	indexes, standIn, err := rw.lookUp(ctx, chunk, workers)
+	if err != nil {
+		return err
+	}
+
+	queue := make(chan int)
 	grp, gctx := errgroup.WithContext(ctx)
 
 	grp.Go(func() error {
 		defer close(queue)
 
-		for _, candidate := range group.candidates {
+		for i := range chunk {
 			select {
-			case queue <- candidate:
+			case queue <- i:
 			case <-gctx.Done():
 				return gctx.Err()
 			}
@@ -104,12 +160,12 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		return nil
 	})
 
-	for range min(workers, len(group.candidates)) {
+	for range min(workers, len(chunk)) {
 		grp.Go(func() error {
 			out := &rewriteOutput{rw: rw}
 
-			for candidate := range queue {
-				if err := rw.candidate(gctx, out, candidate); err != nil {
+			for i := range queue {
+				if err := rw.candidate(gctx, out, chunk[i], indexes[i], standIn); err != nil {
 					out.abort()
 					return err
 				}
@@ -125,22 +181,103 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	}
 
 	if err := grp.Wait(); err != nil {
-		span.RecordError(err)
 		return err
 	}
 
-	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(rw.copied)))
+	rw.mtx.Lock()
+	obsolete, outputs := rw.obsolete, rw.outputs
+	rw.obsolete, rw.outputs = nil, nil
+	rw.mtx.Unlock()
 
-	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
-		"copied", humanize.Bytes(rw.copied), "took", time.Since(rw.started).Round(time.Second))
-
-	if err := ps.carryErasureClock(rw.obsolete, rw.outputs, rw.unmarked); err != nil {
+	if err := rw.ps.carryErasureClock(obsolete, outputs, rw.unmarked); err != nil {
 		return err
 	}
 
-	// the outputs are indexed, so readers that still land on an obsolete
-	// archive find their copy elsewhere once it is retired
-	for _, archive := range rw.obsolete {
+	rw.ps.retireRewritten(obsolete)
+
+	return nil
+}
+
+// lookUp reads the indexes of the chunk and works out once for every
+// object they hold whether a copy outside the group may stand in for it.
+func (rw *rewrite) lookUp(ctx context.Context, chunk []*archive, workers int) ([]IndexFile, map[string]bool, error) {
+	indexes := make([]IndexFile, len(chunk))
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(workers)
+
+	for i, candidate := range chunk {
+		grp.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+
+			idx, err := candidate.getIndex()
+			if err != nil {
+				return errors.Wrapf(err, "reading the index of %s", candidate.name)
+			}
+
+			indexes[i] = idx
+
+			return nil
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	seen := make(map[string]bool)
+	var refs []*proto.Ref
+
+	for _, idx := range indexes {
+		for i := range idx {
+			if key := string(idx[i].Sum[:]); !seen[key] {
+				seen[key] = true
+				refs = append(refs, &proto.Ref{Hash: idx[i].Sum[:]})
+			}
+		}
+	}
+
+	var mtx sync.Mutex
+	standIn := make(map[string]bool)
+
+	grp, gctx = errgroup.WithContext(ctx)
+	grp.SetLimit(workers)
+
+	for start := 0; start < len(refs); start += lookupBatch {
+		batch := refs[start:min(start+lookupBatch, len(refs))]
+
+		grp.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+
+			copies, err := rw.ps.index.LocateCopies(batch, Scope{})
+			if err != nil {
+				return errors.Wrap(err, "locating the objects of a rewrite")
+			}
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			for _, ref := range batch {
+				if rw.elsewhere(copies[string(ref.Hash)]) {
+					standIn[string(ref.Hash)] = true
+				}
+			}
+
+			return nil
+		})
+	}
+
+	return indexes, standIn, grp.Wait()
+}
+
+// retireRewritten retires the inputs of a rewrite whose outputs are
+// indexed, so readers that still land on one find their copy elsewhere.
+func (ps *PackStorage) retireRewritten(obsolete []*archive) {
+	for _, archive := range obsolete {
 		idx, err := archive.getIndex()
 		if err != nil {
 			ps.logger.Warn("reading the index of an obsolete archive failed", "archive", archive.name, "err", err)
@@ -178,26 +315,6 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 			ps.observer.ArchiveDeleted(archive.name)
 		}
 	}
-
-	return nil
-}
-
-// rewrite is the state the workers of one compactGroup share.
-type rewrite struct {
-	ps      *PackStorage
-	group   *compactionGroup
-	inGroup map[string]bool
-
-	started time.Time
-
-	mtx      sync.Mutex
-	written  map[string]bool
-	outputs  []*archive
-	obsolete []*archive
-	copied   uint64
-	// unmarked names the copied objects their input's last mark result
-	// left unreachable, and that result's generation
-	unmarked map[string]uint64
 }
 
 // progressEvery is how many rewritten archives pass between progress logs.
@@ -238,29 +355,15 @@ func (rw *rewrite) elsewhere(copies []IndexLocation) bool {
 	return false
 }
 
-// candidate copies what survives of one candidate into out.
-func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate *archive) error {
+// candidate copies what survives of one candidate into out; standIn names
+// the objects a copy outside the group stands in for.
+func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate *archive, idx IndexFile, standIn map[string]bool) error {
 	started := time.Now()
 	var copied uint64
 
-	idx, err := candidate.getIndex()
-	if err != nil {
-		return errors.Wrapf(err, "reading the index of %s", candidate.name)
-	}
-
-	refs := make([]*proto.Ref, len(idx))
-	for i := range idx {
-		refs[i] = &proto.Ref{Hash: idx[i].Sum[:]}
-	}
-
-	copies, err := rw.ps.index.LocateCopies(refs, Scope{})
-	if err != nil {
-		return errors.Wrapf(err, "locating the objects of %s", candidate.name)
-	}
-
 	mark := candidate.gcResult()
 
-	err = candidate.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+	err := candidate.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -272,7 +375,7 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 			return nil
 		}
 
-		if rw.elsewhere(copies[string(hdr.Ref.Hash)]) {
+		if standIn[string(hdr.Ref.Hash)] {
 			return nil
 		}
 
@@ -308,7 +411,8 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 	rw.mtx.Lock()
 	rw.obsolete = append(rw.obsolete, candidate)
 	rw.copied += copied
-	done, total := len(rw.obsolete), len(rw.group.candidates)
+	rw.done++
+	done, total := rw.done, len(rw.group.candidates)
 	rw.mtx.Unlock()
 
 	if done%progressEvery == 0 {
