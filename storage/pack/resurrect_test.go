@@ -34,23 +34,32 @@ func requireUntombed(t *testing.T, store *PackStorage, objects []*proto.Object, 
 	}
 }
 
-func TestACommitTakesBackTheTombstonesOfWhatItSkipped(t *testing.T) {
+func TestACommitTakesBackItselfAndTheTombstonesOfWhatItSkipped(t *testing.T) {
 	store := newGCStore(t, t.TempDir())
 	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
 
 	blobs := makeTestData(t, 10)
 	putAll(t, store, blobs)
 
+	// stored again after its tombstone, so a session skips it with the
+	// tombstone still standing
+	require.NoError(t, store.Delete(ctx, blobs[0].Ref()))
+	require.NoError(t, store.Flush())
+	putAll(t, store, blobs[:1])
+
 	chain := makeChain(blobs)
 	own := chain[len(blobs):]
+	commit := own[len(own)-1]
 
-	ctx, _ := beginSession(t, store, "agent-a")
+	sctx, _ := beginSession(t, store, "agent-a")
 	for _, obj := range own {
-		require.NoError(t, store.Put(ctx, obj))
+		require.NoError(t, store.Put(sctx, obj))
 	}
 
-	requireUntombed(t, store, blobs, true)
-	requireUntombed(t, store, own, false)
+	requireUntombed(t, store, []*proto.Object{commit, blobs[0]}, true)
+	requireUntombed(t, store, blobs[1:], false)
+	requireUntombed(t, store, own[:len(own)-1], false)
 }
 
 func TestACommitCopiesWhatACollectionCondemnedUnderWhatItReliedOn(t *testing.T) {

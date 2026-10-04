@@ -24,11 +24,18 @@ func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *
 		return err
 	}
 
+	// an un-tombstone of the commit keeps everything the commit reaches,
+	// so only a skipped ref a tombstone stands against needs its own
+	tombstoned, err := ps.tombstoned(ctx, skipped)
+	if err != nil {
+		return err
+	}
+
 	// the un-tombstones are stored before the seals are read, so a
 	// collection either reads them or sealed before; they stay the
 	// session's, so no other session relies on them before the copies
 	// below are made
-	for _, ref := range skipped {
+	for _, ref := range append([]*proto.Ref{commit}, tombstoned...) {
 		if err := ps.putTombstone(ctx, ws, proto.TombstoneRef(ref), false); err != nil {
 			return fmt.Errorf("taking back the tombstones of what session %s relied on: %w", ws.id, err)
 		}
@@ -118,6 +125,29 @@ func (ps *PackStorage) skippedRefs(ctx context.Context, ws *writeSession, commit
 	}
 
 	return skipped, nil
+}
+
+// tombstoned returns the refs a tombstone the session sees names.
+func (ps *PackStorage) tombstoned(ctx context.Context, refs []*proto.Ref) ([]*proto.Ref, error) {
+	tombs := make([]*proto.Ref, len(refs))
+	for i, ref := range refs {
+		tombs[i] = proto.TombstoneRef(ref)
+	}
+
+	found, err := ps.index.LocateCopies(tombs, ScopeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	var named []*proto.Ref
+
+	for i, ref := range refs {
+		if len(found[string(tombs[i].Hash)]) > 0 {
+			named = append(named, ref)
+		}
+	}
+
+	return named, nil
 }
 
 func ownCopy(locs []IndexLocation, own map[string]bool) (IndexLocation, bool) {

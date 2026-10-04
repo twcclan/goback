@@ -241,8 +241,11 @@ type gcRun struct {
 	archives map[string]*gcArchive
 	order    []*gcArchive
 	// pending are the finalized archives of live sessions that have not
-	// committed, read for the un-tombstones a committing session wrote
-	pending []*archive
+	// committed, read for the un-tombstones a committing session wrote;
+	// pendingAt places their objects, so the mark walks from a commit a
+	// session un-tombstoned before committing it
+	pending   []*archive
+	pendingAt map[refKey]placed
 	erased  []refKey
 	visited  *visitedSet
 	runDir   string
@@ -639,10 +642,16 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		}
 	}
 
-	takeBack := func(tomb refKey) {
-		if untombed, ok := tombOf[tomb]; ok && !r.untombed[untombed] {
+	keep := func(untombed refKey) {
+		if !r.untombed[untombed] {
 			r.untombed[untombed] = true
 			r.roots = append(r.roots, r.root(untombed[:]))
+		}
+	}
+
+	takeBack := func(tomb refKey) {
+		if untombed, ok := tombOf[tomb]; ok {
+			keep(untombed)
 		}
 	}
 
@@ -653,9 +662,15 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	// a session commits only after copying what it relies on, so its
 	// un-tombstones stay its own until then; they keep what they take
 	// back from the moment they are written
+	r.pendingAt = make(map[refKey]placed)
+	var pendingUntombs []refKey
+
 	for _, a := range r.pending {
 		err := scanArchive(a, func(_ int, rec *IndexRecord) error {
 			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
+				held := *rec
+				r.pendingAt[keyOf(rec.Sum[:])] = placed{key: keyOf(rec.Sum[:]), a: a, rec: &held}
+
 				return nil
 			}
 
@@ -665,13 +680,29 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 			}
 
 			if hdr.TombstoneFor != nil {
-				takeBack(keyOf(hdr.TombstoneFor.Hash))
+				pendingUntombs = append(pendingUntombs, keyOf(hdr.TombstoneFor.Hash))
 			}
 
 			return nil
 		}, nil, nil)
 		if err != nil && !notExist(err) {
 			return errors.Wrapf(err, "reading index of %s", a.name)
+		}
+	}
+
+	// an un-tombstone names only the tombstone it takes back, so one of
+	// an object no tombstone names, as of a session's own commit, is
+	// told by the session's objects
+	byTomb := make(map[refKey]refKey, len(r.pendingAt))
+	for key := range r.pendingAt {
+		byTomb[keyOf(proto.TombstoneRef(&proto.Ref{Hash: key[:]}).Hash)] = key
+	}
+
+	for _, tomb := range pendingUntombs {
+		if untombed, ok := tombOf[tomb]; ok {
+			keep(untombed)
+		} else if untombed, ok := byTomb[tomb]; ok {
+			keep(untombed)
 		}
 	}
 
@@ -1020,6 +1051,10 @@ func (r *gcRun) readChunk(ctx context.Context, keys []refKey) ([]markRead, error
 			return nil, errors.Wrapf(err, "locating %x", key)
 		}
 
+		if p, ok := r.pendingAt[key]; ok && rec == nil {
+			a, rec = p.a, p.rec
+		}
+
 		if rec == nil {
 			r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
 			continue
@@ -1082,7 +1117,22 @@ func (r *gcRun) readSpan(ctx context.Context, records []placed, span int64) ([]m
 		reads := make([]markRead, 0, len(records))
 
 		for _, record := range records {
-			obj, err := r.ps.Get(ctx, &proto.Ref{Hash: record.key[:]})
+			ref := &proto.Ref{Hash: record.key[:]}
+
+			var obj *proto.Object
+			var err error
+
+			// a session's own object is in no index until it commits; one
+			// that ended without committing took the archive with it
+			if p, ok := r.pendingAt[record.key]; ok && p.a == a {
+				obj, err = a.getRaw(ctx, ref, record.rec)
+				if notExist(err) {
+					err = backup.ErrNotFound
+				}
+			} else {
+				obj, err = r.ps.Get(ctx, ref)
+			}
+
 			if errors.Is(err, backup.ErrNotFound) {
 				r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", record.key))
 				continue

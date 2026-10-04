@@ -35,7 +35,8 @@ CONSTANTS
     SealScope,   \* a committing session only re-checks seals written after it began
     SkipUntombRoots, \* mutation: a pipelined mark does not keep what un-tombstones take back
     TombsNewer,  \* a pipelined condemnation checks its tombstones are newer than the snapshot's copies
-    SkipPendingRoots \* mutation: a mark ignores the un-tombstones of sessions that have not committed
+    SkipPendingRoots, \* mutation: a mark ignores the un-tombstones of sessions that have not committed
+    SkipCover    \* mutation: a session's un-tombstones need not reach all it deduplicated
 
 None == "none"
 
@@ -134,18 +135,23 @@ Use(s, o) ==
               /\ UNCHANGED dedup
     /\ UNCHANGED <<phase, roots, gc, lease, cycles, sealed, plans, rw, state, seen>>
 
-\* before committing, take back every tombstone of what the session
-\* deduplicated
+\* before committing, take back what the session deduplicated: un-tombstone
+\* objects whose closure holds all of it, the session's own commit among
+\* them, and every deduplicated object a tombstone stands against
 Untomb(s) ==
-    /\ Resurrect
-    /\ phase[s] = "active"
-    /\ phase' = [phase EXCEPT ![s] = "untombed"]
-    /\ \E ver \in [dedup[s] -> NewVersions] :
-         /\ records' = records \cup {Record("untomb", o, ver[o], s, s) : o \in dedup[s]}
-         /\ clock' = IF dedup[s] = {} THEN clock ELSE
-                       LET top == CHOOSE v \in {ver[o] : o \in dedup[s]} : \A o \in dedup[s] : ver[o] <= v
-                       IN IF top > clock THEN top ELSE clock
-    /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
+    LET tombed == {o \in dedup[s] : \E t \in Visible(s) : t.kind = "tomb" /\ t.obj = o}
+    IN /\ Resurrect
+       /\ phase[s] = "active"
+       /\ phase' = [phase EXCEPT ![s] = "untombed"]
+       /\ \E U \in SUBSET refs[s] :
+            /\ SkipCover \/ dedup[s] \subseteq Closure(U)
+            /\ tombed \subseteq U
+            /\ \E ver \in [U -> NewVersions] :
+                 /\ records' = records \cup {Record("untomb", o, ver[o], s, s) : o \in U}
+                 /\ clock' = IF U = {} THEN clock ELSE
+                               LET top == CHOOSE v \in {ver[o] : o \in U} : \A o \in U : ver[o] <= v
+                               IN IF top > clock THEN top ELSE clock
+       /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
 
 \* after its un-tombstones are written, a session uploads again whatever a
 \* sealed tombstone condemns among what it deduplicated and all that
