@@ -86,6 +86,38 @@ func (ps *PackStorage) PurgeQuarantine(period time.Duration, now time.Time) (int
 	return purged, nil
 }
 
+// retiredBytes sums the sizes of the retired archives still stored.
+func (ps *PackStorage) retiredBytes() (uint64, error) {
+	retired, err := ps.markerIDs(RetiredExt)
+	if err != nil {
+		return 0, err
+	}
+
+	var total uint64
+
+	for name := range retired {
+		file, err := ps.storage.Open(name + ArchiveSuffix)
+		if notExist(err) {
+			continue
+		}
+
+		if err != nil {
+			return 0, err
+		}
+
+		info, err := file.Stat()
+		_ = file.Close()
+
+		if err != nil {
+			return 0, err
+		}
+
+		total += uint64(info.Size())
+	}
+
+	return total, nil
+}
+
 func (ps *PackStorage) retiredOn(name string) (time.Time, error) {
 	file, err := ps.storage.Open(name + RetiredExt)
 	if err != nil {

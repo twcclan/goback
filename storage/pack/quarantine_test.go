@@ -27,6 +27,8 @@ func TestARewriteKeepsWhatItRetiredUntilTheQuarantineEnds(t *testing.T) {
 	second, err := store.Collect(ctx, opts)
 	require.NoError(t, err)
 	require.NotZero(t, second.Swept)
+	require.NotZero(t, second.RetiredBytes, "the retired archives are still stored")
+	require.NotZero(t, second.ArchiveBytes)
 	requireStored(t, store, gone, false)
 
 	retired, err := store.markerIDs(RetiredExt)

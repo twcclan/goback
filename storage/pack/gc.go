@@ -153,6 +153,10 @@ type CollectReport struct {
 	ReclaimedBytes   uint64
 	// Purged counts the quarantined files the run deleted.
 	Purged int
+	// ArchiveBytes is what the archives the run marked take up in storage,
+	// dead objects included, and RetiredBytes what the archives rewrites
+	// retired still take up until they are purged.
+	ArchiveBytes, RetiredBytes uint64
 	// OldestDead is when the archive that has held dead objects longest
 	// without being rewritten first held them; zero when none holds any.
 	OldestDead time.Time
@@ -420,6 +424,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	for _, ga := range run.order {
 		report.DeadObjects += ga.next.DeadObjects
 		report.DeadBytes += ga.next.DeadBytes
+		report.ArchiveBytes += ga.a.size
 	}
 	gcDeadBytes.Record(ctx, int64(report.DeadBytes))
 
@@ -489,6 +494,11 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	report.Purged, err = ps.PurgeQuarantine(opts.Quarantine, opts.Now)
 	if err != nil {
 		return nil, errors.Wrap(err, "purging the quarantine")
+	}
+
+	report.RetiredBytes, err = ps.retiredBytes()
+	if err != nil {
+		return nil, errors.Wrap(err, "measuring the quarantine")
 	}
 
 	report.Duration = time.Since(started)
