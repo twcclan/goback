@@ -10,3 +10,5 @@ DROP TABLE `settings`;
 ALTER TABLE `new_settings` RENAME TO `settings`;
 -- Enable back the enforcement of foreign-keys constraints
 PRAGMA foreign_keys = on;
+-- Retired commits no longer wait out a hold window
+UPDATE `commits` SET `expires_at` = `retire_at` WHERE `retire_at` IS NOT NULL AND `deleted_at` IS NULL AND `tombstoned_at` IS NULL;
