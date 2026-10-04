@@ -517,13 +517,15 @@ func TestCollectCarriesTheErasureClockThroughARewrite(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, before, after, "the rewrite replaced the archives")
 
-	_, err = store.Collect(ctx, patient(48*time.Hour))
+	waiting, err := store.Collect(ctx, patient(48*time.Hour))
 	require.NoError(t, err)
 	requireStored(t, store, gone, true)
+	require.False(t, waiting.OldestDead.IsZero(), "the dead objects wait for the bound")
 
 	report, err := store.Collect(ctx, patient(11*24*time.Hour))
 	require.NoError(t, err)
 	require.EqualValues(t, len(gone), report.ReclaimedObjects, "the bound counts from the generation before the rewrite")
+	require.True(t, report.OldestDead.IsZero(), "no archive holds dead objects past the rewrite")
 	requireStored(t, store, gone, false)
 	requireStored(t, store, kept, true)
 

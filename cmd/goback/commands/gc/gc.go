@@ -33,7 +33,7 @@ var Command = cli.Command{
 		cli.DurationFlag{
 			Name:  "erasure-bound",
 			Usage: "rewrite an archive that has held dead objects this long regardless of ratio",
-			Value: 21 * 24 * time.Hour,
+			Value: 14 * 24 * time.Hour,
 		},
 		cli.DurationFlag{
 			Name:  "min-age",

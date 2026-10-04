@@ -32,7 +32,7 @@ type CollectOptions struct {
 	// is dead (0.3).
 	DeadRatio float64
 	// ErasureBound selects an archive that has held dead objects this long
-	// regardless of ratio (21 days).
+	// regardless of ratio (14 days).
 	ErasureBound time.Duration
 	// MinAge keeps every object younger than this, whatever the mark says (24h).
 	MinAge time.Duration
@@ -74,7 +74,7 @@ func (a Attribution) before(b Attribution) bool {
 const (
 	defaultGCReaders      = 32
 	defaultGCDeadRatio    = 0.3
-	defaultGCErasureBound = 21 * 24 * time.Hour
+	defaultGCErasureBound = 14 * 24 * time.Hour
 	defaultGCMinAge       = 24 * time.Hour
 	liveRunLimit          = 1 << 20
 	markChunk             = 64
@@ -152,8 +152,11 @@ type CollectReport struct {
 	ReclaimedObjects uint64
 	ReclaimedBytes   uint64
 	// Purged counts the quarantined files the run deleted.
-	Purged   int
-	Duration time.Duration
+	Purged int
+	// OldestDead is when the archive that has held dead objects longest
+	// without being rewritten first held them; zero when none holds any.
+	OldestDead time.Time
+	Duration   time.Duration
 }
 
 // Collector is implemented by stores that can garbage collect themselves.
@@ -467,7 +470,19 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		if err := storeGCState(ps.storage, state); err != nil {
 			return nil, errors.Wrap(err, "storing gc state")
 		}
-	} else {
+	}
+
+	for _, ga := range run.order {
+		if ga.next.DeadObjects == 0 || (state.Swept && run.selected(ga)) {
+			continue
+		}
+
+		if report.OldestDead.IsZero() || ga.next.DeadSince.Before(report.OldestDead) {
+			report.OldestDead = ga.next.DeadSince
+		}
+	}
+
+	if report.SweepSkipped != "" {
 		ps.logger.Info("gc did not sweep", "generation", run.gen, "reason", report.SweepSkipped)
 	}
 

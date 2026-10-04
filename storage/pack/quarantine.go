@@ -16,8 +16,9 @@ const RetiredExt = ".retired"
 
 const quarantineDay = "2006-01-02"
 
-// DefaultQuarantine is how long a retired archive is kept by default.
-const DefaultQuarantine = 7 * 24 * time.Hour
+// DefaultQuarantine is how long a retired archive is kept by default, so
+// reads already under way, in this process or another, finish against it.
+const DefaultQuarantine = 24 * time.Hour
 
 // archiveNames lists the archives in the storage that are not retired.
 func (ps *PackStorage) archiveNames() ([]string, error) {

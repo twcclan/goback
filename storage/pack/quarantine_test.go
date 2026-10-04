@@ -19,7 +19,12 @@ func TestARewriteKeepsWhatItRetiredUntilTheQuarantineEnds(t *testing.T) {
 	_, err := store.Collect(ctx, gcOptions(t, 0))
 	require.NoError(t, err)
 
-	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	// the run's clock is ahead of the retirement, so it would purge what
+	// it retired under the default quarantine
+	opts := gcOptions(t, 48*time.Hour)
+	opts.Quarantine = 7 * 24 * time.Hour
+
+	second, err := store.Collect(ctx, opts)
 	require.NoError(t, err)
 	require.NotZero(t, second.Swept)
 	requireStored(t, store, gone, false)
@@ -69,7 +74,9 @@ func TestRestoringAQuarantinedArchiveBringsItsObjectsBack(t *testing.T) {
 
 	_, err := store.Collect(ctx, gcOptions(t, 0))
 	require.NoError(t, err)
-	_, err = store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	opts := gcOptions(t, 48*time.Hour)
+	opts.Quarantine = 7 * 24 * time.Hour
+	_, err = store.Collect(ctx, opts)
 	require.NoError(t, err)
 	requireStored(t, store, gone, false)
 
