@@ -59,6 +59,66 @@ func TestARewriteLooksEachObjectUpOncePerChunk(t *testing.T) {
 	}
 }
 
+func TestCompactionMergesOnlySmallArchivesAndNeverItsOwnOutput(t *testing.T) {
+	const small = 64 << 10
+
+	store := newTestStore(t, t.TempDir(), WithMaxSize(4<<20),
+		WithCompaction(CompactionConfig{Small: small, Batch: 1 << 20, MinimumCandidates: 1000, Workers: 16}))
+	defer store.Close()
+
+	objects := makeTestData(t, 300)
+
+	for i := 0; i < 200; i += 5 {
+		for _, object := range objects[i : i+5] {
+			require.NoError(t, store.Put(context.Background(), object))
+		}
+		require.NoError(t, store.Flush())
+	}
+
+	for _, object := range objects[200:] {
+		require.NoError(t, store.Put(context.Background(), object))
+	}
+	require.NoError(t, store.Flush())
+
+	sizes := func() map[string]uint64 {
+		store.mtx.RLock()
+		defer store.mtx.RUnlock()
+
+		out := make(map[string]uint64)
+		for _, a := range store.archives {
+			out[a.name] = a.size
+		}
+
+		return out
+	}
+
+	var large string
+	for name, size := range sizes() {
+		if size >= small {
+			large = name
+		}
+	}
+	require.NotEmpty(t, large)
+
+	require.NoError(t, store.doCompaction())
+
+	merged := sizes()
+	require.Contains(t, merged, large, "an archive that is not small stays")
+
+	for name, size := range merged {
+		require.GreaterOrEqual(t, size, uint64(small), "%s came out small", name)
+	}
+
+	require.NoError(t, store.doCompaction())
+	require.Equal(t, merged, sizes(), "what compaction wrote is not merged again")
+
+	for _, object := range objects {
+		got, err := store.Get(context.Background(), object.Ref())
+		require.NoError(t, err)
+		require.Equal(t, object.Bytes(), got.Bytes())
+	}
+}
+
 func TestARewriteTrustsOnlyAReachableCopyOutsideItsGroup(t *testing.T) {
 	rw := &rewrite{
 		inGroup: map[string]bool{"candidate": true},

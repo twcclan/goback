@@ -31,8 +31,9 @@ type compactionGroup struct {
 	droppedBytes   uint64
 }
 
-// Compact rewrites the small committed archives into full-sized archives at
-// the root and returns when it is done.
+// Compact merges the small committed archives into archives at the root
+// once they add up to a batch, or are more than MinimumCandidates, and
+// returns when it is done. What it writes is too large to be merged again.
 func (ps *PackStorage) Compact() error {
 	return ps.doCompaction()
 }
@@ -46,7 +47,7 @@ func (ps *PackStorage) doCompaction() error {
 	ps.mtx.RLock()
 	for _, candidate := range ps.archives {
 		candidate.mtx.RLock()
-		eligible := candidate.readOnly && candidate.state == ArchiveCommitted && candidate.size < ps.maxSize
+		eligible := candidate.readOnly && candidate.state == ArchiveCommitted && candidate.size < ps.compaction.small()
 		candidate.mtx.RUnlock()
 
 		if !eligible {
@@ -58,7 +59,7 @@ func (ps *PackStorage) doCompaction() error {
 	}
 	ps.mtx.RUnlock()
 
-	if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.maxSize {
+	if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.compaction.batch() {
 		ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total))
 
 		return ps.compactGroup(context.Background(), group)
@@ -79,6 +80,39 @@ const maxWorkers = 16
 
 // lookupBatch is how many objects one lookup of a rewrite asks for.
 const lookupBatch = 1000
+
+const (
+	defaultSmall = 16 << 20
+	defaultBatch = 256 << 20
+)
+
+func (c CompactionConfig) small() uint64 {
+	if c.Small == 0 {
+		return defaultSmall
+	}
+
+	return c.Small
+}
+
+func (c CompactionConfig) batch() uint64 {
+	if c.Batch == 0 {
+		return defaultBatch
+	}
+
+	return c.Batch
+}
+
+// workersFor is at most workers, and few enough that each writes at least
+// four times what counts as small out of chunk: an output that came out
+// small would be merged again by the next Compact.
+func (c CompactionConfig) workersFor(chunk []*archive, workers int) int {
+	var total uint64
+	for _, a := range chunk {
+		total += a.size
+	}
+
+	return max(1, min(workers, int(total/(4*c.small()))))
+}
 
 // compactGroup rewrites the group's candidates, several at once. An object
 // with a usable copy committed outside the group is dropped; the rest is
@@ -108,7 +142,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	for start := 0; start < len(group.candidates); start += size {
 		chunk := group.candidates[start:min(start+size, len(group.candidates))]
 
-		if err := rw.chunk(ctx, chunk, workers); err != nil {
+		if err := rw.chunk(ctx, chunk, ps.compaction.workersFor(chunk, workers)); err != nil {
 			span.RecordError(err)
 			return err
 		}
@@ -141,6 +175,39 @@ type rewrite struct {
 	unmarked map[string]uint64
 }
 
+// shares splits the chunk into at most workers runs of about the same size,
+// one per worker, each writing its own outputs.
+func shares(chunk []*archive, workers int) [][]int {
+	var left uint64
+	for _, a := range chunk {
+		left += a.size
+	}
+
+	workers = max(1, min(workers, len(chunk)))
+	out := make([][]int, 0, workers)
+
+	var share []int
+	var taken uint64
+
+	for i, a := range chunk {
+		share = append(share, i)
+		taken += a.size
+
+		// each share aims at an equal part of what the earlier ones left
+		if remaining := uint64(workers - len(out)); remaining > 1 && taken*remaining >= left {
+			out = append(out, share)
+			left -= taken
+			share, taken = nil, 0
+		}
+	}
+
+	if len(share) > 0 {
+		out = append(out, share)
+	}
+
+	return out
+}
+
 // chunk rewrites some of the group's candidates and retires them.
 func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) error {
 	indexes, standIn, err := rw.lookUp(ctx, chunk, workers)
@@ -148,28 +215,18 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 		return err
 	}
 
-	queue := make(chan int)
 	grp, gctx := errgroup.WithContext(ctx)
 
-	grp.Go(func() error {
-		defer close(queue)
-
-		for i := range chunk {
-			select {
-			case queue <- i:
-			case <-gctx.Done():
-				return gctx.Err()
-			}
-		}
-
-		return nil
-	})
-
-	for range min(workers, len(chunk)) {
+	for _, share := range shares(chunk, workers) {
 		grp.Go(func() error {
 			out := &rewriteOutput{rw: rw}
 
-			for i := range queue {
+			for _, i := range share {
+				if err := gctx.Err(); err != nil {
+					out.abort()
+					return err
+				}
+
 				if err := rw.candidate(gctx, out, chunk[i], indexes[i], standIn); err != nil {
 					out.abort()
 					return err

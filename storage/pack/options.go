@@ -97,8 +97,14 @@ type PackOption func(p *packOptions)
 
 // CompactionConfig tunes Compact; when it runs is the caller's business.
 type CompactionConfig struct {
-	// MinimumCandidates is how many eligible archives Compact needs before
-	// it rewrites them.
+	// Small is the size under which a committed archive is merged; zero
+	// means 16 MiB.
+	Small uint64
+	// Batch is how much the small archives must add up to before Compact
+	// merges them; zero means 256 MiB.
+	Batch uint64
+	// MinimumCandidates is how many small archives make Compact merge them
+	// whatever they add up to.
 	MinimumCandidates int
 	// Workers is how many archives a rewrite, by Compact or Collect, reads
 	// at once, each into its own output; zero means four per GOMAXPROCS, at
