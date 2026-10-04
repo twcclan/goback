@@ -202,11 +202,7 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 		}
 
 		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return nil, backup.ErrNotFound
-			}
-
-			return nil, err
+			return nil, fromStatus(err)
 		}
 
 		objects = append(objects, resp.Object)
@@ -321,11 +317,7 @@ func (r *Client) Presence(ctx context.Context, set string) (presence.Set, error)
 func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	resp, err := r.store.Get(r.outgoing(ctx), &proto.GetRequest{Ref: ref})
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return nil, backup.ErrNotFound
-		}
-
-		return nil, err
+		return nil, fromStatus(err)
 	}
 
 	if location := resp.GetLocation(); location != nil {
@@ -464,11 +456,7 @@ func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn 
 		}
 
 		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return backup.ErrNotFound
-			}
-
-			return err
+			return fromStatus(err)
 		}
 
 		err = fn(int(resp.Index), resp.Object)
@@ -678,6 +666,21 @@ func ToStatus(err error) error {
 		return status.Error(codes.Unimplemented, err.Error())
 	case errors.Is(err, backup.ErrSessionLost):
 		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, backup.ErrQuotaExceeded):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	}
+
+	return err
+}
+
+// fromStatus maps the codes a read answers with back to the store's
+// sentinel errors, keeping the server's message.
+func fromStatus(err error) error {
+	switch status.Code(err) {
+	case codes.NotFound:
+		return backup.ErrNotFound
+	case codes.ResourceExhausted:
+		return fmt.Errorf("%w: %s", backup.ErrQuotaExceeded, status.Convert(err).Message())
 	}
 
 	return err

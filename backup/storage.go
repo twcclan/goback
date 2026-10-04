@@ -44,6 +44,11 @@ var (
 	// ErrSessionLost is returned for a commit whose session lost objects it
 	// had already been told were stored; backing up again stores them anew.
 	ErrSessionLost = errors.New("the session lost objects it had stored")
+
+	// ErrQuotaExceeded is returned when the store refuses a read because
+	// the caller used up what it may read; retrying does not help until
+	// the quota is raised or renews.
+	ErrQuotaExceeded = errors.New("read quota exceeded")
 )
 
 // SetID reads s as a set id, which a set given by digits alone is; ok is

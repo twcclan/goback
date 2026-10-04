@@ -50,6 +50,9 @@ type memIndex struct {
 	deny   string
 	policy *storekey.Policy
 
+	// exhausted refuses every read as over quota
+	exhausted bool
+
 	filters       []*proto.PresenceFilter
 	presenceScope backup.PresenceScope
 	presenceSet   string
@@ -123,6 +126,10 @@ func (m *memIndex) unreference(ref *proto.Ref) {
 func (m *memIndex) Get(_ context.Context, ref *proto.Ref) (*proto.Object, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	if m.exhausted {
+		return nil, fmt.Errorf("%w: 10 GB this month", backup.ErrQuotaExceeded)
+	}
 
 	obj, ok := m.objects[string(ref.Hash)]
 	if !ok {
@@ -353,6 +360,27 @@ func TestRemoteReadFileStreamsParts(t *testing.T) {
 	require.ErrorIs(t, client.Delete(ctx, file.Ref()), backup.ErrNotImplemented)
 	_, err = client.Has(ctx, file.Ref())
 	require.ErrorIs(t, err, backup.ErrNotImplemented)
+}
+
+func TestRemoteReadsOverQuotaFailAsQuotaExceeded(t *testing.T) {
+	index, dial := startServer(t)
+	ctx := context.Background()
+	client := dial("node-1")
+
+	blob := proto.NewObject(&proto.Blob{Data: []byte("save data")})
+	require.NoError(t, client.Put(ctx, blob))
+	file := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Length: 9, Ref: blob.Ref()}}})
+	require.NoError(t, client.Put(ctx, file))
+
+	index.mtx.Lock()
+	index.exhausted = true
+	index.mtx.Unlock()
+
+	_, err := client.Get(ctx, file.Ref())
+	require.ErrorIs(t, err, backup.ErrQuotaExceeded)
+	_, err = client.GetTree(ctx, file.Ref(), 1)
+	require.ErrorIs(t, err, backup.ErrQuotaExceeded)
+	require.ErrorIs(t, client.ReadParts(ctx, file.Ref(), nil, func(int, *proto.Object) error { return nil }), backup.ErrQuotaExceeded)
 }
 
 func TestRemoteBeginCommit(t *testing.T) {

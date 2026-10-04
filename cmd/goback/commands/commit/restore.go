@@ -107,8 +107,9 @@ func (c *commit) restore() error {
 					err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)
 				}
 
-				// a salvage restores what it can and reports the rest
-				if !c.restorer.Salvage {
+				// a salvage restores what it can and reports the rest, but
+				// past the quota every other file would fail the same way
+				if !c.restorer.Salvage || errors.Is(err, backup.ErrQuotaExceeded) {
 					return err
 				}
 
