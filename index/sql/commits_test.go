@@ -1049,3 +1049,64 @@ func TestARebuildPointsEachSetAtItsCommits(t *testing.T) {
 
 	require.ElementsMatch(t, []*proto.Ref{first, second}, keeper.heads)
 }
+
+func TestACommitPlannedBeforeAnotherOfItsSetLandedWritesNothingStale(t *testing.T) {
+	f := newFixture(t)
+
+	f.commit("world", f.tree(f.dir("d", f.file("a.txt", "one"))), false)
+
+	f.advance(time.Hour)
+	other := f.tree(f.dir("d", f.file("a.txt", "two")))
+	planned := f.tree(f.dir("d", f.file("a.txt", "three")))
+
+	// the other commit lands while the planned one reads its directory;
+	// it was received later, so the planned one is the older and goes
+	f.store.beforeGet = map[string]func(){string(planned.GetTree().Nodes[0].Ref.Hash): func() {
+		f.commit("world", other, false)
+	}}
+
+	plannedRef := f.commit("world", planned, false)
+
+	var versions []rangeRow
+	for _, r := range f.ranges(f.x, "files") {
+		if r.path == "d/a.txt" {
+			versions = append(versions, r)
+		}
+	}
+
+	require.Len(t, versions, 2, "the planned commit's writes were not made")
+	require.Equal(t, versions[1].validFrom, *versions[0].validUntil)
+	require.Nil(t, versions[1].validUntil)
+
+	exists, err := f.x.client.CommitRow.Query().Where(commitrow.Ref(plannedRef.Hash)).Exist(f.ctx)
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
+func TestRetiringKeepsTheRefsOfACommitThatLandsWhileItWalks(t *testing.T) {
+	f := newFixture(t)
+
+	shared := f.file("shared.txt", "shared")
+	f.commit("world", f.tree(shared), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 2}))
+	f.advance(time.Hour)
+	kept := f.tree(f.file("b.txt", "two"))
+	f.commit("world", kept, false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("c.txt", "three")), false)
+
+	// the first commit is retired; while its refs are weighed against the
+	// live commits, one that holds its file again lands
+	f.store.beforeGet = map[string]func(){string(kept.Ref().Hash): func() {
+		f.advance(time.Hour)
+		f.commit("world", f.tree(shared), false)
+	}}
+
+	n, err := f.x.Retire(f.ctx, f.clock)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	held, err := f.x.client.SetRef.Query().Where(setref.Ref(shared.Ref.Hash)).Exist(f.ctx)
+	require.NoError(t, err)
+	require.True(t, held, "a ref a live commit holds was dropped")
+}

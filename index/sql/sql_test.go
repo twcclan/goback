@@ -51,6 +51,8 @@ type memStore struct {
 	// asked counts the Has calls for each ref, and read the Get calls
 	asked map[string]int
 	read  map[string]int
+	// beforeGet runs once, before the first Get of its ref
+	beforeGet map[string]func()
 }
 
 func newMemStore() *memStore {
@@ -79,6 +81,15 @@ func (m *memStore) Put(_ context.Context, obj *proto.Object) error {
 }
 
 func (m *memStore) Get(_ context.Context, ref *proto.Ref) (*proto.Object, error) {
+	m.mu.Lock()
+	before := m.beforeGet[string(ref.Hash)]
+	delete(m.beforeGet, string(ref.Hash))
+	m.mu.Unlock()
+
+	if before != nil {
+		before()
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.read[string(ref.Hash)]++

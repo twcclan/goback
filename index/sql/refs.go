@@ -70,17 +70,38 @@ func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte)
 		return nil
 	}
 
-	if err := subtractLive(x.client); err != nil {
-		return err
+	for range planAttempts {
+		if err := subtractLive(x.client); err != nil {
+			return err
+		}
+
+		err := x.dropRefs(ctx, setID, dead, walked)
+		if !errors.Is(err, errSetMoved) {
+			return err
+		}
 	}
 
+	// the set keeps taking commits: the next retirement prunes what is left
+	return nil
+}
+
+// dropRefs deletes the dead refs of a set under its lock, provided every
+// live commit of the set is among those walked to find them.
+func (x *Index) dropRefs(ctx context.Context, setID int64, dead, walked map[string]bool) error {
 	return x.tx(ctx, func(tx *ent.Tx) error {
 		if _, err := x.lockSet(ctx, tx, setID); err != nil {
 			return err
 		}
 
-		if err := subtractLive(tx.Client()); err != nil {
+		live, err := tx.CommitRow.Query().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).Select(commitrow.FieldRef).Strings(ctx)
+		if err != nil {
 			return err
+		}
+
+		for _, ref := range live {
+			if !walked[ref] {
+				return errSetMoved
+			}
 		}
 
 		refs := make([][]byte, 0, len(dead))

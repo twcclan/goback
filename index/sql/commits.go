@@ -196,73 +196,167 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		return err
 	}
 
-	var (
-		start   = time.Now()
-		indexed int64
-	)
+	start := time.Now()
+	at := time.Unix(0, commit.ReceivedAtNs).UTC()
 
-	err = x.tx(ctx, func(tx *ent.Tx) error {
+	for attempt := 1; ; attempt++ {
+		diff, newest, err := x.planCommit(ctx, commit, ref, treeObj, setID, at, strict)
+		if err != nil || diff == nil {
+			return err
+		}
+
+		indexed, err := x.applyCommit(ctx, commit, ref, setID, at, strict, evaluate, diff, newest)
+		if errors.Is(err, errSetMoved) && attempt < planAttempts {
+			continue
+		}
+
+		if err != nil || !indexed {
+			return err
+		}
+
+		x.logger().Info("indexed commit", "set", commit.GetBackupSet(), "took", time.Since(start))
+
+		return nil
+	}
+}
+
+// planAttempts bounds how often a commit is planned again because another
+// commit of its set was indexed in the meantime.
+const planAttempts = 3
+
+// errSetMoved is applyCommit's answer when the set's newest commit is no
+// longer the one the plan was made against.
+var errSetMoved = errors.New("the set moved on while the commit was planned")
+
+// planCommit walks the commit's tree against the set's open rows outside
+// any transaction, so reading the store holds no lock and no connection,
+// and returns the writes that index it and the set's newest commit they
+// assume, 0 for none. It returns no diff for a commit there is nothing to
+// do for.
+func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, treeObj *proto.Object, setID int64, at time.Time, strict bool) (*treeDiff, int, error) {
+	c := x.client
+
+	skip, err := x.skipCommit(ctx, c, commit, ref, setID, strict)
+	if err != nil || skip {
+		return nil, 0, err
+	}
+
+	newest, err := newestCommit(ctx, c, setID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if newest != nil && !at.After(newest.ReceivedAt) {
+		x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", at, "newest", newest.ReceivedAt)
+		return nil, 0, nil
+	}
+
+	diff := &treeDiff{read: c, store: x.ObjectStore, setID: setID, at: at, tolerant: !strict}
+
+	root := &proto.Tree{}
+	if treeObj == nil {
+		diff.holes = append(diff.holes, "")
+	} else {
+		root, err = diff.flatten(ctx, "", commit.Tree, treeObj.GetTree())
+	}
+
+	if err == nil {
+		err = diff.dir(ctx, "", root)
+	}
+
+	if err != nil {
+		if strict {
+			return nil, 0, fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
+		}
+
+		x.logger().Warn("ignoring commit, traversing its tree failed", "ref", fmt.Sprintf("%x", ref.Hash), "err", err)
+		return nil, 0, nil
+	}
+
+	var newestID int
+	if newest != nil {
+		newestID = newest.ID
+	}
+
+	return diff, newestID, nil
+}
+
+// skipCommit reports whether a commit is already indexed or tombstoned,
+// which strict mode refuses, and refuses a strict commit to a set that no
+// longer takes them.
+func (x *Index) skipCommit(ctx context.Context, c *ent.Client, commit *proto.Commit, ref *proto.Ref, setID int64, strict bool) (bool, error) {
+	exists, err := c.CommitRow.Query().Where(commitrow.Ref(ref.Hash)).Exist(ctx)
+	if err != nil || exists {
+		return true, err
+	}
+
+	deleted, err := isDeleted(ctx, c, ref.Hash)
+	if err != nil {
+		return true, err
+	}
+
+	if deleted {
+		if strict {
+			return true, fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.Hash)
+		}
+
+		return true, nil
+	}
+
+	if !strict {
+		return false, nil
+	}
+
+	s, err := c.Set.Get(ctx, setID)
+	if err != nil {
+		return true, err
+	}
+
+	if s.State != set.StateActive {
+		return true, fmt.Errorf("%w: set %q", backup.ErrSetClosed, commit.GetBackupSet())
+	}
+
+	return false, nil
+}
+
+func newestCommit(ctx context.Context, c *ent.Client, setID int64) (*ent.CommitRow, error) {
+	newest, err := c.CommitRow.Query().Where(commitrow.SetID(setID)).Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
+	if ent.IsNotFound(err) {
+		return nil, nil
+	}
+
+	return newest, err
+}
+
+// applyCommit writes a planned commit under its set's lock, provided the
+// set's newest commit is still the one the plan assumed, and reports
+// whether it indexed it.
+func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, setID int64, at time.Time, strict, evaluate bool, diff *treeDiff, newestID int) (bool, error) {
+	indexed := false
+
+	err := x.tx(ctx, func(tx *ent.Tx) error {
 		c := tx.Client()
 
-		exists, err := c.CommitRow.Query().Where(commitrow.Ref(ref.Hash)).Exist(ctx)
-		if err != nil || exists {
+		if _, err := x.lockSet(ctx, tx, setID); err != nil {
 			return err
 		}
 
-		deleted, err := isDeleted(ctx, c, ref.Hash)
+		skip, err := x.skipCommit(ctx, c, commit, ref, setID, strict)
+		if err != nil || skip {
+			return err
+		}
+
+		newest, err := newestCommit(ctx, c, setID)
 		if err != nil {
 			return err
 		}
 
-		if deleted {
-			if strict {
-				return fmt.Errorf("%w: commit %x", backup.ErrTombstoned, ref.Hash)
-			}
-
-			return nil
+		if (newest == nil && newestID != 0) || (newest != nil && newest.ID != newestID) {
+			return errSetMoved
 		}
 
-		s, err := x.lockSet(ctx, tx, setID)
-		if err != nil {
+		if err := diff.apply(ctx, c); err != nil {
 			return err
-		}
-
-		if strict && s.State != set.StateActive {
-			return fmt.Errorf("%w: set %q", backup.ErrSetClosed, commit.GetBackupSet())
-		}
-
-		at := time.Unix(0, commit.ReceivedAtNs).UTC()
-
-		newest, err := c.CommitRow.Query().Where(commitrow.SetID(setID)).Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
-		if err != nil && !ent.IsNotFound(err) {
-			return err
-		}
-
-		if err == nil && !at.After(newest.ReceivedAt) {
-			x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", at, "newest", newest.ReceivedAt)
-			return nil
-		}
-
-		diff := &treeDiff{c: c, store: x.ObjectStore, setID: setID, at: at, tolerant: !strict}
-
-		root := &proto.Tree{}
-		err = nil
-		if treeObj == nil {
-			diff.holes = append(diff.holes, "")
-		} else {
-			root, err = diff.flatten(ctx, "", commit.Tree, treeObj.GetTree())
-		}
-
-		if err == nil {
-			err = diff.dir(ctx, "", root)
-		}
-		if err != nil {
-			if strict {
-				return fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
-			}
-
-			x.logger().Warn("ignoring commit, traversing its tree failed", "ref", fmt.Sprintf("%x", ref.Hash), "err", err)
-			return nil
 		}
 
 		size, err := logicalSize(ctx, c, setID, at)
@@ -279,7 +373,7 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
-		err = diff.ref(ctx, ref.Hash)
+		err = setRef(ctx, c, setID, ref.Hash)
 		if err != nil {
 			return err
 		}
@@ -308,27 +402,24 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			}
 		}
 
-		indexed = setID
+		indexed = true
 
 		return nil
 	})
-	if err != nil || indexed == 0 {
-		return err
-	}
 
-	x.logger().Info("indexed commit", "set", commit.GetBackupSet(), "took", time.Since(start))
-
-	return nil
+	return indexed, err
 }
 
 // treeDiff walks the changed directories of a commit against the open
-// rows of its set, closing the rows of versions that changed or vanished
-// at the commit's receipt time and opening rows for new versions.
+// rows of its set as read reads them, and plans closing the rows of
+// versions that changed or vanished at the commit's receipt time and
+// opening rows for new versions, for apply to write.
 type treeDiff struct {
-	c     *ent.Client
+	read  *ent.Client
 	store backup.ObjectStore
 	setID int64
 	at    time.Time
+	ops   []func(context.Context, *ent.Client) error
 
 	// tolerant walks around objects the store no longer holds, recording
 	// where in holes (directories whose content is unknown) and gaps
@@ -343,19 +434,36 @@ func (d *treeDiff) missing(err error) bool {
 	return d.tolerant && errors.Is(err, backup.ErrNotFound)
 }
 
-// ref records that the set references an object, which makes it readable.
-func (d *treeDiff) ref(ctx context.Context, hash []byte) error {
-	return ignoreNoRows(d.c.SetRef.Create().SetSetID(d.setID).SetRef(hash).
-		OnConflict().DoNothing().Exec(ctx))
+// do plans a write.
+func (d *treeDiff) do(op func(ctx context.Context, c *ent.Client) error) {
+	d.ops = append(d.ops, op)
+}
+
+// apply makes the planned writes through c, in the order planned.
+func (d *treeDiff) apply(ctx context.Context, c *ent.Client) error {
+	for _, op := range d.ops {
+		if err := op(ctx, c); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ref plans recording that the set references an object, which makes it
+// readable.
+func (d *treeDiff) ref(hash []byte) {
+	d.do(func(ctx context.Context, c *ent.Client) error { return setRef(ctx, c, d.setID, hash) })
+}
+
+func setRef(ctx context.Context, c *ent.Client, setID int64, hash []byte) error {
+	return ignoreNoRows(c.SetRef.Create().SetSetID(setID).SetRef(hash).OnConflict().DoNothing().Exec(ctx))
 }
 
 // flatten records a tree and its split trees and returns the flat node
 // list, like backup.LoadTree.
 func (d *treeDiff) flatten(ctx context.Context, dir string, ref *proto.Ref, t *proto.Tree) (*proto.Tree, error) {
-	err := d.ref(ctx, ref.GetHash())
-	if err != nil {
-		return nil, err
-	}
+	d.ref(ref.GetHash())
 
 	if len(t.Splits) == 0 {
 		return t, nil
@@ -391,9 +499,9 @@ func (d *treeDiff) flatten(ctx context.Context, dir string, ref *proto.Ref, t *p
 // refFile records a file object and, for one large enough to be split,
 // the sub-file objects it names.
 func (d *treeDiff) refFile(ctx context.Context, path string, node *proto.TreeNode) error {
-	err := d.ref(ctx, node.GetRef().GetHash())
-	if err != nil || node.GetStat().GetSize() < backup.SplitFileSize {
-		return err
+	d.ref(node.GetRef().GetHash())
+	if node.GetStat().GetSize() < backup.SplitFileSize {
+		return nil
 	}
 
 	obj, err := d.store.Get(ctx, node.GetRef())
@@ -407,7 +515,8 @@ func (d *treeDiff) refFile(ctx context.Context, path string, node *proto.TreeNod
 	}
 
 	err = backup.SubFiles(ctx, d.store, obj.GetFile(), func(split *proto.Ref) error {
-		return d.ref(ctx, split.GetHash())
+		d.ref(split.GetHash())
+		return nil
 	})
 	if d.missing(err) {
 		d.gaps = append(d.gaps, path)
@@ -429,7 +538,7 @@ func sameFile(row *ent.File, node *proto.TreeNode) bool {
 }
 
 func (d *treeDiff) openTrees(ctx context.Context, dir string) (map[string][]byte, error) {
-	rows, err := d.c.Tree.Query().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).All(ctx)
+	rows, err := d.read.Tree.Query().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +552,7 @@ func (d *treeDiff) openTrees(ctx context.Context, dir string) (map[string][]byte
 }
 
 func (d *treeDiff) openFiles(ctx context.Context, dir string) (map[string]*ent.File, error) {
-	rows, err := d.c.File.Query().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).All(ctx)
+	rows, err := d.read.File.Query().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -456,30 +565,34 @@ func (d *treeDiff) openFiles(ctx context.Context, dir string) (map[string]*ent.F
 	return open, nil
 }
 
-func (d *treeDiff) closeTree(ctx context.Context, p string) error {
-	return d.c.Tree.Update().Where(tree.SetID(d.setID), tree.Path(p), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+func (d *treeDiff) closeTree(p string) {
+	d.do(func(ctx context.Context, c *ent.Client) error {
+		return c.Tree.Update().Where(tree.SetID(d.setID), tree.Path(p), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
 }
 
-func (d *treeDiff) closeFile(ctx context.Context, p string) error {
-	return d.c.File.Update().Where(file.SetID(d.setID), file.Path(p), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+func (d *treeDiff) closeFile(p string) {
+	d.do(func(ctx context.Context, c *ent.Client) error {
+		return c.File.Update().Where(file.SetID(d.setID), file.Path(p), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
 }
 
-// closeSubtree closes every open row below a directory that vanished.
+// closeSubtree plans closing every open row below a directory that
+// vanished.
 func (d *treeDiff) closeSubtree(ctx context.Context, dir string) error {
-	err := d.c.File.Update().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
-	if err != nil {
-		return err
-	}
-
 	children, err := d.openTrees(ctx, dir)
 	if err != nil {
 		return err
 	}
 
-	err = d.c.Tree.Update().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
-	if err != nil {
-		return err
-	}
+	d.do(func(ctx context.Context, c *ent.Client) error {
+		err := c.File.Update().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		return c.Tree.Update().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
 
 	for child := range children {
 		if err := d.closeSubtree(ctx, child); err != nil {
@@ -517,15 +630,13 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 			}
 
 			if open {
-				if err := d.closeTree(ctx, child); err != nil {
-					return err
-				}
+				d.closeTree(child)
 			}
 
-			err = d.c.Tree.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(node.GetRef().GetHash()).Exec(ctx)
-			if err != nil {
-				return err
-			}
+			ref := node.GetRef().GetHash()
+			d.do(func(ctx context.Context, c *ent.Client) error {
+				return c.Tree.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(ref).Exec(ctx)
+			})
 
 			descend = append(descend, node)
 			continue
@@ -537,17 +648,15 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		}
 
 		if open {
-			if err := d.closeFile(ctx, child); err != nil {
-				return err
-			}
+			d.closeFile(child)
 		}
 
-		err = d.c.File.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(node.GetRef().GetHash()).
-			SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(proto.PathComponent(info.GetUser())).SetGroup(proto.PathComponent(info.GetGroup())).SetSize(info.GetSize()).
-			SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget()).Exec(ctx)
-		if err != nil {
-			return err
-		}
+		ref := node.GetRef().GetHash()
+		d.do(func(ctx context.Context, c *ent.Client) error {
+			return c.File.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(ref).
+				SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(proto.PathComponent(info.GetUser())).SetGroup(proto.PathComponent(info.GetGroup())).SetSize(info.GetSize()).
+				SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget()).Exec(ctx)
+		})
 
 		if info.GetType() == proto.NodeType_NODE_SYMLINK {
 			continue
@@ -564,9 +673,7 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 			continue
 		}
 
-		if err := d.closeTree(ctx, p); err != nil {
-			return err
-		}
+		d.closeTree(p)
 
 		if err := d.closeSubtree(ctx, p); err != nil {
 			return err
@@ -575,9 +682,7 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 
 	for p := range files {
 		if !seen[p] {
-			if err := d.closeFile(ctx, p); err != nil {
-				return err
-			}
+			d.closeFile(p)
 		}
 	}
 
