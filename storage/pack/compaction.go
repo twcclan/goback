@@ -72,6 +72,11 @@ func (ps *PackStorage) doCompaction() error {
 // done, so a rewrite that is stopped keeps what it finished.
 const compactionChunk = 1000
 
+// maxWorkers bounds the default number of workers: each holds an open
+// output archive and a lookup's rows, which a many-core host would
+// otherwise multiply into gigabytes.
+const maxWorkers = 16
+
 // lookupBatch is how many objects one lookup of a rewrite asks for.
 const lookupBatch = 1000
 
@@ -90,7 +95,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 
 	workers := ps.compaction.Workers
 	if workers <= 0 {
-		workers = 4 * runtime.GOMAXPROCS(0)
+		workers = min(4*runtime.GOMAXPROCS(0), maxWorkers)
 	}
 
 	size := ps.compaction.Chunk
