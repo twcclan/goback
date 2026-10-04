@@ -601,9 +601,14 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	tombstoned := make(map[refKey]bool)
 	// tombOf maps a tombstone's own ref to its target
 	tombOf := make(map[refKey]refKey)
+	commits := make(map[refKey]bool)
 
 	for _, ga := range r.order {
 		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+			if proto.ObjectType(rec.Type) == proto.ObjectType_COMMIT {
+				commits[keyOf(rec.Sum[:])] = true
+			}
+
 			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
 				return nil
 			}
@@ -649,14 +654,13 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		}
 	}
 
-	takeBack := func(tomb refKey) {
-		if untombed, ok := tombOf[tomb]; ok {
+	// a committed session's commit is a root of its own, so the
+	// un-tombstone it wrote of the commit never takes back the
+	// tombstone that retires it
+	for _, t := range r.tombstones {
+		if untombed, ok := tombOf[t.target]; ok && !commits[untombed] {
 			keep(untombed)
 		}
-	}
-
-	for _, t := range r.tombstones {
-		takeBack(t.target)
 	}
 
 	// a session commits only after copying what it relies on, so its

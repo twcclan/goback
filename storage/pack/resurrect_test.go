@@ -62,6 +62,37 @@ func TestACommitTakesBackItselfAndTheTombstonesOfWhatItSkipped(t *testing.T) {
 	requireUntombed(t, store, own[:len(own)-1], false)
 }
 
+func TestTheUntombstoneOfACommitDoesNotUndoItsRetirement(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	blobs := makeTestData(t, 10)
+	putAll(t, store, blobs)
+
+	chain := makeChain(blobs)
+	own := chain[len(blobs):]
+	commit := own[len(own)-1]
+
+	sctx, _ := beginSession(t, store, "agent-a")
+	for _, obj := range own {
+		require.NoError(t, store.Put(sctx, obj))
+	}
+
+	requireUntombed(t, store, []*proto.Object{commit}, true)
+
+	require.NoError(t, store.Delete(ctx, commit.Ref()))
+	require.NoError(t, store.Flush())
+
+	for i, ahead := range []time.Duration{0, 48 * time.Hour, 96 * time.Hour} {
+		_, err := store.Collect(ctx, gcOptions(t, ahead))
+		require.NoError(t, err, "collection %d", i)
+	}
+
+	requirePresent(t, store, []*proto.Object{commit}, false)
+	requireStored(t, store, chain, false)
+}
+
 func TestACommitCopiesWhatACollectionCondemnedUnderWhatItReliedOn(t *testing.T) {
 	store := newGCStore(t, t.TempDir())
 	t.Cleanup(func() { _ = store.Close() })
