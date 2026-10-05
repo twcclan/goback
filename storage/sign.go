@@ -21,18 +21,81 @@ var _ pack.RangeSigner = (*BucketStore)(nil)
 // be turned on the rest of the archive.
 const rangeHeader = "Range"
 
-// bindRange puts the range among the headers the signature covers, for
-// each driver that can, and reports whether one did.
-func bindRange(as func(any) bool, value string) bool {
+// SignedRange asks for a GET of bytes [Offset, Offset+Length) of the
+// archive Name, working for TTL from Now (zero means time.Now). Header
+// is bound into the signature beside the range, and the request must
+// send it as given.
+type SignedRange struct {
+	Name           string
+	Offset, Length int64
+	TTL            time.Duration
+	Now            time.Time
+	Header         map[string]string
+}
+
+// SignArchiveRange signs r against bucket, which holds archives as a
+// BucketStore keeps them. A bucket whose driver cannot bind the range and
+// headers answers pack.ErrNoSignedURL; only Cloud Storage binds headers
+// beyond the range.
+func SignArchiveRange(ctx context.Context, bucket *blob.Bucket, r SignedRange) (*proto.Location, error) {
+	if r.Length <= 0 {
+		return nil, fmt.Errorf("%w: empty range of %s", pack.ErrNoSignedURL, r.Name)
+	}
+
+	now := r.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	value := fmt.Sprintf("bytes=%d-%d", r.Offset, r.Offset+r.Length-1)
+
+	bound := false
+	url, err := bucket.SignedURL(ctx, ArchiveKey(r.Name), &blob.SignedURLOptions{
+		Expiry: r.TTL,
+		Method: "GET",
+		BeforeSign: func(as func(any) bool) error {
+			bound = bind(as, value, r.Header)
+
+			return nil
+		},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", pack.ErrNoSignedURL, err)
+	}
+
+	if !bound {
+		return nil, fmt.Errorf("%w: this bucket cannot bind the range and its headers", pack.ErrNoSignedURL)
+	}
+
+	header := map[string]string{rangeHeader: value}
+	for name, v := range r.Header {
+		header[name] = v
+	}
+
+	return &proto.Location{
+		Url:     url,
+		Header:  header,
+		Length:  r.Length,
+		Expires: timestamppb.New(now.Add(r.TTL)),
+	}, nil
+}
+
+// bind puts the range and the extra headers among those the signature
+// covers, for each driver that can, and reports whether one did.
+func bind(as func(any) bool, value string, extra map[string]string) bool {
 	var gcsOptions *gcs.SignedURLOptions
 	if as(&gcsOptions) {
 		gcsOptions.Headers = append(gcsOptions.Headers, rangeHeader+":"+value)
+		for name, v := range extra {
+			gcsOptions.Headers = append(gcsOptions.Headers, name+":"+v)
+		}
 
 		return true
 	}
 
 	var s3Get *s3.GetObjectInput
-	if as(&s3Get) {
+	if len(extra) == 0 && as(&s3Get) {
 		s3Get.Range = aws.String(value)
 
 		return true
@@ -45,35 +108,5 @@ func bindRange(as func(any) bool, value string) bool {
 // so the recipient can read those bytes and nothing else of the archive.
 // A bucket whose driver cannot bind a header answers ErrNoSignedURL.
 func (c *BucketStore) SignRange(ctx context.Context, name string, offset, length int64, ttl time.Duration) (*proto.Location, error) {
-	if length <= 0 {
-		return nil, fmt.Errorf("%w: empty range of %s", pack.ErrNoSignedURL, name)
-	}
-
-	value := fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)
-
-	bound := false
-	url, err := c.bucket.SignedURL(ctx, c.key(name), &blob.SignedURLOptions{
-		Expiry: ttl,
-		Method: "GET",
-		BeforeSign: func(as func(any) bool) error {
-			bound = bindRange(as, value)
-
-			return nil
-		},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", pack.ErrNoSignedURL, err)
-	}
-
-	if !bound {
-		return nil, fmt.Errorf("%w: this bucket cannot bind a range", pack.ErrNoSignedURL)
-	}
-
-	return &proto.Location{
-		Url:     url,
-		Header:  map[string]string{rangeHeader: value},
-		Length:  length,
-		Expires: timestamppb.New(time.Now().Add(ttl)),
-	}, nil
+	return SignArchiveRange(ctx, c.bucket, SignedRange{Name: name, Offset: offset, Length: length, TTL: ttl})
 }

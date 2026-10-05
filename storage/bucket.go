@@ -250,6 +250,12 @@ func (c *BucketStore) newWriteFile(key string) (pack.File, error) {
 }
 
 func (c *BucketStore) key(name string) string {
+	return ArchiveKey(name)
+}
+
+// ArchiveKey is where a BucketStore keeps the archive file name in its
+// bucket.
+func ArchiveKey(name string) string {
 	return fmt.Sprintf(blobObjectKey, path.Ext(name), name)
 }
 
