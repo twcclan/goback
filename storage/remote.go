@@ -532,6 +532,18 @@ func (r *Client) TrashedCommits(ctx context.Context, set string, before time.Tim
 	return resp.GetCommits(), nil
 }
 
+// CountCommits implements backup.Retention.
+func (r *Client) CountCommits(ctx context.Context, set string, period proto.Period, from, to time.Time, zone string, deleted bool) ([]*proto.CommitCount, error) {
+	resp, err := r.store.CountCommits(r.outgoing(ctx), &proto.CountCommitsRequest{
+		BackupSet: set, Period: period, FromNs: unixNanos(from), ToNs: unixNanos(to), TimeZone: zone, Deleted: deleted,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.GetCounts(), nil
+}
+
 // DeleteSet implements backup.Retention.
 func (r *Client) DeleteSet(ctx context.Context, set string, erase bool) error {
 	_, err := r.store.DeleteSet(r.outgoing(ctx), &proto.DeleteSetRequest{BackupSet: set, Erase: erase})
@@ -718,7 +730,7 @@ func ToStatus(err error) error {
 	case errors.Is(err, auth.ErrForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, ErrInvalidRequest), errors.Is(err, proto.ErrRefMismatch), errors.Is(err, proto.ErrInvalidObject),
-		errors.Is(err, backup.ErrInvalidEscrow), errors.Is(err, backup.ErrSetName):
+		errors.Is(err, backup.ErrInvalidEscrow), errors.Is(err, backup.ErrSetName), errors.Is(err, backup.ErrInvalidCount):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, backup.ErrDanglingRef), errors.Is(err, backup.ErrSetClosed),
 		errors.Is(err, backup.ErrTombstoned), errors.Is(err, backup.ErrNewestCommit),
@@ -791,6 +803,40 @@ func (r *Server) ListTrash(ctx context.Context, request *proto.ListTrashRequest)
 	}
 
 	return &proto.ListTrashResponse{Commits: commits}, nil
+}
+
+// CountCommits implements proto.StoreServer.
+func (r *Server) CountCommits(ctx context.Context, request *proto.CountCommitsRequest) (*proto.CountCommitsResponse, error) {
+	ret, err := r.store.Retention()
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	counts, err := ret.CountCommits(ctx, request.GetBackupSet(), request.GetPeriod(),
+		fromUnixNanos(request.GetFromNs()), fromUnixNanos(request.GetToNs()), request.GetTimeZone(), request.GetDeleted())
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	return &proto.CountCommitsResponse{Counts: counts}, nil
+}
+
+// unixNanos is t on the wire, 0 for the zero time.
+func unixNanos(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+
+	return t.UnixNano()
+}
+
+// fromUnixNanos reads what unixNanos wrote.
+func fromUnixNanos(ns int64) time.Time {
+	if ns == 0 {
+		return time.Time{}
+	}
+
+	return time.Unix(0, ns)
 }
 
 // DeleteSet implements proto.StoreServer.

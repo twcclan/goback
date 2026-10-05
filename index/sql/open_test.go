@@ -211,6 +211,8 @@ func TestPostgres(t *testing.T) {
 		"CommitDetailsBefore":              TestCommitDetailsBeforeKeepsInstantsWhole,
 		"VersionsBefore":                   TestVersionsBeforePagesNewestFirst,
 		"ReadDirAfter":                     TestReadDirAfterPagesByteByByte,
+		"CountCommitsPerPeriod":            TestCountCommitsPerPeriodInAZone,
+		"CountCommitsLiveOrDeleted":        TestCountCommitsLiveOrDeleted,
 		"ListSetsAfter":                    TestListSetsAfterPagesByName,
 		"CommitInfoSkipsCheckpoints":       TestCommitInfoSkipsCheckpoints,
 		"IndexesASplitRoot":                TestIndexesASplitRoot,

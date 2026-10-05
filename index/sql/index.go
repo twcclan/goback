@@ -50,6 +50,7 @@ type Index struct {
 
 	location string
 	db       *sql.DB
+	dialect  string
 	client   *ent.Client
 	// locking is set where SELECT ... FOR UPDATE takes row locks; SQLite
 	// serialises transactions as a whole instead.
@@ -153,6 +154,7 @@ func (x *Index) Open() error {
 	client := ent.NewClient(ent.Driver(entsql.OpenDB(dialect, db)))
 
 	x.db = db
+	x.dialect = dialect
 	x.client = client
 
 	return x.seedStamp(context.Background())

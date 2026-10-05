@@ -229,6 +229,39 @@ message ListTrashResponse {
     repeated TrashedCommit commits = 1;
 }
 
+enum Period {
+    PERIOD_UNSPECIFIED = 0;
+    PERIOD_YEAR = 1;
+    PERIOD_MONTH = 2;
+    PERIOD_DAY = 3;
+    PERIOD_HOUR = 4;
+}
+
+message CountCommitsRequest {
+    string backup_set = 1;
+    Period period = 2;
+    // the receipt range counted: from_ns inclusive, to_ns exclusive
+    int64 from_ns = 3;
+    int64 to_ns = 4;
+    // IANA name the periods fall in; empty for UTC
+    string time_zone = 5;
+    // count the deleted commits UndeleteCommit can still bring back
+    // instead of the live ones
+    bool deleted = 6;
+}
+
+// CommitCount is how many commits a period holds.
+message CommitCount {
+    // the period's first instant
+    int64 start_ns = 1;
+    int64 count = 2;
+}
+
+message CountCommitsResponse {
+    // the non-empty periods, oldest first
+    repeated CommitCount counts = 1;
+}
+
 message DeleteSetRequest {
     string backup_set = 1;
     // erase uses a zero window: the commits are tombstoned by the next
@@ -315,6 +348,8 @@ service Store {
     rpc UndeleteCommit(UndeleteCommitRequest) returns (UndeleteCommitResponse) {}
     // ListTrash pages through a set's deleted commits, newest deleted first
     rpc ListTrash(ListTrashRequest) returns (ListTrashResponse) {}
+    // CountCommits counts a set's commits per year, month, day or hour
+    rpc CountCommits(CountCommitsRequest) returns (CountCommitsResponse) {}
     rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}
     rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
     rpc Unpin(UnpinRequest) returns (UnpinResponse) {}

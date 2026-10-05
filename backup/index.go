@@ -115,6 +115,12 @@ type Retention interface {
 	// then the others deleted at the last one's instant, so its
 	// DeletedAtNs is the before of the next page.
 	TrashedCommits(ctx context.Context, set string, before time.Time, limit int) ([]*proto.TrashedCommit, error)
+	// CountCommits counts the set's live complete commits received in
+	// [from, to), or with deleted the ones TrashedCommits lists, per period
+	// as it falls in the IANA zone, "" for UTC. It returns the non-empty
+	// periods oldest first, each starting at its first instant; the first
+	// may start before from.
+	CountCommits(ctx context.Context, set string, period proto.Period, from, to time.Time, zone string, deleted bool) ([]*proto.CommitCount, error)
 	// DeleteSet closes a set and retires every commit; erase uses a zero
 	// window.
 	DeleteSet(ctx context.Context, set string, erase bool) error
@@ -125,6 +131,9 @@ type Retention interface {
 	// Pins lists the live pins.
 	Pins(ctx context.Context) ([]*proto.PinInfo, error)
 }
+
+// MaxCountPeriods is the most periods a CountCommits range may span.
+const MaxCountPeriods = 1000
 
 // Retirer runs the retirement job: every retired commit past its window
 // gets a tombstone and loses its index rows.

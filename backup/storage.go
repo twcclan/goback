@@ -41,6 +41,10 @@ var (
 	// ErrSetName refuses a set name that reads as a set id.
 	ErrSetName = errors.New("a set name cannot be only digits, which name a set by id")
 
+	// ErrInvalidCount refuses a CountCommits call with an unknown period or
+	// time zone, an empty range, or more than MaxCountPeriods periods.
+	ErrInvalidCount = errors.New("invalid commit count")
+
 	// ErrSessionLost is returned for a commit whose session lost objects it
 	// had already been told were stored; backing up again stores them anew.
 	ErrSessionLost = errors.New("the session lost objects it had stored")

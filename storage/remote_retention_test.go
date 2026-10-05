@@ -54,6 +54,15 @@ func (r *retentionIndex) TrashedCommits(ctx context.Context, set string, before 
 	return []*proto.TrashedCommit{{Ref: &proto.Ref{Hash: testHash("commit")}, DeletedAtNs: 3, ExpiresAtNs: 9}}, nil
 }
 
+func (r *retentionIndex) CountCommits(ctx context.Context, set string, period proto.Period, from, to time.Time, zone string, deleted bool) ([]*proto.CommitCount, error) {
+	err := r.record(ctx, fmt.Sprintf("count:%s:%v:%d:%d:%s:%v", set, period, from.UnixNano(), to.UnixNano(), zone, deleted))
+	if err != nil {
+		return nil, err
+	}
+
+	return []*proto.CommitCount{{StartNs: 4, Count: 2}}, nil
+}
+
 func (r *retentionIndex) DeleteSet(ctx context.Context, set string, erase bool) error {
 	return r.record(ctx, "delete-set:"+set)
 }
@@ -90,6 +99,10 @@ func TestRemoteRetentionCallsReachTheIndex(t *testing.T) {
 	require.Len(t, trash, 1)
 	require.True(t, trash[0].Ref.Equal(ref))
 	require.EqualValues(t, 9, trash[0].ExpiresAtNs)
+	counts, err := client.CountCommits(ctx, "world", proto.Period_PERIOD_DAY, time.Unix(0, 5), time.Unix(0, 8), "Europe/Berlin", true)
+	require.NoError(t, err)
+	require.Len(t, counts, 1)
+	require.EqualValues(t, 2, counts[0].Count)
 	require.NoError(t, client.DeleteSet(ctx, "world", true))
 	require.NoError(t, client.UndeleteSet(ctx, "world"))
 	require.NoError(t, client.Unpin(ctx, ref))
@@ -99,7 +112,7 @@ func TestRemoteRetentionCallsReachTheIndex(t *testing.T) {
 	require.Len(t, pins, 1)
 	require.True(t, pins[0].Target.Equal(ref))
 
-	require.Equal(t, []string{"delete", "undelete", "trash:world:5:2", "delete-set:world", "undelete-set:world", "unpin", "pins"}, index.calls)
+	require.Equal(t, []string{"delete", "undelete", "trash:world:5:2", "count:world:PERIOD_DAY:5:8:Europe/Berlin:true", "delete-set:world", "undelete-set:world", "unpin", "pins"}, index.calls)
 	require.Equal(t, "node-1", index.agent, "the caller's principal reaches the index")
 
 	index.fail = backup.ErrNewestCommit
@@ -110,6 +123,10 @@ func TestRemoteRetentionCallsReachTheIndex(t *testing.T) {
 
 	index.fail = backup.ErrNotFound
 	require.Equal(t, codes.NotFound, status.Code(client.Unpin(ctx, ref)))
+
+	index.fail = backup.ErrInvalidCount
+	_, err = client.CountCommits(ctx, "world", proto.Period_PERIOD_HOUR, time.Unix(0, 5), time.Unix(0, 8), "Mars/Olympus", false)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
 	index.fail = auth.ErrForbidden
 	require.Equal(t, codes.PermissionDenied, status.Code(client.DeleteSet(ctx, "logs", false)))
