@@ -9,7 +9,6 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/backup/storekey/master"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -27,22 +26,6 @@ var Command = cli.Command{
 			ArgsUsage:   "<name>",
 			Action:      newAction,
 			Flags:       []cli.Flag{outFlag("store.key")},
-		},
-		{
-			Name:        "master",
-			Description: "Generate a master key file that store keys can be derived from",
-			Action:      masterAction,
-			Flags:       []cli.Flag{outFlag("master.key")},
-		},
-		{
-			Name:        "derive",
-			Description: "Derive the named store's key from a master key file; the same master and name always give the same key",
-			ArgsUsage:   "<name>",
-			Action:      deriveAction,
-			Flags: []cli.Flag{
-				cli.StringFlag{Name: "master", Usage: "master key file to derive from", Value: "master.key"},
-				outFlag("store.key"),
-			},
 		},
 		{
 			Name:        "escrow",
@@ -158,46 +141,6 @@ func newAction(c *cli.Context) error {
 	}
 
 	return write(c, key, "wrote")
-}
-
-func masterAction(c *cli.Context) error {
-	out := c.String("out")
-	if err := fresh(out); err != nil {
-		return err
-	}
-
-	m, err := master.Generate()
-	if err != nil {
-		return err
-	}
-
-	err = m.Save(out)
-	if err != nil {
-		return err
-	}
-
-	common.Result(keyWritten{Action: "wrote", Path: out}, func() { fmt.Printf("wrote master key to %s\n", out) })
-
-	return nil
-}
-
-func deriveAction(c *cli.Context) error {
-	name, err := storeName(c)
-	if err != nil {
-		return err
-	}
-
-	m, err := master.Load(c.String("master"))
-	if err != nil {
-		return err
-	}
-
-	key, err := m.Derive(name)
-	if err != nil {
-		return err
-	}
-
-	return write(c, key, "derived")
 }
 
 // minPassphrase is the shortest passphrase a key is escrowed under: anyone

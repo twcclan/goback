@@ -53,7 +53,7 @@ goback --storage /backups --store-key store.key --set home \
 | `file` | list and restore single files and their versions |
 | `set` | delete and undelete a set, show or change its retention |
 | `pin` | keep a commit regardless of retention |
-| `key` | make, derive, escrow and recover store keys; make at-rest keys |
+| `key` | make, escrow and recover store keys; make at-rest keys |
 | `gc` | mark what live commits and pins reach, and rewrite archives that are mostly dead |
 | `maintain` | finalize idle archives, compact, retire expired commits, build presence filters |
 | `scrub`, `repair` | rehash every stored object, and rewrite the archives holding corrupt ones |
