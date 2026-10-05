@@ -84,6 +84,34 @@ func ClientTLS(caFile string) (*tls.Config, error) {
 	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, nil
 }
 
+// ServerTLS returns what a store server listens with: TLS from the
+// certificate and key files, or plaintext when the operator declared a
+// TLS-terminating proxy in front and gave neither. The TLS configuration
+// is nil for plaintext.
+func ServerTLS(certFile, keyFile string, plaintextBehindProxy bool) (credentials.TransportCredentials, *tls.Config, error) {
+	switch {
+	case certFile != "" && keyFile != "":
+		if plaintextBehindProxy {
+			return nil, nil, errors.New("--plaintext-behind-proxy and --tls-cert are exclusive")
+		}
+
+		pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		config := &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
+
+		return credentials.NewTLS(config), config, nil
+	case certFile != "" || keyFile != "":
+		return nil, nil, errors.New("--tls-cert and --tls-key go together")
+	case plaintextBehindProxy:
+		return insecure.NewCredentials(), nil, nil
+	default:
+		return nil, nil, errors.New("--tls-cert and --tls-key are required unless --plaintext-behind-proxy is set")
+	}
+}
+
 var (
 	_ backup.Index      = (*Client)(nil)
 	_ backup.Retention  = (*Client)(nil)

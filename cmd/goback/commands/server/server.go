@@ -26,8 +26,6 @@ import (
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Command is the server command.
@@ -102,9 +100,13 @@ func serverAction(ctx *cli.Context) {
 		common.Fatal(err)
 	}
 
-	creds, tlsConfig, err := transportCredentials(ctx)
+	creds, tlsConfig, err := storage.ServerTLS(ctx.String("tls-cert"), ctx.String("tls-key"), ctx.Bool("plaintext-behind-proxy"))
 	if err != nil {
 		common.Fatal(err)
+	}
+
+	if tlsConfig == nil {
+		log.Println("Serving plaintext; a proxy must terminate TLS in front of this listener")
 	}
 
 	s := common.GetObjectStore(ctx)
@@ -197,36 +199,6 @@ func sharedSecret(ctx *cli.Context) (string, error) {
 	}
 
 	return secret, nil
-}
-
-// transportCredentials serves TLS from --tls-cert and --tls-key, or
-// plaintext when the operator declared a TLS-terminating proxy in front;
-// the TLS configuration is nil for plaintext.
-func transportCredentials(ctx *cli.Context) (credentials.TransportCredentials, *tls.Config, error) {
-	cert, key := ctx.String("tls-cert"), ctx.String("tls-key")
-
-	switch {
-	case cert != "" && key != "":
-		if ctx.Bool("plaintext-behind-proxy") {
-			return nil, nil, errors.New("--plaintext-behind-proxy and --tls-cert are exclusive")
-		}
-
-		pair, err := tls.LoadX509KeyPair(cert, key)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		config := &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
-
-		return credentials.NewTLS(config), config, nil
-	case cert != "" || key != "":
-		return nil, nil, errors.New("--tls-cert and --tls-key go together")
-	case ctx.Bool("plaintext-behind-proxy"):
-		log.Println("Serving plaintext; a proxy must terminate TLS in front of this listener")
-		return insecure.NewCredentials(), nil, nil
-	default:
-		return nil, nil, errors.New("--tls-cert and --tls-key are required unless --plaintext-behind-proxy is set")
-	}
 }
 
 // serveAdmin starts the operator surface on addr with the main listener's
