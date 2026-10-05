@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/internal/testminio"
+	"github.com/twcclan/goback/testing/tests3"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 )
 
 func TestAnS3StoreKeepsItsArchivesInTheIndexAndTakesACache(t *testing.T) {
-	u := parse(t, testminio.Start(t, "goback")+"&cache="+t.TempDir())
+	u := parse(t, tests3.Start(t, "goback")+"&cache="+t.TempDir())
 
 	global := flag.NewFlagSet("goback", flag.ContinueOnError)
 	global.String("index", t.TempDir(), "")

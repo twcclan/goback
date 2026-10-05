@@ -13,11 +13,10 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/index/sql/migrations"
+	"github.com/twcclan/goback/testing/testpg"
 
 	"ariga.io/atlas/sql/migrate"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 // concurrentOpen opens several indexes on one empty database at once; the
@@ -121,57 +120,11 @@ func TestPostgres(t *testing.T) {
 
 	ctx := context.Background()
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "postgres:17-alpine",
-			ExposedPorts: []string{"5432/tcp"},
-			Env:          map[string]string{"POSTGRES_PASSWORD": "goback", "POSTGRES_DB": "goback"},
-			WaitingFor:   wait.ForListeningPort("5432/tcp"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Skipf("no Docker: %v", err)
-	}
-
-	t.Cleanup(func() { _ = container.Terminate(context.Background()) })
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "5432")
-	require.NoError(t, err)
-
-	dsn := fmt.Sprintf("postgres://postgres:goback@%s:%s/goback?sslmode=disable", host, port.Port())
-
-	// wait for the server to accept connections
-	deadline := time.Now().Add(time.Minute)
-	for {
-		x := New(dsn, newMemStore())
-		err := x.Open()
-		if err == nil {
-			require.NoError(t, x.Close())
-			break
-		}
-
-		t.Logf("opening %s: %v", dsn, err)
-		require.False(t, time.Now().After(deadline), "postgres did not come up: %v", err)
-		time.Sleep(time.Second)
-	}
-
-	var databases int
 	previous := openIndex
 	openIndex = func(t testing.TB, store backup.ObjectStore) *Index {
 		t.Helper()
 
-		databases++
-		name := fmt.Sprintf("goback_%d", databases)
-		admin := New(dsn, nil)
-		require.NoError(t, admin.Open())
-		_, err := admin.db.ExecContext(ctx, "CREATE DATABASE "+name)
-		require.NoError(t, err)
-		require.NoError(t, admin.Close())
-
-		x := New(fmt.Sprintf("postgres://postgres:goback@%s:%s/%s?sslmode=disable", host, port.Port(), name), store)
+		x := New(testpg.Start(t), store)
 		require.NoError(t, x.Open())
 		t.Cleanup(func() { _ = x.Close() })
 
@@ -180,15 +133,7 @@ func TestPostgres(t *testing.T) {
 	t.Cleanup(func() { openIndex = previous })
 
 	t.Run("MigrationsMatchSchema", func(t *testing.T) {
-		databases++
-		name := fmt.Sprintf("goback_%d", databases)
-		admin := New(dsn, nil)
-		require.NoError(t, admin.Open())
-		_, err := admin.db.ExecContext(ctx, "CREATE DATABASE "+name)
-		require.NoError(t, err)
-		require.NoError(t, admin.Close())
-
-		scratch, err := sql.Open("pgx", fmt.Sprintf("postgres://postgres:goback@%s:%s/%s?sslmode=disable", host, port.Port(), name))
+		scratch, err := sql.Open("pgx", testpg.Start(t))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = scratch.Close() })
 
@@ -222,15 +167,7 @@ func TestPostgres(t *testing.T) {
 	})
 
 	t.Run("ConcurrentOpen", func(t *testing.T) {
-		databases++
-		name := fmt.Sprintf("goback_%d", databases)
-		admin := New(dsn, nil)
-		require.NoError(t, admin.Open())
-		_, err := admin.db.ExecContext(ctx, "CREATE DATABASE "+name)
-		require.NoError(t, err)
-		require.NoError(t, admin.Close())
-
-		url := fmt.Sprintf("postgres://postgres:goback@%s:%s/%s?sslmode=disable", host, port.Port(), name)
+		url := testpg.Start(t)
 		concurrentOpen(t, func() *Index { return New(url, newMemStore()) })
 	})
 

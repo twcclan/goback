@@ -159,7 +159,12 @@ func apply(ctx context.Context, q querier, dialect string, dir migrate.Dir, tabl
 // scratch database of the dialect that is left empty again. It returns
 // migrate.ErrNoPlan when dir is up to date.
 func Diff(ctx context.Context, db *sql.DB, dialect string, dir migrate.Dir, name string) error {
-	return DiffWith(ctx, entmigrate.NewSchema(entsql.OpenDB(EntDialect(dialect), db)), dir, name)
+	return DiffWith(ctx, Schema(db, dialect), dir, name)
+}
+
+// Schema is goback's index schema over db in the dialect.
+func Schema(db *sql.DB, dialect string) Differ {
+	return entmigrate.NewSchema(entsql.OpenDB(EntDialect(dialect), db))
 }
 
 // Differ is what a generated ent migrate package's NewSchema returns.

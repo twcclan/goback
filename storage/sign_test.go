@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/internal/testminio"
+	"github.com/twcclan/goback/testing/tests3"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -25,7 +25,7 @@ func signing(t *testing.T, name string) *storage.BucketStore {
 	t.Helper()
 	ctx := context.Background()
 
-	bucket, err := blob.OpenBucket(ctx, testminio.Start(t, "goback"))
+	bucket, err := blob.OpenBucket(ctx, tests3.Start(t, "goback"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = bucket.Close() })
 

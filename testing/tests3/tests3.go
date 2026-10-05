@@ -1,10 +1,11 @@
-// Package testminio starts a throwaway S3-compatible object store for
-// tests that need one.
-package testminio
+// Package tests3 starts a throwaway S3-compatible object store for tests
+// that need one.
+package tests3
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,8 +23,8 @@ const (
 )
 
 // Start runs a MinIO container holding one empty bucket and returns the
-// blob URL that opens it; the test is skipped in short mode or without
-// Docker. It puts the credentials in the environment for the AWS SDK to
+// blob URL that opens it; the test is skipped in short mode, and without
+// Docker unless CI is set. It puts the credentials in the environment for the AWS SDK to
 // find, so a test using it cannot run beside one wanting other ones.
 func Start(t testing.TB, bucket string) string {
 	t.Helper()
@@ -47,7 +48,7 @@ func Start(t testing.TB, bucket string) string {
 		Started: true,
 	})
 	if err != nil {
-		t.Skipf("no Docker: %v", err)
+		noDocker(t, err)
 	}
 	t.Cleanup(func() { _ = container.Terminate(context.Background()) })
 
@@ -76,4 +77,15 @@ func client(endpoint string) *s3.Client {
 		o.BaseEndpoint = aws.String(endpoint)
 		o.UsePathStyle = true
 	})
+}
+
+// noDocker skips the test, or fails it in CI, where Docker must be there.
+func noDocker(t testing.TB, err error) {
+	t.Helper()
+
+	if os.Getenv("CI") != "" {
+		t.Fatalf("no Docker: %v", err)
+	}
+
+	t.Skipf("no Docker: %v", err)
 }
