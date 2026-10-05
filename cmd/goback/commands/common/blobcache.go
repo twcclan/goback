@@ -1,9 +1,8 @@
 package common
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/twcclan/goback/backup/blobcache"
 	"github.com/twcclan/goback/backup/storekey"
@@ -12,10 +11,10 @@ import (
 	"github.com/urfave/cli"
 )
 
-// BlobCache opens the blob cache named by the global --blob-cache flag for
-// the store the command works against, or returns nil when there is none.
+// BlobCache opens the blob cache under --cache-dir for the store the
+// command works against, or returns nil when --cache-dir is unset.
 func BlobCache(c *cli.Context, key *storekey.Key) *blobcache.Cache {
-	dir := c.GlobalString("blob-cache")
+	dir := c.GlobalString("cache-dir")
 	if dir == "" {
 		return nil
 	}
@@ -25,15 +24,12 @@ func BlobCache(c *cli.Context, key *storekey.Key) *blobcache.Cache {
 		Fatalf("invalid --blob-cache-size: %v", err)
 	}
 
-	storeID := ""
+	storeID := storageID(c)
 	if key != nil {
 		storeID = key.IDString()
-	} else {
-		sum := sha256.Sum256([]byte(c.GlobalString("storage")))
-		storeID = fmt.Sprintf("%x", sum[:8])
 	}
 
-	cache, err := blobcache.Open(dir, storeID, int64(limit))
+	cache, err := blobcache.Open(filepath.Join(dir, "blobs"), storeID, int64(limit))
 	if err != nil {
 		Fatalf("opening blob cache: %v", err)
 	}

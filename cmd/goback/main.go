@@ -83,12 +83,13 @@ func main() {
 			Usage: "key file a pack:// or gcs:// store seals its archives with, from goback key at-rest; empty stores objects as received",
 		},
 		cli.StringFlag{
-			Name:  "blob-cache",
-			Usage: "directory holding copies of stored blobs, consulted before downloading during a restore; empty disables it",
+			Name:   "cache-dir",
+			Usage:  "per-machine directory for the caches of every store: blobs a restore need not download, the stat and tree caches a backup skips unchanged files with, and a bucket's archive metadata; empty caches nothing",
+			EnvVar: "GOBACK_CACHE_DIR",
 		},
 		cli.StringFlag{
 			Name:  "blob-cache-size",
-			Usage: "size the blob cache is trimmed to after a backup or restore",
+			Usage: "size the blob cache under --cache-dir is trimmed to after a backup or restore",
 			Value: "4GB",
 		},
 		cli.BoolTFlag{

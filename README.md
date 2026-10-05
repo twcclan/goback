@@ -43,7 +43,9 @@ goback --storage /backups --store-key store.key --set home \
 ```
 
 `--storage` also takes `gcs://bucket`, `s3://bucket?endpoint=…`, or
-`goback://<secret>@host:port` for a goback server.
+`goback://<secret>@host:port` for a goback server. `--cache-dir` (or
+`GOBACK_CACHE_DIR`) names a per-machine directory for every cache: a backup
+skips unchanged files with it and a restore downloads less.
 
 ## Commands
 

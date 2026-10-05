@@ -227,9 +227,10 @@ func atRest(c *cli.Context) ([]pack.PackOption, error) {
 	return []pack.PackOption{pack.WithAtRestKey(key)}, nil
 }
 
-// initGCS opens a Cloud Storage bucket, initS3 an S3-compatible one. The
-// query takes cache; every other parameter (prefix, endpoint, region, ...)
-// goes to the bucket. The archive index is the --index location.
+// initGCS opens a Cloud Storage bucket, initS3 an S3-compatible one. Every
+// query parameter (prefix, endpoint, region, ...) goes to the bucket; the
+// archive index is the --index location and the metadata cache sits under
+// --cache-dir.
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return initBucket("gs", u, c)
 }
@@ -244,8 +245,9 @@ func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, 
 		return nil, errors.New("a bucket url takes no index; the --index location is the store's index")
 	}
 
-	cache := query.Get("cache")
-	query.Del("cache")
+	if query.Has("cache") {
+		return nil, errors.New("a bucket url takes no cache; --cache-dir names where caches go")
+	}
 
 	bucket, err := blob.OpenBucket(context.Background(), (&url.URL{Scheme: scheme, Host: u.Host, RawQuery: query.Encode()}).String())
 	if err != nil {
@@ -258,7 +260,7 @@ func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, 
 	}
 
 	return withIndex(c, func(x *sql.Index) (*pack.PackStorage, error) {
-		return storage.NewBucketObjectStore(bucket, x, cache, append(options, pack.WithOwned(x))...)
+		return storage.NewBucketObjectStore(bucket, x, StoreCache(c, "metadata"), append(options, pack.WithOwned(x))...)
 	})
 }
 

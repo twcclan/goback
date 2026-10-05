@@ -96,7 +96,7 @@ func runNew(c *cli.Context) error {
 	objects := backup.ObjectStore(index)
 
 	var stats *statcache.Cache
-	if dir := c.String("state-dir"); dir != "" {
+	if dir := common.StoreCache(c, "backup"); dir != "" {
 		stats, err = statcache.Open(filepath.Join(dir, "stat"))
 		if err != nil {
 			return errors.Join(errors.New("opening stat cache"), err)
@@ -256,10 +256,6 @@ var newCmd = cli.Command{
 			Name:  "progress-interval",
 			Usage: "how often to report what the walk has covered so far; negative disables",
 			Value: backup.DefaultProgressInterval,
-		},
-		cli.StringFlag{
-			Name:  "state-dir",
-			Usage: "per-machine directory for the stat cache and tree cache; optional",
 		},
 		common.MetaFlag,
 		cli.StringFlag{
