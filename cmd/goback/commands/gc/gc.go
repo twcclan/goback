@@ -125,6 +125,7 @@ type ReportView struct {
 	Swept            int              `json:"swept"`
 	ReclaimedObjects uint64           `json:"reclaimed_objects"`
 	ReclaimedBytes   uint64           `json:"reclaimed_bytes"`
+	CopiedBytes      uint64           `json:"copied_bytes"`
 	Purged           int              `json:"purged"`
 	Seconds          float64          `json:"seconds"`
 	SetBytes         map[int64]uint64 `json:"set_bytes,omitempty"`
@@ -139,7 +140,7 @@ func View(report *pack.CollectReport) ReportView {
 		Roots: report.Roots, Marked: report.Marked, DeadObjects: report.DeadObjects, DeadBytes: report.DeadBytes,
 		Resumed: report.Resumed, ErasedArchives: report.ErasedArchives, Condemned: report.Condemned,
 		SweepSkipped: report.SweepSkipped, Published: report.Published, Swept: report.Swept,
-		ReclaimedObjects: report.ReclaimedObjects, ReclaimedBytes: report.ReclaimedBytes, Purged: report.Purged,
+		ReclaimedObjects: report.ReclaimedObjects, ReclaimedBytes: report.ReclaimedBytes, CopiedBytes: report.CopiedBytes, Purged: report.Purged,
 		Seconds: report.Duration.Seconds(), SetBytes: report.SetBytes, SetDeduplicated: report.SetDeduplicated,
 		SetAlone: report.SetAlone, SetExclusive: report.SetExclusive}
 }
@@ -160,5 +161,5 @@ func Summary(report *pack.CollectReport) string {
 		return summary + "\nGC sweep skipped: " + report.SweepSkipped
 	}
 
-	return summary + fmt.Sprintf("\nGC swept %d archives (%d flagged for erasure), reclaimed %d objects (%s)", report.Swept, report.ErasedArchives, report.ReclaimedObjects, humanize.Bytes(report.ReclaimedBytes))
+	return summary + fmt.Sprintf("\nGC swept %d archives (%d flagged for erasure), reclaimed %d objects (%s), copied %s", report.Swept, report.ErasedArchives, report.ReclaimedObjects, humanize.Bytes(report.ReclaimedBytes), humanize.Bytes(report.CopiedBytes))
 }

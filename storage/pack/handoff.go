@@ -27,6 +27,8 @@ type sweepPlan struct {
 	MinAge     time.Duration `json:"minAge"`
 	// Drop holds, per archive, the index positions the rewrite drops.
 	Drop map[string]*bitset.BitSet `json:"drop"`
+	// Class holds, per archive, the output class of each index position.
+	Class map[string][]int32 `json:"class,omitempty"`
 }
 
 func planName(generation uint64) string {
@@ -58,7 +60,8 @@ func (ps *PackStorage) PendingPlans() ([]uint64, error) {
 
 // publish writes the sweep the run would do as a plan for RewritePlan.
 func (r *gcRun) publish() (int, error) {
-	plan := sweepPlan{Generation: r.gen, Now: r.opts.Now, MinAge: r.opts.MinAge, Drop: make(map[string]*bitset.BitSet)}
+	plan := sweepPlan{Generation: r.gen, Now: r.opts.Now, MinAge: r.opts.MinAge, Drop: make(map[string]*bitset.BitSet),
+		Class: make(map[string][]int32)}
 
 	for _, ga := range r.order {
 		if !r.selected(ga) {
@@ -78,6 +81,7 @@ func (r *gcRun) publish() (int, error) {
 		}
 
 		plan.Drop[ga.a.name] = drop
+		plan.Class[ga.a.name] = ga.class
 	}
 
 	if len(plan.Drop) == 0 {
@@ -102,6 +106,7 @@ type RewriteReport struct {
 	Swept            int
 	ReclaimedObjects uint64
 	ReclaimedBytes   uint64
+	CopiedBytes      uint64
 }
 
 // RewritePlan runs the sweeps collections published, oldest first, and
@@ -156,7 +161,9 @@ func (ps *PackStorage) readPlan(generation uint64) (*sweepPlan, error) {
 
 func (ps *PackStorage) rewrite(ctx context.Context, plan *sweepPlan, report *RewriteReport) error {
 	marks := &planMarks{ps: ps, indexes: make(map[string]IndexFile), results: make(map[string]*gcFile)}
-	group := &compactionGroup{marked: marks.marked}
+	group := &compactionGroup{marked: marks.marked, class: func(candidate *archive, pos int) int32 {
+		return classAt(plan.Class[candidate.name], pos)
+	}}
 
 	ps.mtx.RLock()
 	for _, a := range ps.archives {
@@ -195,6 +202,7 @@ func (ps *PackStorage) rewrite(ctx context.Context, plan *sweepPlan, report *Rew
 	report.Swept += len(group.candidates)
 	report.ReclaimedObjects += group.droppedObjects
 	report.ReclaimedBytes += group.droppedBytes
+	report.CopiedBytes += group.copiedBytes
 
 	return nil
 }

@@ -26,9 +26,13 @@ type compactionGroup struct {
 	// reachable and may replace the candidate's.
 	keep   func(candidate *archive, hdr *proto.ObjectHeader) bool
 	marked func(loc *IndexLocation) bool
+	// class, when set, names the output class of the candidate's record
+	// at an index position, or -1; each class is written apart.
+	class func(candidate *archive, pos int) int32
 
 	droppedObjects uint64
 	droppedBytes   uint64
+	copiedBytes    uint64
 }
 
 // Compact merges the small committed archives into archives at the root
@@ -122,7 +126,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 	defer span.End()
 
 	rw := &rewrite{started: time.Now(), ps: ps, group: group, inGroup: make(map[string]bool, len(group.candidates)),
-		written: make(map[string]bool), unmarked: make(map[string]uint64)}
+		written: make(map[string]bool), unmarked: make(map[string]uint64), open: make(map[int64]*rewriteOutput)}
 	for _, candidate := range group.candidates {
 		rw.inGroup[candidate.name] = true
 	}
@@ -148,6 +152,7 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		}
 	}
 
+	group.copiedBytes = rw.copied
 	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(rw.copied)))
 
 	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
@@ -173,6 +178,9 @@ type rewrite struct {
 	// unmarked names the copied objects their input's last mark result
 	// left unreachable, and that result's generation
 	unmarked map[string]uint64
+	// open holds the outputs being written, by class, or by worker for
+	// what has none
+	open map[int64]*rewriteOutput
 }
 
 // shares splits the chunk into at most workers runs of about the same size,
@@ -217,32 +225,28 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 
 	grp, gctx := errgroup.WithContext(ctx)
 
-	for _, share := range shares(chunk, workers) {
+	for worker, share := range shares(chunk, workers) {
 		grp.Go(func() error {
-			out := &rewriteOutput{rw: rw}
-
 			for _, i := range share {
 				if err := gctx.Err(); err != nil {
-					out.abort()
 					return err
 				}
 
-				if err := rw.candidate(gctx, out, chunk[i], indexes[i], standIn); err != nil {
-					out.abort()
+				if err := rw.candidate(gctx, worker, chunk[i], indexes[i], standIn); err != nil {
 					return err
 				}
 			}
 
-			if err := gctx.Err(); err != nil {
-				out.abort()
-				return err
-			}
-
-			return out.finish()
+			return gctx.Err()
 		})
 	}
 
 	if err := grp.Wait(); err != nil {
+		rw.abort()
+		return err
+	}
+
+	if err := rw.finish(ctx, workers); err != nil {
 		return err
 	}
 
@@ -417,9 +421,67 @@ func (rw *rewrite) elsewhere(copies []IndexLocation) bool {
 	return false
 }
 
-// candidate copies what survives of one candidate into out; standIn names
-// the objects a copy outside the group stands in for.
-func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate *archive, idx IndexFile, standIn map[string]bool) error {
+// output is the open output the worker writes the record at pos of
+// candidate into.
+func (rw *rewrite) output(worker int, candidate *archive, pos int) *rewriteOutput {
+	key := -1 - int64(worker)
+	if rw.group.class != nil {
+		if class := rw.group.class(candidate, pos); class >= 0 {
+			key = int64(class)
+		}
+	}
+
+	rw.mtx.Lock()
+	defer rw.mtx.Unlock()
+
+	out := rw.open[key]
+	if out == nil {
+		out = &rewriteOutput{rw: rw}
+		rw.open[key] = out
+	}
+
+	return out
+}
+
+// finish closes and indexes every open output.
+func (rw *rewrite) finish(ctx context.Context, workers int) error {
+	rw.mtx.Lock()
+	open := rw.open
+	rw.open = make(map[int64]*rewriteOutput)
+	rw.mtx.Unlock()
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(workers)
+
+	for _, out := range open {
+		grp.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				out.abort()
+				return err
+			}
+
+			return out.finish()
+		})
+	}
+
+	return grp.Wait()
+}
+
+func (rw *rewrite) abort() {
+	rw.mtx.Lock()
+	defer rw.mtx.Unlock()
+
+	for _, out := range rw.open {
+		out.abort()
+	}
+
+	rw.open = make(map[int64]*rewriteOutput)
+}
+
+// candidate copies what survives of one candidate into the worker's
+// outputs; standIn names the objects a copy outside the group stands in
+// for.
+func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive, idx IndexFile, standIn map[string]bool) error {
 	started := time.Now()
 	var copied uint64
 
@@ -447,9 +509,14 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 			return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, candidate.name)
 		}
 
-		if !rw.claim(hdr.Ref.Hash, mark, idx.position(hdr.Ref.Hash)) {
+		pos := idx.position(hdr.Ref.Hash)
+		if !rw.claim(hdr.Ref.Hash, mark, pos) {
 			return nil
 		}
+
+		out := rw.output(worker, candidate, pos)
+		out.mtx.Lock()
+		defer out.mtx.Unlock()
 
 		ar, err := out.archive()
 		if err != nil {
@@ -458,7 +525,7 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 
 		copied += uint64(length)
 
-		version := idx[idx.position(hdr.Ref.Hash)].Version(candidate.created)
+		version := idx[pos].Version(candidate.created)
 
 		return ar.putVersioned(ctx, hdr, bytes, &version)
 	})
@@ -486,9 +553,10 @@ func (rw *rewrite) candidate(ctx context.Context, out *rewriteOutput, candidate 
 	return nil
 }
 
-// rewriteOutput is the root archive one worker writes into.
+// rewriteOutput is the root archive one class is written into.
 type rewriteOutput struct {
 	rw   *rewrite
+	mtx  sync.Mutex
 	open *archive
 }
 

@@ -107,8 +107,8 @@ type CompactionConfig struct {
 	// whatever they add up to.
 	MinimumCandidates int
 	// Workers is how many archives a rewrite, by Compact or Collect, reads
-	// at once, each into its own output; zero means four per GOMAXPROCS, at
-	// most 16.
+	// at once; zero means four per GOMAXPROCS, at most 16. Compact gives
+	// each its own output, Collect each set and age of what survives.
 	Workers int
 	// Chunk is how many archives a rewrite takes at a time, retiring each
 	// chunk as it finishes; zero means 1000.

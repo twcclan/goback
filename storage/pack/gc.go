@@ -151,6 +151,8 @@ type CollectReport struct {
 	Swept            int
 	ReclaimedObjects uint64
 	ReclaimedBytes   uint64
+	// CopiedBytes is what the sweep wrote again to reclaim that.
+	CopiedBytes uint64
 	// Purged counts the quarantined files the run deleted.
 	Purged int
 	// ArchiveBytes is what the archives the run marked take up in storage,
@@ -182,6 +184,11 @@ type gcArchive struct {
 	prev      *gcFile
 	cur       *bitset.BitSet
 	next      *gcFile
+	// owners and class are what a sweep rewriting the archive needs per
+	// record: whom the mark attributed it to, then what it is written
+	// with
+	owners []Attribution
+	class  []int32
 }
 
 type gcTombstone struct {
@@ -407,6 +414,10 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 
 	if err := run.writeResults(); err != nil {
+		return nil, err
+	}
+
+	if err := run.classify(live); err != nil {
 		return nil, err
 	}
 
@@ -1338,6 +1349,11 @@ func (r *gcRun) share(owners []Attribution, length uint64) {
 // sorted runs; hit sees the records the runs name, with everything that
 // reached them, and each sees every record.
 func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution, size uint64), each func(sum refKey)) error {
+	return r.scanOf(r.order, runs, hit, each)
+}
+
+// scanOf is scan over archives alone.
+func (r *gcRun) scanOf(archives []*gcArchive, runs *liveRuns, hit func(ga *gcArchive, pos int, rec *IndexRecord, owners []Attribution, size uint64), each func(sum refKey)) error {
 	it, err := runs.iterator()
 	if err != nil {
 		return err
@@ -1351,7 +1367,7 @@ func (r *gcRun) scan(runs *liveRuns, hit func(ga *gcArchive, pos int, rec *Index
 		}
 	}()
 
-	for _, ga := range r.order {
+	for _, ga := range archives {
 		scanner, err := ga.a.scanIndex()
 		if err != nil {
 			return errors.Wrapf(err, "reading index of %s", ga.a.name)
@@ -1507,7 +1523,7 @@ func (r *gcRun) sweepBlocker() string {
 // sweep rewrites the archives whose dead share or age selects them, dropping
 // objects unmarked in two consecutive generations.
 func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
-	group := &compactionGroup{keep: r.keep, marked: r.marked}
+	group := &compactionGroup{keep: r.keep, marked: r.marked, class: r.class}
 
 	for _, ga := range r.order {
 		if !r.selected(ga) {
@@ -1531,6 +1547,7 @@ func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
 	report.Swept += len(group.candidates)
 	report.ReclaimedObjects += group.droppedObjects
 	report.ReclaimedBytes += group.droppedBytes
+	report.CopiedBytes += group.copiedBytes
 
 	return nil
 }
