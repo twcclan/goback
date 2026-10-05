@@ -73,6 +73,9 @@ func (CommitRow) Fields() []ent.Field {
 		field.String("agent_id").Default(""),
 		field.Int64("scan_start_ns").Default(0),
 		field.Uint32("policy_version").Default(0),
+		// the commit's key_id in hex: empty for a plain commit, null for one that
+		// records none
+		field.String("key_id").Optional().Nillable(),
 		field.Bool("consistent").Default(false),
 		field.Int64("set_id"),
 		field.Bytes("presence").Optional(),

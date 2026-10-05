@@ -95,6 +95,11 @@ func PolicyVersion(v uint32) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldPolicyVersion, v))
 }
 
+// KeyID applies equality check predicate on the "key_id" field. It's identical to KeyIDEQ.
+func KeyID(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldKeyID, v))
+}
+
 // Consistent applies equality check predicate on the "consistent" field. It's identical to ConsistentEQ.
 func Consistent(v bool) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldConsistent, v))
@@ -508,6 +513,81 @@ func PolicyVersionLT(v uint32) predicate.CommitRow {
 // PolicyVersionLTE applies the LTE predicate on the "policy_version" field.
 func PolicyVersionLTE(v uint32) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldLTE(FieldPolicyVersion, v))
+}
+
+// KeyIDEQ applies the EQ predicate on the "key_id" field.
+func KeyIDEQ(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldKeyID, v))
+}
+
+// KeyIDNEQ applies the NEQ predicate on the "key_id" field.
+func KeyIDNEQ(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNEQ(FieldKeyID, v))
+}
+
+// KeyIDIn applies the In predicate on the "key_id" field.
+func KeyIDIn(vs ...string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIn(FieldKeyID, vs...))
+}
+
+// KeyIDNotIn applies the NotIn predicate on the "key_id" field.
+func KeyIDNotIn(vs ...string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotIn(FieldKeyID, vs...))
+}
+
+// KeyIDGT applies the GT predicate on the "key_id" field.
+func KeyIDGT(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGT(FieldKeyID, v))
+}
+
+// KeyIDGTE applies the GTE predicate on the "key_id" field.
+func KeyIDGTE(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGTE(FieldKeyID, v))
+}
+
+// KeyIDLT applies the LT predicate on the "key_id" field.
+func KeyIDLT(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLT(FieldKeyID, v))
+}
+
+// KeyIDLTE applies the LTE predicate on the "key_id" field.
+func KeyIDLTE(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLTE(FieldKeyID, v))
+}
+
+// KeyIDContains applies the Contains predicate on the "key_id" field.
+func KeyIDContains(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldContains(FieldKeyID, v))
+}
+
+// KeyIDHasPrefix applies the HasPrefix predicate on the "key_id" field.
+func KeyIDHasPrefix(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldHasPrefix(FieldKeyID, v))
+}
+
+// KeyIDHasSuffix applies the HasSuffix predicate on the "key_id" field.
+func KeyIDHasSuffix(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldHasSuffix(FieldKeyID, v))
+}
+
+// KeyIDIsNil applies the IsNil predicate on the "key_id" field.
+func KeyIDIsNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIsNull(FieldKeyID))
+}
+
+// KeyIDNotNil applies the NotNil predicate on the "key_id" field.
+func KeyIDNotNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotNull(FieldKeyID))
+}
+
+// KeyIDEqualFold applies the EqualFold predicate on the "key_id" field.
+func KeyIDEqualFold(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEqualFold(FieldKeyID, v))
+}
+
+// KeyIDContainsFold applies the ContainsFold predicate on the "key_id" field.
+func KeyIDContainsFold(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldContainsFold(FieldKeyID, v))
 }
 
 // ConsistentEQ applies the EQ predicate on the "consistent" field.

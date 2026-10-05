@@ -36,19 +36,19 @@ func init() {
 	// commitrow.DefaultPolicyVersion holds the default value on creation for the policy_version field.
 	commitrow.DefaultPolicyVersion = commitrowDescPolicyVersion.Default.(uint32)
 	// commitrowDescConsistent is the schema descriptor for consistent field.
-	commitrowDescConsistent := commitrowFields[8].Descriptor()
+	commitrowDescConsistent := commitrowFields[9].Descriptor()
 	// commitrow.DefaultConsistent holds the default value on creation for the consistent field.
 	commitrow.DefaultConsistent = commitrowDescConsistent.Default.(bool)
 	// commitrowDescPartial is the schema descriptor for partial field.
-	commitrowDescPartial := commitrowFields[11].Descriptor()
+	commitrowDescPartial := commitrowFields[12].Descriptor()
 	// commitrow.DefaultPartial holds the default value on creation for the partial field.
 	commitrow.DefaultPartial = commitrowDescPartial.Default.(bool)
 	// commitrowDescIncomplete is the schema descriptor for incomplete field.
-	commitrowDescIncomplete := commitrowFields[12].Descriptor()
+	commitrowDescIncomplete := commitrowFields[13].Descriptor()
 	// commitrow.DefaultIncomplete holds the default value on creation for the incomplete field.
 	commitrow.DefaultIncomplete = commitrowDescIncomplete.Default.(bool)
 	// commitrowDescRetainedBy is the schema descriptor for retained_by field.
-	commitrowDescRetainedBy := commitrowFields[13].Descriptor()
+	commitrowDescRetainedBy := commitrowFields[14].Descriptor()
 	// commitrow.DefaultRetainedBy holds the default value on creation for the retained_by field.
 	commitrow.DefaultRetainedBy = commitrowDescRetainedBy.Default.(string)
 	fileFields := schema.File{}.Fields()

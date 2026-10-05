@@ -475,7 +475,18 @@ func canonicalCommit(c *Commit) ([]byte, error) {
 	b = appendVarint(b, 11, uint64(c.ReceivedAtNs))
 	b = appendBool(b, 12, c.Consistent)
 
-	return appendMap(b, 13, c.Metadata)
+	b, err = appendMap(b, 13, c.Metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// present and empty says plain, so it is written even when empty
+	if c.KeyId != nil {
+		b = protowire.AppendTag(b, 14, protowire.BytesType)
+		b = protowire.AppendBytes(b, c.KeyId)
+	}
+
+	return b, nil
 }
 
 func canonicalPin(p *Pin) ([]byte, error) {

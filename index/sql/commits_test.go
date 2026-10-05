@@ -634,6 +634,27 @@ func TestCommitInfoReproducesTheRef(t *testing.T) {
 	require.True(t, commits[0].GetParent().Equal(parent))
 }
 
+func TestACommitKeepsTheKeyItRecords(t *testing.T) {
+	f := newFixture(t)
+
+	for i, keyID := range [][]byte{nil, {}, {1, 2, 3, 4, 5, 6, 7, 8}} {
+		f.advance(time.Hour)
+
+		obj := proto.NewObject(&proto.Commit{
+			Timestamp: f.clock.Unix(),
+			Tree:      f.tree(f.file("a.txt", fmt.Sprint(i))).Ref(),
+			BackupSet: "world",
+			KeyId:     keyID,
+		})
+		require.NoError(t, f.x.Put(f.ctx, obj))
+
+		commits, err := f.x.CommitInfo(f.ctx, "world", f.clock, 1)
+		require.NoError(t, err)
+		require.Equal(t, keyID, commits[0].KeyId)
+		require.True(t, proto.NewObject(commits[0]).Ref().Equal(obj.Ref()), "key id %x", keyID)
+	}
+}
+
 // TestConcurrentPinsOfOneSet pins several commits of a set at once; every
 // pin re-evaluates the set, which must not deadlock on the commit rows.
 func TestConcurrentPinsOfOneSet(t *testing.T) {

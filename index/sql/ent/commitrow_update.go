@@ -131,6 +131,26 @@ func (_u *CommitRowUpdate) AddPolicyVersion(v int32) *CommitRowUpdate {
 	return _u
 }
 
+// SetKeyID sets the "key_id" field.
+func (_u *CommitRowUpdate) SetKeyID(v string) *CommitRowUpdate {
+	_u.mutation.SetKeyID(v)
+	return _u
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_u *CommitRowUpdate) SetNillableKeyID(v *string) *CommitRowUpdate {
+	if v != nil {
+		_u.SetKeyID(*v)
+	}
+	return _u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (_u *CommitRowUpdate) ClearKeyID() *CommitRowUpdate {
+	_u.mutation.ClearKeyID()
+	return _u
+}
+
 // SetConsistent sets the "consistent" field.
 func (_u *CommitRowUpdate) SetConsistent(v bool) *CommitRowUpdate {
 	_u.mutation.SetConsistent(v)
@@ -452,6 +472,12 @@ func (_u *CommitRowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedPolicyVersion(); ok {
 		_spec.AddField(commitrow.FieldPolicyVersion, field.TypeUint32, value)
 	}
+	if value, ok := _u.mutation.KeyID(); ok {
+		_spec.SetField(commitrow.FieldKeyID, field.TypeString, value)
+	}
+	if _u.mutation.KeyIDCleared() {
+		_spec.ClearField(commitrow.FieldKeyID, field.TypeString)
+	}
 	if value, ok := _u.mutation.Consistent(); ok {
 		_spec.SetField(commitrow.FieldConsistent, field.TypeBool, value)
 	}
@@ -666,6 +692,26 @@ func (_u *CommitRowUpdateOne) SetNillablePolicyVersion(v *uint32) *CommitRowUpda
 // AddPolicyVersion adds value to the "policy_version" field.
 func (_u *CommitRowUpdateOne) AddPolicyVersion(v int32) *CommitRowUpdateOne {
 	_u.mutation.AddPolicyVersion(v)
+	return _u
+}
+
+// SetKeyID sets the "key_id" field.
+func (_u *CommitRowUpdateOne) SetKeyID(v string) *CommitRowUpdateOne {
+	_u.mutation.SetKeyID(v)
+	return _u
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_u *CommitRowUpdateOne) SetNillableKeyID(v *string) *CommitRowUpdateOne {
+	if v != nil {
+		_u.SetKeyID(*v)
+	}
+	return _u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (_u *CommitRowUpdateOne) ClearKeyID() *CommitRowUpdateOne {
+	_u.mutation.ClearKeyID()
 	return _u
 }
 
@@ -1019,6 +1065,12 @@ func (_u *CommitRowUpdateOne) sqlSave(ctx context.Context) (_node *CommitRow, er
 	}
 	if value, ok := _u.mutation.AddedPolicyVersion(); ok {
 		_spec.AddField(commitrow.FieldPolicyVersion, field.TypeUint32, value)
+	}
+	if value, ok := _u.mutation.KeyID(); ok {
+		_spec.SetField(commitrow.FieldKeyID, field.TypeString, value)
+	}
+	if _u.mutation.KeyIDCleared() {
+		_spec.ClearField(commitrow.FieldKeyID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Consistent(); ok {
 		_spec.SetField(commitrow.FieldConsistent, field.TypeBool, value)

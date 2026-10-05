@@ -192,3 +192,21 @@ func TestVerifyPayload(t *testing.T) {
 	_, compression = Encode(random)
 	require.Equal(t, Compression_NONE, compression)
 }
+
+func TestACommitsKeyIDIsPartOfItsIdentity(t *testing.T) {
+	refs := map[string]bool{}
+
+	for _, keyID := range [][]byte{nil, {}, {1}, {2}} {
+		obj := NewObject(&Commit{Timestamp: 1, Tree: refOf("tree"), BackupSet: "s", KeyId: keyID})
+
+		payload, err := obj.Canonical()
+		require.NoError(t, err)
+		decoded, err := NewObjectFromPayload(payload, ObjectType_COMMIT)
+		require.NoError(t, err)
+		require.Equal(t, keyID, decoded.GetCommit().KeyId)
+
+		refs[hex.EncodeToString(obj.Ref().Hash)] = true
+	}
+
+	require.Len(t, refs, 4)
+}

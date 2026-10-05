@@ -95,6 +95,20 @@ func (_c *CommitRowCreate) SetNillablePolicyVersion(v *uint32) *CommitRowCreate 
 	return _c
 }
 
+// SetKeyID sets the "key_id" field.
+func (_c *CommitRowCreate) SetKeyID(v string) *CommitRowCreate {
+	_c.mutation.SetKeyID(v)
+	return _c
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_c *CommitRowCreate) SetNillableKeyID(v *string) *CommitRowCreate {
+	if v != nil {
+		_c.SetKeyID(*v)
+	}
+	return _c
+}
+
 // SetConsistent sets the "consistent" field.
 func (_c *CommitRowCreate) SetConsistent(v bool) *CommitRowCreate {
 	_c.mutation.SetConsistent(v)
@@ -423,6 +437,10 @@ func (_c *CommitRowCreate) createSpec() (*CommitRow, *sqlgraph.CreateSpec) {
 		_spec.SetField(commitrow.FieldPolicyVersion, field.TypeUint32, value)
 		_node.PolicyVersion = value
 	}
+	if value, ok := _c.mutation.KeyID(); ok {
+		_spec.SetField(commitrow.FieldKeyID, field.TypeString, value)
+		_node.KeyID = &value
+	}
 	if value, ok := _c.mutation.Consistent(); ok {
 		_spec.SetField(commitrow.FieldConsistent, field.TypeBool, value)
 		_node.Consistent = value
@@ -639,6 +657,24 @@ func (u *CommitRowUpsert) UpdatePolicyVersion() *CommitRowUpsert {
 // AddPolicyVersion adds v to the "policy_version" field.
 func (u *CommitRowUpsert) AddPolicyVersion(v uint32) *CommitRowUpsert {
 	u.Add(commitrow.FieldPolicyVersion, v)
+	return u
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *CommitRowUpsert) SetKeyID(v string) *CommitRowUpsert {
+	u.Set(commitrow.FieldKeyID, v)
+	return u
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *CommitRowUpsert) UpdateKeyID() *CommitRowUpsert {
+	u.SetExcluded(commitrow.FieldKeyID)
+	return u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *CommitRowUpsert) ClearKeyID() *CommitRowUpsert {
+	u.SetNull(commitrow.FieldKeyID)
 	return u
 }
 
@@ -1019,6 +1055,27 @@ func (u *CommitRowUpsertOne) AddPolicyVersion(v uint32) *CommitRowUpsertOne {
 func (u *CommitRowUpsertOne) UpdatePolicyVersion() *CommitRowUpsertOne {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.UpdatePolicyVersion()
+	})
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *CommitRowUpsertOne) SetKeyID(v string) *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetKeyID(v)
+	})
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *CommitRowUpsertOne) UpdateKeyID() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateKeyID()
+	})
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *CommitRowUpsertOne) ClearKeyID() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearKeyID()
 	})
 }
 
@@ -1601,6 +1658,27 @@ func (u *CommitRowUpsertBulk) AddPolicyVersion(v uint32) *CommitRowUpsertBulk {
 func (u *CommitRowUpsertBulk) UpdatePolicyVersion() *CommitRowUpsertBulk {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.UpdatePolicyVersion()
+	})
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *CommitRowUpsertBulk) SetKeyID(v string) *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetKeyID(v)
+	})
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *CommitRowUpsertBulk) UpdateKeyID() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateKeyID()
+	})
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *CommitRowUpsertBulk) ClearKeyID() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearKeyID()
 	})
 }
 

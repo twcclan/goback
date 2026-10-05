@@ -56,6 +56,7 @@ func (m MapperImpl) Commit(in *ent.CommitRow) *proto.Commit {
 		ReceivedAtNs:  in.ReceivedAt.UnixNano(),
 		Consistent:    in.Consistent,
 		Metadata:      in.Metadata,
+		KeyId:         mapping.KeyID(in.KeyID),
 	}
 }
 

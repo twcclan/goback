@@ -35,6 +35,8 @@ type CommitRow struct {
 	ScanStartNs int64 `json:"scan_start_ns,omitempty"`
 	// PolicyVersion holds the value of the "policy_version" field.
 	PolicyVersion uint32 `json:"policy_version,omitempty"`
+	// KeyID holds the value of the "key_id" field.
+	KeyID *string `json:"key_id,omitempty"`
 	// Consistent holds the value of the "consistent" field.
 	Consistent bool `json:"consistent,omitempty"`
 	// SetID holds the value of the "set_id" field.
@@ -98,7 +100,7 @@ func (*CommitRow) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case commitrow.FieldID, commitrow.FieldScanStartNs, commitrow.FieldPolicyVersion, commitrow.FieldSetID, commitrow.FieldLogicalSize, commitrow.FieldFileCount:
 			values[i] = new(sql.NullInt64)
-		case commitrow.FieldAgentID, commitrow.FieldRetainedBy:
+		case commitrow.FieldAgentID, commitrow.FieldKeyID, commitrow.FieldRetainedBy:
 			values[i] = new(sql.NullString)
 		case commitrow.FieldTimestamp, commitrow.FieldReceivedAt, commitrow.FieldRetireAt, commitrow.FieldDeletedAt, commitrow.FieldExpiresAt, commitrow.FieldTombstonedAt:
 			values[i] = new(sql.NullTime)
@@ -170,6 +172,13 @@ func (_m *CommitRow) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field policy_version", values[i])
 			} else if value.Valid {
 				_m.PolicyVersion = uint32(value.Int64)
+			}
+		case commitrow.FieldKeyID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field key_id", values[i])
+			} else if value.Valid {
+				_m.KeyID = new(string)
+				*_m.KeyID = value.String
 			}
 		case commitrow.FieldConsistent:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -321,6 +330,11 @@ func (_m *CommitRow) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("policy_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PolicyVersion))
+	builder.WriteString(", ")
+	if v := _m.KeyID; v != nil {
+		builder.WriteString("key_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("consistent=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Consistent))

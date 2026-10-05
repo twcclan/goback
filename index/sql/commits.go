@@ -3,6 +3,7 @@ package sql
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -365,11 +366,16 @@ func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
-		err = c.CommitRow.Create().SetRef(ref.Hash).SetTimestamp(time.Unix(commit.Timestamp, 0).UTC()).SetReceivedAt(at).
+		row := c.CommitRow.Create().SetRef(ref.Hash).SetTimestamp(time.Unix(commit.Timestamp, 0).UTC()).SetReceivedAt(at).
 			SetTree(commit.Tree.Hash).SetParent(commit.GetParent().GetHash()).SetAgentID(commit.GetAgentId()).
 			SetScanStartNs(commit.GetScanStartNs()).SetPolicyVersion(commit.GetPolicyVersion()).SetConsistent(commit.GetConsistent()).
 			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).SetFileCount(files).
-			SetIncomplete(len(diff.holes)+len(diff.gaps) > 0).Exec(ctx)
+			SetIncomplete(len(diff.holes)+len(diff.gaps) > 0)
+		if commit.KeyId != nil {
+			row.SetKeyID(hex.EncodeToString(commit.KeyId))
+		}
+
+		err = row.Exec(ctx)
 		if err != nil {
 			return err
 		}

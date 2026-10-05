@@ -794,6 +794,7 @@ type CommitRowMutation struct {
 	addscan_start_ns  *int64
 	policy_version    *uint32
 	addpolicy_version *int32
+	key_id            *string
 	consistent        *bool
 	presence          *[]byte
 	partial           *bool
@@ -1253,6 +1254,55 @@ func (m *CommitRowMutation) AddedPolicyVersion() (r int32, exists bool) {
 func (m *CommitRowMutation) ResetPolicyVersion() {
 	m.policy_version = nil
 	m.addpolicy_version = nil
+}
+
+// SetKeyID sets the "key_id" field.
+func (m *CommitRowMutation) SetKeyID(s string) {
+	m.key_id = &s
+}
+
+// KeyID returns the value of the "key_id" field in the mutation.
+func (m *CommitRowMutation) KeyID() (r string, exists bool) {
+	v := m.key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeyID returns the old "key_id" field's value of the CommitRow entity.
+// If the CommitRow object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitRowMutation) OldKeyID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeyID: %w", err)
+	}
+	return oldValue.KeyID, nil
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (m *CommitRowMutation) ClearKeyID() {
+	m.key_id = nil
+	m.clearedFields[commitrow.FieldKeyID] = struct{}{}
+}
+
+// KeyIDCleared returns if the "key_id" field was cleared in this mutation.
+func (m *CommitRowMutation) KeyIDCleared() bool {
+	_, ok := m.clearedFields[commitrow.FieldKeyID]
+	return ok
+}
+
+// ResetKeyID resets all changes to the "key_id" field.
+func (m *CommitRowMutation) ResetKeyID() {
+	m.key_id = nil
+	delete(m.clearedFields, commitrow.FieldKeyID)
 }
 
 // SetConsistent sets the "consistent" field.
@@ -1930,7 +1980,7 @@ func (m *CommitRowMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CommitRowMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.ref != nil {
 		fields = append(fields, commitrow.FieldRef)
 	}
@@ -1954,6 +2004,9 @@ func (m *CommitRowMutation) Fields() []string {
 	}
 	if m.policy_version != nil {
 		fields = append(fields, commitrow.FieldPolicyVersion)
+	}
+	if m.key_id != nil {
+		fields = append(fields, commitrow.FieldKeyID)
 	}
 	if m.consistent != nil {
 		fields = append(fields, commitrow.FieldConsistent)
@@ -2018,6 +2071,8 @@ func (m *CommitRowMutation) Field(name string) (ent.Value, bool) {
 		return m.ScanStartNs()
 	case commitrow.FieldPolicyVersion:
 		return m.PolicyVersion()
+	case commitrow.FieldKeyID:
+		return m.KeyID()
 	case commitrow.FieldConsistent:
 		return m.Consistent()
 	case commitrow.FieldSetID:
@@ -2069,6 +2124,8 @@ func (m *CommitRowMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldScanStartNs(ctx)
 	case commitrow.FieldPolicyVersion:
 		return m.OldPolicyVersion(ctx)
+	case commitrow.FieldKeyID:
+		return m.OldKeyID(ctx)
 	case commitrow.FieldConsistent:
 		return m.OldConsistent(ctx)
 	case commitrow.FieldSetID:
@@ -2159,6 +2216,13 @@ func (m *CommitRowMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPolicyVersion(v)
+		return nil
+	case commitrow.FieldKeyID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeyID(v)
 		return nil
 	case commitrow.FieldConsistent:
 		v, ok := value.(bool)
@@ -2335,6 +2399,9 @@ func (m *CommitRowMutation) ClearedFields() []string {
 	if m.FieldCleared(commitrow.FieldParent) {
 		fields = append(fields, commitrow.FieldParent)
 	}
+	if m.FieldCleared(commitrow.FieldKeyID) {
+		fields = append(fields, commitrow.FieldKeyID)
+	}
 	if m.FieldCleared(commitrow.FieldPresence) {
 		fields = append(fields, commitrow.FieldPresence)
 	}
@@ -2375,6 +2442,9 @@ func (m *CommitRowMutation) ClearField(name string) error {
 	switch name {
 	case commitrow.FieldParent:
 		m.ClearParent()
+		return nil
+	case commitrow.FieldKeyID:
+		m.ClearKeyID()
 		return nil
 	case commitrow.FieldPresence:
 		m.ClearPresence()
@@ -2431,6 +2501,9 @@ func (m *CommitRowMutation) ResetField(name string) error {
 		return nil
 	case commitrow.FieldPolicyVersion:
 		m.ResetPolicyVersion()
+		return nil
+	case commitrow.FieldKeyID:
+		m.ResetKeyID()
 		return nil
 	case commitrow.FieldConsistent:
 		m.ResetConsistent()

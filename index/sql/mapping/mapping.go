@@ -4,6 +4,7 @@
 package mapping
 
 import (
+	"encoding/hex"
 	"path"
 	"time"
 
@@ -24,6 +25,7 @@ type Mapper interface {
 	// field:Tree using:"Ref"
 	// field:BackupSet from:"Edges.Set.Name"
 	// field:Parent using:"Ref"
+	// field:KeyId from:"KeyID" using:"KeyID"
 	Commit(in *ent.CommitRow) *proto.Commit
 
 	// field:Stat from:"."
@@ -112,6 +114,21 @@ var setStates = map[set.State]proto.SetState{
 	set.StateActive:  proto.SetState_SET_ACTIVE,
 	set.StateClosing: proto.SetState_SET_CLOSING,
 	set.StateDeleted: proto.SetState_SET_DELETED,
+}
+
+// KeyID is a stored commit key id: nil when the commit records none,
+// empty but not nil when it records a plain commit.
+func KeyID(stored *string) []byte {
+	if stored == nil {
+		return nil
+	}
+
+	id, _ := hex.DecodeString(*stored)
+	if id == nil {
+		return []byte{}
+	}
+
+	return id
 }
 
 // Ref wraps a stored hash, nil for none.

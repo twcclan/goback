@@ -28,6 +28,8 @@ const (
 	FieldScanStartNs = "scan_start_ns"
 	// FieldPolicyVersion holds the string denoting the policy_version field in the database.
 	FieldPolicyVersion = "policy_version"
+	// FieldKeyID holds the string denoting the key_id field in the database.
+	FieldKeyID = "key_id"
 	// FieldConsistent holds the string denoting the consistent field in the database.
 	FieldConsistent = "consistent"
 	// FieldSetID holds the string denoting the set_id field in the database.
@@ -78,6 +80,7 @@ var Columns = []string{
 	FieldAgentID,
 	FieldScanStartNs,
 	FieldPolicyVersion,
+	FieldKeyID,
 	FieldConsistent,
 	FieldSetID,
 	FieldPresence,
@@ -151,6 +154,11 @@ func ByScanStartNs(opts ...sql.OrderTermOption) OrderOption {
 // ByPolicyVersion orders the results by the policy_version field.
 func ByPolicyVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPolicyVersion, opts...).ToFunc()
+}
+
+// ByKeyID orders the results by the key_id field.
+func ByKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeyID, opts...).ToFunc()
 }
 
 // ByConsistent orders the results by the consistent field.
