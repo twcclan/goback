@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -61,8 +63,11 @@ func Start(t testing.TB, bucket string) string {
 
 	endpoint := fmt.Sprintf("http://%s:%s", host, port.Port())
 
-	_, err = client(endpoint).CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
-	require.NoError(t, err, "creating the bucket")
+	// the store answers 503 for a while after its port opens
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		_, err := client(endpoint).CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
+		assert.NoError(c, err, "creating the bucket")
+	}, time.Minute, 500*time.Millisecond)
 
 	return fmt.Sprintf("s3://%s?endpoint=%s&region=us-east-1&use_path_style=true&disable_https=true",
 		bucket, endpoint)
