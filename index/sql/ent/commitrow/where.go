@@ -150,6 +150,11 @@ func LogicalSize(v int64) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldLogicalSize, v))
 }
 
+// FileCount applies equality check predicate on the "file_count" field. It's identical to FileCountEQ.
+func FileCount(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldFileCount, v))
+}
+
 // RefEQ applies the EQ predicate on the "ref" field.
 func RefEQ(v []byte) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldRef, v))
@@ -918,6 +923,56 @@ func LogicalSizeIsNil() predicate.CommitRow {
 // LogicalSizeNotNil applies the NotNil predicate on the "logical_size" field.
 func LogicalSizeNotNil() predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldNotNull(FieldLogicalSize))
+}
+
+// FileCountEQ applies the EQ predicate on the "file_count" field.
+func FileCountEQ(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldFileCount, v))
+}
+
+// FileCountNEQ applies the NEQ predicate on the "file_count" field.
+func FileCountNEQ(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNEQ(FieldFileCount, v))
+}
+
+// FileCountIn applies the In predicate on the "file_count" field.
+func FileCountIn(vs ...int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIn(FieldFileCount, vs...))
+}
+
+// FileCountNotIn applies the NotIn predicate on the "file_count" field.
+func FileCountNotIn(vs ...int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotIn(FieldFileCount, vs...))
+}
+
+// FileCountGT applies the GT predicate on the "file_count" field.
+func FileCountGT(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGT(FieldFileCount, v))
+}
+
+// FileCountGTE applies the GTE predicate on the "file_count" field.
+func FileCountGTE(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGTE(FieldFileCount, v))
+}
+
+// FileCountLT applies the LT predicate on the "file_count" field.
+func FileCountLT(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLT(FieldFileCount, v))
+}
+
+// FileCountLTE applies the LTE predicate on the "file_count" field.
+func FileCountLTE(v int64) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLTE(FieldFileCount, v))
+}
+
+// FileCountIsNil applies the IsNil predicate on the "file_count" field.
+func FileCountIsNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIsNull(FieldFileCount))
+}
+
+// FileCountNotNil applies the NotNil predicate on the "file_count" field.
+func FileCountNotNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotNull(FieldFileCount))
 }
 
 // MetadataIsNil applies the IsNil predicate on the "metadata" field.

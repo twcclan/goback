@@ -50,6 +50,8 @@ const (
 	FieldTombstonedAt = "tombstoned_at"
 	// FieldLogicalSize holds the string denoting the logical_size field in the database.
 	FieldLogicalSize = "logical_size"
+	// FieldFileCount holds the string denoting the file_count field in the database.
+	FieldFileCount = "file_count"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
 	// EdgeSet holds the string denoting the set edge name in mutations.
@@ -87,6 +89,7 @@ var Columns = []string{
 	FieldExpiresAt,
 	FieldTombstonedAt,
 	FieldLogicalSize,
+	FieldFileCount,
 	FieldMetadata,
 }
 
@@ -198,6 +201,11 @@ func ByTombstonedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByLogicalSize orders the results by the logical_size field.
 func ByLogicalSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLogicalSize, opts...).ToFunc()
+}
+
+// ByFileCount orders the results by the file_count field.
+func ByFileCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFileCount, opts...).ToFunc()
 }
 
 // BySetField orders the results by set field.

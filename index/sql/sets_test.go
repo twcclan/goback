@@ -386,6 +386,7 @@ func TestLogicalSizeLeavesOutWhatHoldsNoContent(t *testing.T) {
 
 	require.EqualValues(t, 6, *f.commitRow(commit.Ref()).LogicalSize,
 		"two files of three bytes; the symlink and the directory hold none")
+	require.EqualValues(t, 2, *f.commitRow(commit.Ref()).FileCount, "nor do they count as files")
 }
 
 func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
@@ -396,7 +397,7 @@ func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
 	second := f.commit("world", f.tree(f.file("a.txt", "one longer")), false)
 
 	// an index older than commit sizes left both rows without one
-	_, err := f.x.client.CommitRow.Update().ClearLogicalSize().Save(f.ctx)
+	_, err := f.x.client.CommitRow.Update().ClearLogicalSize().ClearFileCount().Save(f.ctx)
 	require.NoError(t, err)
 
 	n, err := f.x.FillMissingSizes(f.ctx)
@@ -405,6 +406,8 @@ func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
 
 	require.EqualValues(t, 8, *f.commitRow(first).LogicalSize)
 	require.EqualValues(t, 10, *f.commitRow(second).LogicalSize, "each commit gets the size of the set as it stood then")
+	require.EqualValues(t, 2, *f.commitRow(first).FileCount)
+	require.EqualValues(t, 1, *f.commitRow(second).FileCount)
 
 	n, err = f.x.FillMissingSizes(f.ctx)
 	require.NoError(t, err)

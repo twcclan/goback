@@ -103,6 +103,18 @@ message CommitInfoRequest {
 
 message CommitInfoResponse {
     repeated Commit commits = 1;
+    // what the set held at each of commits, in the same order; empty when
+    // the store measures nothing
+    repeated CommitSize sizes = 2;
+}
+
+// CommitSize is how big a set was at one commit, as the store measured it.
+message CommitSize {
+    // the size of every file, before deduplication and compression;
+    // absent for a commit the store has not measured
+    optional int64 logical_bytes = 1;
+    // how many files there were, absent likewise
+    optional int64 files = 2;
 }
 
 message LatestCommitRequest {

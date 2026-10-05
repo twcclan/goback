@@ -146,21 +146,34 @@ func (r *Client) ReadDir(ctx context.Context, set string, dir string, notAfter t
 
 // CommitInfo implements backup.Index.
 func (r *Client) CommitInfo(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, error) {
-	ctx = r.outgoing(ctx)
+	commits, _, err := r.CommitSizes(ctx, set, notAfter, count)
 
-	na := timestamppb.New(notAfter)
+	return commits, err
+}
+
+// CommitSizes implements backup.CommitSizer. A store that measures nothing
+// answers each commit with an empty size.
+func (r *Client) CommitSizes(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, []*proto.CommitSize, error) {
+	ctx = r.outgoing(ctx)
 
 	response, err := r.store.CommitInfo(ctx, &proto.CommitInfoRequest{
 		BackupSet: set,
-		NotAfter:  na,
+		NotAfter:  timestamppb.New(notAfter),
 		Count:     int32(count),
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return response.Commits, nil
+	sizes := response.Sizes
+	if len(sizes) != len(response.Commits) {
+		sizes = make([]*proto.CommitSize, len(response.Commits))
+		for i := range sizes {
+			sizes[i] = &proto.CommitSize{}
+		}
+	}
+
+	return response.Commits, sizes, nil
 }
 
 // ReIndex is not offered by the server.
@@ -579,6 +592,15 @@ func (r *Server) CommitInfo(ctx context.Context, request *proto.CommitInfoReques
 	err := request.NotAfter.CheckValid()
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if sizer, ok := r.store.Index.(backup.CommitSizer); ok {
+		commits, sizes, err := sizer.CommitSizes(ctx, request.BackupSet, request.NotAfter.AsTime(), int(request.Count))
+		if err != nil {
+			return nil, ToStatus(err)
+		}
+
+		return &proto.CommitInfoResponse{Commits: commits, Sizes: sizes}, nil
 	}
 
 	commits, err := r.store.Index.CommitInfo(ctx, request.BackupSet, request.NotAfter.AsTime(), int(request.Count))

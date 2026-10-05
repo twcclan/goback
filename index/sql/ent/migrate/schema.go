@@ -62,6 +62,7 @@ var (
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "tombstoned_at", Type: field.TypeTime, Nullable: true},
 		{Name: "logical_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "file_count", Type: field.TypeInt64, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "set_id", Type: field.TypeInt64},
 	}
@@ -73,7 +74,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "commits_sets_set",
-				Columns:    []*schema.Column{CommitsColumns[20]},
+				Columns:    []*schema.Column{CommitsColumns[21]},
 				RefColumns: []*schema.Column{SetsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -87,12 +88,12 @@ var (
 			{
 				Name:    "commitrow_set_id_received_at",
 				Unique:  false,
-				Columns: []*schema.Column{CommitsColumns[20], CommitsColumns[3]},
+				Columns: []*schema.Column{CommitsColumns[21], CommitsColumns[3]},
 			},
 			{
 				Name:    "commits_presence",
 				Unique:  false,
-				Columns: []*schema.Column{CommitsColumns[20]},
+				Columns: []*schema.Column{CommitsColumns[21]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "presence IS NOT NULL",
 				},

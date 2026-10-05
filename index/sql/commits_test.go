@@ -833,6 +833,13 @@ func TestCommitDetailsCarryTheSizeAndWhyEachCommitIsKept(t *testing.T) {
 	commits, err := f.x.CommitInfo(f.ctx, "world", f.clock, 10)
 	require.NoError(t, err)
 	require.Len(t, commits, 2)
+
+	sized, sizes, err := f.x.CommitSizes(f.ctx, "world", f.clock, 10)
+	require.NoError(t, err)
+	require.Len(t, sized, 2)
+	require.EqualValues(t, 8, sizes[0].GetLogicalBytes())
+	require.EqualValues(t, 2, sizes[0].GetFiles())
+	require.EqualValues(t, 1, sizes[1].GetFiles())
 	require.Equal(t, commits[0].GetReceivedAtNs(), held[0].Commit.GetReceivedAtNs())
 
 	// a commit retention has retired is not offered, as with CommitInfo

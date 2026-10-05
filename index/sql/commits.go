@@ -359,7 +359,7 @@ func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
-		size, err := logicalSize(ctx, c, setID, at)
+		size, files, err := logicalSize(ctx, c, setID, at)
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		err = c.CommitRow.Create().SetRef(ref.Hash).SetTimestamp(time.Unix(commit.Timestamp, 0).UTC()).SetReceivedAt(at).
 			SetTree(commit.Tree.Hash).SetParent(commit.GetParent().GetHash()).SetAgentID(commit.GetAgentId()).
 			SetScanStartNs(commit.GetScanStartNs()).SetPolicyVersion(commit.GetPolicyVersion()).SetConsistent(commit.GetConsistent()).
-			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).
+			SetSetID(setID).SetPartial(commit.Partial).SetMetadata(commit.GetMetadata()).SetLogicalSize(size).SetFileCount(files).
 			SetIncomplete(len(diff.holes)+len(diff.gaps) > 0).Exec(ctx)
 		if err != nil {
 			return err
@@ -1145,6 +1145,30 @@ func (x *Index) ReadDir(ctx context.Context, backupSet string, dir string, notAf
 
 // CommitInfo lists the live, complete commits of a set, newest first.
 func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*proto.Commit, error) {
+	rows, err := x.commitInfo(ctx, backupSet, notAfter, count)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapAll(rows, m.Commit), nil
+}
+
+// CommitSizes implements backup.CommitSizer.
+func (x *Index) CommitSizes(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*proto.Commit, []*proto.CommitSize, error) {
+	rows, err := x.commitInfo(ctx, backupSet, notAfter, count)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sizes := make([]*proto.CommitSize, len(rows))
+	for i, row := range rows {
+		sizes[i] = &proto.CommitSize{LogicalBytes: row.LogicalSize, Files: row.FileCount}
+	}
+
+	return mapAll(rows, m.Commit), sizes, nil
+}
+
+func (x *Index) commitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*ent.CommitRow, error) {
 	setID, err := findSet(ctx, x.client, backupSet)
 	if errors.Is(err, backup.ErrNotFound) {
 		return nil, nil
@@ -1154,14 +1178,9 @@ func (x *Index) CommitInfo(ctx context.Context, backupSet string, notAfter time.
 		return nil, err
 	}
 
-	rows, err := x.client.CommitRow.Query().
+	return x.client.CommitRow.Query().
 		Where(commitrow.SetID(setID), commitrow.TimestampLTE(notAfter.UTC()), commitrow.Partial(false), liveCommit()).
 		WithSet().Order(ent.Desc(commitrow.FieldReceivedAt)).Limit(count).All(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return mapAll(rows, m.Commit), nil
 }
 
 // CommitDetail is a commit together with what the index knows about it
@@ -1172,10 +1191,10 @@ type CommitDetail struct {
 	// Ref is the commit object's own ref, which names it to a caller that
 	// wants to pin or read it.
 	Ref *proto.Ref
-	// LogicalSize is what the set's files held at this commit; nil when
-	// nothing measured it, which is every commit written before the index
-	// started recording it.
-	LogicalSize *int64
+	// LogicalSize is what the set's files held at this commit, and Files
+	// how many there were; nil when nothing measured it, which is every
+	// commit written before the index started recording it.
+	LogicalSize, Files *int64
 	// RetainedBy names the retention rules keeping this commit, comma
 	// separated: "last", "within", "pinned", "hourly", "daily", "weekly",
 	// "monthly". It is empty for a commit retention has not evaluated yet
@@ -1211,6 +1230,7 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 			Commit:      m.Commit(row),
 			Ref:         &proto.Ref{Hash: row.Ref},
 			LogicalSize: row.LogicalSize,
+			Files:       row.FileCount,
 			RetainedBy:  row.RetainedBy,
 			Incomplete:  row.Incomplete,
 		}
@@ -1256,12 +1276,13 @@ func mapAll[S, T any](in []S, f func(S) T) []T {
 	return out
 }
 
-// logicalSize is what the set's files hold at a moment: the recorded size
-// of every file version open then. Directories and symlinks carry no
-// content and are left out.
-func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) (int64, error) {
+// logicalSize is what the set's files hold at a moment, and how many
+// there are: the recorded size of every file version open then.
+// Directories and symlinks carry no content and are left out.
+func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) (int64, int64, error) {
 	var sums []struct {
-		Sum *int64 `sql:"sum"`
+		Sum   *int64 `sql:"sum"`
+		Count int64  `sql:"count"`
 	}
 
 	err := c.File.Query().Where(
@@ -1269,36 +1290,37 @@ func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) 
 		file.TypeEQ(uint32(proto.NodeType_NODE_FILE)),
 		file.ValidFromLTE(at),
 		file.Or(file.ValidUntilIsNil(), file.ValidUntilGT(at)),
-	).Aggregate(ent.Sum(file.FieldSize)).Scan(ctx, &sums)
+	).Aggregate(ent.Sum(file.FieldSize), ent.Count()).Scan(ctx, &sums)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	if len(sums) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
-	return deref(sums[0].Sum), nil
+	return deref(sums[0].Sum), sums[0].Count, nil
 }
 
-// FillMissingSizes records the logical size of every commit that carries
-// none, and reports how many it filled. A tombstoned commit is skipped:
+// FillMissingSizes records the logical size and file count of every
+// commit missing either, and reports how many it filled. A tombstoned commit is skipped:
 // the file versions it held may already be pruned, so its size can no
 // longer be worked out.
 func (x *Index) FillMissingSizes(ctx context.Context) (int, error) {
-	rows, err := x.client.CommitRow.Query().Where(commitrow.LogicalSizeIsNil(), commitrow.TombstonedAtIsNil()).All(ctx)
+	rows, err := x.client.CommitRow.Query().
+		Where(commitrow.Or(commitrow.LogicalSizeIsNil(), commitrow.FileCountIsNil()), commitrow.TombstonedAtIsNil()).All(ctx)
 	if err != nil {
 		return 0, err
 	}
 
 	filled := 0
 	for _, row := range rows {
-		size, err := logicalSize(ctx, x.client, row.SetID, row.ReceivedAt)
+		size, files, err := logicalSize(ctx, x.client, row.SetID, row.ReceivedAt)
 		if err != nil {
 			return filled, err
 		}
 
-		err = x.client.CommitRow.UpdateOneID(row.ID).SetLogicalSize(size).Exec(ctx)
+		err = x.client.CommitRow.UpdateOneID(row.ID).SetLogicalSize(size).SetFileCount(files).Exec(ctx)
 		if err != nil {
 			return filled, err
 		}

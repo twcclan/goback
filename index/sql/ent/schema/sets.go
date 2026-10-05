@@ -86,6 +86,9 @@ func (CommitRow) Fields() []ent.Field {
 		field.Time("expires_at").Optional().Nillable(),
 		field.Time("tombstoned_at").Optional().Nillable(),
 		field.Int64("logical_size").Optional().Nillable(),
+		// how many files the set held at the commit, measured with
+		// logical_size
+		field.Int64("file_count").Optional().Nillable(),
 		field.JSON("metadata", map[string]string{}).Optional(),
 	}
 }

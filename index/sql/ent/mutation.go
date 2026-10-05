@@ -805,6 +805,8 @@ type CommitRowMutation struct {
 	tombstoned_at     *time.Time
 	logical_size      *int64
 	addlogical_size   *int64
+	file_count        *int64
+	addfile_count     *int64
 	metadata          *map[string]string
 	clearedFields     map[string]struct{}
 	set               *int64
@@ -1748,6 +1750,76 @@ func (m *CommitRowMutation) ResetLogicalSize() {
 	delete(m.clearedFields, commitrow.FieldLogicalSize)
 }
 
+// SetFileCount sets the "file_count" field.
+func (m *CommitRowMutation) SetFileCount(i int64) {
+	m.file_count = &i
+	m.addfile_count = nil
+}
+
+// FileCount returns the value of the "file_count" field in the mutation.
+func (m *CommitRowMutation) FileCount() (r int64, exists bool) {
+	v := m.file_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileCount returns the old "file_count" field's value of the CommitRow entity.
+// If the CommitRow object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitRowMutation) OldFileCount(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileCount: %w", err)
+	}
+	return oldValue.FileCount, nil
+}
+
+// AddFileCount adds i to the "file_count" field.
+func (m *CommitRowMutation) AddFileCount(i int64) {
+	if m.addfile_count != nil {
+		*m.addfile_count += i
+	} else {
+		m.addfile_count = &i
+	}
+}
+
+// AddedFileCount returns the value that was added to the "file_count" field in this mutation.
+func (m *CommitRowMutation) AddedFileCount() (r int64, exists bool) {
+	v := m.addfile_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (m *CommitRowMutation) ClearFileCount() {
+	m.file_count = nil
+	m.addfile_count = nil
+	m.clearedFields[commitrow.FieldFileCount] = struct{}{}
+}
+
+// FileCountCleared returns if the "file_count" field was cleared in this mutation.
+func (m *CommitRowMutation) FileCountCleared() bool {
+	_, ok := m.clearedFields[commitrow.FieldFileCount]
+	return ok
+}
+
+// ResetFileCount resets all changes to the "file_count" field.
+func (m *CommitRowMutation) ResetFileCount() {
+	m.file_count = nil
+	m.addfile_count = nil
+	delete(m.clearedFields, commitrow.FieldFileCount)
+}
+
 // SetMetadata sets the "metadata" field.
 func (m *CommitRowMutation) SetMetadata(value map[string]string) {
 	m.metadata = &value
@@ -1858,7 +1930,7 @@ func (m *CommitRowMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CommitRowMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.ref != nil {
 		fields = append(fields, commitrow.FieldRef)
 	}
@@ -1916,6 +1988,9 @@ func (m *CommitRowMutation) Fields() []string {
 	if m.logical_size != nil {
 		fields = append(fields, commitrow.FieldLogicalSize)
 	}
+	if m.file_count != nil {
+		fields = append(fields, commitrow.FieldFileCount)
+	}
 	if m.metadata != nil {
 		fields = append(fields, commitrow.FieldMetadata)
 	}
@@ -1965,6 +2040,8 @@ func (m *CommitRowMutation) Field(name string) (ent.Value, bool) {
 		return m.TombstonedAt()
 	case commitrow.FieldLogicalSize:
 		return m.LogicalSize()
+	case commitrow.FieldFileCount:
+		return m.FileCount()
 	case commitrow.FieldMetadata:
 		return m.Metadata()
 	}
@@ -2014,6 +2091,8 @@ func (m *CommitRowMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldTombstonedAt(ctx)
 	case commitrow.FieldLogicalSize:
 		return m.OldLogicalSize(ctx)
+	case commitrow.FieldFileCount:
+		return m.OldFileCount(ctx)
 	case commitrow.FieldMetadata:
 		return m.OldMetadata(ctx)
 	}
@@ -2158,6 +2237,13 @@ func (m *CommitRowMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetLogicalSize(v)
 		return nil
+	case commitrow.FieldFileCount:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileCount(v)
+		return nil
 	case commitrow.FieldMetadata:
 		v, ok := value.(map[string]string)
 		if !ok {
@@ -2182,6 +2268,9 @@ func (m *CommitRowMutation) AddedFields() []string {
 	if m.addlogical_size != nil {
 		fields = append(fields, commitrow.FieldLogicalSize)
 	}
+	if m.addfile_count != nil {
+		fields = append(fields, commitrow.FieldFileCount)
+	}
 	return fields
 }
 
@@ -2196,6 +2285,8 @@ func (m *CommitRowMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPolicyVersion()
 	case commitrow.FieldLogicalSize:
 		return m.AddedLogicalSize()
+	case commitrow.FieldFileCount:
+		return m.AddedFileCount()
 	}
 	return nil, false
 }
@@ -2226,6 +2317,13 @@ func (m *CommitRowMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddLogicalSize(v)
 		return nil
+	case commitrow.FieldFileCount:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFileCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown CommitRow numeric field %s", name)
 }
@@ -2254,6 +2352,9 @@ func (m *CommitRowMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(commitrow.FieldLogicalSize) {
 		fields = append(fields, commitrow.FieldLogicalSize)
+	}
+	if m.FieldCleared(commitrow.FieldFileCount) {
+		fields = append(fields, commitrow.FieldFileCount)
 	}
 	if m.FieldCleared(commitrow.FieldMetadata) {
 		fields = append(fields, commitrow.FieldMetadata)
@@ -2292,6 +2393,9 @@ func (m *CommitRowMutation) ClearField(name string) error {
 		return nil
 	case commitrow.FieldLogicalSize:
 		m.ClearLogicalSize()
+		return nil
+	case commitrow.FieldFileCount:
+		m.ClearFileCount()
 		return nil
 	case commitrow.FieldMetadata:
 		m.ClearMetadata()
@@ -2360,6 +2464,9 @@ func (m *CommitRowMutation) ResetField(name string) error {
 		return nil
 	case commitrow.FieldLogicalSize:
 		m.ResetLogicalSize()
+		return nil
+	case commitrow.FieldFileCount:
+		m.ResetFileCount()
 		return nil
 	case commitrow.FieldMetadata:
 		m.ResetMetadata()

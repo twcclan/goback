@@ -31,6 +31,14 @@ type Index interface {
 	ReIndex(ctx context.Context) error
 }
 
+// CommitSizer is implemented by indexes that measure how big a set was
+// at each commit.
+type CommitSizer interface {
+	// CommitSizes is CommitInfo with the size of each commit beside it, in
+	// the same order.
+	CommitSizes(ctx context.Context, set string, notAfter time.Time, count int) ([]*proto.Commit, []*proto.CommitSize, error)
+}
+
 // DirLister is implemented by indexes that can list a directory as it
 // stood, without walking the stored trees.
 type DirLister interface {

@@ -233,6 +233,20 @@ func (_c *CommitRowCreate) SetNillableLogicalSize(v *int64) *CommitRowCreate {
 	return _c
 }
 
+// SetFileCount sets the "file_count" field.
+func (_c *CommitRowCreate) SetFileCount(v int64) *CommitRowCreate {
+	_c.mutation.SetFileCount(v)
+	return _c
+}
+
+// SetNillableFileCount sets the "file_count" field if the given value is not nil.
+func (_c *CommitRowCreate) SetNillableFileCount(v *int64) *CommitRowCreate {
+	if v != nil {
+		_c.SetFileCount(*v)
+	}
+	return _c
+}
+
 // SetMetadata sets the "metadata" field.
 func (_c *CommitRowCreate) SetMetadata(v map[string]string) *CommitRowCreate {
 	_c.mutation.SetMetadata(v)
@@ -448,6 +462,10 @@ func (_c *CommitRowCreate) createSpec() (*CommitRow, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.LogicalSize(); ok {
 		_spec.SetField(commitrow.FieldLogicalSize, field.TypeInt64, value)
 		_node.LogicalSize = &value
+	}
+	if value, ok := _c.mutation.FileCount(); ok {
+		_spec.SetField(commitrow.FieldFileCount, field.TypeInt64, value)
+		_node.FileCount = &value
 	}
 	if value, ok := _c.mutation.Metadata(); ok {
 		_spec.SetField(commitrow.FieldMetadata, field.TypeJSON, value)
@@ -795,6 +813,30 @@ func (u *CommitRowUpsert) AddLogicalSize(v int64) *CommitRowUpsert {
 // ClearLogicalSize clears the value of the "logical_size" field.
 func (u *CommitRowUpsert) ClearLogicalSize() *CommitRowUpsert {
 	u.SetNull(commitrow.FieldLogicalSize)
+	return u
+}
+
+// SetFileCount sets the "file_count" field.
+func (u *CommitRowUpsert) SetFileCount(v int64) *CommitRowUpsert {
+	u.Set(commitrow.FieldFileCount, v)
+	return u
+}
+
+// UpdateFileCount sets the "file_count" field to the value that was provided on create.
+func (u *CommitRowUpsert) UpdateFileCount() *CommitRowUpsert {
+	u.SetExcluded(commitrow.FieldFileCount)
+	return u
+}
+
+// AddFileCount adds v to the "file_count" field.
+func (u *CommitRowUpsert) AddFileCount(v int64) *CommitRowUpsert {
+	u.Add(commitrow.FieldFileCount, v)
+	return u
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (u *CommitRowUpsert) ClearFileCount() *CommitRowUpsert {
+	u.SetNull(commitrow.FieldFileCount)
 	return u
 }
 
@@ -1180,6 +1222,34 @@ func (u *CommitRowUpsertOne) UpdateLogicalSize() *CommitRowUpsertOne {
 func (u *CommitRowUpsertOne) ClearLogicalSize() *CommitRowUpsertOne {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.ClearLogicalSize()
+	})
+}
+
+// SetFileCount sets the "file_count" field.
+func (u *CommitRowUpsertOne) SetFileCount(v int64) *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetFileCount(v)
+	})
+}
+
+// AddFileCount adds v to the "file_count" field.
+func (u *CommitRowUpsertOne) AddFileCount(v int64) *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.AddFileCount(v)
+	})
+}
+
+// UpdateFileCount sets the "file_count" field to the value that was provided on create.
+func (u *CommitRowUpsertOne) UpdateFileCount() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateFileCount()
+	})
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (u *CommitRowUpsertOne) ClearFileCount() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearFileCount()
 	})
 }
 
@@ -1734,6 +1804,34 @@ func (u *CommitRowUpsertBulk) UpdateLogicalSize() *CommitRowUpsertBulk {
 func (u *CommitRowUpsertBulk) ClearLogicalSize() *CommitRowUpsertBulk {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.ClearLogicalSize()
+	})
+}
+
+// SetFileCount sets the "file_count" field.
+func (u *CommitRowUpsertBulk) SetFileCount(v int64) *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetFileCount(v)
+	})
+}
+
+// AddFileCount adds v to the "file_count" field.
+func (u *CommitRowUpsertBulk) AddFileCount(v int64) *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.AddFileCount(v)
+	})
+}
+
+// UpdateFileCount sets the "file_count" field to the value that was provided on create.
+func (u *CommitRowUpsertBulk) UpdateFileCount() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateFileCount()
+	})
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (u *CommitRowUpsertBulk) ClearFileCount() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearFileCount()
 	})
 }
 

@@ -57,6 +57,8 @@ type CommitRow struct {
 	TombstonedAt *time.Time `json:"tombstoned_at,omitempty"`
 	// LogicalSize holds the value of the "logical_size" field.
 	LogicalSize *int64 `json:"logical_size,omitempty"`
+	// FileCount holds the value of the "file_count" field.
+	FileCount *int64 `json:"file_count,omitempty"`
 	// Metadata holds the value of the "metadata" field.
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -94,7 +96,7 @@ func (*CommitRow) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case commitrow.FieldConsistent, commitrow.FieldPartial, commitrow.FieldIncomplete:
 			values[i] = new(sql.NullBool)
-		case commitrow.FieldID, commitrow.FieldScanStartNs, commitrow.FieldPolicyVersion, commitrow.FieldSetID, commitrow.FieldLogicalSize:
+		case commitrow.FieldID, commitrow.FieldScanStartNs, commitrow.FieldPolicyVersion, commitrow.FieldSetID, commitrow.FieldLogicalSize, commitrow.FieldFileCount:
 			values[i] = new(sql.NullInt64)
 		case commitrow.FieldAgentID, commitrow.FieldRetainedBy:
 			values[i] = new(sql.NullString)
@@ -240,6 +242,13 @@ func (_m *CommitRow) assignValues(columns []string, values []any) error {
 				_m.LogicalSize = new(int64)
 				*_m.LogicalSize = value.Int64
 			}
+		case commitrow.FieldFileCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field file_count", values[i])
+			} else if value.Valid {
+				_m.FileCount = new(int64)
+				*_m.FileCount = value.Int64
+			}
 		case commitrow.FieldMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field metadata", values[i])
@@ -353,6 +362,11 @@ func (_m *CommitRow) String() string {
 	builder.WriteString(", ")
 	if v := _m.LogicalSize; v != nil {
 		builder.WriteString("logical_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FileCount; v != nil {
+		builder.WriteString("file_count=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

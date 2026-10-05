@@ -53,6 +53,9 @@ type memIndex struct {
 	// exhausted refuses every read as over quota
 	exhausted bool
 
+	// commits is what CommitInfo answers
+	commits []*proto.Commit
+
 	filters       []*proto.PresenceFilter
 	presenceScope backup.PresenceScope
 	presenceSet   string
@@ -156,7 +159,7 @@ func (m *memIndex) FileInfo(context.Context, string, string, time.Time, int) ([]
 	return nil, backup.ErrNotImplemented
 }
 func (m *memIndex) CommitInfo(context.Context, string, time.Time, int) ([]*proto.Commit, error) {
-	return nil, backup.ErrNotImplemented
+	return m.commits, nil
 }
 
 // ReadDir implements backup.DirLister by echoing its arguments, so a test
@@ -731,4 +734,30 @@ func TestRemoteGetFollowsALocation(t *testing.T) {
 	index.offer(t, file.Ref(), proto.NewObject(&proto.File{Inline: []byte("someone else")}))
 	_, err = client.Get(ctx, file.Ref())
 	require.ErrorIs(t, err, proto.ErrRefMismatch, "a location pointing at other bytes is refused")
+}
+
+// sized is an index that measured its one commit.
+type sized struct{ *memIndex }
+
+func (sized) CommitSizes(context.Context, string, time.Time, int) ([]*proto.Commit, []*proto.CommitSize, error) {
+	bytes, files := int64(4096), int64(3)
+
+	return []*proto.Commit{{BackupSet: "world"}}, []*proto.CommitSize{{LogicalBytes: &bytes, Files: &files}}, nil
+}
+
+func TestRemoteCommitSizesCrossTheWire(t *testing.T) {
+	ctx := context.Background()
+
+	commits, sizes, err := startServerWith(t, sized{newMemIndex()}, nil)("node-1").CommitSizes(ctx, "world", time.Now(), 1)
+	require.NoError(t, err)
+	require.Len(t, commits, 1)
+	require.EqualValues(t, 4096, sizes[0].GetLogicalBytes())
+	require.EqualValues(t, 3, sizes[0].GetFiles())
+
+	unmeasured := newMemIndex()
+	unmeasured.commits = []*proto.Commit{{BackupSet: "world"}}
+	commits, sizes, err = startServerWith(t, unmeasured, nil)("node-1").CommitSizes(ctx, "world", time.Now(), 1)
+	require.NoError(t, err)
+	require.Len(t, sizes, len(commits), "a store that measures nothing still answers each commit")
+	require.Nil(t, sizes[0].LogicalBytes)
 }

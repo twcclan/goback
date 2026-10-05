@@ -320,6 +320,33 @@ func (_u *CommitRowUpdate) ClearLogicalSize() *CommitRowUpdate {
 	return _u
 }
 
+// SetFileCount sets the "file_count" field.
+func (_u *CommitRowUpdate) SetFileCount(v int64) *CommitRowUpdate {
+	_u.mutation.ResetFileCount()
+	_u.mutation.SetFileCount(v)
+	return _u
+}
+
+// SetNillableFileCount sets the "file_count" field if the given value is not nil.
+func (_u *CommitRowUpdate) SetNillableFileCount(v *int64) *CommitRowUpdate {
+	if v != nil {
+		_u.SetFileCount(*v)
+	}
+	return _u
+}
+
+// AddFileCount adds value to the "file_count" field.
+func (_u *CommitRowUpdate) AddFileCount(v int64) *CommitRowUpdate {
+	_u.mutation.AddFileCount(v)
+	return _u
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (_u *CommitRowUpdate) ClearFileCount() *CommitRowUpdate {
+	_u.mutation.ClearFileCount()
+	return _u
+}
+
 // SetMetadata sets the "metadata" field.
 func (_u *CommitRowUpdate) SetMetadata(v map[string]string) *CommitRowUpdate {
 	_u.mutation.SetMetadata(v)
@@ -475,6 +502,15 @@ func (_u *CommitRowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.LogicalSizeCleared() {
 		_spec.ClearField(commitrow.FieldLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FileCount(); ok {
+		_spec.SetField(commitrow.FieldFileCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFileCount(); ok {
+		_spec.AddField(commitrow.FieldFileCount, field.TypeInt64, value)
+	}
+	if _u.mutation.FileCountCleared() {
+		_spec.ClearField(commitrow.FieldFileCount, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(commitrow.FieldMetadata, field.TypeJSON, value)
@@ -822,6 +858,33 @@ func (_u *CommitRowUpdateOne) ClearLogicalSize() *CommitRowUpdateOne {
 	return _u
 }
 
+// SetFileCount sets the "file_count" field.
+func (_u *CommitRowUpdateOne) SetFileCount(v int64) *CommitRowUpdateOne {
+	_u.mutation.ResetFileCount()
+	_u.mutation.SetFileCount(v)
+	return _u
+}
+
+// SetNillableFileCount sets the "file_count" field if the given value is not nil.
+func (_u *CommitRowUpdateOne) SetNillableFileCount(v *int64) *CommitRowUpdateOne {
+	if v != nil {
+		_u.SetFileCount(*v)
+	}
+	return _u
+}
+
+// AddFileCount adds value to the "file_count" field.
+func (_u *CommitRowUpdateOne) AddFileCount(v int64) *CommitRowUpdateOne {
+	_u.mutation.AddFileCount(v)
+	return _u
+}
+
+// ClearFileCount clears the value of the "file_count" field.
+func (_u *CommitRowUpdateOne) ClearFileCount() *CommitRowUpdateOne {
+	_u.mutation.ClearFileCount()
+	return _u
+}
+
 // SetMetadata sets the "metadata" field.
 func (_u *CommitRowUpdateOne) SetMetadata(v map[string]string) *CommitRowUpdateOne {
 	_u.mutation.SetMetadata(v)
@@ -1007,6 +1070,15 @@ func (_u *CommitRowUpdateOne) sqlSave(ctx context.Context) (_node *CommitRow, er
 	}
 	if _u.mutation.LogicalSizeCleared() {
 		_spec.ClearField(commitrow.FieldLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FileCount(); ok {
+		_spec.SetField(commitrow.FieldFileCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFileCount(); ok {
+		_spec.AddField(commitrow.FieldFileCount, field.TypeInt64, value)
+	}
+	if _u.mutation.FileCountCleared() {
+		_spec.ClearField(commitrow.FieldFileCount, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(commitrow.FieldMetadata, field.TypeJSON, value)
