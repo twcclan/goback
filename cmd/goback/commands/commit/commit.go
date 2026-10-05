@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/proto"
 
 	"github.com/urfave/cli"
 )
@@ -16,6 +17,7 @@ type commit struct {
 	store    backup.ObjectStore
 	index    backup.Index
 	when     time.Time
+	ref      *proto.Ref
 	base     string
 	from     string
 	set      string

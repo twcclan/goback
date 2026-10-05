@@ -27,17 +27,83 @@ type restoredDir struct {
 	modTime time.Time
 }
 
+// pick returns the commit c.ref names, or else the set's newest at or
+// before c.when.
+func (c *commit) pick() (*proto.Commit, error) {
+	if c.ref == nil {
+		commits, err := c.index.CommitInfo(c.ctx, c.set, c.when, 1)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(commits) != 1 {
+			return nil, errors.Errorf("set %s has no commit at or before %s", c.set, c.when.Format(time.RFC3339))
+		}
+
+		return commits[0], nil
+	}
+
+	obj, err := c.index.Get(c.ctx, c.ref)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, errors.Errorf("set %s has no commit %x", c.set, c.ref.Hash)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	commit := obj.GetCommit()
+	if commit == nil {
+		return nil, errors.Errorf("%x is not a commit", c.ref.Hash)
+	}
+
+	if commit.GetBackupSet() != c.set {
+		return nil, errors.Errorf("commit %x belongs to set %s, not %s", c.ref.Hash, commit.GetBackupSet(), c.set)
+	}
+
+	return commit, nil
+}
+
+// restoreTarget is the instant a restore picks the newest commit at or
+// before; at most one of age, at and ref may be given.
+func restoreTarget(now time.Time, age, at, ref string) (time.Time, error) {
+	given := 0
+	for _, s := range []string{age, at, ref} {
+		if s != "" {
+			given++
+		}
+	}
+
+	if given > 1 {
+		return time.Time{}, errors.New("<age>, --at and --ref are mutually exclusive")
+	}
+
+	if at != "" {
+		t, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			return time.Time{}, errors.Wrap(err, "parsing --at")
+		}
+
+		return t, nil
+	}
+
+	if age == "" {
+		return now, nil
+	}
+
+	d, err := time.ParseDuration(age)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "parsing <age>")
+	}
+
+	return now.Add(-d), nil
+}
+
 func (c *commit) restore() error {
-	commits, err := c.index.CommitInfo(c.ctx, c.set, c.when, 1)
+	commit, err := c.pick()
 	if err != nil {
 		return err
 	}
 
-	if len(commits) != 1 {
-		return errors.New("Commit not found")
-	}
-
-	commit := commits[0]
 	ref := proto.NewObject(commit).Ref()
 	log.Printf("Restoring commit %x from %v", ref.Hash, commit.Timestamp)
 
@@ -303,18 +369,17 @@ func overwriteMode(name string) backup.OverwriteMode {
 
 func restoreAction(c *cli.Context) {
 	dst := c.Args().Get(0)
-	age := c.Args().Get(1)
 
-	if age == "" {
-		age = "0"
-	}
-
-	d, err := time.ParseDuration(age)
+	when, err := restoreTarget(time.Now(), c.Args().Get(1), c.String("at"), c.String("ref"))
 	if err != nil {
-		common.Fatalf("Failed parsing <age> parameter: %v", err)
+		common.Fatal(err)
 	}
 
-	when := time.Now().Add(-d)
+	var ref *proto.Ref
+	if hex := c.String("ref"); hex != "" {
+		ref = common.ParseRef(hex)
+	}
+
 	base := filepath.Clean(dst)
 
 	if !c.Bool("force") {
@@ -367,7 +432,8 @@ func restoreAction(c *cli.Context) {
 		index:    index,
 		base:     base,
 		when:     when,
-		from:     c.String("from"),
+		ref:      ref,
+		from:    c.String("from"),
 		delete:   c.Bool("delete"),
 		reader:   backup.NewBackupReader(store).WithKey(key),
 		restorer: restorer,
@@ -422,6 +488,14 @@ var restoreCmd = cli.Command{
 		cli.StringFlag{
 			Name:  "from",
 			Value: "",
+		},
+		cli.StringFlag{
+			Name:  "ref",
+			Usage: "restore exactly the commit with this hex ref",
+		},
+		cli.StringFlag{
+			Name:  "at",
+			Usage: "restore the newest commit at or before this RFC3339 time",
 		},
 		cli.BoolFlag{
 			Name:  "delete",
