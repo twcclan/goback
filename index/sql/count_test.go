@@ -68,6 +68,8 @@ func TestCountCommitsPerPeriodInAZone(t *testing.T) {
 		count(proto.Period_PERIOD_YEAR, local(2025, 1, 1), local(2027, 1, 1), "Europe/Berlin"))
 	require.Equal(t, map[time.Time]int64{utcAt(2025, 1, 1, 0, 0): 1, utcAt(2026, 1, 1, 0, 0): 9},
 		count(proto.Period_PERIOD_YEAR, utcAt(2025, 1, 1, 0, 0), utcAt(2027, 1, 1, 0, 0), ""))
+	require.Equal(t, map[time.Time]int64{utcAt(2025, 12, 31, 23, 0): 10},
+		count(proto.Period_PERIOD_YEAR, local(2026, 1, 1), local(2027, 1, 1), "Europe/Berlin"), "a range within one period")
 
 	require.Equal(t, map[time.Time]int64{
 		utcAt(2025, 12, 31, 23, 0): 1,

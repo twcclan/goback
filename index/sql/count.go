@@ -73,6 +73,11 @@ func (x *Index) CountCommits(ctx context.Context, backupSet string, period proto
 // falls in, as the column period.
 func periodOf(received string, starts []time.Time) entsql.Querier {
 	return entsql.ExprFunc(func(b *entsql.Builder) {
+		if len(starts) == 1 {
+			b.WriteString("0 AS ").Ident("period")
+			return
+		}
+
 		b.WriteString("CASE")
 		for i := 1; i < len(starts); i++ {
 			b.WriteString(" WHEN ").WriteString(received).WriteOp(entsql.OpLT).Arg(starts[i].UTC())
