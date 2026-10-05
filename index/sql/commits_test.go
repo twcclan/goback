@@ -130,6 +130,35 @@ func TestIndexerKeepsOrderAndRefusesClosedSets(t *testing.T) {
 	require.NoError(t, f.x.Put(f.ctx, fresh))
 }
 
+func TestAStrayNewestCommitIsDeletedAndTheOneBeforeItIsLatestAgain(t *testing.T) {
+	f := newFixture(t)
+
+	only := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	require.ErrorIs(t, f.x.DeleteCommit(f.ctx, only), backup.ErrNewestCommit, "a set keeps one commit")
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	stray := f.commit("world", f.tree(f.file("stray.txt", "elsewhere")), false)
+	require.NotNil(t, f.commitRow(only).RetireAt, "keep_last 1 retires the commit before the stray one")
+
+	require.NoError(t, f.x.DeleteCommit(f.ctx, stray))
+
+	latest, err := f.x.LatestCommit(f.ctx, "world")
+	require.NoError(t, err)
+	require.True(t, latest.Equal(only))
+	require.Nil(t, f.commitRow(only).RetireAt, "the latest is kept again")
+	require.Equal(t, "latest,last", f.commitRow(only).RetainedBy)
+
+	versions, err := f.x.FileInfo(f.ctx, "world", "stray.txt", f.clock, 10)
+	require.NoError(t, err)
+	require.Empty(t, versions, "what only the stray commit held is not offered")
+
+	require.NoError(t, f.x.UndeleteCommit(f.ctx, stray))
+	latest, err = f.x.LatestCommit(f.ctx, "world")
+	require.NoError(t, err)
+	require.True(t, latest.Equal(stray))
+}
+
 func TestRetentionLifecycle(t *testing.T) {
 	f := newFixture(t)
 
@@ -157,7 +186,6 @@ func TestRetentionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, versions, 2, "the version only a retired commit holds is not offered")
 
-	require.ErrorIs(t, f.x.DeleteCommit(f.ctx, c), backup.ErrNewestCommit)
 	require.NoError(t, f.x.DeleteCommit(f.ctx, b))
 
 	row = f.commitRow(b)

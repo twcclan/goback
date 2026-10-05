@@ -1209,15 +1209,15 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 	return mapAll(rows, m.CommitDetail), nil
 }
 
-// LatestCommit returns the set's newest commit without a tombstone,
-// partial or not, or backup.ErrNotFound.
+// LatestCommit returns the set's newest commit that is neither tombstoned
+// nor deleted, partial or not, or backup.ErrNotFound.
 func (x *Index) LatestCommit(ctx context.Context, backupSet string) (*proto.Ref, error) {
 	setID, err := findSet(ctx, x.client, backupSet)
 	if err != nil {
 		return nil, err
 	}
 
-	row, err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).
+	row, err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil(), commitrow.DeletedAtIsNil()).
 		Order(ent.Desc(commitrow.FieldReceivedAt), ent.Desc(commitrow.FieldTimestamp)).Select(commitrow.FieldRef).First(ctx)
 	if ent.IsNotFound(err) {
 		return nil, backup.ErrNotFound

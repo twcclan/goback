@@ -284,12 +284,13 @@ func (x *Index) DeleteCommit(ctx context.Context, ref *proto.Ref) error {
 		}
 
 		if c.cfg.state == set.StateActive {
-			newest, err := tx.CommitRow.Query().Where(commitrow.SetID(c.row.SetID), liveCommit()).Order(ent.Desc(commitrow.FieldReceivedAt)).Select(commitrow.FieldRef).First(ctx)
-			if err != nil && !ent.IsNotFound(err) {
+			others, err := tx.CommitRow.Query().Where(commitrow.SetID(c.row.SetID), commitrow.RefNEQ(ref.GetHash()),
+				commitrow.TombstonedAtIsNil(), commitrow.DeletedAtIsNil()).Exist(ctx)
+			if err != nil {
 				return nil, err
 			}
 
-			if newest != nil && ref.Equal(&proto.Ref{Hash: newest.Ref}) {
+			if !others {
 				return nil, fmt.Errorf("%w: %x", backup.ErrNewestCommit, ref.GetHash())
 			}
 		}
@@ -305,7 +306,13 @@ func (x *Index) DeleteCommit(ctx context.Context, ref *proto.Ref) error {
 
 		now := x.now()
 
-		return commitScope(ref.GetHash(), now), trashCommit(ctx, tx, c.row, c.cfg.trash, now)
+		if err := trashCommit(ctx, tx, c.row, c.cfg.trash, now); err != nil {
+			return nil, err
+		}
+
+		// the commit the deleted one was newer than may be retired, and is
+		// the latest now
+		return commitScope(ref.GetHash(), now), x.evaluateSet(ctx, tx, c.row.SetID, now)
 	})
 }
 

@@ -29,9 +29,9 @@ var (
 	// ErrTombstoned is returned when a commit or pin already has a
 	// tombstone; there is no undo past that point.
 	ErrTombstoned = errors.New("object is tombstoned")
-	// ErrNewestCommit is returned when deleting a set's newest live commit
-	// on its own.
-	ErrNewestCommit = errors.New("the newest commit of a set cannot be deleted")
+	// ErrNewestCommit is returned when deleting the only live commit of an
+	// active set; delete the set instead.
+	ErrNewestCommit = errors.New("the only commit of a set cannot be deleted")
 	// ErrPinned refuses the deletion of a commit a live pin holds.
 	ErrPinned = errors.New("commit is pinned")
 	// ErrCommitDenied is returned by BeginCommit when the store refuses the

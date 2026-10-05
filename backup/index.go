@@ -102,8 +102,9 @@ type PartReader interface {
 // Retention is implemented by indexes that keep the commit lifecycle: live,
 // then retired, or deleted into a trash window, then tombstoned.
 type Retention interface {
-	// DeleteCommit retires a commit into its trash window; the newest
-	// live commit of a set is refused with ErrNewestCommit.
+	// DeleteCommit retires a commit into its trash window, after which
+	// LatestCommit no longer returns it; the only live commit of an active
+	// set is refused with ErrNewestCommit.
 	DeleteCommit(ctx context.Context, ref *proto.Ref) error
 	// UndeleteCommit moves a retired commit back to live; a tombstoned
 	// one is refused with ErrTombstoned.
