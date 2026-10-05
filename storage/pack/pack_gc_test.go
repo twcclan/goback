@@ -204,9 +204,18 @@ func TestCollectMarksThenSweeps(t *testing.T) {
 	reachable, unreachable := makeGCTestData(t)
 	putAll(t, store, append(append([]*proto.Object{}, reachable...), unreachable...))
 
-	first, err := store.Collect(ctx, gcOptions(t, 0))
+	never, err := store.LastCollected()
+	require.NoError(t, err)
+	require.True(t, never.IsZero())
+
+	opts := gcOptions(t, 0)
+	first, err := store.Collect(ctx, opts)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, first.Generation)
+
+	last, err := store.LastCollected()
+	require.NoError(t, err)
+	require.True(t, last.Equal(opts.Now), "the newest collection marked as of its now")
 	require.Equal(t, "first generation", first.SweepSkipped)
 	require.EqualValues(t, len(unreachable), first.DeadObjects)
 	require.EqualValues(t, len(reachable), first.Marked)

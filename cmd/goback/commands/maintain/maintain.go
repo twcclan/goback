@@ -1,4 +1,5 @@
-// Package maintain runs one housekeeping operation against a store.
+// Package maintain runs a store's housekeeping: whatever is due, or one
+// operation.
 package maintain
 
 import (
@@ -8,7 +9,9 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/gc"
 	"github.com/twcclan/goback/storage/maintenance"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
 )
@@ -16,7 +19,16 @@ import (
 // Command is the maintain command.
 var Command = cli.Command{
 	Name:        "maintain",
-	Description: "Run one maintenance operation against the store, as the server does on its schedule",
+	Usage:       "Run the housekeeping that is due, as a store server does on its schedule; run it from cron",
+	Description: "Without a subcommand: sweep, retire, compact and build presence filters, and garbage collect once the last collection is older than --gc-interval. A subcommand runs one operation",
+	Flags: []cli.Flag{
+		cli.DurationFlag{
+			Name:  "gc-interval",
+			Usage: "garbage collect when the last collection is at least this old; 0 never collects",
+			Value: maintenance.DefaultSchedule.Collect,
+		},
+	},
+	Action: action(due),
 	Subcommands: []cli.Command{
 		{
 			Name:   "sweep",
@@ -89,6 +101,41 @@ var Command = cli.Command{
 			}),
 		},
 	},
+}
+
+func due(m *members) {
+	schedule := maintenance.DefaultSchedule
+	schedule.Collect = m.c.Duration("gc-interval")
+
+	base := common.Unwrap(m.objects)
+	runner := &maintenance.Runner{Schedule: schedule}
+	runner.Store, _ = base.(maintenance.Store)
+	runner.Collector, _ = base.(pack.Collector)
+	runner.Retirer, _ = m.index.(backup.Retirer)
+	runner.Presence, _ = m.index.(maintenance.Presence)
+	runner.Attributor, _ = m.index.(maintenance.Attributor)
+
+	ran, err := runner.Due(common.Context(m.c))
+
+	view := common.View.Maintenance(ran)
+	if ran.Collected != nil {
+		report := common.View.Report(ran.Collected)
+		view.Collected = &report
+	}
+
+	common.Result(view, func() {
+		log.Printf("Swept: %t, compacted: %t, retired %d commits, built %d presence filters", ran.Swept, ran.Compacted, ran.Retired, ran.Presence)
+
+		if ran.Collected != nil {
+			gc.Log(ran.Collected)
+		} else {
+			log.Print("No collection due")
+		}
+	})
+
+	if err != nil {
+		common.Fatal(err)
+	}
 }
 
 // counted is what a maintenance operation did, and to how many things.

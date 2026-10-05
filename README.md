@@ -55,7 +55,7 @@ goback --storage /backups --store-key store.key --set home \
 | `pin` | keep a commit regardless of retention |
 | `key` | make, escrow and recover store keys; make at-rest keys |
 | `gc` | mark what live commits and pins reach, and rewrite archives that are mostly dead |
-| `maintain` | finalize idle archives, compact, retire expired commits, build presence filters |
+| `maintain` | run the housekeeping that is due: retire, compact, build presence filters, and collect garbage weekly |
 | `scrub`, `repair` | rehash every stored object, and rewrite the archives holding corrupt ones |
 | `fix` | rebuild the index from the store |
 | `postgres` | back up a Postgres cluster with point-in-time recovery |
@@ -76,6 +76,9 @@ goback --storage /backups set retention home \
 Commits the policy lets go are tombstoned by the next retirement; a commit
 deleted by hand waits in the trash first, where it can be taken back.
 Once no live commit or pin reaches an object, garbage collection drops it.
+
+Without a server, run `goback maintain` from cron, say hourly: it retires and
+compacts every time and collects garbage once the last collection is a week old.
 
 ## A server for several agents
 

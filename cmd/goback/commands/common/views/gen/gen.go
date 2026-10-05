@@ -7,6 +7,7 @@ import (
 	retention "github.com/twcclan/goback/backup/retention"
 	views "github.com/twcclan/goback/cmd/goback/commands/common/views"
 	proto "github.com/twcclan/goback/proto"
+	maintenance "github.com/twcclan/goback/storage/maintenance"
 	pack "github.com/twcclan/goback/storage/pack"
 )
 
@@ -33,6 +34,16 @@ func (m MapperImpl) Commit(in *proto.Commit) views.CommitView {
 		Consistent: in.Consistent,
 		Partial:    in.Partial,
 		Metadata:   in.Metadata,
+	}
+}
+
+func (m MapperImpl) Maintenance(in maintenance.Ran) views.MaintenanceView {
+
+	return views.MaintenanceView{
+		Swept:     in.Swept,
+		Compacted: in.Compacted,
+		Retired:   in.Retired,
+		Presence:  in.Presence,
 	}
 }
 

@@ -5,6 +5,7 @@ package maintenance
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -23,6 +24,18 @@ type Presence interface {
 	BuildPendingPresence(ctx context.Context) (int, error)
 }
 
+// Attributor is an index that names the set behind each root and keeps
+// what a collection attributed to every set.
+type Attributor interface {
+	RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error)
+	RecordSetSizes(ctx context.Context, report *pack.CollectReport) error
+}
+
+// Collected is a store that knows when it was last garbage collected.
+type Collected interface {
+	LastCollected() (time.Time, error)
+}
+
 // Schedule is how often each job runs; zero never runs it.
 type Schedule struct {
 	Sweep    time.Duration
@@ -32,13 +45,51 @@ type Schedule struct {
 	Presence time.Duration
 }
 
+// DefaultSchedule is how often a store server runs each job unless told
+// otherwise.
+var DefaultSchedule = Schedule{
+	Sweep:    30 * time.Second,
+	Compact:  time.Hour,
+	Collect:  7 * 24 * time.Hour,
+	Retire:   time.Hour,
+	Presence: 30 * time.Second,
+}
+
+// Collect garbage collects the store with opts. When attributor is not
+// nil, what survives is grouped by the set that owns it and what each set
+// takes up is recorded.
+func Collect(ctx context.Context, collector pack.Collector, attributor Attributor, opts pack.CollectOptions) (*pack.CollectReport, error) {
+	if attributor != nil {
+		owner, err := attributor.RootOwner(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		opts.Owner = owner
+	}
+
+	report, err := collector.Collect(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if attributor != nil && report.Waiting == 0 {
+		if err := attributor.RecordSetSizes(ctx, report); err != nil {
+			return report, err
+		}
+	}
+
+	return report, nil
+}
+
 // Runner ticks the jobs of one store. A nil member skips its jobs.
 type Runner struct {
-	Store     Store
-	Collector pack.Collector
-	Retirer   backup.Retirer
-	Presence  Presence
-	Schedule  Schedule
+	Store      Store
+	Collector  pack.Collector
+	Attributor Attributor
+	Retirer    backup.Retirer
+	Presence   Presence
+	Schedule   Schedule
 	// OnCollect sees every garbage collection report; nil ignores them.
 	OnCollect func(*pack.CollectReport)
 	// Logger is where failures go; nil means slog.Default.
@@ -115,6 +166,73 @@ func (r *Runner) Run(ctx context.Context) {
 	}
 }
 
+// Ran is what one pass of Due did.
+type Ran struct {
+	Swept, Compacted  bool
+	Retired, Presence int
+	// Collected is nil when no collection was due.
+	Collected *pack.CollectReport
+}
+
+// Due runs every scheduled job once, except a collection, which runs only
+// when the store's last one is at least Schedule.Collect old. It is what
+// a cron job calls; errors are joined and every job still runs.
+func (r *Runner) Due(ctx context.Context) (Ran, error) {
+	var ran Ran
+	var errs []error
+
+	if r.Store != nil && r.Schedule.Sweep > 0 {
+		r.Store.Sweep(r.now())
+		ran.Swept = true
+	}
+
+	if r.Retirer != nil && r.Schedule.Retire > 0 {
+		n, err := r.Retirer.Retire(ctx, r.now())
+		ran.Retired = n
+		errs = append(errs, err)
+	}
+
+	if r.Store != nil && r.Schedule.Compact > 0 {
+		err := r.Store.Compact()
+		ran.Compacted = err == nil
+		errs = append(errs, err)
+	}
+
+	if r.Presence != nil && r.Schedule.Presence > 0 {
+		n, err := r.Presence.BuildPendingPresence(ctx)
+		ran.Presence = n
+		errs = append(errs, err)
+	}
+
+	due, err := r.collectDue()
+	errs = append(errs, err)
+
+	if due {
+		ran.Collected, err = Collect(ctx, r.Collector, r.Attributor, pack.CollectOptions{})
+		errs = append(errs, err)
+	}
+
+	return ran, errors.Join(errs...)
+}
+
+func (r *Runner) collectDue() (bool, error) {
+	if r.Collector == nil || r.Schedule.Collect <= 0 {
+		return false, nil
+	}
+
+	collected, ok := r.Collector.(Collected)
+	if !ok {
+		return true, nil
+	}
+
+	last, err := collected.LastCollected()
+	if err != nil {
+		return false, err
+	}
+
+	return last.IsZero() || r.now().Sub(last) >= r.Schedule.Collect, nil
+}
+
 // Sweep finalizes idle archives and ends expired sessions.
 func (r *Runner) Sweep() {
 	if r.Store != nil {
@@ -139,7 +257,7 @@ func (r *Runner) Collect(ctx context.Context) {
 		return
 	}
 
-	report, err := r.Collector.Collect(ctx, pack.CollectOptions{})
+	report, err := Collect(ctx, r.Collector, r.Attributor, pack.CollectOptions{})
 	if err != nil {
 		r.logger().Error("garbage collection failed", "err", err)
 		return

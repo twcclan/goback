@@ -81,3 +81,53 @@ func TestRunnerSkipsWhatItDoesNotHave(t *testing.T) {
 	r.Retire(context.Background())
 	require.Equal(t, int32(1), retirer.runs.Load())
 }
+
+type lastCollected struct {
+	fakeCollector
+	at time.Time
+}
+
+func (l *lastCollected) LastCollected() (time.Time, error) { return l.at, nil }
+
+type fakeAttributor struct{ recorded atomic.Int32 }
+
+func (f *fakeAttributor) RootOwner(context.Context) (func([]byte) pack.Attribution, error) {
+	return func([]byte) pack.Attribution { return pack.Attribution{Set: 1} }, nil
+}
+
+func (f *fakeAttributor) RecordSetSizes(context.Context, *pack.CollectReport) error {
+	f.recorded.Add(1)
+	return nil
+}
+
+func TestDueCollectsOnlyOnceTheLastCollectionIsOldEnough(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	collector := &lastCollected{at: now.Add(-6 * 24 * time.Hour)}
+	retirer, presence, attributor := &fakeRetirer{}, &fakePresence{}, &fakeAttributor{}
+
+	r := &Runner{Collector: collector, Retirer: retirer, Presence: presence, Attributor: attributor, Schedule: DefaultSchedule, Now: func() time.Time { return now }}
+
+	ran, err := r.Due(context.Background())
+	require.NoError(t, err)
+	require.Nil(t, ran.Collected, "six days since the last collection, a week between them")
+	require.Equal(t, 2, ran.Retired)
+	require.Equal(t, 1, ran.Presence)
+
+	collector.at = now.Add(-7 * 24 * time.Hour)
+	ran, err = r.Due(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, ran.Collected)
+	require.Equal(t, int32(1), collector.runs.Load())
+	require.Equal(t, int32(1), attributor.recorded.Load(), "what each set takes up is recorded")
+}
+
+func TestDueRunsEveryJobPastAFailingOne(t *testing.T) {
+	store, retirer := &fakeStore{}, &fakeRetirer{}
+	r := &Runner{Store: store, Retirer: retirer, Schedule: DefaultSchedule}
+
+	ran, err := r.Due(context.Background())
+	require.ErrorContains(t, err, "disk full")
+	require.True(t, ran.Swept)
+	require.False(t, ran.Compacted)
+	require.Equal(t, 2, ran.Retired)
+}

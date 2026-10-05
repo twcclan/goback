@@ -253,6 +253,17 @@ func writeGCFile(storage ArchiveStorage, name string, g *gcFile) error {
 	return file.Close()
 }
 
+// LastCollected returns when the newest collection marked the store, zero
+// when none has.
+func (ps *PackStorage) LastCollected() (time.Time, error) {
+	state, err := loadGCState(ps.storage)
+	if err != nil || state == nil {
+		return time.Time{}, err
+	}
+
+	return state.Snapshot, nil
+}
+
 func loadGCState(storage ArchiveStorage) (*gcState, error) {
 	file, err := storage.Open(gcStateName)
 	if err != nil {

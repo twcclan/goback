@@ -1,12 +1,12 @@
 package gc
 
 import (
-	"context"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/urfave/cli"
@@ -49,13 +49,6 @@ var Command = cli.Command{
 	},
 }
 
-// attributer is an index that names the set behind a root, so a
-// collection can record what each set's objects take up.
-type attributer interface {
-	RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error)
-	RecordSetSizes(ctx context.Context, report *pack.CollectReport) error
-}
-
 func gcAction(c *cli.Context) {
 	ctx := common.Context(c)
 	store := common.GetObjectStore(c)
@@ -68,7 +61,7 @@ func gcAction(c *cli.Context) {
 	index := common.OpenIndex(c, store)
 	defer index.Close()
 
-	sizes, _ := index.(attributer)
+	attributor, _ := index.(maintenance.Attributor)
 
 	opts := pack.CollectOptions{
 		Readers:      c.Int("readers"),
@@ -79,24 +72,9 @@ func gcAction(c *cli.Context) {
 		TempDir:      c.String("temp-dir"),
 	}
 
-	if sizes != nil {
-		owner, err := sizes.RootOwner(ctx)
-		if err != nil {
-			common.Fatal(err)
-		}
-
-		opts.Owner = owner
-	}
-
-	report, err := collector.Collect(ctx, opts)
+	report, err := maintenance.Collect(ctx, collector, attributor, opts)
 	if err != nil {
 		common.Fatal(err)
-	}
-
-	if sizes != nil {
-		if err := sizes.RecordSetSizes(ctx, report); err != nil {
-			common.Fatal(err)
-		}
 	}
 
 	common.Result(common.View.Report(report), func() { Log(report) })

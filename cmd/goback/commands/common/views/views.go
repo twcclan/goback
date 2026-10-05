@@ -8,6 +8,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
 )
 
@@ -38,6 +39,9 @@ type Mapper interface {
 
 	// field:Seconds from:"Duration" using:"Seconds"
 	Report(in *pack.CollectReport) ReportView
+
+	// field:Collected from:"-"
+	Maintenance(in maintenance.Ran) MaintenanceView
 
 	// field:Keep from:"Brackets"
 	// field:KeepWithin using:"Within"
@@ -178,6 +182,16 @@ type ReportView struct {
 	SetDeduplicated  map[int64]uint64 `json:"set_deduplicated,omitempty"`
 	SetAlone         map[int64]uint64 `json:"set_alone,omitempty"`
 	SetExclusive     map[int64]uint64 `json:"set_exclusive,omitempty"`
+}
+
+// MaintenanceView is what goback maintain did; collected is absent when
+// no collection was due.
+type MaintenanceView struct {
+	Swept     bool        `json:"swept"`
+	Compacted bool        `json:"compacted"`
+	Retired   int         `json:"retired"`
+	Presence  int         `json:"presence"`
+	Collected *ReportView `json:"collected,omitempty"`
 }
 
 // PolicyView is a retention policy as JSON output shows it.

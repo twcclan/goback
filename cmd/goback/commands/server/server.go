@@ -61,27 +61,27 @@ var Command = cli.Command{
 		cli.DurationFlag{
 			Name:  "retire-interval",
 			Usage: "how often retired commits past their window are tombstoned; 0 disables the job",
-			Value: time.Hour,
+			Value: maintenance.DefaultSchedule.Retire,
 		},
 		cli.DurationFlag{
 			Name:  "gc-interval",
 			Usage: "how often the store is garbage collected; 0 disables the job",
-			Value: 7 * 24 * time.Hour,
+			Value: maintenance.DefaultSchedule.Collect,
 		},
 		cli.DurationFlag{
 			Name:  "compact-interval",
 			Usage: "how often small archives are compacted; 0 disables the job",
-			Value: time.Hour,
+			Value: maintenance.DefaultSchedule.Compact,
 		},
 		cli.DurationFlag{
 			Name:  "sweep-interval",
 			Usage: "how often idle archives are finalized and expired sessions ended",
-			Value: 30 * time.Second,
+			Value: maintenance.DefaultSchedule.Sweep,
 		},
 		cli.DurationFlag{
 			Name:  "presence-interval",
 			Usage: "how often presence filters are built for new commits; 0 disables the job",
-			Value: 30 * time.Second,
+			Value: maintenance.DefaultSchedule.Presence,
 		},
 	},
 }
@@ -145,10 +145,12 @@ func serverAction(ctx *cli.Context) {
 	base := common.Unwrap(s)
 	retirer, _ := idx.(backup.Retirer)
 	collector, _ := base.(pack.Collector)
+	attributor, _ := idx.(maintenance.Attributor)
 	runner := &maintenance.Runner{
-		Retirer:   retirer,
-		Collector: collector,
-		OnCollect: gc.Log,
+		Retirer:    retirer,
+		Collector:  collector,
+		Attributor: attributor,
+		OnCollect:  gc.Log,
 		Schedule: maintenance.Schedule{
 			Sweep:    ctx.Duration("sweep-interval"),
 			Compact:  ctx.Duration("compact-interval"),
