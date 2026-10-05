@@ -55,7 +55,7 @@ var Command = cli.Command{
 		},
 		{
 			Name:        "at-rest",
-			Description: "Generate the key a pack:// or gcs:// store seals its archives with, or rotate it",
+			Description: "Generate the key a local, gcs:// or s3:// store seals its archives with, or rotate it",
 			Action:      atRestAction,
 			Flags: []cli.Flag{
 				outFlag("at-rest.key"),

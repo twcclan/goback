@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,19 @@ func parse(t *testing.T, raw string) *url.URL {
 	require.NoError(t, err)
 
 	return u
+}
+
+func TestADrivePathIsAPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows paths start with a volume")
+	}
+
+	for _, raw := range []string{`e:\backups\store`, "e:/backups/store"} {
+		u, err := parseLocation(raw)
+		require.NoError(t, err)
+		require.Empty(t, u.Scheme, raw)
+		require.Equal(t, "e:/backups/store", u.Path, raw)
+	}
 }
 
 func TestRemoteAddressKeepsThePortOnlyOnce(t *testing.T) {

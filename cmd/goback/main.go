@@ -80,7 +80,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "at-rest-key",
-			Usage: "key file a pack:// or gcs:// store seals its archives with, from goback key at-rest; empty stores objects as received",
+			Usage: "key file a local, gcs:// or s3:// store seals its archives with, from goback key at-rest; empty stores objects as received",
 		},
 		cli.StringFlag{
 			Name:   "cache-dir",

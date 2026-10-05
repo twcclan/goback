@@ -144,6 +144,16 @@ func createFolders(loc string) (string, error) {
 	return abs, nil
 }
 
+// parseLocation reads a --storage or --index location. A path that starts
+// with a volume, such as e:/backups, is a path, not a URL with scheme e.
+func parseLocation(raw string) (*url.URL, error) {
+	if filepath.VolumeName(raw) != "" {
+		return &url.URL{Path: filepath.ToSlash(raw)}, nil
+	}
+
+	return url.Parse(raw)
+}
+
 func makeLocation(u *url.URL) (string, error) {
 	return createFolders(u.Host + u.Path)
 }
@@ -188,7 +198,7 @@ func withIndex(c *cli.Context, build func(*sql.Index) (*pack.PackStorage, error)
 		return nil, errors.New("--index is required: where this store's index lives, a directory for SQLite or a postgres:// url")
 	}
 
-	u, err := url.Parse(c.GlobalString("index"))
+	u, err := parseLocation(c.GlobalString("index"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid index location %s: %w", c.GlobalString("index"), err)
 	}
@@ -487,7 +497,7 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 		Fatalf("--storage is required: where the objects live")
 	}
 
-	u, err := url.Parse(location)
+	u, err := parseLocation(location)
 
 	if err != nil {
 		Fatalf("Invalid storage location %s: %v", location, err)
@@ -530,7 +540,7 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 		Fatalf("--index is required: where the store's index lives")
 	}
 
-	u, err := url.Parse(location)
+	u, err := parseLocation(location)
 
 	if err != nil {
 		Fatalf("Invalid index location %s: %v", location, err)
