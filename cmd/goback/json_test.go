@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -76,6 +77,26 @@ func TestJSONModeKeepsResultsOnStdoutAndLogsAsLinesOnStderr(t *testing.T) {
 	require.Len(t, commits, 1)
 	require.Equal(t, walk.Commit, commits[0].Ref, "a listed commit carries the ref a run reported")
 	require.Equal(t, "world", commits[0].Set)
+
+	write(t, filepath.Join(src, "server.properties"), []byte("motd=again\n"))
+	_, logs, code = c.runJSON("commit", "new", src)
+	require.Zero(t, code, logs)
+
+	_, logs, code = c.runJSON("commit", "delete", walk.Commit)
+	require.Zero(t, code, logs)
+
+	out, logs, code = c.runJSON("commit", "list", "--deleted")
+	require.Zero(t, code, logs)
+
+	var trashed []struct {
+		Ref     string    `json:"ref"`
+		Deleted time.Time `json:"deleted"`
+		Expires time.Time `json:"expires"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &trashed), out)
+	require.Len(t, trashed, 1)
+	require.Equal(t, walk.Commit, trashed[0].Ref)
+	require.True(t, trashed[0].Expires.After(trashed[0].Deleted), "a deleted commit shows when it expires")
 
 	out, _, code = c.runJSON("pin", "remove", "not-hex")
 	require.Equal(t, 1, code)

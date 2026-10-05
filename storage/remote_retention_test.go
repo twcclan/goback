@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
@@ -43,6 +45,15 @@ func (r *retentionIndex) UndeleteCommit(ctx context.Context, ref *proto.Ref) err
 	return r.record(ctx, "undelete")
 }
 
+func (r *retentionIndex) TrashedCommits(ctx context.Context, set string, before time.Time, limit int) ([]*proto.TrashedCommit, error) {
+	err := r.record(ctx, fmt.Sprintf("trash:%s:%d:%d", set, before.UnixNano(), limit))
+	if err != nil {
+		return nil, err
+	}
+
+	return []*proto.TrashedCommit{{Ref: &proto.Ref{Hash: testHash("commit")}, DeletedAtNs: 3, ExpiresAtNs: 9}}, nil
+}
+
 func (r *retentionIndex) DeleteSet(ctx context.Context, set string, erase bool) error {
 	return r.record(ctx, "delete-set:"+set)
 }
@@ -74,6 +85,11 @@ func TestRemoteRetentionCallsReachTheIndex(t *testing.T) {
 
 	require.NoError(t, client.DeleteCommit(ctx, ref))
 	require.NoError(t, client.UndeleteCommit(ctx, ref))
+	trash, err := client.TrashedCommits(ctx, "world", time.Unix(0, 5), 2)
+	require.NoError(t, err)
+	require.Len(t, trash, 1)
+	require.True(t, trash[0].Ref.Equal(ref))
+	require.EqualValues(t, 9, trash[0].ExpiresAtNs)
 	require.NoError(t, client.DeleteSet(ctx, "world", true))
 	require.NoError(t, client.UndeleteSet(ctx, "world"))
 	require.NoError(t, client.Unpin(ctx, ref))
@@ -83,7 +99,7 @@ func TestRemoteRetentionCallsReachTheIndex(t *testing.T) {
 	require.Len(t, pins, 1)
 	require.True(t, pins[0].Target.Equal(ref))
 
-	require.Equal(t, []string{"delete", "undelete", "delete-set:world", "undelete-set:world", "unpin", "pins"}, index.calls)
+	require.Equal(t, []string{"delete", "undelete", "trash:world:5:2", "delete-set:world", "undelete-set:world", "unpin", "pins"}, index.calls)
 	require.Equal(t, "node-1", index.agent, "the caller's principal reaches the index")
 
 	index.fail = backup.ErrNewestCommit

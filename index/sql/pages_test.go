@@ -140,3 +140,83 @@ func names(nodes []*proto.TreeNode) []string {
 
 	return out
 }
+
+func TestTrashedCommitsListsTheTrashUntilItsTombstone(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "three")), false)
+
+	require.NoError(t, f.x.DeleteCommit(f.ctx, a))
+	deletedA := f.clock
+	f.advance(48 * time.Hour)
+	require.NoError(t, f.x.DeleteCommit(f.ctx, b))
+	deletedB := f.clock
+
+	trash, err := f.x.TrashedCommits(f.ctx, "world", time.Time{}, 0)
+	require.NoError(t, err)
+	require.Len(t, trash, 2)
+	require.True(t, trash[0].Ref.Equal(b), "the newest deleted comes first")
+	require.True(t, trash[1].Ref.Equal(a))
+	require.Equal(t, deletedB.UnixNano(), trash[0].DeletedAtNs)
+	require.Equal(t, deletedB.Add(14*24*time.Hour).UnixNano(), trash[0].ExpiresAtNs)
+	require.Equal(t, "world", trash[0].Commit.BackupSet)
+
+	n, err := f.x.Retire(f.ctx, deletedA.Add(14*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	trash, err = f.x.TrashedCommits(f.ctx, "world", time.Time{}, 0)
+	require.NoError(t, err)
+	require.Len(t, trash, 1, "a tombstoned commit leaves the trash")
+	require.True(t, trash[0].Ref.Equal(b))
+
+	require.NoError(t, f.x.UndeleteCommit(f.ctx, b))
+	trash, err = f.x.TrashedCommits(f.ctx, "world", time.Time{}, 0)
+	require.NoError(t, err)
+	require.Empty(t, trash, "an undeleted commit is live again")
+
+	trash, err = f.x.TrashedCommits(f.ctx, "unknown", time.Time{}, 0)
+	require.NoError(t, err)
+	require.Empty(t, trash)
+}
+
+func TestTrashedCommitsKeepsInstantsWhole(t *testing.T) {
+	f := newFixture(t)
+
+	deleted := []int64{5e9, 4e9, 4e9, 3e9}
+	for i, at := range deleted {
+		ref := f.commit("world", f.tree(f.file("a.txt", fmt.Sprint("version ", i))), false)
+		f.advance(time.Hour)
+		require.NoError(t, f.x.client.CommitRow.Update().Where(commitrow.Ref(ref.Hash)).SetDeletedAt(time.Unix(0, at).UTC()).Exec(f.ctx))
+	}
+
+	f.commit("world", f.tree(f.file("a.txt", "live")), false)
+
+	var (
+		pages  [][]int64
+		before time.Time
+	)
+
+	for range len(deleted) + 1 {
+		page, err := f.x.TrashedCommits(f.ctx, "world", before, 2)
+		require.NoError(t, err)
+
+		if len(page) == 0 {
+			break
+		}
+
+		var stamps []int64
+		for _, c := range page {
+			stamps = append(stamps, c.DeletedAtNs)
+		}
+
+		pages = append(pages, stamps)
+		before = time.Unix(0, page[len(page)-1].DeletedAtNs)
+	}
+
+	require.Equal(t, [][]int64{{5e9, 4e9, 4e9}, {3e9}}, pages, "a page runs on through the instant it ends at")
+}

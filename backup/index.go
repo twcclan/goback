@@ -109,6 +109,12 @@ type Retention interface {
 	// UndeleteCommit moves a retired commit back to live; a tombstoned
 	// one is refused with ErrTombstoned.
 	UndeleteCommit(ctx context.Context, ref *proto.Ref) error
+	// TrashedCommits pages through the set's deleted commits that are not
+	// tombstoned yet, newest deleted first: those deleted before before, or
+	// all when it is zero, at most limit, every one when limit is zero, and
+	// then the others deleted at the last one's instant, so its
+	// DeletedAtNs is the before of the next page.
+	TrashedCommits(ctx context.Context, set string, before time.Time, limit int) ([]*proto.TrashedCommit, error)
 	// DeleteSet closes a set and retires every commit; erase uses a zero
 	// window.
 	DeleteSet(ctx context.Context, set string, erase bool) error

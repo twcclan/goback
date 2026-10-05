@@ -67,6 +67,52 @@ func (x *Index) CommitDetailsBefore(ctx context.Context, backupSet string, befor
 	return mapAll(rows, m.CommitDetail), nil
 }
 
+// TrashedCommits implements backup.Retention.
+func (x *Index) TrashedCommits(ctx context.Context, backupSet string, before time.Time, limit int) ([]*proto.TrashedCommit, error) {
+	setID, err := findSet(ctx, x.client, backupSet)
+	if errors.Is(err, backup.ErrNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	trashed := func() *ent.CommitRowQuery {
+		return x.client.CommitRow.Query().
+			Where(commitrow.SetID(setID), commitrow.Partial(false), commitrow.DeletedAtNotNil(), commitrow.TombstonedAtIsNil()).
+			WithSet()
+	}
+
+	query := trashed().Order(ent.Desc(commitrow.FieldDeletedAt), ent.Desc(commitrow.FieldID))
+	if !before.IsZero() {
+		query.Where(commitrow.DeletedAtLT(before.UTC()))
+	}
+
+	if limit > 0 {
+		query.Limit(limit)
+	}
+
+	rows, err := query.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if limit > 0 && len(rows) == limit {
+		last := rows[len(rows)-1]
+
+		rest, err := trashed().Where(commitrow.DeletedAt(*last.DeletedAt), commitrow.IDLT(last.ID)).
+			Order(ent.Desc(commitrow.FieldID)).All(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		rows = append(rows, rest...)
+	}
+
+	return mapAll(rows, m.TrashedCommit), nil
+}
+
 // VersionsBefore pages through the versions of a path that a live commit
 // of the set contains, newest first: those first held before before, or
 // all of them when it is zero, at most limit, every one when limit is

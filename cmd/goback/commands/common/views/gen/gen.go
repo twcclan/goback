@@ -150,6 +150,18 @@ func (m MapperImpl) Report(in *pack.CollectReport) views.ReportView {
 	}
 }
 
+func (m MapperImpl) TrashedCommit(in *proto.TrashedCommit) views.TrashedCommitView {
+	if in == nil {
+		return views.TrashedCommitView{}
+	}
+
+	return views.TrashedCommitView{
+		CommitView: m.Commit(in.Commit),
+		Deleted:    views.UnixNano(in.DeletedAtNs),
+		Expires:    views.UnixNano(in.ExpiresAtNs),
+	}
+}
+
 func (m MapperImpl) Walk(in *backup.WalkResult) views.WalkView {
 	if in == nil {
 		return views.WalkView{}

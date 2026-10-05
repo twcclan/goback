@@ -1163,12 +1163,7 @@ func (x *Index) CommitSizes(ctx context.Context, backupSet string, notAfter time
 		return nil, nil, err
 	}
 
-	sizes := make([]*proto.CommitSize, len(rows))
-	for i, row := range rows {
-		sizes[i] = &proto.CommitSize{LogicalBytes: row.LogicalSize, Files: row.FileCount}
-	}
-
-	return mapAll(rows, m.Commit), sizes, nil
+	return mapAll(rows, m.Commit), mapAll(rows, m.CommitSize), nil
 }
 
 func (x *Index) commitInfo(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]*ent.CommitRow, error) {

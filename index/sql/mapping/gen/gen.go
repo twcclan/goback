@@ -75,6 +75,17 @@ func (m MapperImpl) CommitDetail(in *ent.CommitRow) index.CommitDetail {
 	}
 }
 
+func (m MapperImpl) CommitSize(in *ent.CommitRow) *proto.CommitSize {
+	if in == nil {
+		return nil
+	}
+
+	return &proto.CommitSize{
+		LogicalBytes: in.LogicalSize,
+		Files:        in.FileCount,
+	}
+}
+
 func (m MapperImpl) FileInfo(in *ent.File) *proto.FileInfo {
 	if in == nil {
 		return nil
@@ -221,6 +232,20 @@ func (m MapperImpl) StoreScope(in *ent.Settings) *proto.StoreScope {
 		KeyAcknowledgedAtNs: mapping.Nanos(in.KeyAcknowledgedAt),
 		DefaultRetention:    tmp1,
 		TrashDays:           uint32(in.TrashDays),
+	}
+}
+
+func (m MapperImpl) TrashedCommit(in *ent.CommitRow) *proto.TrashedCommit {
+	if in == nil {
+		return nil
+	}
+
+	return &proto.TrashedCommit{
+		Ref:         mapping.Ref(in.Ref),
+		Commit:      m.Commit(in),
+		Size:        m.CommitSize(in),
+		DeletedAtNs: mapping.Nanos(in.DeletedAt),
+		ExpiresAtNs: mapping.Nanos(in.ExpiresAt),
 	}
 }
 

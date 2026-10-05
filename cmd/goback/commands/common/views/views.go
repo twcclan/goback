@@ -54,6 +54,11 @@ type Mapper interface {
 	// field:Target using:"Hex"
 	// field:Received from:"ReceivedAtNs" using:"UnixNano"
 	Pin(in *proto.PinInfo) PinView
+
+	// field:CommitView from:"Commit"
+	// field:Deleted from:"DeletedAtNs" using:"UnixNano"
+	// field:Expires from:"ExpiresAtNs" using:"UnixNano"
+	TrashedCommit(in *proto.TrashedCommit) TrashedCommitView
 }
 
 // Hex is a ref as the hex its hash prints as, empty for none.
@@ -126,6 +131,14 @@ type CommitView struct {
 	Consistent bool              `json:"consistent"`
 	Partial    bool              `json:"partial,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// TrashedCommitView is a deleted commit as JSON output shows it: the
+// commit, when it was deleted and when retirement tombstones it.
+type TrashedCommitView struct {
+	CommitView
+	Deleted time.Time `json:"deleted"`
+	Expires time.Time `json:"expires"`
 }
 
 // NodeView is a file or directory as JSON output shows it.

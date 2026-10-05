@@ -34,6 +34,24 @@ func (c *commit) list() {
 	})
 }
 
+func (c *commit) listTrash() {
+	trashed, err := common.GetRetention(c.index).TrashedCommits(c.ctx, c.set, time.Time{}, 0)
+	if err != nil {
+		common.Fatal(errors.Wrap(err, "Failed reading deleted commits"))
+	}
+
+	out := make([]views.TrashedCommitView, len(trashed))
+	for i, commit := range trashed {
+		out[i] = common.View.TrashedCommit(commit)
+	}
+
+	common.Result(out, func() {
+		for _, commit := range out {
+			log.Printf("%s %s deleted %s, expires %s", commit.Time, commit.Ref, commit.Deleted, commit.Expires)
+		}
+	})
+}
+
 func listAction(c *cli.Context) {
 	store := common.GetObjectStore(c)
 	index := common.OpenIndex(c, store)
@@ -44,7 +62,11 @@ func listAction(c *cli.Context) {
 		set:   c.GlobalString("set"),
 	}
 
-	s.list()
+	if c.Bool("deleted") {
+		s.listTrash()
+	} else {
+		s.list()
+	}
 
 	common.CloseAll(store, index)
 }
@@ -53,4 +75,10 @@ var listCmd = cli.Command{
 	Name:        "list",
 	Description: "List commits",
 	Action:      listAction,
+	Flags: []cli.Flag{
+		cli.BoolFlag{
+			Name:  "deleted",
+			Usage: "list the deleted commits that can still be undeleted",
+		},
+	},
 }

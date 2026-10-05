@@ -204,6 +204,31 @@ message UndeleteCommitRequest {
 
 message UndeleteCommitResponse {}
 
+message ListTrashRequest {
+    string backup_set = 1;
+    // only commits deleted before this instant; 0 for the newest
+    int64 before_ns = 2;
+    // at most this many, and then the rest deleted at the last one's
+    // instant; 0 for all
+    int32 limit = 3;
+}
+
+// TrashedCommit is a deleted commit that UndeleteCommit can still bring
+// back.
+message TrashedCommit {
+    Ref ref = 1;
+    Commit commit = 2;
+    CommitSize size = 3;
+    int64 deleted_at_ns = 4;
+    // when retirement tombstones it
+    int64 expires_at_ns = 5;
+}
+
+message ListTrashResponse {
+    // newest deleted first
+    repeated TrashedCommit commits = 1;
+}
+
 message DeleteSetRequest {
     string backup_set = 1;
     // erase uses a zero window: the commits are tombstoned by the next
@@ -288,6 +313,8 @@ service Store {
 
     rpc DeleteCommit(DeleteCommitRequest) returns (DeleteCommitResponse) {}
     rpc UndeleteCommit(UndeleteCommitRequest) returns (UndeleteCommitResponse) {}
+    // ListTrash pages through a set's deleted commits, newest deleted first
+    rpc ListTrash(ListTrashRequest) returns (ListTrashResponse) {}
     rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}
     rpc UndeleteSet(UndeleteSetRequest) returns (UndeleteSetResponse) {}
     rpc Unpin(UnpinRequest) returns (UnpinResponse) {}

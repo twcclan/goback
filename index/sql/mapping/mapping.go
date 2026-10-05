@@ -72,6 +72,17 @@ type Mapper interface {
 	// field:Files from:"FileCount"
 	CommitDetail(in *ent.CommitRow) index.CommitDetail
 
+	// field:Ref using:"Ref"
+	// field:Commit from:"."
+	// field:Size from:"."
+	// field:DeletedAtNs from:"DeletedAt" using:"Nanos"
+	// field:ExpiresAtNs from:"ExpiresAt" using:"Nanos"
+	TrashedCommit(in *ent.CommitRow) *proto.TrashedCommit
+
+	// field:LogicalBytes from:"LogicalSize"
+	// field:Files from:"FileCount"
+	CommitSize(in *ent.CommitRow) *proto.CommitSize
+
 	// field:Node from:"."
 	// field:From from:"ValidFrom"
 	Version(in *ent.File) index.Version

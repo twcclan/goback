@@ -517,6 +517,21 @@ func (r *Client) UndeleteCommit(ctx context.Context, ref *proto.Ref) error {
 	return err
 }
 
+// TrashedCommits implements backup.Retention.
+func (r *Client) TrashedCommits(ctx context.Context, set string, before time.Time, limit int) ([]*proto.TrashedCommit, error) {
+	request := &proto.ListTrashRequest{BackupSet: set, Limit: int32(limit)}
+	if !before.IsZero() {
+		request.BeforeNs = before.UnixNano()
+	}
+
+	resp, err := r.store.ListTrash(r.outgoing(ctx), request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.GetCommits(), nil
+}
+
 // DeleteSet implements backup.Retention.
 func (r *Client) DeleteSet(ctx context.Context, set string, erase bool) error {
 	_, err := r.store.DeleteSet(r.outgoing(ctx), &proto.DeleteSetRequest{BackupSet: set, Erase: erase})
@@ -752,6 +767,30 @@ func (r *Server) UndeleteCommit(ctx context.Context, request *proto.UndeleteComm
 	}
 
 	return &proto.UndeleteCommitResponse{}, ToStatus(ret.UndeleteCommit(ctx, request.GetRef()))
+}
+
+// ListTrash implements proto.StoreServer.
+func (r *Server) ListTrash(ctx context.Context, request *proto.ListTrashRequest) (*proto.ListTrashResponse, error) {
+	if request.GetLimit() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "limit must not be negative")
+	}
+
+	ret, err := r.store.Retention()
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	var before time.Time
+	if request.GetBeforeNs() != 0 {
+		before = time.Unix(0, request.GetBeforeNs())
+	}
+
+	commits, err := ret.TrashedCommits(ctx, request.GetBackupSet(), before, int(request.GetLimit()))
+	if err != nil {
+		return nil, ToStatus(err)
+	}
+
+	return &proto.ListTrashResponse{Commits: commits}, nil
 }
 
 // DeleteSet implements proto.StoreServer.

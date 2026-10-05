@@ -33,6 +33,7 @@ const (
 	Store_GetPresence_FullMethodName    = "/proto.Store/GetPresence"
 	Store_DeleteCommit_FullMethodName   = "/proto.Store/DeleteCommit"
 	Store_UndeleteCommit_FullMethodName = "/proto.Store/UndeleteCommit"
+	Store_ListTrash_FullMethodName      = "/proto.Store/ListTrash"
 	Store_DeleteSet_FullMethodName      = "/proto.Store/DeleteSet"
 	Store_UndeleteSet_FullMethodName    = "/proto.Store/UndeleteSet"
 	Store_Unpin_FullMethodName          = "/proto.Store/Unpin"
@@ -66,6 +67,8 @@ type StoreClient interface {
 	GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetPresenceResponse], error)
 	DeleteCommit(ctx context.Context, in *DeleteCommitRequest, opts ...grpc.CallOption) (*DeleteCommitResponse, error)
 	UndeleteCommit(ctx context.Context, in *UndeleteCommitRequest, opts ...grpc.CallOption) (*UndeleteCommitResponse, error)
+	// ListTrash pages through a set's deleted commits, newest deleted first
+	ListTrash(ctx context.Context, in *ListTrashRequest, opts ...grpc.CallOption) (*ListTrashResponse, error)
 	DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error)
 	UndeleteSet(ctx context.Context, in *UndeleteSetRequest, opts ...grpc.CallOption) (*UndeleteSetResponse, error)
 	Unpin(ctx context.Context, in *UnpinRequest, opts ...grpc.CallOption) (*UnpinResponse, error)
@@ -250,6 +253,16 @@ func (c *storeClient) UndeleteCommit(ctx context.Context, in *UndeleteCommitRequ
 	return out, nil
 }
 
+func (c *storeClient) ListTrash(ctx context.Context, in *ListTrashRequest, opts ...grpc.CallOption) (*ListTrashResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTrashResponse)
+	err := c.cc.Invoke(ctx, Store_ListTrash_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *storeClient) DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSetResponse)
@@ -326,6 +339,8 @@ type StoreServer interface {
 	GetPresence(*GetPresenceRequest, grpc.ServerStreamingServer[GetPresenceResponse]) error
 	DeleteCommit(context.Context, *DeleteCommitRequest) (*DeleteCommitResponse, error)
 	UndeleteCommit(context.Context, *UndeleteCommitRequest) (*UndeleteCommitResponse, error)
+	// ListTrash pages through a set's deleted commits, newest deleted first
+	ListTrash(context.Context, *ListTrashRequest) (*ListTrashResponse, error)
 	DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error)
 	UndeleteSet(context.Context, *UndeleteSetRequest) (*UndeleteSetResponse, error)
 	Unpin(context.Context, *UnpinRequest) (*UnpinResponse, error)
@@ -384,6 +399,9 @@ func (UnimplementedStoreServer) DeleteCommit(context.Context, *DeleteCommitReque
 }
 func (UnimplementedStoreServer) UndeleteCommit(context.Context, *UndeleteCommitRequest) (*UndeleteCommitResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UndeleteCommit not implemented")
+}
+func (UnimplementedStoreServer) ListTrash(context.Context, *ListTrashRequest) (*ListTrashResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTrash not implemented")
 }
 func (UnimplementedStoreServer) DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSet not implemented")
@@ -652,6 +670,24 @@ func _Store_UndeleteCommit_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Store_ListTrash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTrashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StoreServer).ListTrash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Store_ListTrash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StoreServer).ListTrash(ctx, req.(*ListTrashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Store_DeleteSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSetRequest)
 	if err := dec(in); err != nil {
@@ -792,6 +828,10 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UndeleteCommit",
 			Handler:    _Store_UndeleteCommit_Handler,
+		},
+		{
+			MethodName: "ListTrash",
+			Handler:    _Store_ListTrash_Handler,
 		},
 		{
 			MethodName: "DeleteSet",
