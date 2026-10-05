@@ -165,6 +165,23 @@ type CollectReport struct {
 	Duration   time.Duration
 }
 
+// Summary renders the report as a few lines for a log or an operator.
+func (r *CollectReport) Summary() string {
+	if r.Waiting > 0 {
+		return fmt.Sprintf("GC waits for the rewrite of generation %d", r.Waiting)
+	}
+
+	summary := fmt.Sprintf("GC generation %d: %d roots, %d of %d objects in %d archives marked, %d objects (%s) dead, %s",
+		r.Generation, r.Roots, r.Marked, r.Objects, r.Archives, r.DeadObjects, humanize.Bytes(r.DeadBytes), r.Duration.Round(time.Millisecond))
+
+	if r.SweepSkipped != "" {
+		return summary + "\nGC sweep skipped: " + r.SweepSkipped
+	}
+
+	return summary + fmt.Sprintf("\nGC published %d archives, swept %d (%d flagged for erasure), reclaimed %d objects (%s), copied %s",
+		r.Published, r.Swept, r.ErasedArchives, r.ReclaimedObjects, humanize.Bytes(r.ReclaimedBytes), humanize.Bytes(r.CopiedBytes))
+}
+
 // Collector is implemented by stores that can garbage collect themselves.
 type Collector interface {
 	Collect(ctx context.Context, opts CollectOptions) (*CollectReport, error)

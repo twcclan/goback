@@ -2,7 +2,6 @@ package gc
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage/pack"
 
-	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"
 )
 
@@ -147,19 +145,8 @@ func View(report *pack.CollectReport) ReportView {
 
 // Log prints one line per phase of a collection report.
 func Log(report *pack.CollectReport) {
-	for _, line := range strings.Split(Summary(report), "\n") {
+	for _, line := range strings.Split(report.Summary(), "\n") {
 		log.Print(line)
 	}
 }
 
-// Summary renders a report as the lines Log prints.
-func Summary(report *pack.CollectReport) string {
-	summary := fmt.Sprintf("GC generation %d: %d roots, %d of %d objects in %d archives marked, %d objects (%s) dead, %s",
-		report.Generation, report.Roots, report.Marked, report.Objects, report.Archives, report.DeadObjects, humanize.Bytes(report.DeadBytes), report.Duration.Round(time.Millisecond))
-
-	if report.SweepSkipped != "" {
-		return summary + "\nGC sweep skipped: " + report.SweepSkipped
-	}
-
-	return summary + fmt.Sprintf("\nGC swept %d archives (%d flagged for erasure), reclaimed %d objects (%s), copied %s", report.Swept, report.ErasedArchives, report.ReclaimedObjects, humanize.Bytes(report.ReclaimedBytes), humanize.Bytes(report.CopiedBytes))
-}

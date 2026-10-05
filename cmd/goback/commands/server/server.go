@@ -228,7 +228,7 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, 
 
 			gc.Log(report)
 
-			return gc.Summary(report), nil
+			return report.Summary(), nil
 		}
 	}
 
