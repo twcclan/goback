@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/urfave/cli"
@@ -29,7 +30,7 @@ func (o *object) get() {
 		Parts int    `json:"parts,omitempty"`
 		Path  string `json:"path"`
 		Bytes int    `json:"bytes"`
-	}{common.Hex(o.ref), obj.Type().String(), len(obj.GetFile().GetParts()), o.out, len(obj.Bytes())}, func() {
+	}{views.Hex(o.ref), obj.Type().String(), len(obj.GetFile().GetParts()), o.out, len(obj.Bytes())}, func() {
 		log.Printf("Found object %s", obj.Type())
 
 		if obj.Type() == proto.ObjectType_FILE {

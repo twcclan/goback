@@ -4,10 +4,47 @@ package gen
 
 import (
 	mapping "github.com/twcclan/goback/admin/mapping"
+	retention "github.com/twcclan/goback/backup/retention"
+	storekey "github.com/twcclan/goback/backup/storekey"
 	index "github.com/twcclan/goback/index"
 	admin "github.com/twcclan/goback/proto/admin"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func (m MapperImpl) Bracket(in retention.Bracket) *admin.RetentionBracket {
+
+	return &admin.RetentionBracket{
+		Period: string(in.Period),
+		Count:  int32(in.Count),
+	}
+}
+
+func (m MapperImpl) FromBracket(in *admin.RetentionBracket) retention.Bracket {
+	if in == nil {
+		return retention.Bracket{}
+	}
+
+	return retention.Bracket{
+		Period: retention.Period(in.Period),
+		Count:  int(in.Count),
+	}
+}
+
+func (m MapperImpl) FromRetention(in *admin.RetentionPolicy) retention.Policy {
+	if in == nil {
+		return retention.Policy{}
+	}
+	tmp0 := make([]retention.Bracket, len(in.Brackets))
+	for i := range in.Brackets {
+		tmp0[i] = m.FromBracket(in.Brackets[i])
+	}
+
+	return retention.Policy{
+		Brackets:   tmp0,
+		KeepLast:   int(in.KeepLast),
+		KeepWithin: mapping.Duration(in.KeepWithin),
+	}
+}
 
 func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 	var tmp0 *timestamppb.Timestamp
@@ -24,6 +61,19 @@ func (m MapperImpl) Policy(in index.StorePolicy) *admin.StorePolicy {
 	}
 }
 
+func (m MapperImpl) Retention(in retention.Policy) *admin.RetentionPolicy {
+	tmp0 := make([]*admin.RetentionBracket, len(in.Brackets))
+	for i := range in.Brackets {
+		tmp0[i] = m.Bracket(in.Brackets[i])
+	}
+
+	return &admin.RetentionPolicy{
+		KeepLast:   int32(in.KeepLast),
+		KeepWithin: mapping.Seconds(in.KeepWithin),
+		Brackets:   tmp0,
+	}
+}
+
 func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 
 	return &admin.BackupSet{
@@ -34,6 +84,17 @@ func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 		DeduplicatedSize: in.DeduplicatedSize,
 		AloneSize:        in.AloneSize,
 		ExclusiveSize:    in.ExclusiveSize,
+	}
+}
+
+func (m MapperImpl) WritePolicy(in *admin.SetStorePolicyRequest) storekey.Policy {
+	if in == nil {
+		return storekey.Policy{}
+	}
+
+	return storekey.Policy{
+		Mode:          storekey.Mode(in.Mode),
+		PresenceScope: in.PresenceScope,
 	}
 }
 

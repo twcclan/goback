@@ -6,6 +6,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/pkg/errors"
@@ -23,13 +24,13 @@ func (f *file) list() error {
 		return err
 	}
 
-	views := make([]common.NodeView, len(entries))
+	out := make([]views.NodeView, len(entries))
 	for i, entry := range entries {
-		views[i] = common.ViewNode(entry)
+		out[i] = common.View.Node(entry)
 	}
 
 	if common.JSON() {
-		common.Result(views, nil)
+		common.Result(out, nil)
 
 		return nil
 	}

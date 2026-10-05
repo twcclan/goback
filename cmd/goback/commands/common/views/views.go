@@ -1,0 +1,203 @@
+// Package views is what goback's commands print as JSON.
+package views
+
+import (
+	"encoding/hex"
+	"time"
+
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
+)
+
+//go:generate mapper .
+
+// mapper:generate
+type Mapper interface {
+	// field:Ref from:"." using:"CommitRef"
+	// field:Tree using:"Hex"
+	// field:Parent using:"Hex"
+	// field:Set from:"BackupSet"
+	// field:Agent from:"AgentId"
+	// field:Time from:"Timestamp" using:"Unix"
+	Commit(in *proto.Commit) CommitView
+
+	// field:Name from:"Stat.Name" using:"Text"
+	// field:Type from:"Stat.Type" using:"Kind"
+	// field:Size from:"Stat.Size"
+	// field:Mode from:"Stat.Mode"
+	// field:Modified from:"Stat.MtimeNs" using:"UnixNano"
+	// field:Target from:"Stat.LinkTarget" using:"Text"
+	// field:Ref using:"Hex"
+	Node(in *proto.TreeNode) NodeView
+
+	// field:Commit from:"Ref" using:"Hex"
+	// field:Base using:"Hex"
+	Walk(in *backup.WalkResult) WalkView
+
+	// field:Seconds from:"Duration" using:"Seconds"
+	Report(in *pack.CollectReport) ReportView
+
+	// field:Keep from:"Brackets"
+	// field:KeepWithin using:"Within"
+	// field:Flags from:"-"
+	Policy(in retention.Policy) PolicyView
+
+	Bracket(in retention.Bracket) BracketView
+
+	// field:Pin from:"Ref" using:"Hex"
+	// field:Target using:"Hex"
+	// field:Received from:"ReceivedAtNs" using:"UnixNano"
+	Pin(in *proto.PinInfo) PinView
+}
+
+// Hex is a ref as the hex its hash prints as, empty for none.
+func Hex(ref *proto.Ref) string {
+	if ref == nil {
+		return ""
+	}
+
+	return hex.EncodeToString(ref.Hash)
+}
+
+// CommitRef is the hex of the ref commit is stored under.
+func CommitRef(commit *proto.Commit) string {
+	return Hex(proto.NewObject(commit).Ref())
+}
+
+// Unix is a time in seconds since the epoch, in UTC.
+func Unix(seconds int64) time.Time {
+	return time.Unix(seconds, 0).UTC()
+}
+
+// UnixNano is a time in nanoseconds since the epoch, in UTC.
+func UnixNano(nanos int64) time.Time {
+	return time.Unix(0, nanos).UTC()
+}
+
+// Text is a stored name as text.
+func Text(name []byte) string {
+	return string(name)
+}
+
+// Kind names a node type: file, directory or symlink.
+func Kind(t proto.NodeType) string {
+	switch t {
+	case proto.NodeType_NODE_DIRECTORY:
+		return "directory"
+	case proto.NodeType_NODE_SYMLINK:
+		return "symlink"
+	}
+
+	return "file"
+}
+
+// Seconds is d in seconds.
+func Seconds(d time.Duration) float64 {
+	return d.Seconds()
+}
+
+// Within is how long a policy keeps everything, "forever" for no end and
+// empty for not at all.
+func Within(d time.Duration) string {
+	switch {
+	case d == time.Duration(1<<63-1):
+		return "forever"
+	case d > 0:
+		return d.String()
+	}
+
+	return ""
+}
+
+// CommitView is a commit as JSON output shows it.
+type CommitView struct {
+	Ref        string            `json:"ref"`
+	Tree       string            `json:"tree"`
+	Parent     string            `json:"parent,omitempty"`
+	Set        string            `json:"set"`
+	Agent      string            `json:"agent,omitempty"`
+	Time       time.Time         `json:"time"`
+	Consistent bool              `json:"consistent"`
+	Partial    bool              `json:"partial,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// NodeView is a file or directory as JSON output shows it.
+type NodeView struct {
+	Name     string    `json:"name"`
+	Type     string    `json:"type"`
+	Size     int64     `json:"size"`
+	Mode     uint32    `json:"mode"`
+	Modified time.Time `json:"modified"`
+	Target   string    `json:"target,omitempty"`
+	Ref      string    `json:"ref,omitempty"`
+}
+
+// WalkView is what a backup run did, as JSON output shows it.
+type WalkView struct {
+	Commit      string `json:"commit"`
+	Base        string `json:"base,omitempty"`
+	Files       int64  `json:"files"`
+	Bytes       int64  `json:"bytes"`
+	Uploaded    int64  `json:"uploaded"`
+	Reused      int64  `json:"reused"`
+	Read        int64  `json:"read"`
+	Torn        int64  `json:"torn"`
+	Unreadable  int64  `json:"unreadable"`
+	Skipped     int64  `json:"skipped"`
+	Checkpoints int64  `json:"checkpoints"`
+	Assumed     int64  `json:"assumed"`
+	Repaired    int64  `json:"repaired"`
+}
+
+// ReportView is a collection report as JSON output shows it; the per-set
+// maps are keyed by set id.
+type ReportView struct {
+	Generation       uint64           `json:"generation"`
+	Waiting          uint64           `json:"waiting,omitempty"`
+	Archives         int              `json:"archives"`
+	Objects          uint64           `json:"objects"`
+	Roots            int              `json:"roots"`
+	Marked           uint64           `json:"marked"`
+	DeadObjects      uint64           `json:"dead_objects"`
+	DeadBytes        uint64           `json:"dead_bytes"`
+	Resumed          int              `json:"resumed"`
+	ErasedArchives   int              `json:"erased_archives"`
+	Condemned        int              `json:"condemned"`
+	SweepSkipped     string           `json:"sweep_skipped,omitempty"`
+	Published        int              `json:"published"`
+	Swept            int              `json:"swept"`
+	ReclaimedObjects uint64           `json:"reclaimed_objects"`
+	ReclaimedBytes   uint64           `json:"reclaimed_bytes"`
+	CopiedBytes      uint64           `json:"copied_bytes"`
+	Purged           int              `json:"purged"`
+	Seconds          float64          `json:"seconds"`
+	SetBytes         map[int64]uint64 `json:"set_bytes,omitempty"`
+	SetDeduplicated  map[int64]uint64 `json:"set_deduplicated,omitempty"`
+	SetAlone         map[int64]uint64 `json:"set_alone,omitempty"`
+	SetExclusive     map[int64]uint64 `json:"set_exclusive,omitempty"`
+}
+
+// PolicyView is a retention policy as JSON output shows it.
+type PolicyView struct {
+	KeepLast   int           `json:"keep_last"`
+	Keep       []BracketView `json:"keep"`
+	KeepWithin string        `json:"keep_within,omitempty"`
+	Flags      string        `json:"flags"`
+}
+
+// BracketView's count is zero for the tail, which keeps forever.
+type BracketView struct {
+	Period string `json:"period"`
+	Count  int    `json:"count"`
+}
+
+// PinView is a pin as JSON output shows it.
+type PinView struct {
+	Pin      string            `json:"pin"`
+	Target   string            `json:"target"`
+	Received time.Time         `json:"received"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}

@@ -15,9 +15,9 @@ import (
 	"github.com/twcclan/goback/auth"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/presence"
-	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
 	adminpb "github.com/twcclan/goback/proto/admin"
+	"github.com/twcclan/goback/storage/mapping/gen"
 	"github.com/twcclan/goback/storage/pack"
 
 	"google.golang.org/grpc"
@@ -113,6 +113,8 @@ func ServerTLS(certFile, keyFile string, plaintextBehindProxy bool) (credentials
 		return nil, nil, errors.New("--tls-cert and --tls-key are required unless --plaintext-behind-proxy is set")
 	}
 }
+
+var m = gen.MapperImpl{}
 
 var (
 	_ backup.KeyEscrow  = (*Client)(nil)
@@ -465,26 +467,10 @@ func (r *Client) BeginCommit(ctx context.Context, set string) (*backup.CommitGra
 	}
 
 	return &backup.CommitGrant{
-		Policy:  policyFromProto(resp.Policy),
+		Policy:  m.FromStorePolicy(resp.Policy),
 		Rescan:  resp.Rescan,
 		Damaged: resp.DamagedPaths,
 	}, nil
-}
-
-func policyFromProto(p *proto.StorePolicy) *storekey.Policy {
-	if p == nil {
-		return nil
-	}
-
-	return &storekey.Policy{Version: p.Version, Mode: storekey.Mode(p.Mode), PresenceScope: p.PresenceScope}
-}
-
-func policyProto(p *storekey.Policy) *proto.StorePolicy {
-	if p == nil {
-		return nil
-	}
-
-	return &proto.StorePolicy{Version: p.Version, Mode: string(p.Mode), PresenceScope: p.PresenceScope}
 }
 
 // ReadParts implements backup.PartReader through the ReadFile stream.
@@ -591,7 +577,7 @@ func (r *Server) BeginCommit(ctx context.Context, request *proto.BeginCommitRequ
 
 	return &proto.BeginCommitResponse{
 		Allowed:      true,
-		Policy:       policyProto(grant.Policy),
+		Policy:       m.StorePolicy(grant.Policy),
 		Rescan:       grant.Rescan,
 		DamagedPaths: grant.Damaged,
 	}, nil

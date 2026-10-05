@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/dustin/go-humanize"
@@ -46,7 +47,7 @@ func scrubAction(c *cli.Context) {
 
 	corrupted := make([]corrupt, len(report.Corrupt))
 	for i, f := range report.Corrupt {
-		corrupted[i] = corrupt{f.Archive, common.Hex(f.Ref), f.Err.Error()}
+		corrupted[i] = corrupt{f.Archive, views.Hex(f.Ref), f.Err.Error()}
 	}
 
 	common.Result(struct {

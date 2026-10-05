@@ -7,6 +7,7 @@ import (
 
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/proto"
 )
 
 // Set states.
@@ -55,4 +56,26 @@ type SetRetention struct {
 // by hand waits before its tombstone.
 type Windows struct {
 	TrashDays int
+}
+
+// CommitDetail is a commit together with what the index knows about it
+// beyond the stored object: how big the set was when it was taken, and
+// which retention rule is keeping it.
+type CommitDetail struct {
+	Commit *proto.Commit
+	// Ref is the commit object's own ref, which names it to a caller that
+	// wants to pin or read it.
+	Ref *proto.Ref
+	// LogicalSize is what the set's files held at this commit, and Files
+	// how many there were; nil when nothing measured it, which is every
+	// commit written before the index started recording it.
+	LogicalSize, Files *int64
+	// RetainedBy names the retention rules keeping this commit, comma
+	// separated: "last", "within", "pinned", "hourly", "daily", "weekly",
+	// "monthly". It is empty for a commit retention has not evaluated yet
+	// or has retired.
+	RetainedBy string
+	// Incomplete reports a commit indexed around objects the store no
+	// longer holds, which cannot be restored whole.
+	Incomplete bool
 }

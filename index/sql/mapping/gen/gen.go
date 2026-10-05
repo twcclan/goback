@@ -59,6 +59,21 @@ func (m MapperImpl) Commit(in *ent.CommitRow) *proto.Commit {
 	}
 }
 
+func (m MapperImpl) CommitDetail(in *ent.CommitRow) index.CommitDetail {
+	if in == nil {
+		return index.CommitDetail{}
+	}
+
+	return index.CommitDetail{
+		Commit:      m.Commit(in),
+		Ref:         mapping.Ref(in.Ref),
+		LogicalSize: in.LogicalSize,
+		Files:       in.FileCount,
+		RetainedBy:  in.RetainedBy,
+		Incomplete:  in.Incomplete,
+	}
+}
+
 func (m MapperImpl) FileInfo(in *ent.File) *proto.FileInfo {
 	if in == nil {
 		return nil
@@ -73,6 +88,19 @@ func (m MapperImpl) FileInfo(in *ent.File) *proto.FileInfo {
 		MtimeNs:    in.MtimeNs,
 		Type:       mapping.NodeType(in.Type),
 		LinkTarget: in.LinkTarget,
+	}
+}
+
+func (m MapperImpl) FilePath(in *ent.File) backup.FilePath {
+	if in == nil {
+		return backup.FilePath{}
+	}
+
+	return backup.FilePath{
+		Ref:   mapping.Ref(in.Ref),
+		SetID: in.SetID,
+		Path:  in.Path,
+		Open:  mapping.Open(in.ValidUntil),
 	}
 }
 
@@ -150,6 +178,48 @@ func (m MapperImpl) Set(in *ent.Set) index.SetInfo {
 		State:         string(in.State),
 		AloneSize:     tmp0,
 		ExclusiveSize: tmp1,
+	}
+}
+
+func (m MapperImpl) SetScope(in *ent.Set) *proto.SetScope {
+	if in == nil {
+		return nil
+	}
+	var tmp0 string
+	if in.RetentionPolicy != nil {
+		tmp0 = *(in.RetentionPolicy)
+	}
+
+	return &proto.SetScope{
+		SetId:           uint64(in.ID),
+		Name:            in.Name,
+		Retention:       tmp0,
+		RetentionPaused: in.RetentionPaused,
+		State:           mapping.SetState(in.State),
+		Erase:           in.Erase,
+	}
+}
+
+func (m MapperImpl) StoreScope(in *ent.Settings) *proto.StoreScope {
+	if in == nil {
+		return nil
+	}
+	var tmp0 string
+	if in.Policy != nil {
+		tmp0 = *(in.Policy)
+	}
+
+	var tmp1 string
+	if in.RetentionPolicy != nil {
+		tmp1 = *(in.RetentionPolicy)
+	}
+
+	return &proto.StoreScope{
+		WritePolicy:         tmp0,
+		WritePolicyVersion:  in.PolicyVersion,
+		KeyAcknowledgedAtNs: mapping.Nanos(in.KeyAcknowledgedAt),
+		DefaultRetention:    tmp1,
+		TrashDays:           uint32(in.TrashDays),
 	}
 }
 

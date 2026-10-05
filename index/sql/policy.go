@@ -61,47 +61,13 @@ func (x *Index) policyTx(ctx context.Context, change func(tx *ent.Tx) (*proto.Po
 }
 
 func storeScope(s *ent.Settings) *proto.Policy {
-	scope := &proto.StoreScope{
-		WritePolicyVersion: s.PolicyVersion,
-		TrashDays:          uint32(s.TrashDays),
-	}
-
-	if s.Policy != nil {
-		scope.WritePolicy = *s.Policy
-	}
-
-	if s.KeyAcknowledgedAt != nil {
-		scope.KeyAcknowledgedAtNs = s.KeyAcknowledgedAt.UnixNano()
-	}
-
-	if s.RetentionPolicy != nil {
-		scope.DefaultRetention = *s.RetentionPolicy
-	}
-
-	return &proto.Policy{Scope: &proto.Policy_Store{Store: scope}}
-}
-
-var setStates = map[set.State]proto.SetState{
-	set.StateActive:  proto.SetState_SET_ACTIVE,
-	set.StateClosing: proto.SetState_SET_CLOSING,
-	set.StateDeleted: proto.SetState_SET_DELETED,
+	return &proto.Policy{Scope: &proto.Policy_Store{Store: m.StoreScope(s)}}
 }
 
 // setScope is the set's state; closedAt is when a closing set was
 // deleted, zero otherwise.
 func setScope(s *ent.Set, closedAt time.Time) *proto.Policy {
-	scope := &proto.SetScope{
-		SetId:           uint64(s.ID),
-		Name:            s.Name,
-		RetentionPaused: s.RetentionPaused,
-		State:           setStates[s.State],
-		Erase:           s.Erase,
-	}
-
-	if s.RetentionPolicy != nil {
-		scope.Retention = *s.RetentionPolicy
-	}
-
+	scope := m.SetScope(s)
 	if !closedAt.IsZero() {
 		scope.ClosedAtNs = closedAt.UnixNano()
 	}

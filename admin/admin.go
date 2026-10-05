@@ -112,10 +112,7 @@ func (s *Server) GetStorePolicy(ctx context.Context, _ *pb.GetStorePolicyRequest
 
 // SetStorePolicy implements pb.AdminServer.
 func (s *Server) SetStorePolicy(ctx context.Context, request *pb.SetStorePolicyRequest) (*pb.StorePolicy, error) {
-	policy := storekey.Policy{
-		Mode:          storekey.Mode(request.Mode),
-		PresenceScope: request.PresenceScope,
-	}
+	policy := m.WritePolicy(request)
 
 	switch policy.Mode {
 	case storekey.ModeSealed, storekey.ModeNone:
@@ -158,7 +155,7 @@ func (s *Server) GetRetention(ctx context.Context, request *pb.GetRetentionReque
 func (s *Server) SetRetention(ctx context.Context, request *pb.SetRetentionRequest) (*pb.Retention, error) {
 	var policy *retention.Policy
 	if request.Policy != nil {
-		p := fromPolicy(request.Policy)
+		p := m.FromRetention(request.Policy)
 		policy = &p
 	}
 
@@ -196,7 +193,7 @@ func (s *Server) retention(ctx context.Context, set string) (*pb.Retention, erro
 			return nil, Status(err)
 		}
 
-		resp.Effective = toPolicy(policy)
+		resp.Effective = m.Retention(policy)
 		if stored {
 			resp.Policy = resp.Effective
 		}
@@ -209,45 +206,13 @@ func (s *Server) retention(ctx context.Context, set string) (*pb.Retention, erro
 		return nil, Status(err)
 	}
 
-	resp.Effective = toPolicy(ret.Effective)
+	resp.Effective = m.Retention(ret.Effective)
 	resp.Paused = ret.Paused
 	if ret.Policy != nil {
-		resp.Policy = toPolicy(*ret.Policy)
+		resp.Policy = m.Retention(*ret.Policy)
 	}
 
 	return resp, nil
-}
-
-func toPolicy(p retention.Policy) *pb.RetentionPolicy {
-	out := &pb.RetentionPolicy{KeepLast: int32(p.KeepLast)}
-	if p.KeepWithin > 0 {
-		out.KeepWithin = int64(p.KeepWithin / time.Second)
-	}
-
-	for _, b := range p.Brackets {
-		out.Brackets = append(out.Brackets, &pb.RetentionBracket{
-			Period: string(b.Period),
-			Count:  int32(b.Count),
-		})
-	}
-
-	return out
-}
-
-func fromPolicy(p *pb.RetentionPolicy) retention.Policy {
-	out := retention.Policy{
-		KeepLast:   int(p.KeepLast),
-		KeepWithin: time.Duration(p.KeepWithin) * time.Second,
-	}
-
-	for _, b := range p.Brackets {
-		out.Brackets = append(out.Brackets, retention.Bracket{
-			Period: retention.Period(b.Period),
-			Count:  int(b.Count),
-		})
-	}
-
-	return out
 }
 
 // Retire implements pb.AdminServer.

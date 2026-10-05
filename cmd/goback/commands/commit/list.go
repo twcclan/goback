@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
@@ -16,12 +17,12 @@ func (c *commit) list() {
 		common.Fatal(errors.Wrap(err, "Failed reading commit info"))
 	}
 
-	views := make([]common.CommitView, len(commits))
+	out := make([]views.CommitView, len(commits))
 	for i, commit := range commits {
-		views[i] = common.ViewCommit(commit)
+		out[i] = common.View.Commit(commit)
 	}
 
-	common.Result(views, func() {
+	common.Result(out, func() {
 		for _, commit := range commits {
 			note := ""
 			if commit.Consistent {

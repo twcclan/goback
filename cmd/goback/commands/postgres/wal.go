@@ -77,7 +77,7 @@ func walAction(c *cli.Context) error {
 		return nil
 	}
 
-	common.Result(common.ViewWalk(result), func() { log.Printf("Commit %x: %d spooled files", result.Ref.Hash, result.Files) })
+	common.Result(common.View.Walk(result), func() { log.Printf("Commit %x: %d spooled files", result.Ref.Hash, result.Files) })
 
 	return nil
 }

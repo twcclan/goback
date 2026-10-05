@@ -5,10 +5,12 @@ package mapping
 
 import (
 	"path"
+	"time"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
+	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
 )
@@ -62,6 +64,54 @@ type Mapper interface {
 	// field:PhysicalSize from:"-"
 	// field:DeduplicatedSize from:"-"
 	Set(in *ent.Set) index.SetInfo
+
+	// field:Commit from:"."
+	// field:Ref using:"Ref"
+	// field:Files from:"FileCount"
+	CommitDetail(in *ent.CommitRow) index.CommitDetail
+
+	// field:Ref using:"Ref"
+	// field:Set from:"-"
+	// field:Open from:"ValidUntil" using:"Open"
+	FilePath(in *ent.File) backup.FilePath
+
+	// field:WritePolicy from:"Policy"
+	// field:WritePolicyVersion from:"PolicyVersion"
+	// field:KeyAcknowledgedAtNs from:"KeyAcknowledgedAt" using:"Nanos"
+	// field:DefaultRetention from:"RetentionPolicy"
+	// field:HoldDays from:"-"
+	StoreScope(in *ent.Settings) *proto.StoreScope
+
+	// field:SetId from:"ID"
+	// field:Retention from:"RetentionPolicy"
+	// field:State using:"SetState"
+	// field:ClosedAtNs from:"-"
+	SetScope(in *ent.Set) *proto.SetScope
+}
+
+// Nanos is a stored time in nanoseconds since the Unix epoch, 0 for none.
+func Nanos(t *time.Time) int64 {
+	if t == nil {
+		return 0
+	}
+
+	return t.UnixNano()
+}
+
+// Open is whether a version has no end yet.
+func Open(validUntil *time.Time) bool {
+	return validUntil == nil
+}
+
+// SetState is a stored set state as policies record it.
+func SetState(s set.State) proto.SetState {
+	return setStates[s]
+}
+
+var setStates = map[set.State]proto.SetState{
+	set.StateActive:  proto.SetState_SET_ACTIVE,
+	set.StateClosing: proto.SetState_SET_CLOSING,
+	set.StateDeleted: proto.SetState_SET_DELETED,
 }
 
 // Ref wraps a stored hash, nil for none.

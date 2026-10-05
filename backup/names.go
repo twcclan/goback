@@ -5,6 +5,8 @@ import (
 
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+
+	pb "google.golang.org/protobuf/proto"
 )
 
 // sealInfo returns a copy of the stat with its name-like fields sealed for
@@ -14,7 +16,7 @@ func sealInfo(key *storekey.Key, parent []byte, info *proto.FileInfo) *proto.Fil
 		return info
 	}
 
-	sealed := copyInfo(info)
+	sealed := pb.Clone(info).(*proto.FileInfo)
 	sealed.Name = key.SealField(parent, storekey.FieldName, info.Name)
 	sealed.User = key.SealField(parent, storekey.FieldUser, info.User)
 	sealed.Group = key.SealField(parent, storekey.FieldGroup, info.Group)
@@ -29,7 +31,7 @@ func openInfo(key *storekey.Key, parent []byte, info *proto.FileInfo) (*proto.Fi
 		return info, nil
 	}
 
-	opened := copyInfo(info)
+	opened := pb.Clone(info).(*proto.FileInfo)
 	var err error
 
 	fields := []struct {
@@ -51,19 +53,6 @@ func openInfo(key *storekey.Key, parent []byte, info *proto.FileInfo) (*proto.Fi
 	}
 
 	return opened, nil
-}
-
-func copyInfo(info *proto.FileInfo) *proto.FileInfo {
-	return &proto.FileInfo{
-		Name:       info.Name,
-		Mode:       info.Mode,
-		User:       info.User,
-		Group:      info.Group,
-		Size:       info.Size,
-		MtimeNs:    info.MtimeNs,
-		Type:       info.Type,
-		LinkTarget: info.LinkTarget,
-	}
 }
 
 // NameToken is the stored form of a directory entry's name, which is the

@@ -14,6 +14,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/postgres"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -97,9 +98,9 @@ func restoreAction(c *cli.Context) error {
 	}
 
 	common.Result(struct {
-		Base common.CommitView `json:"base"`
-		WAL  string            `json:"wal,omitempty"`
-	}{common.ViewCommit(result.Base), common.Hex(result.WAL)}, func() {
+		Base views.CommitView `json:"base"`
+		WAL  string           `json:"wal,omitempty"`
+	}{common.View.Commit(result.Base), views.Hex(result.WAL)}, func() {
 		log.Printf("Restored the base backup of %s (commit %x)", time.Unix(result.Base.GetTimestamp(), 0).UTC().Format(time.RFC3339), result.BaseRef.Hash)
 
 		if result.WAL == nil {

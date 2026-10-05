@@ -196,7 +196,7 @@ func runNew(c *cli.Context) error {
 
 	common.SweepBlobCache(walker.BlobCache)
 
-	common.Result(common.ViewWalk(result), func() {
+	common.Result(common.View.Walk(result), func() {
 		log.Printf("Commit %x: %d files, %d reused, %d read, %d checkpoints", result.Ref.Hash, result.Files, result.Reused, result.Read, result.Checkpoints)
 
 		if result.Torn > 0 || result.Unreadable > 0 || result.Skipped > 0 {

@@ -54,10 +54,9 @@ func (x *Index) PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]backup.F
 		}
 
 		seen[key] = true
-		out = append(out, backup.FilePath{
-			Ref: &proto.Ref{Hash: row.Ref}, SetID: row.SetID, Set: name, Path: row.Path,
-			Open: row.ValidUntil == nil,
-		})
+		path := m.FilePath(row)
+		path.Set = name
+		out = append(out, path)
 	}
 
 	return out, nil

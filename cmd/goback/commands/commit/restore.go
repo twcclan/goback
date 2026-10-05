@@ -13,6 +13,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 
@@ -224,11 +225,11 @@ func (c *commit) restore() error {
 	stats, missed := c.restorer.Stats(), unrestored.Load()
 
 	common.Result(struct {
-		Commit     common.CommitView       `json:"commit"`
-		DryRun     bool                    `json:"dry_run"`
-		Stats      common.RestoreStatsView `json:"stats"`
-		Unrestored int64                   `json:"unrestored"`
-	}{common.ViewCommit(commit), c.restorer.DryRun, common.ViewRestoreStats(stats), int64(missed)}, func() {
+		Commit     views.CommitView    `json:"commit"`
+		DryRun     bool                `json:"dry_run"`
+		Stats      backup.RestoreStats `json:"stats"`
+		Unrestored int64               `json:"unrestored"`
+	}{common.View.Commit(commit), c.restorer.DryRun, stats, int64(missed)}, func() {
 		logStats(stats)
 
 		if missed > 0 {
@@ -433,7 +434,7 @@ func restoreAction(c *cli.Context) {
 		base:     base,
 		when:     when,
 		ref:      ref,
-		from:    c.String("from"),
+		from:     c.String("from"),
 		delete:   c.Bool("delete"),
 		reader:   backup.NewBackupReader(store).WithKey(key),
 		restorer: restorer,

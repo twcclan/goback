@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/file"
@@ -1183,32 +1184,10 @@ func (x *Index) commitInfo(ctx context.Context, backupSet string, notAfter time.
 		WithSet().Order(ent.Desc(commitrow.FieldReceivedAt)).Limit(count).All(ctx)
 }
 
-// CommitDetail is a commit together with what the index knows about it
-// beyond the stored object: how big the set was when it was taken, and
-// which retention rule is keeping it.
-type CommitDetail struct {
-	Commit *proto.Commit
-	// Ref is the commit object's own ref, which names it to a caller that
-	// wants to pin or read it.
-	Ref *proto.Ref
-	// LogicalSize is what the set's files held at this commit, and Files
-	// how many there were; nil when nothing measured it, which is every
-	// commit written before the index started recording it.
-	LogicalSize, Files *int64
-	// RetainedBy names the retention rules keeping this commit, comma
-	// separated: "last", "within", "pinned", "hourly", "daily", "weekly",
-	// "monthly". It is empty for a commit retention has not evaluated yet
-	// or has retired.
-	RetainedBy string
-	// Incomplete reports a commit indexed around objects the store no
-	// longer holds, which cannot be restored whole.
-	Incomplete bool
-}
-
 // CommitDetails is CommitInfo with what the index knows about each commit
 // beyond the object, for a caller reporting on a set rather than reading
 // it back.
-func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]CommitDetail, error) {
+func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter time.Time, count int) ([]index.CommitDetail, error) {
 	setID, err := findSet(ctx, x.client, backupSet)
 	if errors.Is(err, backup.ErrNotFound) {
 		return nil, nil
@@ -1225,16 +1204,7 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 		return nil, err
 	}
 
-	return mapAll(rows, func(row *ent.CommitRow) CommitDetail {
-		return CommitDetail{
-			Commit:      m.Commit(row),
-			Ref:         &proto.Ref{Hash: row.Ref},
-			LogicalSize: row.LogicalSize,
-			Files:       row.FileCount,
-			RetainedBy:  row.RetainedBy,
-			Incomplete:  row.Incomplete,
-		}
-	}), nil
+	return mapAll(rows, m.CommitDetail), nil
 }
 
 // LatestCommit returns the set's newest commit without a tombstone,

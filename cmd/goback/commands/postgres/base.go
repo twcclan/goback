@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/postgres"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 
 	"github.com/urfave/cli"
 )
@@ -103,9 +104,9 @@ func baseAction(c *cli.Context) error {
 	}
 
 	common.Result(struct {
-		common.WalkView
+		views.WalkView
 		WALStart string `json:"wal_start"`
-	}{common.ViewWalk(result), result.Commit.Metadata[postgres.MetaStartWALFile]}, func() {
+	}{common.View.Walk(result), result.Commit.Metadata[postgres.MetaStartWALFile]}, func() {
 		log.Printf("Commit %x: base backup of %d bytes, WAL from %s", result.Ref.Hash, result.Bytes, result.Commit.Metadata[postgres.MetaStartWALFile])
 	})
 

@@ -83,19 +83,19 @@ func (o Outcome) String() string {
 
 // RestoreStats counts what a Restorer did and where the bytes came from.
 type RestoreStats struct {
-	Files     int64
-	Written   int64
-	Unchanged int64
-	Skipped   int64
+	Files     int64 `json:"files"`
+	Written   int64 `json:"written"`
+	Unchanged int64 `json:"unchanged"`
+	Skipped   int64 `json:"skipped"`
 	// Salvaged counts files written with holes, and MissingBytes the bytes
 	// of those holes.
-	Salvaged     int64
-	MissingBytes int64
+	Salvaged     int64 `json:"salvaged"`
+	MissingBytes int64 `json:"missing_bytes"`
 
-	BytesFromDestination int64
-	BytesFromSeeds       int64
-	BytesFromCache       int64
-	BytesFromStore       int64
+	BytesFromDestination int64 `json:"bytes_from_destination"`
+	BytesFromSeeds       int64 `json:"bytes_from_seeds"`
+	BytesFromCache       int64 `json:"bytes_from_cache"`
+	BytesFromStore       int64 `json:"bytes_from_store"`
 }
 
 // DefaultRestoreWorkers is how much of a restore runs at once when nothing

@@ -12,6 +12,7 @@ import (
 	"github.com/twcclan/goback/admin"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/index"
 
 	"github.com/urfave/cli"
@@ -125,9 +126,9 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 		}
 
 		common.Result(struct {
-			Policy    policyView `json:"policy"`
-			Source    string     `json:"source"`
-			TrashDays int        `json:"trash_days"`
+			Policy    views.PolicyView `json:"policy"`
+			Source    string           `json:"source"`
+			TrashDays int              `json:"trash_days"`
 		}{viewPolicy(policy), source, w.TrashDays}, func() {
 			fmt.Printf("store default: %s (%s)\ntrash %d days\n", describe(policy), source, w.TrashDays)
 		})
@@ -146,10 +147,10 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 	}
 
 	common.Result(struct {
-		Set    string     `json:"set"`
-		Policy policyView `json:"policy"`
-		Source string     `json:"source"`
-		Paused bool       `json:"paused"`
+		Set    string           `json:"set"`
+		Policy views.PolicyView `json:"policy"`
+		Source string           `json:"source"`
+		Paused bool             `json:"paused"`
 	}{name, viewPolicy(ret.Effective), source, ret.Paused}, func() {
 		fmt.Printf("set %s: %s (%s)\n", name, describe(ret.Effective), source)
 		if ret.Paused {
@@ -158,34 +159,9 @@ func showRetention(ctx context.Context, x admin.Index, name string) {
 	})
 }
 
-// policyView is a retention policy as JSON output shows it; a duration of
-// "forever" never ends.
-type policyView struct {
-	KeepLast   int           `json:"keep_last"`
-	Keep       []bracketView `json:"keep"`
-	KeepWithin string        `json:"keep_within,omitempty"`
-	Flags      string        `json:"flags"`
-}
-
-// bracketView's count is zero for the tail, which keeps forever.
-type bracketView struct {
-	Period string `json:"period"`
-	Count  int    `json:"count"`
-}
-
-func viewPolicy(p retention.Policy) policyView {
-	out := policyView{KeepLast: p.KeepLast, Keep: []bracketView{}, Flags: describe(p)}
-
-	for _, b := range p.Brackets {
-		out.Keep = append(out.Keep, bracketView{Period: string(b.Period), Count: b.Count})
-	}
-
-	switch {
-	case p.KeepWithin == time.Duration(1<<63-1):
-		out.KeepWithin = "forever"
-	case p.KeepWithin > 0:
-		out.KeepWithin = p.KeepWithin.String()
-	}
+func viewPolicy(p retention.Policy) views.PolicyView {
+	out := common.View.Policy(p)
+	out.Flags = describe(p)
 
 	return out
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
@@ -17,12 +18,12 @@ func (f *file) show() error {
 	}
 
 	if common.JSON() {
-		views := make([]common.NodeView, len(nodes))
+		out := make([]views.NodeView, len(nodes))
 		for i, node := range nodes {
-			views[i] = common.ViewNode(node)
+			out[i] = common.View.Node(node)
 		}
 
-		common.Result(views, nil)
+		common.Result(out, nil)
 
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/urfave/cli"
@@ -56,7 +57,7 @@ func addAction(c *cli.Context) {
 	common.Result(struct {
 		Pin    string `json:"pin"`
 		Target string `json:"target"`
-	}{common.Hex(pin.Ref()), c.Args().First()}, func() { log.Printf("Pinned %s as %x", c.Args().First(), pin.Ref().Hash) })
+	}{views.Hex(pin.Ref()), c.Args().First()}, func() { log.Printf("Pinned %s as %x", c.Args().First(), pin.Ref().Hash) })
 	index.Close()
 }
 
@@ -69,19 +70,12 @@ func listAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	type view struct {
-		Pin      string            `json:"pin"`
-		Target   string            `json:"target"`
-		Received time.Time         `json:"received"`
-		Metadata map[string]string `json:"metadata,omitempty"`
-	}
-
-	views := make([]view, len(pins))
+	out := make([]views.PinView, len(pins))
 	for i, pin := range pins {
-		views[i] = view{common.Hex(pin.Ref), common.Hex(pin.Target), time.Unix(0, pin.ReceivedAtNs).UTC(), pin.Metadata}
+		out[i] = common.View.Pin(pin)
 	}
 
-	common.Result(views, func() {
+	common.Result(out, func() {
 		for _, pin := range pins {
 			log.Printf("%x -> %x (%s)", pin.Ref.Hash, pin.Target.Hash, time.Unix(0, pin.ReceivedAtNs).Format(time.RFC3339))
 		}

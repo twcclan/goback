@@ -6,6 +6,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
@@ -53,7 +54,7 @@ func repairAction(c *cli.Context) {
 	hexes := func(refs []*proto.Ref) []string {
 		out := make([]string, len(refs))
 		for i, ref := range refs {
-			out[i] = common.Hex(ref)
+			out[i] = views.Hex(ref)
 		}
 
 		return out

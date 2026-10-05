@@ -9,6 +9,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 
 	"github.com/urfave/cli"
 )
@@ -48,11 +49,11 @@ func (f *file) restore() error {
 	stats := f.restorer.Stats()
 
 	common.Result(struct {
-		File    common.NodeView         `json:"file"`
-		Outcome string                  `json:"outcome"`
-		Path    string                  `json:"path"`
-		Stats   common.RestoreStatsView `json:"stats"`
-	}{common.ViewNode(files[0]), outcome.String(), f.dst, common.ViewRestoreStats(stats)}, func() {
+		File    views.NodeView      `json:"file"`
+		Outcome string              `json:"outcome"`
+		Path    string              `json:"path"`
+		Stats   backup.RestoreStats `json:"stats"`
+	}{common.View.Node(files[0]), outcome.String(), f.dst, stats}, func() {
 		log.Printf("%s: %s", outcome, f.dst)
 		log.Printf("bytes from destination %d, seeds %d, cache %d, store %d", stats.BytesFromDestination, stats.BytesFromSeeds, stats.BytesFromCache, stats.BytesFromStore)
 	})
