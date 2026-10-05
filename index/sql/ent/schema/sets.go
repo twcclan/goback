@@ -50,6 +50,8 @@ func (Set) Edges() []ent.Edge {
 func (Set) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("name").Unique(),
+		index.Fields("physical_size", "name").Annotations(entsql.DescColumns("physical_size")).
+			StorageKey("sets_by_size"),
 	}
 }
 

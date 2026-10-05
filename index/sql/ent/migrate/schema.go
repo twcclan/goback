@@ -310,6 +310,16 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{SetsColumns[1]},
 			},
+			{
+				Name:    "sets_by_size",
+				Unique:  false,
+				Columns: []*schema.Column{SetsColumns[7], SetsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						SetsColumns[7].Name: true,
+					},
+				},
+			},
 		},
 	}
 	// SetRefsColumns holds the columns for the "set_refs" table.
