@@ -184,6 +184,10 @@ var storeIndexes = map[backup.ObjectStore]*sql.Index{}
 // withIndex opens the --index location as the archive index of the pack
 // store build makes, and records it for OpenIndex. The store closes it.
 func withIndex(c *cli.Context, build func(*sql.Index) (*pack.PackStorage, error)) (backup.ObjectStore, error) {
+	if c.GlobalString("index") == "" {
+		return nil, errors.New("--index is required: where this store's index lives, a directory for SQLite or a postgres:// url")
+	}
+
 	u, err := url.Parse(c.GlobalString("index"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid index location %s: %w", c.GlobalString("index"), err)
@@ -479,6 +483,10 @@ func Salvage(c *cli.Context, restorer *backup.Restorer) {
 // exits.
 func GetObjectStore(c *cli.Context) backup.ObjectStore {
 	location := c.GlobalString("storage")
+	if location == "" {
+		Fatalf("--storage is required: where the objects live")
+	}
+
 	u, err := url.Parse(location)
 
 	if err != nil {
@@ -518,6 +526,10 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 	}
 
 	location := c.GlobalString("index")
+	if location == "" {
+		Fatalf("--index is required: where the store's index lives")
+	}
+
 	u, err := url.Parse(location)
 
 	if err != nil {

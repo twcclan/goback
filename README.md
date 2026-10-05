@@ -33,17 +33,20 @@ go build ./cmd/goback
 
 goback key new my-store                 # writes store.key; keep a copy elsewhere
 
-goback --storage /backups --store-key store.key --set home \
-  commit new ~/
+export GOBACK_STORAGE=/backups/store GOBACK_INDEX=/backups/index
 
-goback --storage /backups --store-key store.key --set home commit list
+goback --store-key store.key --set home commit new ~/
 
-goback --storage /backups --store-key store.key --set home \
+goback --store-key store.key --set home commit list
+
+goback --store-key store.key --set home \
   commit restore ~/restored             # the latest commit; add an age like 24h for an older one
 ```
 
 `--storage` also takes `gcs://bucket`, `s3://bucket?endpoint=…`, or
-`goback://<secret>@host:port` for a goback server. `--cache-dir` (or
+`goback://<secret>@host:port` for a goback server. `--storage` and `--index`
+(or `GOBACK_STORAGE` and `GOBACK_INDEX`) have no defaults; a command that
+needs one says so. `--cache-dir` (or
 `GOBACK_CACHE_DIR`) names a per-machine directory for every cache: a backup
 skips unchanged files with it and a restore downloads less.
 
@@ -71,7 +74,7 @@ A set keeps the last commit of each calendar hour, day, week or month, by
 brackets counted back from now, newest first:
 
 ```sh
-goback --storage /backups set retention home \
+goback set retention home \
   --keep hourly=336 --keep daily=60 --keep weekly=12 --keep monthly
 ```
 
@@ -85,8 +88,8 @@ compacts every time and collects garbage once the last collection is a week old.
 ## A server for several agents
 
 ```sh
-goback --storage gcs://my-bucket server --secret-file secret \
-  --tls-cert cert.pem --tls-key key.pem
+goback --storage gcs://my-bucket --index /var/lib/goback/index \
+  server --secret-file secret --tls-cert cert.pem --tls-key key.pem
 ```
 
 Every agent presents the shared secret and its own `--agent-id`. The server

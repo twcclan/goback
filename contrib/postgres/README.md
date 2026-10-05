@@ -51,7 +51,7 @@ The host and its volumes are gone. You need three things:
 
    ```sh
    docker compose run --rm --no-deps -u postgres --entrypoint /opt/goback/goback postgres \
-     --storage 'gcs://BUCKET?index=/var/lib/goback/archives-restore' \
+     --storage 'gcs://BUCKET' \
      --index /var/lib/goback/index --store-key /run/secrets/goback-key \
      postgres restore --base-set db-base --wal-set db-wal /var/lib/postgresql/data
    ```
@@ -67,7 +67,7 @@ The host and its volumes are gone. You need three things:
 
    ```sh
    docker compose exec -u postgres postgres \
-     /opt/goback/goback --storage 'gcs://BUCKET?index=/var/lib/goback/archives-base' \
+     /opt/goback/goback --storage 'gcs://BUCKET' \
      --index /var/lib/goback/index --store-key /run/secrets/goback-key --agent-id db \
      --set db-base postgres base
    ```
@@ -80,7 +80,7 @@ To look at an earlier state without touching the live cluster, restore into any 
 
 ```sh
 docker compose exec -u postgres postgres sh -c '
-  /opt/goback/goback --storage "gcs://BUCKET?index=/var/lib/goback/archives-restore" \
+  /opt/goback/goback --storage "gcs://BUCKET" \
     --index /var/lib/goback/index --store-key /run/secrets/goback-key \
     postgres restore --base-set db-base --wal-set db-wal --at 2026-10-02T14:30:00Z /var/lib/goback/restored &&
   pg_ctl -D /var/lib/goback/restored -o "-p 5433 -c archive_mode=off" -l /var/lib/goback/restored.log start'

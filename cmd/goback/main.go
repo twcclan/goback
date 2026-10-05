@@ -54,13 +54,13 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "storage",
-			Usage:  "where the objects live: a directory, gcs://bucket, s3://bucket?endpoint=…, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it",
-			Value:  "storage",
+			Usage:  "where the objects live: a directory, gcs://bucket, s3://bucket?endpoint=…, goback://key@host:port for a store server, or goback+insecure://key@host:port for one on this machine with no TLS in front of it; required",
 			EnvVar: "GOBACK_STORAGE",
 		},
 		cli.StringFlag{
-			Name:  "index",
-			Value: "index",
+			Name:   "index",
+			Usage:  "where a directory or bucket store keeps its index: a directory for SQLite, or a postgres:// url; required unless --storage is a store server",
+			EnvVar: "GOBACK_INDEX",
 		},
 		cli.StringFlag{
 			Name: "set, s",
