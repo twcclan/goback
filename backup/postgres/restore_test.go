@@ -76,6 +76,28 @@ func TestARestoreWritesTheNewestBaseAndRecoversFromTheWALSet(t *testing.T) {
 	require.NotContains(t, string(conf), "recovery_target_time")
 }
 
+func TestARestoreBeforePostgres12RecoversThroughRecoveryConf(t *testing.T) {
+	f := newWALFixture(t)
+
+	_, err := f.runBase(oldBaseTar(t), nil)
+	require.NoError(t, err)
+
+	f.archive(3, 42)
+	wal, err := f.run()
+	require.NoError(t, err)
+
+	_, dir, err := f.restore(time.Time{})
+	require.NoError(t, err)
+
+	require.NoFileExists(t, filepath.Join(dir, "recovery.signal"))
+	require.NoFileExists(t, filepath.Join(dir, "postgresql.auto.conf"))
+
+	conf, err := os.ReadFile(filepath.Join(dir, "recovery.conf"))
+	require.NoError(t, err)
+	require.Contains(t, string(conf), "restore_command = 'goback postgres wal-get --commit "+hex.EncodeToString(wal.Ref.Hash)+" %f %p'")
+	require.Contains(t, string(conf), "recovery_target_timeline = 'latest'")
+}
+
 func TestARestoreToAMomentSetsItAsTheTarget(t *testing.T) {
 	f := newWALFixture(t)
 

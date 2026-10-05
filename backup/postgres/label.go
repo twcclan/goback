@@ -34,7 +34,9 @@ func (i BaseInfo) Metadata() map[string]string {
 
 var startWAL = regexp.MustCompile(`^START WAL LOCATION: ([0-9A-F]+/[0-9A-F]+) \(file ([0-9A-F]{24})\)$`)
 
-// readBackupLabel fills in the start of the backup from its backup_label.
+// readBackupLabel fills in the start of the backup from its backup_label;
+// before Postgres 11 the label names no timeline, and the start WAL file's
+// name does.
 func (i *BaseInfo) readBackupLabel(r io.Reader) error {
 	var sawStart, sawTimeline bool
 
@@ -65,8 +67,17 @@ func (i *BaseInfo) readBackupLabel(r io.Reader) error {
 		return err
 	}
 
-	if !sawStart || !sawTimeline {
-		return errors.New("backup_label names no start WAL location and timeline")
+	if !sawStart {
+		return errors.New("backup_label names no start WAL location")
+	}
+
+	if !sawTimeline {
+		timeline, err := strconv.ParseUint(i.StartWALFile[:8], 16, 32)
+		if err != nil {
+			return fmt.Errorf("backup_label: start WAL file %q: %w", i.StartWALFile, err)
+		}
+
+		i.Timeline = uint32(timeline)
 	}
 
 	return nil

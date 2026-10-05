@@ -27,7 +27,8 @@ var restoreCmd = cli.Command{
 	ArgsUsage: "<data directory>",
 	Description: "restore_command runs goback again for every WAL file Postgres asks for: this binary with the\n" +
 		"global flags given here, unless --goback names another command. Flags end up in\n" +
-		"postgresql.auto.conf; settings from the environment have to be in Postgres's environment.",
+		"postgresql.auto.conf, or recovery.conf before Postgres 12; settings from the environment have to\n" +
+		"be in Postgres's environment.",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "base-set",

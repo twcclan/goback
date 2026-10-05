@@ -278,8 +278,14 @@ func (r *Restore) writeTree(ctx context.Context, base *proto.Commit, dir string)
 }
 
 // configureRecovery makes Postgres recover from the WAL commit when it
-// starts on dir.
+// starts on dir: through recovery.signal and postgresql.auto.conf from
+// Postgres 12, through recovery.conf before.
 func (r *Restore) configureRecovery(dir string, walRef *proto.Ref) error {
+	major, err := majorVersion(dir)
+	if err != nil {
+		return err
+	}
+
 	settings := []string{
 		"restore_command = " + confString(r.RestoreCommand(walRef)),
 		"recovery_target_action = 'promote'",
@@ -289,7 +295,14 @@ func (r *Restore) configureRecovery(dir string, walRef *proto.Ref) error {
 		settings = append(settings, "recovery_target_time = "+confString(r.At.UTC().Format("2006-01-02 15:04:05.999999+00")))
 	}
 
-	conf, err := os.OpenFile(filepath.Join(dir, "postgresql.auto.conf"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	name := "postgresql.auto.conf"
+	if major < 12 {
+		name = "recovery.conf"
+		// the default from Postgres 12 on
+		settings = append(settings, "recovery_target_timeline = 'latest'")
+	}
+
+	conf, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -303,7 +316,30 @@ func (r *Restore) configureRecovery(dir string, walRef *proto.Ref) error {
 		return err
 	}
 
+	if major < 12 {
+		return nil
+	}
+
 	return os.WriteFile(filepath.Join(dir, "recovery.signal"), nil, 0o600)
+}
+
+// majorVersion reads the major version of the cluster in dir from its
+// PG_VERSION: 9 for 9.6, 10 and on as they are.
+func majorVersion(dir string) (int, error) {
+	content, err := os.ReadFile(filepath.Join(dir, "PG_VERSION"))
+	if err != nil {
+		return 0, fmt.Errorf("the base backup's version: %w", err)
+	}
+
+	text := strings.TrimSpace(string(content))
+	major, _, _ := strings.Cut(text, ".")
+
+	n, err := strconv.Atoi(major)
+	if err != nil {
+		return 0, fmt.Errorf("the base backup's PG_VERSION %q: %w", text, err)
+	}
+
+	return n, nil
 }
 
 // confString quotes s as a postgresql.conf string.

@@ -15,7 +15,7 @@ var spoolFlag = cli.StringFlag{
 // Command is the postgres command.
 var Command = cli.Command{
 	Name:        "postgres",
-	Description: "Back up and restore Postgres clusters: base backups and the WAL archive, each in a set of its own",
+	Description: "Back up and restore Postgres 9.6 through 17 clusters: base backups and the WAL archive, each in a set of its own",
 	Subcommands: []cli.Command{
 		archiveCmd,
 		baseCmd,
