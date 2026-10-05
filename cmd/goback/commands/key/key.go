@@ -2,27 +2,18 @@
 package key
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
-	"time"
 
-	"github.com/twcclan/goback/admin"
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/backup/storekey/master"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
-	adminpb "github.com/twcclan/goback/proto/admin"
-
 	"github.com/urfave/cli"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Command is the key command.
@@ -60,9 +51,7 @@ var Command = cli.Command{
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "key", Usage: "key file to escrow", Value: "store.key"},
 				passphraseFlag,
-				cli.StringFlag{Name: "upload", Usage: "admin surface of the store server (https://host:port) to keep the escrowed key with, instead of printing it"},
-				cli.StringFlag{Name: "admin-token", Usage: "the server's admin token", EnvVar: "GOBACK_ADMIN_TOKEN"},
-				cli.StringFlag{Name: "admin-ca", Usage: "PEM certificate authority the admin surface must present; empty trusts the system roots"},
+				cli.BoolFlag{Name: "upload", Usage: "keep the escrowed key with the store --storage names, instead of printing it"},
 			},
 		},
 		{
@@ -236,8 +225,8 @@ func escrowAction(c *cli.Context) error {
 		return err
 	}
 
-	if server := c.String("upload"); server != "" {
-		return upload(c, server, key.IDString(), escrowed)
+	if c.Bool("upload") {
+		return upload(c, key.IDString(), escrowed)
 	}
 
 	if common.JSON() {
@@ -254,38 +243,17 @@ func escrowAction(c *cli.Context) error {
 	return err
 }
 
-// upload keeps the escrowed key with the store through its admin surface.
-func upload(c *cli.Context, server, keyID string, escrowed []byte) error {
-	token := c.String("admin-token")
-	if token == "" {
-		return errors.New("--upload needs the admin token (--admin-token or GOBACK_ADMIN_TOKEN)")
+// upload keeps the escrowed key with the store --storage names.
+func upload(c *cli.Context, keyID string, escrowed []byte) error {
+	store := common.GetObjectStore(c)
+	defer common.CloseStore(store)
+
+	escrow, ok := store.(backup.KeyEscrow)
+	if !ok {
+		return fmt.Errorf("store %T keeps no escrowed key", store)
 	}
 
-	tlsConfig, err := storage.ClientTLS(c.String("admin-ca"))
-	if err != nil {
-		return err
-	}
-
-	u, err := url.Parse(server)
-	if err != nil || u.Host == "" {
-		return fmt.Errorf("--upload takes the admin surface as https://host:port, not %q", server)
-	}
-
-	creds := credentials.NewTLS(tlsConfig)
-	if u.Scheme == "http" {
-		creds = insecure.NewCredentials()
-	}
-
-	conn, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(creds), grpc.WithPerRPCCredentials(admin.Credentials(token)))
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(common.Context(c), time.Minute)
-	defer cancel()
-
-	_, err = adminpb.NewAdminClient(conn).PutEscrowedKey(ctx, &adminpb.PutEscrowedKeyRequest{KeyId: keyID, Escrowed: string(escrowed)})
+	err := escrow.PutEscrowedKey(common.Context(c), backup.EscrowedKey{KeyID: keyID, Escrowed: escrowed})
 	if err != nil {
 		return fmt.Errorf("the store refused the escrowed key: %w", err)
 	}

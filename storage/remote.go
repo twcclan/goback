@@ -17,6 +17,7 @@ import (
 	"github.com/twcclan/goback/backup/presence"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+	adminpb "github.com/twcclan/goback/proto/admin"
 	"github.com/twcclan/goback/storage/pack"
 
 	"google.golang.org/grpc"
@@ -61,6 +62,7 @@ func dialStore(addr string, creds auth.Credentials, transport credentials.Transp
 
 	return &Client{
 		store: proto.NewStoreClient(con),
+		admin: adminpb.NewAdminClient(con),
 	}, nil
 }
 
@@ -113,6 +115,7 @@ func ServerTLS(certFile, keyFile string, plaintextBehindProxy bool) (credentials
 }
 
 var (
+	_ backup.KeyEscrow  = (*Client)(nil)
 	_ backup.Index      = (*Client)(nil)
 	_ backup.Retention  = (*Client)(nil)
 	_ backup.PartReader = (*Client)(nil)
@@ -123,6 +126,7 @@ var (
 // Client is a backup.Index over a store server's gRPC API.
 type Client struct {
 	store proto.StoreClient
+	admin adminpb.AdminClient
 
 	// HTTP fetches the locations a server answers with; nil uses the
 	// default client.
@@ -430,6 +434,14 @@ func (r *Client) EscrowedKeys(ctx context.Context) ([]backup.EscrowedKey, error)
 	}
 
 	return kept, nil
+}
+
+// PutEscrowedKey implements backup.KeyEscrow through the server's Admin
+// service, which takes the same credentials as the store.
+func (r *Client) PutEscrowedKey(ctx context.Context, key backup.EscrowedKey) error {
+	_, err := r.admin.PutEscrowedKey(r.outgoing(ctx), &adminpb.PutEscrowedKeyRequest{KeyId: key.KeyID, Escrowed: string(key.Escrowed)})
+
+	return err
 }
 
 // Delete is not offered by the server; retention deletes commits and sets.

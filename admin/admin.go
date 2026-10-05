@@ -1,13 +1,11 @@
-// Package admin serves the operator surface of a store server: sets, the
-// store policy and job triggers, over gRPC and REST behind one bearer
-// token.
+// Package admin implements the Admin service of a store server: sets, the
+// store policy, retention, escrow and job triggers. The server serves it
+// beside the Store service, behind the same credentials.
 package admin
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/twcclan/goback/admin/mapping/gen"
@@ -19,9 +17,7 @@ import (
 	"github.com/twcclan/goback/index/sql"
 	pb "github.com/twcclan/goback/proto/admin"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -305,40 +301,3 @@ func Status(err error) error {
 
 	return status.Error(codes.Internal, err.Error())
 }
-
-const header = "authorization"
-
-// Authorized reports whether the metadata carries the admin token.
-func Authorized(md metadata.MD, token string) bool {
-	for _, v := range md.Get(header) {
-		presented := strings.TrimPrefix(v, "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1 {
-			return true
-		}
-	}
-
-	return false
-}
-
-// UnaryInterceptor rejects calls that do not present the admin token.
-func UnaryInterceptor(token string) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		md, _ := metadata.FromIncomingContext(ctx)
-		if !Authorized(md, token) {
-			return nil, status.Error(codes.Unauthenticated, "admin token required")
-		}
-
-		return handler(ctx, req)
-	}
-}
-
-// Credentials presents the admin token on every call.
-type Credentials string
-
-// GetRequestMetadata implements credentials.PerRPCCredentials.
-func (c Credentials) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
-	return map[string]string{header: "Bearer " + string(c)}, nil
-}
-
-// RequireTransportSecurity implements credentials.PerRPCCredentials.
-func (Credentials) RequireTransportSecurity() bool { return false }

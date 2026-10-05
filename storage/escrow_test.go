@@ -4,12 +4,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/twcclan/goback/admin"
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
+	adminpb "github.com/twcclan/goback/proto/admin"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob/fileblob"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func bucketPack(t *testing.T, dir string) *pack.PackStorage {
@@ -90,4 +95,25 @@ func TestAnAgentFetchesTheEscrowedKey(t *testing.T) {
 	opened, err := storekey.Recover(kept[0].Escrowed, "correct horse")
 	require.NoError(t, err)
 	require.Equal(t, key.ID(), opened.ID())
+}
+
+func TestAnOperatorKeepsTheEscrowedKeyThroughTheStoresOwnListener(t *testing.T) {
+	ctx := context.Background()
+	store := bucketPack(t, t.TempDir())
+
+	key, err := storekey.Generate("s1")
+	require.NoError(t, err)
+	held := escrowed(t, key, "correct horse")
+
+	operations := &admin.Server{Escrow: store}
+	dial := serveAs(t, NewStore(escrowIndex{memIndex: newMemIndex(), KeyEscrow: store}, nil), func(srv *grpc.Server) {
+		adminpb.RegisterAdminServer(srv, operations)
+	})
+
+	require.Equal(t, codes.Unauthenticated, status.Code(dial("wrong", "operator").PutEscrowedKey(ctx, held)), "the store's secret guards it")
+	require.NoError(t, dial(testSecret, "operator").PutEscrowedKey(ctx, held))
+
+	kept, err := store.EscrowedKeys(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []backup.EscrowedKey{held}, kept)
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/twcclan/goback/backup/presence"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+	adminpb "github.com/twcclan/goback/proto/admin"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -213,7 +214,7 @@ func serve(t *testing.T, store *Store) dialer {
 	return func(agent string) *Client { return dial(testSecret, agent) }
 }
 
-func serveAs(t *testing.T, store *Store) func(secret, agent string) *Client {
+func serveAs(t *testing.T, store *Store, register ...func(*grpc.Server)) func(secret, agent string) *Client {
 	t.Helper()
 
 	listener := bufconn.Listen(1 << 20)
@@ -227,6 +228,10 @@ func serveAs(t *testing.T, store *Store) func(secret, agent string) *Client {
 	)
 	proto.RegisterStoreServer(srv, remote)
 
+	for _, r := range register {
+		r(srv)
+	}
+
 	go func() { _ = srv.Serve(listener) }()
 	t.Cleanup(srv.Stop)
 
@@ -239,7 +244,7 @@ func serveAs(t *testing.T, store *Store) func(secret, agent string) *Client {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = con.Close() })
 
-		return &Client{store: proto.NewStoreClient(con)}
+		return &Client{store: proto.NewStoreClient(con), admin: adminpb.NewAdminClient(con)}
 	}
 }
 

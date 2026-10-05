@@ -2,9 +2,7 @@ package admin_test
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -60,14 +58,14 @@ func (m *memStore) Walk(context.Context, bool, proto.ObjectType, backup.ObjectRe
 	return backup.ErrNotImplemented
 }
 
-const token = "operator-secret"
+const secret = "store-secret"
 
 type harness struct {
-	t      *testing.T
-	server *admin.Server
-	http   *httptest.Server
-	admin  pb.AdminClient
-	now    time.Time
+	t       *testing.T
+	server  *admin.Server
+	address string
+	admin   pb.AdminClient
+	now     time.Time
 }
 
 func newHarness(t *testing.T) *harness {
@@ -102,53 +100,48 @@ func newHarness(t *testing.T) *harness {
 		Now:        func() time.Time { return h.now },
 	}
 
-	h.http = httptest.NewUnstartedServer(admin.Handler(token, h.server))
-	h.http.Config = admin.NewHTTPServer(h.http.Config.Handler)
-	h.http.Start()
-	t.Cleanup(h.http.Close)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
 
-	h.admin = h.client(admin.Credentials(token))
+	srv := grpc.NewServer(grpc.UnaryInterceptor(auth.UnaryInterceptor(secret)))
+	pb.RegisterAdminServer(srv, h.server)
+	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(srv.Stop)
+
+	h.address = listener.Addr().String()
+	h.admin = h.client(auth.Credentials{Secret: secret, AgentID: "operator", Plaintext: true})
 
 	return h
 }
 
-// client dials the surface over gRPC presenting creds, none when nil.
+// client dials the service presenting creds, none when nil.
 func (h *harness) client(creds credentials.PerRPCCredentials) pb.AdminClient {
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if creds != nil {
 		options = append(options, grpc.WithPerRPCCredentials(creds))
 	}
 
-	con, err := grpc.NewClient(strings.TrimPrefix(h.http.URL, "http://"), options...)
+	con, err := grpc.NewClient(h.address, options...)
 	require.NoError(h.t, err)
 	h.t.Cleanup(func() { _ = con.Close() })
 
 	return pb.NewAdminClient(con)
 }
 
-func TestAdminRequiresToken(t *testing.T) {
+func TestAdminRequiresTheStoreSecret(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
 	_, err := h.client(nil).ListSets(ctx, &pb.ListSetsRequest{})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
-	_, err = h.client(admin.Credentials("wrong")).ListSets(ctx, &pb.ListSetsRequest{})
+	_, err = h.client(auth.Credentials{Secret: "wrong", AgentID: "operator", Plaintext: true}).ListSets(ctx, &pb.ListSetsRequest{})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
 	sets, err := h.admin.ListSets(ctx, &pb.ListSetsRequest{})
 	require.NoError(t, err)
 	require.Len(t, sets.Sets, 1)
 	require.Equal(t, "world", sets.Sets[0].Name)
-}
-
-func TestTheSurfaceAnswersOnlyGRPC(t *testing.T) {
-	h := newHarness(t)
-
-	resp, err := http.Get(h.http.URL + "/v1/sets")
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 }
 
 func TestAdminSets(t *testing.T) {

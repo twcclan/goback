@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"log"
 	"net"
@@ -18,6 +17,7 @@ import (
 	"github.com/twcclan/goback/health"
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
+	adminpb "github.com/twcclan/goback/proto/admin"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
@@ -57,14 +57,6 @@ var Command = cli.Command{
 		cli.BoolFlag{
 			Name:  "plaintext-behind-proxy",
 			Usage: "serve plaintext because a proxy in front of the server terminates TLS; never expose this listener directly",
-		},
-		cli.StringFlag{
-			Name:  "admin-address",
-			Usage: "listener for the operator surface (gRPC and REST); empty serves none",
-		},
-		cli.StringFlag{
-			Name:  "admin-token",
-			Usage: "bearer token the operator surface requires",
 		},
 		cli.DurationFlag{
 			Name:  "retire-interval",
@@ -169,8 +161,10 @@ func serverAction(ctx *cli.Context) {
 	runner.Presence, _ = idx.(maintenance.Presence)
 	go runner.Run(context.Background())
 
-	if addr := ctx.String("admin-address"); addr != "" {
-		serveAdmin(addr, ctx.String("admin-token"), tlsConfig, probe, idx, retirer, collector)
+	if x, ok := idx.(*sql.Index); ok {
+		adminpb.RegisterAdminServer(srv, adminServer(x, retirer, collector))
+	} else {
+		log.Printf("Index %T keeps no sets or policy; the server serves no Admin service", idx)
 	}
 
 	log.Println("Listening on", listener.Addr().String())
@@ -201,18 +195,8 @@ func sharedSecret(ctx *cli.Context) (string, error) {
 	return secret, nil
 }
 
-// serveAdmin starts the operator surface on addr with the main listener's
-// TLS material.
-func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, idx backup.Index, retirer backup.Retirer, collector pack.Collector) {
-	if token == "" {
-		common.Fatal("--admin-token is required with --admin-address")
-	}
-
-	x, ok := idx.(*sql.Index)
-	if !ok {
-		common.Fatalf("Index %T keeps no sets or policy; the admin surface needs one that does", idx)
-	}
-
+// adminServer is the Admin service over the index and the store's jobs.
+func adminServer(x *sql.Index, retirer backup.Retirer, collector pack.Collector) *admin.Server {
 	server := &admin.Server{Index: x, Escrow: x}
 
 	if retirer != nil {
@@ -232,20 +216,5 @@ func serveAdmin(addr, token string, tlsConfig *tls.Config, probe *health.Probe, 
 		}
 	}
 
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		common.Fatal(err)
-	}
-
-	if tlsConfig != nil {
-		config := tlsConfig.Clone()
-		config.NextProtos = []string{"h2", "http/1.1"}
-		listener = tls.NewListener(listener, config)
-	}
-
-	log.Println("Admin surface listening on", listener.Addr().String())
-
-	go func() {
-		common.Fatal(admin.NewHTTPServer(probe.Handler(admin.Handler(token, server))).Serve(listener))
-	}()
+	return server
 }
