@@ -370,3 +370,69 @@ func TestAPolicyWrittenWithDurationsIsReadAsCounts(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(written), `"for"`)
 }
+
+func TestTheWindowsOfAPolicyHoldExactlyTheCommitsItsBracketsKeep(t *testing.T) {
+	now := time.Date(2026, 10, 5, 14, 30, 0, 0, time.UTC)
+	since := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	var commits []Commit
+	for at := now.Add(-time.Minute); !at.Before(since); at = at.Add(-time.Hour) {
+		commits = append(commits, Commit{ReceivedAt: at})
+	}
+
+	windows := Default.Windows(now, since)
+	decisions := Evaluate(commits, Default, now)
+
+	// commits run newest first, so the first one seen in a window is its last
+	holder := func(at time.Time) int {
+		for i, w := range windows {
+			if !at.Before(w.From) && at.Before(w.To) {
+				return i
+			}
+		}
+
+		return -1
+	}
+
+	seen := map[int]bool{}
+	for i, c := range commits {
+		w := holder(c.ReceivedAt)
+		require.NotEqual(t, -1, w, "%s falls in no window", c.ReceivedAt)
+
+		last := !seen[w]
+		seen[w] = true
+
+		byWindow := false
+		for _, reason := range decisions[i].Reasons {
+			byWindow = byWindow || Period(reason) == windows[w].Period
+		}
+
+		if byWindow {
+			require.True(t, last, "%s is kept but is not the last of %+v", c.ReceivedAt, windows[w])
+		}
+
+		ends := back(windows[w].Period, startOf(windows[w].Period, windows[w].From), -1).Equal(windows[w].To)
+		if last && ends {
+			require.True(t, decisions[i].Keep, "the last of %+v is not kept", windows[w])
+		}
+	}
+
+	require.Len(t, seen, len(windows), "every window holds a commit")
+	require.Equal(t, Window{Period: Hourly, From: now.Truncate(time.Hour), To: now}, windows[0])
+	require.Equal(t, Window{Period: Monthly, From: since, To: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)}, windows[len(windows)-1])
+}
+
+func TestAWindowWithinKeepWithinKeepsEveryCommit(t *testing.T) {
+	now := time.Date(2026, 10, 5, 14, 30, 0, 0, time.UTC)
+	p := Policy{KeepLast: 1, KeepWithin: 48 * time.Hour, Brackets: []Bracket{{Period: Daily, Count: 7}}}
+
+	windows := p.Windows(now, time.Time{})
+	require.Len(t, windows, 7)
+
+	for _, w := range windows {
+		require.Equal(t, !w.From.Before(now.Add(-48*time.Hour)), w.Every, "%+v", w)
+	}
+
+	require.True(t, windows[0].Every)
+	require.False(t, windows[6].Every)
+}

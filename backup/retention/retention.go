@@ -156,6 +156,59 @@ func (p Policy) bounds(now time.Time) []time.Time {
 	return out
 }
 
+// A Window is one calendar period of a bracket, from From up to To
+// (exclusive), whose last commit the policy keeps. Every marks a window
+// within KeepWithin, which keeps all of its commits.
+type Window struct {
+	Period   Period
+	From, To time.Time
+	Every    bool
+}
+
+// Windows lists the windows p keeps a commit of as of now, newest first:
+// each period of each bracket, clipped to the bracket, and the tail's
+// periods back to since. A window also keeps the last commit of any
+// coarser period of a later bracket that ends in it.
+func (p Policy) Windows(now, since time.Time) []Window {
+	var out []Window
+
+	bounds := p.bounds(now)
+	until := now
+
+	for i, b := range p.Brackets {
+		from := bounds[i]
+		if b.Count == 0 {
+			from = since
+		}
+
+		if !until.After(from) {
+			break
+		}
+
+		for at := startOf(b.Period, until.Add(-time.Nanosecond)); ; at = back(b.Period, at, 1) {
+			w := Window{Period: b.Period, From: at, To: back(b.Period, at, -1)}
+			if w.From.Before(from) {
+				w.From = from
+			}
+
+			if w.To.After(until) {
+				w.To = until
+			}
+
+			w.Every = p.KeepWithin > 0 && !w.From.Before(now.Add(-p.KeepWithin))
+			out = append(out, w)
+
+			if !at.After(from) {
+				break
+			}
+		}
+
+		until = from
+	}
+
+	return out
+}
+
 // bracketAt is the bracket a commit received at t falls in, and whether
 // the brackets reach that far back at all.
 func bracketAt(bounds []time.Time, t time.Time) (int, bool) {
