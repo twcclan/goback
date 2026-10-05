@@ -20,6 +20,13 @@ func (f *file) restore() error {
 		return err
 	}
 
+	// a set that took a key later keeps its earlier versions under plain paths
+	if len(files) == 0 && f.key != nil {
+		if files, err = f.index.FileInfo(f.ctx, f.set, backup.IndexPath(nil, f.src), f.when, 1); err != nil {
+			return err
+		}
+	}
+
 	if len(files) != 1 {
 		return errors.New("Couldn't find file")
 	}

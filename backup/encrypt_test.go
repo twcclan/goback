@@ -259,3 +259,54 @@ func TestWalkerWithKeyReadsEverythingOverACommitWrittenWithoutIt(t *testing.T) {
 		require.Equal(t, contents, readAll(t, NewBackupReader(f.store).WithKey(key), keyed.Commit.Tree))
 	}
 }
+
+func TestACommitRecordsTheKeyItWasSealedUnder(t *testing.T) {
+	f := newWalkerFixture(t)
+	key := newKey(t)
+	contents := map[string][]byte{"a.txt": []byte("hello"), "sub/b.txt": []byte("world")}
+	for path, data := range contents {
+		f.write(path, data)
+	}
+
+	plain := f.run().Commit
+	require.NotNil(t, plain.KeyId)
+	require.Empty(t, plain.KeyId)
+
+	f.walker.Key = key
+	sealed := f.run().Commit
+	require.Equal(t, key.ID(), sealed.KeyId)
+
+	f.walker.Key = nil
+	again := f.run().Commit
+	require.Nil(t, again.Parent, "a plain run does not diff against a sealed one")
+
+	reader := NewBackupReader(f.store).WithKey(key)
+	for _, commit := range []*proto.Commit{plain, sealed} {
+		opened, err := reader.ForCommit(context.Background(), commit)
+		require.NoError(t, err)
+		require.Equal(t, contents, readAll(t, opened, commit.Tree))
+	}
+
+	_, err := NewBackupReader(f.store).WithKey(newKey(t)).ForCommit(context.Background(), sealed)
+	require.ErrorIs(t, err, storekey.ErrWrongKey)
+}
+
+func TestACommitThatPredatesItsKeyIDIsOpenedAsItWasWritten(t *testing.T) {
+	f := newWalkerFixture(t)
+	key := newKey(t)
+	f.write("a.txt", []byte("hello"))
+
+	plain := f.run().Commit
+	f.walker.Key = key
+	sealed := f.run().Commit
+
+	plain.KeyId, sealed.KeyId = nil, nil
+
+	got, err := CommitKey(context.Background(), f.store, plain, key)
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	got, err = CommitKey(context.Background(), f.store, sealed, key)
+	require.NoError(t, err)
+	require.Equal(t, key, got)
+}

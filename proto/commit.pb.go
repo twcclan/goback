@@ -45,7 +45,11 @@ type Commit struct {
 	// unreadable; never set on a checkpoint
 	Consistent bool `protobuf:"varint,12,opt,name=consistent,proto3" json:"consistent,omitempty"`
 	// labels the agent attached; the store keeps them and never interprets them
-	Metadata      map[string]string `protobuf:"bytes,13,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Metadata map[string]string `protobuf:"bytes,13,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// the id of the store key names and contents were sealed under, empty
+	// when the commit was written plain; absent on a commit written before
+	// it was recorded
+	KeyId         []byte `protobuf:"bytes,14,opt,name=key_id,json=keyId,proto3,oneof" json:"key_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,11 +168,18 @@ func (x *Commit) GetMetadata() map[string]string {
 	return nil
 }
 
+func (x *Commit) GetKeyId() []byte {
+	if x != nil {
+		return x.KeyId
+	}
+	return nil
+}
+
 var File_commit_proto protoreflect.FileDescriptor
 
 const file_commit_proto_rawDesc = "" +
 	"\n" +
-	"\fcommit.proto\x12\x05proto\x1a\tref.proto\"\xe2\x03\n" +
+	"\fcommit.proto\x12\x05proto\x1a\tref.proto\"\x89\x04\n" +
 	"\x06Commit\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12\x1e\n" +
 	"\x04tree\x18\x02 \x01(\v2\n" +
@@ -187,10 +198,12 @@ const file_commit_proto_rawDesc = "" +
 	"\n" +
 	"consistent\x18\f \x01(\bR\n" +
 	"consistent\x127\n" +
-	"\bmetadata\x18\r \x03(\v2\x1b.proto.Commit.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\r \x03(\v2\x1b.proto.Commit.MetadataEntryR\bmetadata\x12\x1a\n" +
+	"\x06key_id\x18\x0e \x01(\fH\x00R\x05keyId\x88\x01\x01\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\b\x10\tB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\t\n" +
+	"\a_key_idJ\x04\b\b\x10\tB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
 
 var (
 	file_commit_proto_rawDescOnce sync.Once
@@ -227,6 +240,7 @@ func file_commit_proto_init() {
 		return
 	}
 	file_ref_proto_init()
+	file_commit_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

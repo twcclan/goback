@@ -40,4 +40,9 @@ message Commit {
 
   // labels the agent attached; the store keeps them and never interprets them
   map<string, string> metadata = 13;
+
+  // the id of the store key names and contents were sealed under, empty
+  // when the commit was written plain; absent on a commit written before
+  // it was recorded
+  optional bytes key_id = 14;
 }

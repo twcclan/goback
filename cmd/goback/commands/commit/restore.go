@@ -105,6 +105,11 @@ func (c *commit) restore() error {
 		return err
 	}
 
+	c.reader, err = c.reader.ForCommit(c.ctx, commit)
+	if err != nil {
+		return err
+	}
+
 	ref := proto.NewObject(commit).Ref()
 	log.Printf("Restoring commit %x from %v", ref.Hash, commit.Timestamp)
 

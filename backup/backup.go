@@ -43,6 +43,18 @@ func (br *BackupReader) WithKey(key *storekey.Key) *BackupReader {
 	return &BackupReader{store: br.store, key: key}
 }
 
+// ForCommit returns a reader for commit's tree: one that opens it with the
+// store key when the commit was sealed under it, and plain when it was
+// written without one.
+func (br *BackupReader) ForCommit(ctx context.Context, commit *proto.Commit) (*BackupReader, error) {
+	key, err := CommitKey(ctx, br.store, commit, br.key)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BackupReader{store: br.store, key: key}, nil
+}
+
 // ReadFile opens the file object at ref for seekable reading.
 func (br *BackupReader) ReadFile(ctx context.Context, ref *proto.Ref) (io.ReadSeeker, error) {
 	obj, err := br.store.Get(ctx, ref)

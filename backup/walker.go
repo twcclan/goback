@@ -482,6 +482,11 @@ func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 		return nil, fmt.Errorf("base %x is not a commit", ref.Hash)
 	}
 
+	if commit.KeyId != nil && (len(commit.KeyId) > 0) != (w.Key != nil) {
+		w.logger().Info("the previous commit was sealed differently, reading everything", "set", w.Set)
+		return nil, nil
+	}
+
 	tree, err := w.trees.load(ctx, commit.Tree, nil)
 	if errors.Is(err, storekey.ErrWrongKey) {
 		w.logger().Info("the previous commit was written without this key, reading everything", "set", w.Set)
@@ -518,6 +523,10 @@ func (w *Walker) putCommit(ctx context.Context, tree *proto.Ref, partial bool) (
 	}
 
 	commit.PolicyVersion = w.policyVersion
+	commit.KeyId = []byte{}
+	if w.Key != nil {
+		commit.KeyId = w.Key.ID()
+	}
 
 	// a checkpoint carries base nodes this run has not verified, so it
 	// keeps the base run's racy window

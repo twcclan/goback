@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"io"
 	"os"
@@ -208,6 +209,31 @@ func nameBoundary(name []byte) bool {
 type Getter interface {
 	// Get returns the object at the ref, or ErrNotFound.
 	Get(context.Context, *proto.Ref) (*proto.Object, error)
+}
+
+// CommitKey returns the key to open commit's tree with: key for a commit
+// sealed under a store key, nil for one written plain. A commit that does
+// not record its key is tried with key and opened plain when that fails.
+func CommitKey(ctx context.Context, store Getter, commit *proto.Commit, key *storekey.Key) (*storekey.Key, error) {
+	switch {
+	case key == nil, commit.KeyId != nil && len(commit.KeyId) == 0:
+		return nil, nil
+	case bytes.Equal(commit.KeyId, key.ID()):
+		return key, nil
+	}
+
+	_, err := OpenTree(ctx, store, commit.Tree, key, nil)
+
+	switch {
+	case errors.Is(err, storekey.ErrWrongKey) && commit.KeyId != nil:
+		return nil, fmt.Errorf("%w: the commit is sealed under key %x, not %x", err, commit.KeyId, key.ID())
+	case errors.Is(err, storekey.ErrWrongKey):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+
+	return key, nil
 }
 
 // OpenTree loads a tree and opens its names for the directory whose token
