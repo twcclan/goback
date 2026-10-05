@@ -111,7 +111,23 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 // ListSets returns every set by name, each with the size of its newest
 // live commit and the sizes of all of them added up.
 func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
-	rows, err := x.client.Set.Query().Order(ent.Asc(set.FieldName)).All(ctx)
+	return x.ListSetsAfter(ctx, "", 0)
+}
+
+// ListSetsAfter pages through ListSets: the sets whose names sort after
+// after in the database's order, at most limit, every one when limit is
+// zero. The last one's name is the after of the next page.
+func (x *Index) ListSetsAfter(ctx context.Context, after string, limit int) ([]index.SetInfo, error) {
+	query := x.client.Set.Query().Order(ent.Asc(set.FieldName))
+	if after != "" {
+		query.Where(set.NameGT(after))
+	}
+
+	if limit > 0 {
+		query.Limit(limit)
+	}
+
+	rows, err := query.All(ctx)
 	if err != nil {
 		return nil, err
 	}

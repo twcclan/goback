@@ -72,6 +72,10 @@ type Mapper interface {
 	// field:Files from:"FileCount"
 	CommitDetail(in *ent.CommitRow) index.CommitDetail
 
+	// field:Node from:"."
+	// field:From from:"ValidFrom"
+	Version(in *ent.File) index.Version
+
 	// field:Ref using:"Ref"
 	// field:Set from:"-"
 	// field:Open from:"ValidUntil" using:"Open"

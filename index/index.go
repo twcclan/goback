@@ -58,6 +58,13 @@ type Windows struct {
 	TrashDays int
 }
 
+// Version is one version of a path with From, when the store received
+// the commit that first held it. No two versions of a path share a From.
+type Version struct {
+	Node *proto.TreeNode
+	From time.Time
+}
+
 // CommitDetail is a commit together with what the index knows about it
 // beyond the stored object: how big the set was when it was taken, and
 // which retention rule is keeping it.

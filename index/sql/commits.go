@@ -19,7 +19,6 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/tree"
-	"github.com/twcclan/goback/index/sql/mapping"
 	"github.com/twcclan/goback/index/sql/mapping/gen"
 	"github.com/twcclan/goback/proto"
 
@@ -1137,10 +1136,7 @@ func (x *Index) ReadDir(ctx context.Context, backupSet string, dir string, notAf
 
 	entries := mapAll(fileRows, m.TreeNode)
 	for _, row := range treeRows {
-		entries = append(entries, &proto.TreeNode{
-			Stat: &proto.FileInfo{Name: mapping.Base(row.Path), Type: proto.NodeType_NODE_DIRECTORY},
-			Ref:  mapping.Ref(row.Ref),
-		})
+		entries = append(entries, directory(row))
 	}
 
 	sort.Slice(entries, func(i, j int) bool {

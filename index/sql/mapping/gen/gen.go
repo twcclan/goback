@@ -235,6 +235,17 @@ func (m MapperImpl) TreeNode(in *ent.File) *proto.TreeNode {
 	}
 }
 
+func (m MapperImpl) Version(in *ent.File) index.Version {
+	if in == nil {
+		return index.Version{}
+	}
+
+	return index.Version{
+		Node: m.TreeNode(in),
+		From: in.ValidFrom,
+	}
+}
+
 type MapperImpl struct{}
 
 var _ mapping.Mapper = (*MapperImpl)(nil)
