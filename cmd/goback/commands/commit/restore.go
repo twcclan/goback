@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,76 @@ import (
 type restoredDir struct {
 	path    string
 	modTime time.Time
+}
+
+type restoreEntry struct {
+	path string
+	info os.FileInfo
+	ref  *proto.Ref
+}
+
+// restoreProgress counts the files of a restore and the logical bytes they
+// hold; a file is done once the restore is through with it, whether it was
+// written, found unchanged or failed.
+type restoreProgress struct {
+	filesTotal, bytesTotal int64
+	filesDone, bytesDone   atomic.Int64
+}
+
+func (p *restoreProgress) done(size int64) {
+	p.filesDone.Add(1)
+	p.bytesDone.Add(size)
+}
+
+func (p *restoreProgress) log() {
+	files, bytes := p.filesDone.Load(), p.bytesDone.Load()
+
+	if common.JSON() {
+		slog.Info("progress",
+			slog.Int64("files_done", files), slog.Int64("files_total", p.filesTotal),
+			slog.Int64("bytes_done", bytes), slog.Int64("bytes_total", p.bytesTotal))
+
+		return
+	}
+
+	log.Printf("%d of %d files (%s of %s) restored",
+		files, p.filesTotal, humanize.Bytes(uint64(bytes)), humanize.Bytes(uint64(p.bytesTotal)))
+}
+
+// report logs the progress every interval, and once more when the returned
+// stop is called; a negative interval logs nothing.
+func (p *restoreProgress) report(interval time.Duration) func() {
+	if interval < 0 {
+		return func() {}
+	}
+
+	if interval == 0 {
+		interval = backup.DefaultProgressInterval
+	}
+
+	done, gone := make(chan struct{}), make(chan struct{})
+
+	go func() {
+		defer close(gone)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				p.log()
+				return
+			case <-ticker.C:
+				p.log()
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		<-gone
+	}
 }
 
 // pick returns the commit c.ref names, or else the set's newest at or
@@ -132,20 +203,41 @@ func (c *commit) restore() error {
 		}
 	}
 
+	// the whole tree is listed before anything is written, so the totals
+	// progress reports against are known from the start
+	var entries []restoreEntry
+	progress := &restoreProgress{}
+
+	err = c.reader.WalkTree(c.ctx, tree, parent, func(path string, info os.FileInfo, ref *proto.Ref) error {
+		entries = append(entries, restoreEntry{path: filepath.Join(c.base, path), info: info, ref: ref})
+
+		if stat, _ := info.Sys().(*proto.FileInfo); !info.IsDir() && stat != nil && stat.Type != proto.NodeType_NODE_SYMLINK {
+			progress.filesTotal++
+			progress.bytesTotal += stat.Size
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	stopProgress := progress.report(c.progressInterval)
+
 	restored := map[string]bool{}
 	var dirs []restoredDir
 	var unrestored atomic.Int64
 
 	// a file costs a round trip to the store and an fsync, neither of
 	// which overlaps on its own, so files go several at a time while the
-	// walk itself stays in order: a directory is made before its contents
+	// entries stay in order: a directory is made before its contents
 	files, fctx := errgroup.WithContext(c.ctx)
 	if c.restorer.Workers > 0 {
 		files.SetLimit(c.restorer.Workers)
 	}
 
-	err = c.reader.WalkTree(c.ctx, tree, parent, func(path string, info os.FileInfo, ref *proto.Ref) error {
-		path = filepath.Join(c.base, path)
+	for _, entry := range entries {
+		path, info, ref := entry.path, entry.info, entry.ref
 		restored[path] = true
 
 		if info.IsDir() {
@@ -153,26 +245,37 @@ func (c *commit) restore() error {
 			dirs = append(dirs, restoredDir{path: path, modTime: info.ModTime()})
 
 			if c.restorer.DryRun {
-				return nil
+				continue
 			}
 
-			return restoreDir(path, info.Mode())
+			if err = restoreDir(path, info.Mode()); err != nil {
+				break
+			}
+
+			continue
 		}
 
 		stat, _ := info.Sys().(*proto.FileInfo)
 		if stat == nil {
-			return errors.Errorf("no stat for %s", path)
+			err = errors.Errorf("no stat for %s", path)
+			break
 		}
 
 		if stat.Type == proto.NodeType_NODE_SYMLINK {
 			if c.restorer.DryRun {
-				return nil
+				continue
 			}
 
-			return restoreSymlink(path, string(stat.LinkTarget))
+			if err = restoreSymlink(path, string(stat.LinkTarget)); err != nil {
+				break
+			}
+
+			continue
 		}
 
 		files.Go(func() error {
+			defer progress.done(stat.Size)
+
 			outcome, err := c.restorer.RestoreFile(fctx, path, stat, ref)
 			if err != nil {
 				if lost[string(ref.GetHash())] {
@@ -198,14 +301,18 @@ func (c *commit) restore() error {
 			return nil
 		})
 
-		// the walk stops once a file has failed, rather than queueing the
-		// rest of the tree behind an error already on its way out
-		return fctx.Err()
-	})
+		// the restore stops once a file has failed, rather than queueing
+		// the rest of the tree behind an error already on its way out
+		if err = fctx.Err(); err != nil {
+			break
+		}
+	}
 
 	if waited := files.Wait(); err == nil || errors.Is(err, context.Canceled) {
 		err = waited
 	}
+
+	stopProgress()
 
 	if err != nil {
 		return err
@@ -445,6 +552,8 @@ func restoreAction(c *cli.Context) {
 		restorer: restorer,
 		store:    store,
 		set:      c.GlobalString("set"),
+
+		progressInterval: c.Duration("progress-interval"),
 	}
 
 	err = s.restore()
@@ -508,6 +617,11 @@ var restoreCmd = cli.Command{
 		cli.BoolFlag{
 			Name:  "force",
 			Usage: "restore even when a session.lock under the target is held by a running server",
+		},
+		cli.DurationFlag{
+			Name:  "progress-interval",
+			Usage: "how often to report the files and bytes restored so far; negative disables",
+			Value: backup.DefaultProgressInterval,
 		},
 	}, restoreFlags...),
 }

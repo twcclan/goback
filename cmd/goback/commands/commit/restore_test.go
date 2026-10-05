@@ -1,16 +1,25 @@
 package commit
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob/memblob"
 )
 
 type pickIndex struct {
@@ -157,4 +166,92 @@ func TestRestoreDirReplacesWhatIsNotADirectory(t *testing.T) {
 	info, err = os.Lstat(file)
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
+}
+
+type restoreProgressRecord struct {
+	Msg        string `json:"msg"`
+	FilesDone  int64  `json:"files_done"`
+	FilesTotal int64  `json:"files_total"`
+	BytesDone  int64  `json:"bytes_done"`
+	BytesTotal int64  `json:"bytes_total"`
+}
+
+// lastProgress restores into dst and returns the final progress record
+// the restore logged as a JSON line.
+func lastProgress(t *testing.T, c *commit, dst string) restoreProgressRecord {
+	t.Helper()
+
+	var stderr bytes.Buffer
+	common.SetOutput(true)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&stderr, nil)))
+	t.Cleanup(func() { common.SetOutput(false) })
+
+	c.base = dst
+	require.NoError(t, c.restore())
+
+	var last *restoreProgressRecord
+	lines := bufio.NewScanner(&stderr)
+	for lines.Scan() {
+		var record restoreProgressRecord
+		require.NoError(t, json.Unmarshal(lines.Bytes(), &record))
+
+		if record.Msg == "progress" {
+			fields := map[string]any{}
+			require.NoError(t, json.Unmarshal(lines.Bytes(), &fields))
+			for _, name := range []string{"files_done", "files_total", "bytes_done", "bytes_total"} {
+				require.Contains(t, fields, name)
+			}
+
+			last = &record
+		}
+	}
+
+	require.NotNil(t, last, "no progress record")
+
+	return *last
+}
+
+func TestRestoreProgressCountsWhatTheRestoreCovers(t *testing.T) {
+	ctx := context.Background()
+
+	index := sql.NewMemory(t.Name(), nil)
+	packs, err := pack.NewPackStorage(pack.WithArchiveStorage(storage.NewBucketStore(memblob.OpenBucket(nil))), pack.WithArchiveIndex(index))
+	require.NoError(t, err)
+	index.ObjectStore = packs
+	require.NoError(t, index.Open())
+	require.NoError(t, packs.Open())
+	t.Cleanup(func() { _ = packs.Close() })
+
+	src := t.TempDir()
+	for name, size := range map[string]int{"a.txt": 5, "sub/b.txt": 7, "sub/deeper/c.txt": 11} {
+		path := filepath.Join(src, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, bytes.Repeat([]byte("x"), size), 0o644))
+	}
+
+	walker := &backup.Walker{Index: index, Objects: index, Set: "world", AgentID: "a", Root: src, Workers: 1}
+	result, err := walker.Run(ctx)
+	require.NoError(t, err)
+
+	newCommit := func(from string) *commit {
+		return &commit{
+			ctx:              ctx,
+			index:            index,
+			store:            index,
+			set:              "world",
+			ref:              result.Ref,
+			from:             from,
+			reader:           backup.NewBackupReader(index),
+			restorer:         &backup.Restorer{Store: index, Workers: 2, Overwrite: backup.OverwriteIfChanged},
+			progressInterval: time.Hour,
+		}
+	}
+
+	whole := restoreProgressRecord{Msg: "progress", FilesDone: 3, FilesTotal: 3, BytesDone: 23, BytesTotal: 23}
+	dst := t.TempDir()
+	require.Equal(t, whole, lastProgress(t, newCommit(""), dst))
+	require.Equal(t, whole, lastProgress(t, newCommit(""), dst), "unchanged files count as done")
+
+	sub := restoreProgressRecord{Msg: "progress", FilesDone: 2, FilesTotal: 2, BytesDone: 18, BytesTotal: 18}
+	require.Equal(t, sub, lastProgress(t, newCommit("sub"), t.TempDir()))
 }

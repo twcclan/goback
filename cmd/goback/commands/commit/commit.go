@@ -22,6 +22,8 @@ type commit struct {
 	from     string
 	set      string
 	delete   bool
+
+	progressInterval time.Duration
 }
 
 // Command is the commit command.
