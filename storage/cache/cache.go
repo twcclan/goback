@@ -11,25 +11,11 @@ import (
 var _ backup.ObjectStore = (*Store)(nil)
 var _ wrapped.Wrapper = (*Store)(nil)
 
-func cacheable(obj *proto.Object) bool {
-	if obj == nil {
-		return false
-	}
-
-	switch obj.Type() {
-	case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
-		return true
-	}
-
-	return false
-}
-
 // New layers cache over wrapped for its commits, trees and files.
 func New(cache backup.ObjectStore, wrapped backup.ObjectStore) *Store {
 	return &Store{
 		cache:   cache,
 		wrapped: wrapped,
-		test:    cacheable,
 	}
 }
 
@@ -38,7 +24,6 @@ func New(cache backup.ObjectStore, wrapped backup.ObjectStore) *Store {
 type Store struct {
 	cache   backup.ObjectStore
 	wrapped backup.ObjectStore
-	test    func(object *proto.Object) bool
 }
 
 // Unwrap implements wrapped.Wrapper.
@@ -48,7 +33,7 @@ func (s *Store) Unwrap() backup.ObjectStore { return s.wrapped }
 func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	err := s.wrapped.Put(ctx, object)
 
-	if err == nil && s.test(object) {
+	if err == nil && object.Type().Metadata() {
 		_ = s.cache.Put(ctx, object)
 	}
 
@@ -69,7 +54,7 @@ func (s *Store) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([
 	}
 
 	for _, obj := range objects {
-		if s.test(obj) {
+		if obj.Type().Metadata() {
 			_ = s.cache.Put(ctx, obj)
 		}
 	}

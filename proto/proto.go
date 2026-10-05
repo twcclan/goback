@@ -32,6 +32,18 @@ func DecodeVarint(buf []byte) (x uint64, n int) {
 	return protowire.ConsumeVarint(buf)
 }
 
+// Metadata reports whether objects of the type describe a backup rather
+// than carry its content: commits, trees and files, which metadata caches
+// keep.
+func (x ObjectType) Metadata() bool {
+	switch x {
+	case ObjectType_COMMIT, ObjectType_TREE, ObjectType_FILE:
+		return true
+	}
+
+	return false
+}
+
 // Type is the object's type; a sealed object reports the type it carries,
 // an empty wrapper INVALID.
 func (o *Object) Type() ObjectType {

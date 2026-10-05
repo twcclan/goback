@@ -280,21 +280,8 @@ func (ps *PackStorage) committedCopy(scope Scope, ref *proto.Ref, liveOnly bool,
 	}
 }
 
-func (ps *PackStorage) cacheable(obj *proto.Object) bool {
-	if obj == nil {
-		return false
-	}
-
-	switch obj.Type() {
-	case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
-		return true
-	}
-
-	return false
-}
-
 func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err error) error {
-	if ps.cache != nil && err == nil && ps.cacheable(obj) {
+	if ps.cache != nil && err == nil && obj.Type().Metadata() {
 		_ = ps.cache.Put(ctx, obj)
 	}
 
@@ -303,7 +290,7 @@ func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err
 
 func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, error) (*proto.Object, error) {
 	return func(obj *proto.Object, err error) (*proto.Object, error) {
-		if ps.cache != nil && err == nil && ps.cacheable(obj) {
+		if ps.cache != nil && err == nil && obj.Type().Metadata() {
 			_ = ps.cache.Put(ctx, obj)
 		}
 
@@ -319,9 +306,7 @@ func (ps *PackStorage) forgetCached(ctx context.Context, idx IndexFile) {
 	}
 
 	for _, rec := range idx {
-		switch proto.ObjectType(rec.Type) {
-		case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
-		default:
+		if !proto.ObjectType(rec.Type).Metadata() {
 			continue
 		}
 
