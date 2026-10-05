@@ -368,6 +368,11 @@ func TestLogicalSizeIsKnownBeforeMaintenanceRuns(t *testing.T) {
 
 	require.EqualValues(t, 10, *f.commitRow(second.Ref()).LogicalSize)
 	require.EqualValues(t, 8, *f.commitRow(first.Ref()).LogicalSize, "the older commit keeps its own size")
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 10, sets[0].LogicalSize)
+	require.EqualValues(t, 18, sets[0].KeptLogicalSize)
 }
 
 func TestLogicalSizeLeavesOutWhatHoldsNoContent(t *testing.T) {

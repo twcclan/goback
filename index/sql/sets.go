@@ -109,7 +109,7 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 }
 
 // ListSets returns every set by name, each with the size of its newest
-// live commit.
+// live commit and the sizes of all of them added up.
 func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 	rows, err := x.client.Set.Query().Order(ent.Asc(set.FieldName)).All(ctx)
 	if err != nil {
@@ -119,6 +119,11 @@ func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 	out := mapAll(rows, m.Set)
 	for i := range out {
 		out[i].LogicalSize, err = x.latestSize(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		out[i].KeptLogicalSize, err = x.keptSize(ctx, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -200,6 +205,20 @@ func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) 
 
 		return nil
 	})
+}
+
+func (x *Index) keptSize(ctx context.Context, setID int64) (int64, error) {
+	var sums []struct {
+		Sum *int64 `sql:"sum"`
+	}
+
+	err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), liveCommit()).
+		Aggregate(ent.Sum(commitrow.FieldLogicalSize)).Scan(ctx, &sums)
+	if err != nil || len(sums) == 0 {
+		return 0, err
+	}
+
+	return deref(sums[0].Sum), nil
 }
 
 func (x *Index) latestSize(ctx context.Context, setID int64) (int64, error) {

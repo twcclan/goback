@@ -134,11 +134,22 @@ func (m MapperImpl) Set(in *ent.Set) index.SetInfo {
 	if in == nil {
 		return index.SetInfo{}
 	}
+	var tmp0 int64
+	if in.AloneSize != nil {
+		tmp0 = *(in.AloneSize)
+	}
+
+	var tmp1 int64
+	if in.ExclusiveSize != nil {
+		tmp1 = *(in.ExclusiveSize)
+	}
 
 	return index.SetInfo{
-		ID:    in.ID,
-		Name:  in.Name,
-		State: string(in.State),
+		ID:            in.ID,
+		Name:          in.Name,
+		State:         string(in.State),
+		AloneSize:     tmp0,
+		ExclusiveSize: tmp1,
 	}
 }
 

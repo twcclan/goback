@@ -19,14 +19,15 @@ const (
 	SetDeleted = "deleted"
 )
 
-// SetInfo is a set with the size of its newest live commit and, as of the
-// last garbage collection, what its objects take up in the store and the
+// SetInfo is a set with the size of its newest live commit, the sizes of
+// all its live commits added up, and, as of the last garbage collection, what its objects take up in the store and the
 // size of the distinct content they carry before compression.
 type SetInfo struct {
 	ID               int64
 	Name             string
 	State            string
 	LogicalSize      int64
+	KeptLogicalSize  int64
 	PhysicalSize     int64
 	DeduplicatedSize int64
 	// AloneSize is what the set would take up were it the only set, and
