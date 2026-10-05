@@ -135,7 +135,12 @@ func (b *WALBackup) previous(ctx context.Context) ([]string, uint64, error) {
 		}
 	}
 
-	tree, err := backup.OpenTree(ctx, w.Objects, commit.GetTree(), w.Key, nil)
+	key, err := backup.CommitKey(ctx, w.Objects, commit, w.Key)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	tree, err := backup.OpenTree(ctx, w.Objects, commit.GetTree(), key, nil)
 	if err != nil {
 		return nil, 0, err
 	}

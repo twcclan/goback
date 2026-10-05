@@ -238,12 +238,16 @@ func emptyDir(dir string) error {
 // writeTree writes the base's data directory into dir.
 func (r *Restore) writeTree(ctx context.Context, base *proto.Commit, dir string) error {
 	restorer := &backup.Restorer{Store: r.Objects, Key: r.Key}
-	reader := backup.NewBackupReader(r.Objects).WithKey(r.Key)
+
+	reader, err := backup.NewBackupReader(r.Objects).WithKey(r.Key).ForCommit(ctx, base)
+	if err != nil {
+		return err
+	}
 
 	files, fctx := errgroup.WithContext(ctx)
 	files.SetLimit(backup.DefaultRestoreWorkers())
 
-	err := reader.WalkTree(ctx, base.GetTree(), nil, func(rel string, info os.FileInfo, ref *proto.Ref) error {
+	err = reader.WalkTree(ctx, base.GetTree(), nil, func(rel string, info os.FileInfo, ref *proto.Ref) error {
 		if !filepath.IsLocal(rel) {
 			return fmt.Errorf("the base backup holds %q, outside the data directory", rel)
 		}
@@ -353,6 +357,11 @@ func confString(s string) string {
 // course.
 func FetchWAL(ctx context.Context, objects backup.ObjectStore, key *storekey.Key, ref *proto.Ref, name, dst string) error {
 	obj, err := objects.Get(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	key, err = backup.CommitKey(ctx, objects, obj.GetCommit(), key)
 	if err != nil {
 		return err
 	}

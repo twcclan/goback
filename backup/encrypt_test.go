@@ -310,3 +310,14 @@ func TestACommitThatPredatesItsKeyIDIsOpenedAsItWasWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, key, got)
 }
+
+func TestARunThatCarriesEntriesRefusesACommitSealedDifferently(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("000000010000000000000001", []byte("wal"))
+	f.walker.Carry = func(string) bool { return true }
+	f.run()
+
+	f.walker.Key = newKey(t)
+	_, err := f.walker.Run(context.Background())
+	require.ErrorIs(t, err, ErrSealChanged)
+}

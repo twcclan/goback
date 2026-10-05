@@ -31,6 +31,10 @@ type RestoreLeaser interface {
 // ErrNoSession is returned when a session id names no live session.
 var ErrNoSession = errors.New("no such session")
 
+// ErrSealChanged is returned by a Walker with Carry over a previous commit
+// sealed under another store key or none, whose entries it cannot carry.
+var ErrSealChanged = errors.New("the set's latest commit is sealed under another store key or none")
+
 type sessionKey struct{}
 
 // WithSession attaches the session to the context.

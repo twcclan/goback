@@ -62,7 +62,9 @@ type Walker struct {
 
 	// Carry, when set, keeps every entry of the previous commit's root that
 	// is gone from the disk and for which it returns true, so a set can
-	// accumulate files that leave the disk once committed.
+	// accumulate files that leave the disk once committed. A run with Carry
+	// fails with ErrSealChanged over a commit sealed under another key or
+	// none.
 	Carry func(name string) bool
 
 	// Include decides per slash-separated relative path; nil includes all.
@@ -482,14 +484,13 @@ func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 		return nil, fmt.Errorf("base %x is not a commit", ref.Hash)
 	}
 
-	if commit.KeyId != nil && (len(commit.KeyId) > 0) != (w.Key != nil) {
-		w.logger().Info("the previous commit was sealed differently, reading everything", "set", w.Set)
-		return nil, nil
-	}
-
 	tree, err := w.trees.load(ctx, commit.Tree, nil)
-	if errors.Is(err, storekey.ErrWrongKey) {
-		w.logger().Info("the previous commit was written without this key, reading everything", "set", w.Set)
+	if errors.Is(err, storekey.ErrWrongKey) || commit.KeyId != nil && (len(commit.KeyId) > 0) != (w.Key != nil) {
+		if w.Carry != nil {
+			return nil, ErrSealChanged
+		}
+
+		w.logger().Info("the previous commit was sealed under another key or none, reading everything", "set", w.Set)
 		return nil, nil
 	}
 
