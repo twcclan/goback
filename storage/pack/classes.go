@@ -17,8 +17,8 @@ const (
 
 // ageClass is the calendar period an object's stored time falls in.
 type ageClass struct {
-	span  span
-	start int64
+	Span  span  `json:"span"`
+	Start int64 `json:"start"`
 }
 
 // classOf is the period of t seen from now: its day within the last week,
@@ -51,11 +51,11 @@ func monday(day time.Time) time.Time {
 
 // newer orders classes newest first.
 func (c ageClass) newer(o ageClass) bool {
-	if c.start != o.start {
-		return c.start > o.start
+	if c.Start != o.Start {
+		return c.Start > o.Start
 	}
 
-	return c.span < o.span
+	return c.Span < o.Span
 }
 
 // outputClass is what a rewrite writes into one output: the objects of
@@ -63,49 +63,52 @@ func (c ageClass) newer(o ageClass) bool {
 // sets of that group share; a zero Attribution is what the mark
 // attributed to nobody.
 type outputClass struct {
-	owner Attribution
-	age   ageClass
+	Owner Attribution `json:"owner"`
+	Age   ageClass    `json:"age"`
 }
 
-// classes numbers the output classes of a sweep and what of it survives.
+// classes numbers the output classes of a sweep.
 type classes struct {
-	ids   map[outputClass]int32
-	all   []outputClass
-	bytes []uint64
+	ids map[outputClass]int32
+	all []outputClass
 }
 
-func newClasses() *classes {
-	return &classes{ids: make(map[outputClass]int32)}
+func newClasses(all []outputClass) *classes {
+	c := &classes{ids: make(map[outputClass]int32, len(all)), all: all}
+	for id, class := range all {
+		c.ids[class] = int32(id)
+	}
+
+	return c
 }
 
-func (c *classes) add(class outputClass, length uint64) int32 {
+func (c *classes) id(class outputClass) int32 {
 	id, ok := c.ids[class]
 	if !ok {
 		id = int32(len(c.all))
 		c.ids[class] = id
 		c.all = append(c.all, class)
-		c.bytes = append(c.bytes, 0)
 	}
-
-	c.bytes[id] += length
 
 	return id
 }
 
-// fold maps every class to the one its objects are written into. A class
-// holding less than small joins its owner's next older one; the oldest,
-// if that leaves it small, joins the newer one it would have followed.
-func (c *classes) fold(small uint64) []int32 {
-	into := make([]int32, len(c.all))
+// fold maps every class sizes holds to the one its objects are written
+// into. A class holding less than small joins its owner's next older one;
+// the oldest, if that leaves it small, joins the newer one it would have
+// followed.
+func (c *classes) fold(sizes map[int32]uint64, small uint64) map[int32]int32 {
+	into := make(map[int32]int32, len(sizes))
 
 	byOwner := make(map[Attribution][]int32)
-	for id, class := range c.all {
-		byOwner[class.owner] = append(byOwner[class.owner], int32(id))
+	for id := range sizes {
+		owner := c.all[id].Owner
+		byOwner[owner] = append(byOwner[owner], id)
 	}
 
 	for _, ids := range byOwner {
 		slices.SortFunc(ids, func(a, b int32) int {
-			if c.all[a].age.newer(c.all[b].age) {
+			if c.all[a].Age.newer(c.all[b].Age) {
 				return -1
 			}
 
@@ -118,7 +121,7 @@ func (c *classes) fold(small uint64) []int32 {
 
 		for _, id := range ids {
 			carried = append(carried, id)
-			held += c.bytes[id]
+			held += sizes[id]
 
 			if held < small {
 				continue
@@ -142,6 +145,38 @@ func (c *classes) fold(small uint64) []int32 {
 	}
 
 	return into
+}
+
+// classed is the output class of every record of one archive a sweep
+// rewrites, and what of each class survives in it.
+type classed struct {
+	Class []int32          `json:"class"`
+	Bytes map[int32]uint64 `json:"bytes"`
+}
+
+// chunkClasses folds the classes of what a chunk of a rewrite holds, so
+// each output it writes reaches small unless its owner holds less in the
+// chunk, and returns the class of each record.
+func chunkClasses(c *classes, small uint64, chunk []*archive, of func(a *archive) *classed) func(candidate *archive, pos int) int32 {
+	sizes := make(map[int32]uint64)
+	for _, a := range chunk {
+		if cl := of(a); cl != nil {
+			for id, n := range cl.Bytes {
+				sizes[id] += n
+			}
+		}
+	}
+
+	into := c.fold(sizes, small)
+
+	return func(candidate *archive, pos int) int32 {
+		cl := of(candidate)
+		if cl == nil || pos < 0 || pos >= len(cl.Class) {
+			return -1
+		}
+
+		return into[cl.Class[pos]]
+	}
 }
 
 // ownerOf is whom a rewrite files an object under: the set of the first
@@ -188,18 +223,18 @@ func (r *gcRun) classify(live *liveRuns) error {
 		return err
 	}
 
-	all := newClasses()
+	r.classes = newClasses(nil)
 
 	for _, ga := range selected {
-		ga.class = make([]int32, ga.count)
+		ga.classed = &classed{Class: make([]int32, ga.count), Bytes: make(map[int32]uint64)}
 
 		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
-			length := uint64(rec.Length)
-			if r.droppable(ga, ga.next, pos, rec) {
-				length = 0
-			}
+			id := r.classes.id(outputClass{ga.owners[pos], classOf(ga.a.version(*rec).Time, r.opts.Now)})
+			ga.classed.Class[pos] = id
 
-			ga.class[pos] = all.add(outputClass{ga.owners[pos], classOf(ga.a.version(*rec).Time, r.opts.Now)}, length)
+			if !r.droppable(ga, ga.next, pos, rec) {
+				ga.classed.Bytes[id] += uint64(rec.Length)
+			}
 
 			return nil
 		}, nil, nil)
@@ -210,30 +245,16 @@ func (r *gcRun) classify(live *liveRuns) error {
 		ga.owners = nil
 	}
 
-	into := all.fold(r.ps.compaction.small())
-	for _, ga := range selected {
-		for pos, id := range ga.class {
-			ga.class[pos] = into[id]
-		}
-	}
-
 	return nil
 }
 
-// class is the output class of the record at pos in candidate, or -1.
-func (r *gcRun) class(candidate *archive, pos int) int32 {
-	ga := r.archives[candidate.name]
-	if ga == nil {
-		return -1
-	}
+// classesOf is the output classes of a chunk of the sweep.
+func (r *gcRun) classesOf(chunk []*archive) func(candidate *archive, pos int) int32 {
+	return chunkClasses(r.classes, r.ps.compaction.small(), chunk, func(a *archive) *classed {
+		if ga := r.archives[a.name]; ga != nil {
+			return ga.classed
+		}
 
-	return classAt(ga.class, pos)
-}
-
-func classAt(class []int32, pos int) int32 {
-	if pos < 0 || pos >= len(class) {
-		return -1
-	}
-
-	return class[pos]
+		return nil
+	})
 }

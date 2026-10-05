@@ -33,17 +33,17 @@ func TestAnAgeClassIsTheDayThenWeekThenMonthThenYear(t *testing.T) {
 }
 
 func TestASmallClassJoinsItsOwnersNextOlderOne(t *testing.T) {
-	c := newClasses()
+	c := newClasses(nil)
 	set := Attribution{Group: 1, Set: 7}
 	other := Attribution{Group: 1, Set: 9}
 
-	today := c.add(outputClass{set, ageClass{spanDay, 300}}, 10)
-	week := c.add(outputClass{set, ageClass{spanWeek, 200}}, 50)
-	month := c.add(outputClass{set, ageClass{spanMonth, 100}}, 200)
-	year := c.add(outputClass{set, ageClass{spanYear, 0}}, 10)
-	alone := c.add(outputClass{other, ageClass{spanDay, 300}}, 10)
+	today := c.id(outputClass{set, ageClass{spanDay, 300}})
+	week := c.id(outputClass{set, ageClass{spanWeek, 200}})
+	month := c.id(outputClass{set, ageClass{spanMonth, 100}})
+	year := c.id(outputClass{set, ageClass{spanYear, 0}})
+	alone := c.id(outputClass{other, ageClass{spanDay, 300}})
 
-	into := c.fold(100)
+	into := c.fold(map[int32]uint64{today: 10, week: 50, month: 200, year: 10, alone: 10}, 100)
 
 	require.Equal(t, month, into[today], "the day and the week add up to too little, so they join the month")
 	require.Equal(t, month, into[week])
@@ -160,4 +160,25 @@ func testSetsApart(t *testing.T, handoff bool) {
 
 	requireStored(t, store, mine, true)
 	requireStored(t, store, yours, true)
+}
+
+func TestAChunkFoldsTheClassesBySizesWithinIt(t *testing.T) {
+	c := newClasses(nil)
+	set := Attribution{Group: 1, Set: 7}
+	day := c.id(outputClass{set, ageClass{spanDay, 300}})
+	week := c.id(outputClass{set, ageClass{spanWeek, 200}})
+
+	first, second := &archive{name: "first"}, &archive{name: "second"}
+	held := map[string]*classed{
+		"first":  {Class: []int32{day, week}, Bytes: map[int32]uint64{day: 80, week: 80}},
+		"second": {Class: []int32{day, week}, Bytes: map[int32]uint64{day: 30, week: 30}},
+	}
+	of := func(a *archive) *classed { return held[a.name] }
+
+	alone := chunkClasses(c, 100, []*archive{second}, of)
+	require.Equal(t, alone(second, 0), alone(second, 1), "too little of either in the chunk, so they are written together")
+
+	together := chunkClasses(c, 100, []*archive{first, second}, of)
+	require.NotEqual(t, together(first, 0), together(first, 1), "enough of each in the chunk to write them apart")
+	require.Equal(t, int32(-1), together(&archive{name: "unclassified"}, 0))
 }

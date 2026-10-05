@@ -26,9 +26,10 @@ type compactionGroup struct {
 	// reachable and may replace the candidate's.
 	keep   func(candidate *archive, hdr *proto.ObjectHeader) bool
 	marked func(loc *IndexLocation) bool
-	// class, when set, names the output class of the candidate's record
-	// at an index position, or -1; each class is written apart.
-	class func(candidate *archive, pos int) int32
+	// classes, when set, gives for a chunk of the rewrite the output
+	// class of a candidate's record at an index position, or -1; each
+	// class is written apart.
+	classes func(chunk []*archive) func(candidate *archive, pos int) int32
 
 	droppedObjects uint64
 	droppedBytes   uint64
@@ -179,8 +180,9 @@ type rewrite struct {
 	// left unreachable, and that result's generation
 	unmarked map[string]uint64
 	// open holds the outputs being written, by class, or by worker for
-	// what has none
-	open map[int64]*rewriteOutput
+	// what has none; class is the classes of the chunk being written
+	open  map[int64]*rewriteOutput
+	class func(candidate *archive, pos int) int32
 }
 
 // shares splits the chunk into at most workers runs of about the same size,
@@ -221,6 +223,11 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 	indexes, standIn, err := rw.lookUp(ctx, chunk, workers)
 	if err != nil {
 		return err
+	}
+
+	rw.class = nil
+	if rw.group.classes != nil {
+		rw.class = rw.group.classes(chunk)
 	}
 
 	grp, gctx := errgroup.WithContext(ctx)
@@ -425,8 +432,8 @@ func (rw *rewrite) elsewhere(copies []IndexLocation) bool {
 // candidate into.
 func (rw *rewrite) output(worker int, candidate *archive, pos int) *rewriteOutput {
 	key := -1 - int64(worker)
-	if rw.group.class != nil {
-		if class := rw.group.class(candidate, pos); class >= 0 {
+	if rw.class != nil {
+		if class := rw.class(candidate, pos); class >= 0 {
 			key = int64(class)
 		}
 	}

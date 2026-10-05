@@ -27,8 +27,10 @@ type sweepPlan struct {
 	MinAge     time.Duration `json:"minAge"`
 	// Drop holds, per archive, the index positions the rewrite drops.
 	Drop map[string]*bitset.BitSet `json:"drop"`
-	// Class holds, per archive, the output class of each index position.
-	Class map[string][]int32 `json:"class,omitempty"`
+	// Classes are the output classes of the rewrite, and Classed per
+	// archive the class of each index position.
+	Classes []outputClass       `json:"classes,omitempty"`
+	Classed map[string]*classed `json:"classed,omitempty"`
 }
 
 func planName(generation uint64) string {
@@ -61,7 +63,10 @@ func (ps *PackStorage) PendingPlans() ([]uint64, error) {
 // publish writes the sweep the run would do as a plan for RewritePlan.
 func (r *gcRun) publish() (int, error) {
 	plan := sweepPlan{Generation: r.gen, Now: r.opts.Now, MinAge: r.opts.MinAge, Drop: make(map[string]*bitset.BitSet),
-		Class: make(map[string][]int32)}
+		Classed: make(map[string]*classed)}
+	if r.classes != nil {
+		plan.Classes = r.classes.all
+	}
 
 	for _, ga := range r.order {
 		if !r.selected(ga) {
@@ -81,7 +86,7 @@ func (r *gcRun) publish() (int, error) {
 		}
 
 		plan.Drop[ga.a.name] = drop
-		plan.Class[ga.a.name] = ga.class
+		plan.Classed[ga.a.name] = ga.classed
 	}
 
 	if len(plan.Drop) == 0 {
@@ -161,8 +166,9 @@ func (ps *PackStorage) readPlan(generation uint64) (*sweepPlan, error) {
 
 func (ps *PackStorage) rewrite(ctx context.Context, plan *sweepPlan, report *RewriteReport) error {
 	marks := &planMarks{ps: ps, indexes: make(map[string]IndexFile), results: make(map[string]*gcFile)}
-	group := &compactionGroup{marked: marks.marked, class: func(candidate *archive, pos int) int32 {
-		return classAt(plan.Class[candidate.name], pos)
+	known := newClasses(plan.Classes)
+	group := &compactionGroup{marked: marks.marked, classes: func(chunk []*archive) func(*archive, int) int32 {
+		return chunkClasses(known, ps.compaction.small(), chunk, func(a *archive) *classed { return plan.Classed[a.name] })
 	}}
 
 	ps.mtx.RLock()

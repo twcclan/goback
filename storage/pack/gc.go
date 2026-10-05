@@ -184,11 +184,10 @@ type gcArchive struct {
 	prev      *gcFile
 	cur       *bitset.BitSet
 	next      *gcFile
-	// owners and class are what a sweep rewriting the archive needs per
-	// record: whom the mark attributed it to, then what it is written
-	// with
-	owners []Attribution
-	class  []int32
+	// owners is whom the mark attributed each record to, and classed
+	// what a sweep writes each with
+	owners  []Attribution
+	classed *classed
 }
 
 type gcTombstone struct {
@@ -294,6 +293,8 @@ type gcRun struct {
 	// setAlone and setExclusive are what each set reaches, and what only
 	// it reaches within its group.
 	setAlone, setExclusive map[int64]uint64
+	// classes are the output classes of the sweep
+	classes *classes
 }
 
 // gcRoot is a root with what it belongs to, zero when nothing names it.
@@ -1523,7 +1524,7 @@ func (r *gcRun) sweepBlocker() string {
 // sweep rewrites the archives whose dead share or age selects them, dropping
 // objects unmarked in two consecutive generations.
 func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
-	group := &compactionGroup{keep: r.keep, marked: r.marked, class: r.class}
+	group := &compactionGroup{keep: r.keep, marked: r.marked, classes: r.classesOf}
 
 	for _, ga := range r.order {
 		if !r.selected(ga) {
