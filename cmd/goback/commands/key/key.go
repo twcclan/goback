@@ -2,23 +2,27 @@
 package key
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"net/url"
 	"os"
-	"strings"
 	"time"
 
+	"github.com/twcclan/goback/admin"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/backup/storekey/master"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
 	"github.com/twcclan/goback/storage"
 	"github.com/twcclan/goback/storage/pack"
 
+	adminpb "github.com/twcclan/goback/proto/admin"
+
 	"github.com/urfave/cli"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Command is the key command.
@@ -262,30 +266,28 @@ func upload(c *cli.Context, server, keyID string, escrowed []byte) error {
 		return err
 	}
 
-	body, err := json.Marshal(map[string]string{"key_id": keyID, "escrowed": string(escrowed)})
+	u, err := url.Parse(server)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("--upload takes the admin surface as https://host:port, not %q", server)
+	}
+
+	creds := credentials.NewTLS(tlsConfig)
+	if u.Scheme == "http" {
+		creds = insecure.NewCredentials()
+	}
+
+	conn, err := grpc.NewClient(u.Host, grpc.WithTransportCredentials(creds), grpc.WithPerRPCCredentials(admin.Credentials(token)))
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
-	request, err := http.NewRequest(http.MethodPut, strings.TrimSuffix(server, "/")+"/v1/escrow", bytes.NewReader(body))
+	ctx, cancel := context.WithTimeout(common.Context(c), time.Minute)
+	defer cancel()
+
+	_, err = adminpb.NewAdminClient(conn).PutEscrowedKey(ctx, &adminpb.PutEscrowedKeyRequest{KeyId: keyID, Escrowed: string(escrowed)})
 	if err != nil {
-		return err
-	}
-
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}, Timeout: time.Minute}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		reply, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return fmt.Errorf("the store refused the escrowed key: %s: %s", response.Status, strings.TrimSpace(string(reply)))
+		return fmt.Errorf("the store refused the escrowed key: %w", err)
 	}
 
 	common.Result(struct {

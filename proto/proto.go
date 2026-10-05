@@ -1,7 +1,7 @@
 package proto
 
 //go:generate protoc --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. api.proto blob.proto commit.proto encryption.proto file.proto object.proto pin.proto policy.proto presence.proto ref.proto tree.proto
-//go:generate protoc -I . --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. --grpc-gateway_out=paths=source_relative,grpc_api_configuration=admin/admin_gateway.yaml:. admin/admin.proto
+//go:generate protoc -I . --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. admin/admin.proto
 
 import (
 	"os"

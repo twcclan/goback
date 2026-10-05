@@ -8,7 +8,7 @@ import "google/protobuf/timestamp.proto";
 
 // Admin is the operator surface of a store server: sets, the store policy
 // and job triggers. It is served on its own listener behind the admin
-// token, over gRPC and, through grpc-gateway, REST.
+// token, over gRPC.
 service Admin {
     rpc ListSets(ListSetsRequest) returns (ListSetsResponse) {}
     rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse) {}

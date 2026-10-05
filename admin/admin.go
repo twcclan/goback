@@ -19,7 +19,6 @@ import (
 	"github.com/twcclan/goback/index/sql"
 	pb "github.com/twcclan/goback/proto/admin"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -61,14 +60,6 @@ type Server struct {
 
 var _ pb.AdminServer = (*Server)(nil)
 var _ Index = (*sql.Index)(nil)
-
-// Register implements Service.
-func (s *Server) Register(srv *grpc.Server) { pb.RegisterAdminServer(srv, s) }
-
-// RegisterGateway implements Service.
-func (s *Server) RegisterGateway(ctx context.Context, mux *runtime.ServeMux) error {
-	return pb.RegisterAdminHandlerServer(ctx, mux, s)
-}
 
 func (s *Server) now() time.Time {
 	if s.Now != nil {

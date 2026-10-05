@@ -37,7 +37,7 @@ const (
 //
 // Admin is the operator surface of a store server: sets, the store policy
 // and job triggers. It is served on its own listener behind the admin
-// token, over gRPC and, through grpc-gateway, REST.
+// token, over gRPC.
 type AdminClient interface {
 	ListSets(ctx context.Context, in *ListSetsRequest, opts ...grpc.CallOption) (*ListSetsResponse, error)
 	DeleteSet(ctx context.Context, in *DeleteSetRequest, opts ...grpc.CallOption) (*DeleteSetResponse, error)
@@ -174,7 +174,7 @@ func (c *adminClient) PutEscrowedKey(ctx context.Context, in *PutEscrowedKeyRequ
 //
 // Admin is the operator surface of a store server: sets, the store policy
 // and job triggers. It is served on its own listener behind the admin
-// token, over gRPC and, through grpc-gateway, REST.
+// token, over gRPC.
 type AdminServer interface {
 	ListSets(context.Context, *ListSetsRequest) (*ListSetsResponse, error)
 	DeleteSet(context.Context, *DeleteSetRequest) (*DeleteSetResponse, error)

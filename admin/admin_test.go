@@ -1,10 +1,7 @@
 package admin_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -69,6 +66,7 @@ type harness struct {
 	t      *testing.T
 	server *admin.Server
 	http   *httptest.Server
+	admin  pb.AdminClient
 	now    time.Time
 }
 
@@ -109,104 +107,90 @@ func newHarness(t *testing.T) *harness {
 	h.http.Start()
 	t.Cleanup(h.http.Close)
 
+	h.admin = h.client(admin.Credentials(token))
+
 	return h
 }
 
-// call performs a REST request with the token and decodes the JSON reply.
-func (h *harness) call(method, path string, body interface{}, out gproto.Message) int {
-	h.t.Helper()
-
-	var payload io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		require.NoError(h.t, err)
-		payload = bytes.NewReader(data)
+// client dials the surface over gRPC presenting creds, none when nil.
+func (h *harness) client(creds credentials.PerRPCCredentials) pb.AdminClient {
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	if creds != nil {
+		options = append(options, grpc.WithPerRPCCredentials(creds))
 	}
 
-	req, err := http.NewRequest(method, h.http.URL+path, payload)
+	con, err := grpc.NewClient(strings.TrimPrefix(h.http.URL, "http://"), options...)
 	require.NoError(h.t, err)
-	req.Header.Set("Authorization", "Bearer "+token)
+	h.t.Cleanup(func() { _ = con.Close() })
 
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(h.t, err)
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	require.NoError(h.t, err)
-
-	if out != nil && resp.StatusCode == http.StatusOK {
-		require.NoError(h.t, protojson.Unmarshal(data, out), string(data))
-	}
-
-	return resp.StatusCode
+	return pb.NewAdminClient(con)
 }
 
 func TestAdminRequiresToken(t *testing.T) {
 	h := newHarness(t)
+	ctx := context.Background()
 
-	resp, err := http.Get(h.http.URL + "/v1/sets")
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-
-	req, _ := http.NewRequest(http.MethodGet, h.http.URL+"/v1/sets", nil)
-	req.Header.Set("Authorization", "Bearer wrong")
-	resp, err = http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-
-	// the same listener speaks gRPC, behind the same token
-	con, err := grpc.NewClient(strings.TrimPrefix(h.http.URL, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = con.Close() })
-
-	_, err = pb.NewAdminClient(con).ListSets(context.Background(), &pb.ListSetsRequest{})
+	_, err := h.client(nil).ListSets(ctx, &pb.ListSetsRequest{})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
-	con, err = grpc.NewClient(strings.TrimPrefix(h.http.URL, "http://"),
-		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(admin.Credentials(token)))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = con.Close() })
+	_, err = h.client(admin.Credentials("wrong")).ListSets(ctx, &pb.ListSetsRequest{})
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
-	sets, err := pb.NewAdminClient(con).ListSets(context.Background(), &pb.ListSetsRequest{})
+	sets, err := h.admin.ListSets(ctx, &pb.ListSetsRequest{})
 	require.NoError(t, err)
 	require.Len(t, sets.Sets, 1)
 	require.Equal(t, "world", sets.Sets[0].Name)
 }
 
-func TestAdminSets(t *testing.T) {
+func TestTheSurfaceAnswersOnlyGRPC(t *testing.T) {
 	h := newHarness(t)
 
-	var list pb.ListSetsResponse
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets", nil, &list))
+	resp, err := http.Get(h.http.URL + "/v1/sets")
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
+}
+
+func TestAdminSets(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	list, err := h.admin.ListSets(ctx, &pb.ListSetsRequest{})
+	require.NoError(t, err)
 	require.Len(t, list.Sets, 1)
 	require.Equal(t, "world", list.Sets[0].Name)
 	require.Equal(t, "active", list.Sets[0].State)
 	require.EqualValues(t, 3, list.Sets[0].LogicalSize)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodDelete, "/v1/sets/world", nil, nil))
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets", nil, &list))
+	_, err = h.admin.DeleteSet(ctx, &pb.DeleteSetRequest{Name: "world"})
+	require.NoError(t, err)
+	list, err = h.admin.ListSets(ctx, &pb.ListSetsRequest{})
+	require.NoError(t, err)
 	require.Equal(t, "closing", list.Sets[0].State)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/v1/sets/world/undelete", nil, nil))
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets", nil, &list))
+	_, err = h.admin.UndeleteSet(ctx, &pb.UndeleteSetRequest{Name: "world"})
+	require.NoError(t, err)
+	list, err = h.admin.ListSets(ctx, &pb.ListSetsRequest{})
+	require.NoError(t, err)
 	require.Equal(t, "active", list.Sets[0].State)
 
-	require.Equal(t, http.StatusNotFound, h.call(http.MethodDelete, "/v1/sets/nope", nil, nil))
+	_, err = h.admin.DeleteSet(ctx, &pb.DeleteSetRequest{Name: "nope"})
+	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
 func TestAdminStorePolicyAndJobs(t *testing.T) {
 	h := newHarness(t)
+	ctx := context.Background()
 
-	var policy pb.StorePolicy
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/policy", nil, &policy))
+	policy, err := h.admin.GetStorePolicy(ctx, &pb.GetStorePolicyRequest{})
+	require.NoError(t, err)
 	require.Zero(t, policy.Version)
 	require.Equal(t, "sealed", policy.Mode)
 	require.Nil(t, policy.KeyAcknowledgedAt)
 
-	body := map[string]interface{}{"mode": "none", "presence_scope": "store", "acknowledge_key": true}
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/policy", body, &policy))
+	req := &pb.SetStorePolicyRequest{Mode: "none", PresenceScope: "store", AcknowledgeKey: true}
+	policy, err = h.admin.SetStorePolicy(ctx, req)
+	require.NoError(t, err)
 	require.EqualValues(t, 1, policy.Version)
 	require.Equal(t, "none", policy.Mode)
 	require.Equal(t, "store", policy.PresenceScope)
@@ -215,56 +199,67 @@ func TestAdminStorePolicyAndJobs(t *testing.T) {
 	require.True(t, acknowledged.Equal(h.now))
 
 	h.now = h.now.Add(time.Hour)
-	body["acknowledge_key"] = false
-	body["mode"] = "sealed"
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/policy", body, &policy))
+	req.AcknowledgeKey = false
+	req.Mode = "sealed"
+	policy, err = h.admin.SetStorePolicy(ctx, req)
+	require.NoError(t, err)
 	require.EqualValues(t, 2, policy.Version)
 	require.True(t, policy.KeyAcknowledgedAt.AsTime().Equal(acknowledged), "the acknowledgement is recorded once")
 
-	body["mode"] = "rot13"
-	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/policy", body, nil))
-	body["mode"] = "sealed"
-	body["presence_scope"] = "everyone"
-	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/policy", body, nil))
+	req.Mode = "rot13"
+	_, err = h.admin.SetStorePolicy(ctx, req)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	req.Mode = "sealed"
+	req.PresenceScope = "everyone"
+	_, err = h.admin.SetStorePolicy(ctx, req)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
-	var retired pb.RetireResponse
-	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/v1/jobs/retire", nil, &retired))
+	retired, err := h.admin.Retire(ctx, &pb.RetireRequest{})
+	require.NoError(t, err)
 	require.EqualValues(t, 3, retired.Retired)
 
-	var collected pb.CollectGarbageResponse
-	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/v1/jobs/gc", nil, &collected))
+	collected, err := h.admin.CollectGarbage(ctx, &pb.CollectGarbageRequest{})
+	require.NoError(t, err)
 	require.Equal(t, "GC generation 1", collected.Report)
 
 	h.server.CollectJob = nil
-	require.Equal(t, http.StatusNotImplemented, h.call(http.MethodPost, "/v1/jobs/gc", nil, nil))
+	_, err = h.admin.CollectGarbage(ctx, &pb.CollectGarbageRequest{})
+	require.Equal(t, codes.Unimplemented, status.Code(err))
 }
 
 func TestRetentionSurface(t *testing.T) {
 	h := newHarness(t)
+	ctx := context.Background()
 
-	var ret pb.Retention
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/retention", nil, &ret))
+	ret, err := h.admin.GetRetention(ctx, &pb.GetRetentionRequest{})
+	require.NoError(t, err)
 	require.Nil(t, ret.Policy, "no default was stored")
 	require.EqualValues(t, 1, ret.Effective.KeepLast)
 	require.EqualValues(t, 14, ret.TrashDays)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 3, "keep_within": 3600}}, &ret))
+	ret, err = h.admin.SetRetention(ctx, &pb.SetRetentionRequest{Set: "world", Policy: &pb.RetentionPolicy{KeepLast: 3, KeepWithin: 3600}})
+	require.NoError(t, err)
 	require.Equal(t, "world", ret.Set)
 	require.EqualValues(t, 3, ret.Policy.KeepLast)
 	require.EqualValues(t, 3600, ret.Policy.KeepWithin)
 	require.EqualValues(t, 3, ret.Effective.KeepLast)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodGet, "/v1/sets/world/retention", nil, &ret))
+	ret, err = h.admin.GetRetention(ctx, &pb.GetRetentionRequest{Set: "world"})
+	require.NoError(t, err)
 	require.EqualValues(t, 3, ret.Policy.KeepLast)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"policy": map[string]interface{}{"keep_last": 2}, "trash_days": 7}, &ret))
+	ret, err = h.admin.SetRetention(ctx, &pb.SetRetentionRequest{Policy: &pb.RetentionPolicy{KeepLast: 2}, TrashDays: gproto.Int32(7)})
+	require.NoError(t, err)
 	require.EqualValues(t, 2, ret.Policy.KeepLast)
 	require.EqualValues(t, 7, ret.TrashDays)
 
-	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/v1/sets/world/retention", map[string]interface{}{"inherit": true}, &ret))
+	ret, err = h.admin.SetRetention(ctx, &pb.SetRetentionRequest{Set: "world", Inherit: true})
+	require.NoError(t, err)
 	require.Nil(t, ret.Policy)
 	require.EqualValues(t, 2, ret.Effective.KeepLast, "the set inherits the new default")
 
-	require.Equal(t, http.StatusBadRequest, h.call(http.MethodPut, "/v1/retention", map[string]interface{}{"trash_days": -1}, nil))
-	require.Equal(t, http.StatusNotFound, h.call(http.MethodGet, "/v1/sets/nowhere/retention", nil, nil))
+	_, err = h.admin.SetRetention(ctx, &pb.SetRetentionRequest{TrashDays: gproto.Int32(-1)})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = h.admin.GetRetention(ctx, &pb.GetRetentionRequest{Set: "nowhere"})
+	require.Equal(t, codes.NotFound, status.Code(err))
 }
