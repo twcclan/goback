@@ -22,7 +22,7 @@ const (
 	secretKey = "gobacktestsecret"
 )
 
-// Start runs a MinIO container holding one empty bucket and returns the
+// Start runs an S3-compatible store holding one empty bucket and returns the
 // blob URL that opens it; the test is skipped in short mode, and without
 // Docker unless CI is set. It puts the credentials in the environment for the AWS SDK to
 // find, so a test using it cannot run beside one wanting other ones.
@@ -36,14 +36,13 @@ func Start(t testing.TB, bucket string) string {
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
+			Image:        "rustfs/rustfs:1.0.1",
 			ExposedPorts: []string{"9000/tcp"},
 			Env: map[string]string{
-				"MINIO_ROOT_USER":     accessKey,
-				"MINIO_ROOT_PASSWORD": secretKey,
+				"RUSTFS_ACCESS_KEY": accessKey,
+				"RUSTFS_SECRET_KEY": secretKey,
 			},
-			Cmd:        []string{"server", "/data"},
-			WaitingFor: wait.ForHTTP("/minio/health/ready").WithPort("9000/tcp"),
+			WaitingFor: wait.ForListeningPort("9000/tcp"),
 		},
 		Started: true,
 	})
