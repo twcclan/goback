@@ -17,7 +17,6 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
-	badgerIdx "github.com/twcclan/goback/index/badger"
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
@@ -53,6 +52,16 @@ func CloseStore(store backup.ObjectStore) {
 		if err := cl.Close(); err != nil {
 			log.Printf("Closing the store failed: %v", err)
 		}
+	}
+}
+
+// CloseAll closes the store, then the index. A local store keeps its
+// archives in the same index, and its last compaction still writes there.
+func CloseAll(store backup.ObjectStore, index backup.Index) {
+	CloseStore(store)
+
+	if err := index.Close(); err != nil {
+		log.Printf("Closing the index failed: %v", err)
 	}
 }
 
@@ -145,25 +154,6 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	indexLocation, err := createFolders(filepath.Join(archiveLocation, "index"))
-	if err != nil {
-		return nil, err
-	}
-
-	idx, err := badgerIdx.NewBadgerIndex(indexLocation)
-	if err != nil {
-		return nil, err
-	}
-
-	if c.GlobalBool("reset-index") {
-		log.Printf("Resetting archive index at %s", indexLocation)
-
-		err = idx.Reset()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	file, err := fileblob.OpenBucket(archiveLocation, &fileblob.Options{NoTempDir: true})
 	if err != nil {
 		return nil, err
@@ -174,15 +164,51 @@ func initPack(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 		return nil, err
 	}
 
-	return pack.NewPackStorage(append(options,
-		pack.WithArchiveStorage(storage.NewBucketStore(file)),
-		pack.WithArchiveIndex(idx),
-		pack.WithOwned(idx),
-		pack.WithMaxParallel(1),
-		pack.WithMaxSize(1024*1024*1024),
-		pack.WithSessionLease(10*time.Minute),
-		pack.WithCompaction(pack.CompactionConfig{MinimumCandidates: 100}),
-	)...)
+	return withIndex(c, func(x *sql.Index) (*pack.PackStorage, error) {
+		return pack.NewPackStorage(append(options,
+			pack.WithArchiveStorage(storage.NewBucketStore(file)),
+			pack.WithArchiveIndex(x),
+			pack.WithOwned(x),
+			pack.WithMaxParallel(1),
+			pack.WithMaxSize(1024*1024*1024),
+			pack.WithSessionLease(10*time.Minute),
+			pack.WithCompaction(pack.CompactionConfig{MinimumCandidates: 100}),
+		)...)
+	})
+}
+
+// storeIndexes holds the index each pack store keeps its archives in,
+// which is the index OpenIndex hands out for that store.
+var storeIndexes = map[backup.ObjectStore]*sql.Index{}
+
+// withIndex opens the --index location as the archive index of the pack
+// store build makes, and records it for OpenIndex. The store closes it.
+func withIndex(c *cli.Context, build func(*sql.Index) (*pack.PackStorage, error)) (backup.ObjectStore, error) {
+	u, err := url.Parse(c.GlobalString("index"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid index location %s: %w", c.GlobalString("index"), err)
+	}
+
+	x, err := openSQL(u)
+	if err != nil {
+		return nil, err
+	}
+
+	packs, err := build(x)
+	if err != nil {
+		return nil, err
+	}
+
+	x.ObjectStore = packs
+
+	err = x.Open()
+	if err != nil {
+		return nil, fmt.Errorf("opening the index: %w", err)
+	}
+
+	storeIndexes[packs] = x
+
+	return packs, nil
 }
 
 // atRest is the pack options for the global --at-rest-key flag, none
@@ -202,8 +228,8 @@ func atRest(c *cli.Context) ([]pack.PackOption, error) {
 }
 
 // initGCS opens a Cloud Storage bucket, initS3 an S3-compatible one. The
-// query takes index and cache; every other parameter (prefix, endpoint,
-// region, ...) goes to the bucket.
+// query takes cache; every other parameter (prefix, endpoint, region, ...)
+// goes to the bucket. The archive index is the --index location.
 func initGCS(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	return initBucket("gs", u, c)
 }
@@ -214,8 +240,11 @@ func initS3(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 
 func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 	query := u.Query()
-	index, cache := query.Get("index"), query.Get("cache")
-	query.Del("index")
+	if query.Has("index") {
+		return nil, errors.New("a bucket url takes no index; the --index location is the store's index")
+	}
+
+	cache := query.Get("cache")
 	query.Del("cache")
 
 	bucket, err := blob.OpenBucket(context.Background(), (&url.URL{Scheme: scheme, Host: u.Host, RawQuery: query.Encode()}).String())
@@ -228,7 +257,9 @@ func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, 
 		return nil, err
 	}
 
-	return storage.NewBucketObjectStore(bucket, index, cache, options...)
+	return withIndex(c, func(x *sql.Index) (*pack.PackStorage, error) {
+		return storage.NewBucketObjectStore(bucket, x, cache, append(options, pack.WithOwned(x))...)
+	})
 }
 
 // insecureScheme names a store server reached without TLS, which puts the
@@ -339,6 +370,17 @@ func initRemote(u *url.URL, c *cli.Context) (backup.ObjectStore, error) {
 // without a sqlite:// or file:// scheme) holds an SQLite database and
 // postgres:// names a database server.
 func initSQL(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index, error) {
+	x, err := openSQL(u)
+	if err != nil {
+		return nil, err
+	}
+
+	x.ObjectStore = store
+
+	return x, nil
+}
+
+func openSQL(u *url.URL) (*sql.Index, error) {
 	location := u.String()
 
 	switch u.Scheme {
@@ -354,7 +396,7 @@ func initSQL(u *url.URL, c *cli.Context, store backup.ObjectStore) (backup.Index
 	log.Printf("Opening %s index at %s", indexDialect(u.Scheme), location)
 
 	// a local index keeps every commit until a policy is set
-	x := sql.New(location, store)
+	x := sql.New(location, nil)
 	x.DefaultPolicy = ptr(retention.KeepAll)
 
 	return x, nil
@@ -464,6 +506,10 @@ func GetObjectStore(c *cli.Context) backup.ObjectStore {
 // OpenIndex opens the index the --index location names, or the store
 // itself when it is one.
 func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
+	if x, ok := storeIndexes[store]; ok {
+		return x
+	}
+
 	if idx, ok := store.(backup.Index); ok {
 		log.Println("Store implements index")
 		return idx

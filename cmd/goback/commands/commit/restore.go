@@ -448,9 +448,7 @@ func restoreAction(c *cli.Context) {
 
 	common.SweepBlobCache(restorer.Cache)
 
-	index.Close()
-
-	common.CloseStore(store)
+	common.CloseAll(store, index)
 }
 
 var restoreFlags = []cli.Flag{

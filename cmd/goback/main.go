@@ -82,10 +82,6 @@ func main() {
 			Name:  "at-rest-key",
 			Usage: "key file a pack:// or gcs:// store seals its archives with, from goback key at-rest; empty stores objects as received",
 		},
-		cli.BoolFlag{
-			Name:  "reset-index",
-			Usage: "drop the local archive index and rebuild it from the archives",
-		},
 		cli.StringFlag{
 			Name:  "blob-cache",
 			Usage: "directory holding copies of stored blobs, consulted before downloading during a restore; empty disables it",

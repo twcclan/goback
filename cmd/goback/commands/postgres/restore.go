@@ -73,8 +73,7 @@ func restoreAction(c *cli.Context) error {
 	index := common.OpenIndex(c, store)
 
 	defer func() {
-		index.Close()
-		common.CloseStore(store)
+		common.CloseAll(store, index)
 	}()
 
 	r := &postgres.Restore{

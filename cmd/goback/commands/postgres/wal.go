@@ -40,8 +40,7 @@ func walAction(c *cli.Context) error {
 	index := common.OpenIndex(c, store)
 
 	defer func() {
-		index.Close()
-		common.CloseStore(store)
+		common.CloseAll(store, index)
 	}()
 
 	sessions, _ := store.(backup.SessionStore)

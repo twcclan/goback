@@ -22,9 +22,7 @@ func fixAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
-	index.Close()
-
-	common.CloseStore(store)
+	common.CloseAll(store, index)
 
 	common.Result(common.Done{Action: "reindexed"}, func() {})
 }

@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	badgerIdx "github.com/twcclan/goback/index/badger"
 	"github.com/twcclan/goback/storage/badger"
 	"github.com/twcclan/goback/storage/pack"
 
@@ -426,24 +424,13 @@ func NewBucketStore(bucket *blob.Bucket, options ...BucketOption) *BucketStore {
 	return storage
 }
 
-// NewBucketObjectStore returns a pack store over a remote bucket, with a local
-// badger archive index at indexDir and, if cacheDir is not empty, a local
-// metadata cache; extra pack options follow.
-func NewBucketObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra ...pack.PackOption) (backup.ObjectStore, error) {
-	err := os.MkdirAll(indexDir, 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	idx, err := badgerIdx.NewBadgerIndex(indexDir)
-	if err != nil {
-		return nil, err
-	}
-
+// NewBucketObjectStore returns a pack store over a remote bucket that keeps
+// its archives in index and, if cacheDir is not empty, a local metadata
+// cache; extra pack options follow.
+func NewBucketObjectStore(bucket *blob.Bucket, index pack.ArchiveIndex, cacheDir string, extra ...pack.PackOption) (*pack.PackStorage, error) {
 	options := []pack.PackOption{
 		pack.WithArchiveStorage(NewBucketStore(bucket)),
-		pack.WithArchiveIndex(idx),
-		pack.WithOwned(idx),
+		pack.WithArchiveIndex(index),
 		pack.WithMaxParallel(64),
 		pack.WithCloseBeforeRead(true),
 		pack.WithMaxSize(1024 * 1024 * 1024),
@@ -453,7 +440,7 @@ func NewBucketObjectStore(bucket *blob.Bucket, indexDir, cacheDir string, extra 
 	}
 
 	if cacheDir != "" {
-		err = os.MkdirAll(cacheDir, 0755)
+		err := os.MkdirAll(cacheDir, 0755)
 		if err != nil {
 			return nil, err
 		}

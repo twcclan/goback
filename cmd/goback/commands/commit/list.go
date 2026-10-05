@@ -45,9 +45,7 @@ func listAction(c *cli.Context) {
 
 	s.list()
 
-	index.Close()
-
-	common.CloseStore(store)
+	common.CloseAll(store, index)
 }
 
 var listCmd = cli.Command{

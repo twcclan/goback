@@ -43,8 +43,7 @@ func baseAction(c *cli.Context) error {
 	index := common.OpenIndex(c, store)
 
 	defer func() {
-		index.Close()
-		common.CloseStore(store)
+		common.CloseAll(store, index)
 	}()
 
 	// everything that can exit the process comes before pg_basebackup starts:

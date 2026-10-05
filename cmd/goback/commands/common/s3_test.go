@@ -14,11 +14,15 @@ import (
 	"github.com/urfave/cli"
 )
 
-func TestAnS3StoreKeepsIndexAndCacheFromTheS3Client(t *testing.T) {
-	u := parse(t, testminio.Start(t, "goback")+"&index="+t.TempDir()+"&cache="+t.TempDir())
+func TestAnS3StoreKeepsItsArchivesInTheIndexAndTakesACache(t *testing.T) {
+	u := parse(t, testminio.Start(t, "goback")+"&cache="+t.TempDir())
 
-	store, err := initS3(u, cli.NewContext(nil, flag.NewFlagSet("goback", flag.ContinueOnError), nil))
+	global := flag.NewFlagSet("goback", flag.ContinueOnError)
+	global.String("index", t.TempDir(), "")
+
+	store, err := initS3(u, cli.NewContext(nil, flag.NewFlagSet("s3", flag.ContinueOnError), cli.NewContext(nil, global, nil)))
 	require.NoError(t, err)
+	require.Contains(t, storeIndexes, store)
 	t.Cleanup(func() { CloseStore(store) })
 
 	ctx := context.Background()
