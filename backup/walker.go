@@ -483,6 +483,11 @@ func (w *Walker) loadBase(ctx context.Context) ([]*proto.TreeNode, error) {
 	}
 
 	tree, err := w.trees.load(ctx, commit.Tree, nil)
+	if errors.Is(err, storekey.ErrWrongKey) {
+		w.logger().Info("the previous commit was written without this key, reading everything", "set", w.Set)
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("loading base tree %x: %w", commit.Tree.Hash, err)
 	}

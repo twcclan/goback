@@ -242,3 +242,20 @@ func TestAFileStoredOverItsPartsIsTheFileItsWriterStored(t *testing.T) {
 		require.True(t, ref.Equal(again))
 	}
 }
+
+func TestWalkerWithKeyReadsEverythingOverACommitWrittenWithoutIt(t *testing.T) {
+	f := newWalkerFixture(t)
+	contents := map[string][]byte{"a.txt": []byte("hello"), "sub/b.txt": []byte("world")}
+	for path, data := range contents {
+		f.write(path, data)
+	}
+
+	f.run()
+
+	for _, key := range []*storekey.Key{newKey(t), newKey(t)} {
+		f.walker.Key = key
+		keyed := f.run()
+		require.Nil(t, keyed.Commit.Parent)
+		require.Equal(t, contents, readAll(t, NewBackupReader(f.store).WithKey(key), keyed.Commit.Tree))
+	}
+}
