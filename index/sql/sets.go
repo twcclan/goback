@@ -9,6 +9,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/pin"
+	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/storage/pack"
 )
@@ -111,26 +112,93 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 // ListSets returns every set by name, each with the size of its newest
 // live commit and the sizes of all of them added up.
 func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
-	return x.ListSetsAfter(ctx, "", 0)
+	return x.QuerySets(ctx, index.SetQuery{})
 }
 
-// ListSetsAfter pages through ListSets: the sets whose names sort after
-// after in the database's order, at most limit, every one when limit is
-// zero. The last one's name is the after of the next page.
-func (x *Index) ListSetsAfter(ctx context.Context, after string, limit int) ([]index.SetInfo, error) {
-	query := x.client.Set.Query().Order(ent.Asc(set.FieldName))
-	if after != "" {
-		query.Where(set.NameGT(after))
+// GetSet returns the named set as ListSets describes it, or
+// backup.ErrNotFound.
+func (x *Index) GetSet(ctx context.Context, name string) (index.SetInfo, error) {
+	row, err := x.client.Set.Query().Where(set.Name(name)).Only(ctx)
+	if ent.IsNotFound(err) {
+		return index.SetInfo{}, fmt.Errorf("%w: set %q", backup.ErrNotFound, name)
 	}
 
-	if limit > 0 {
-		query.Limit(limit)
+	if err != nil {
+		return index.SetInfo{}, err
+	}
+
+	sets, err := x.describeSets(ctx, []*ent.Set{row})
+	if err != nil {
+		return index.SetInfo{}, err
+	}
+
+	return sets[0], nil
+}
+
+// QuerySets returns a page of the sets q picks, described as ListSets
+// describes them. The last one's Name and PhysicalSize are the After and
+// AfterSize of the next page.
+func (x *Index) QuerySets(ctx context.Context, q index.SetQuery) ([]index.SetInfo, error) {
+	query := x.client.Set.Query().Where(setsPicked(q)...)
+
+	switch {
+	case q.BySize:
+		query.Where(set.PhysicalSizeGT(0)).Order(ent.Desc(set.FieldPhysicalSize), ent.Asc(set.FieldName))
+		if q.After != "" {
+			query.Where(set.Or(set.PhysicalSizeLT(q.AfterSize), set.And(set.PhysicalSize(q.AfterSize), set.NameGT(q.After))))
+		}
+	default:
+		query.Order(ent.Asc(set.FieldName))
+		if q.After != "" {
+			query.Where(set.NameGT(q.After))
+		}
+	}
+
+	if q.Limit > 0 {
+		query.Limit(q.Limit)
 	}
 
 	rows, err := query.All(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	return x.describeSets(ctx, rows)
+}
+
+// CountSets counts the sets in one of the states, every set when none is
+// given.
+func (x *Index) CountSets(ctx context.Context, states ...string) (int, error) {
+	return x.client.Set.Query().Where(setsPicked(index.SetQuery{States: states})...).Count(ctx)
+}
+
+// setsPicked is what keeps a set in q, apart from paging and order.
+func setsPicked(q index.SetQuery) []predicate.Set {
+	var where []predicate.Set
+	if len(q.States) > 0 {
+		states := make([]set.State, len(q.States))
+		for i, s := range q.States {
+			states[i] = set.State(s)
+		}
+
+		where = append(where, set.StateIn(states...))
+	}
+
+	if q.Match != "" {
+		match := set.NameContainsFold(q.Match)
+		if len(q.Named) > 0 {
+			match = set.Or(match, set.NameIn(q.Named...))
+		}
+
+		where = append(where, match)
+	}
+
+	return where
+}
+
+// describeSets is the rows as SetInfo, with the sizes of their commits.
+func (x *Index) describeSets(ctx context.Context, rows []*ent.Set) ([]index.SetInfo, error) {
+	var err error
 
 	out := mapAll(rows, m.Set)
 	for i := range out {

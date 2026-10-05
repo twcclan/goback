@@ -1204,6 +1204,40 @@ func (x *Index) CommitDetails(ctx context.Context, backupSet string, notAfter ti
 	return mapAll(rows, m.CommitDetail), nil
 }
 
+// GetCommitDetail returns the set's live, complete commit ref names, as
+// CommitDetails describes it, or backup.ErrNotFound.
+func (x *Index) GetCommitDetail(ctx context.Context, backupSet string, ref *proto.Ref) (index.CommitDetail, error) {
+	row, err := x.commitOf(ctx, backupSet, ref, liveCommit())
+	if err != nil {
+		return index.CommitDetail{}, err
+	}
+
+	return m.CommitDetail(row), nil
+}
+
+// GetTrashedCommit returns the set's commit ref names while it waits in
+// the trash, as TrashedCommits describes it, or backup.ErrNotFound.
+func (x *Index) GetTrashedCommit(ctx context.Context, backupSet string, ref *proto.Ref) (*proto.TrashedCommit, error) {
+	row, err := x.commitOf(ctx, backupSet, ref, commitrow.DeletedAtNotNil(), commitrow.TombstonedAtIsNil())
+	if err != nil {
+		return nil, err
+	}
+
+	return m.TrashedCommit(row), nil
+}
+
+// commitOf is the set's complete commit ref names that also passes where.
+func (x *Index) commitOf(ctx context.Context, backupSet string, ref *proto.Ref, where ...predicate.CommitRow) (*ent.CommitRow, error) {
+	row, err := x.client.CommitRow.Query().
+		Where(commitrow.Ref(ref.GetHash()), commitrow.Partial(false), commitrow.HasSetWith(set.Name(backupSet))).
+		Where(where...).WithSet().Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: %s holds no commit %x", backup.ErrNotFound, backupSet, ref.GetHash())
+	}
+
+	return row, err
+}
+
 // LatestCommit returns the set's newest commit that is neither tombstoned
 // nor deleted, partial or not, or backup.ErrNotFound.
 func (x *Index) LatestCommit(ctx context.Context, backupSet string) (*proto.Ref, error) {

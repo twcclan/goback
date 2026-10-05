@@ -5,8 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/proto"
+	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 )
@@ -112,24 +115,167 @@ func TestReadDirAfterPagesByteByByte(t *testing.T) {
 	require.Equal(t, proto.NodeType_NODE_DIRECTORY, all[1].Stat.Type)
 }
 
-func TestListSetsAfterPagesByName(t *testing.T) {
+func TestQuerySetsPagesByName(t *testing.T) {
 	l := newLocalIndex(t)
 
 	for _, set := range []string{"c", "a", "b"} {
 		l.commit(set, "world.dat", 1, 0, set)
 	}
 
-	page, err := l.x.ListSetsAfter(l.ctx, "", 2)
+	page, err := l.x.QuerySets(l.ctx, index.SetQuery{Limit: 2})
 	require.NoError(t, err)
-	require.Len(t, page, 2)
-	require.Equal(t, "a", page[0].Name)
-	require.Equal(t, "b", page[1].Name)
+	require.Equal(t, []string{"a", "b"}, setNames(page))
 
-	page, err = l.x.ListSetsAfter(l.ctx, page[1].Name, 2)
+	page, err = l.x.QuerySets(l.ctx, index.SetQuery{After: page[1].Name, Limit: 2})
 	require.NoError(t, err)
-	require.Len(t, page, 1)
-	require.Equal(t, "c", page[0].Name)
+	require.Equal(t, []string{"c"}, setNames(page))
 	require.EqualValues(t, 1, page[0].LogicalSize)
+}
+
+func TestQuerySetsPicksByStateAndName(t *testing.T) {
+	l := newLocalIndex(t)
+
+	for _, set := range []string{"Mc-Lobby", "mc-survival", "logs", "web"} {
+		l.commit(set, "world.dat", 1, 0, set)
+	}
+
+	require.NoError(t, l.x.DeleteSet(l.ctx, "mc-survival", false))
+
+	picked, err := l.x.QuerySets(l.ctx, index.SetQuery{Match: "MC-"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"Mc-Lobby", "mc-survival"}, setNames(picked))
+
+	picked, err = l.x.QuerySets(l.ctx, index.SetQuery{Match: "mc-", Named: []string{"web"}, States: []string{index.SetActive}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"Mc-Lobby", "web"}, setNames(picked))
+
+	n, err := l.x.CountSets(l.ctx, index.SetActive)
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+
+	n, err = l.x.CountSets(l.ctx)
+	require.NoError(t, err)
+	require.Equal(t, 4, n)
+}
+
+func TestQuerySetsPagesBySize(t *testing.T) {
+	l := newLocalIndex(t)
+
+	for _, set := range []string{"a", "b", "c", "d", "unmeasured"} {
+		l.commit(set, "world.dat", 1, 0, set)
+	}
+
+	sizes := map[string]uint64{"a": 100, "b": 300, "c": 100, "d": 200}
+	report := &pack.CollectReport{SetBytes: map[int64]uint64{}}
+
+	for name, size := range sizes {
+		s, err := l.x.GetSet(l.ctx, name)
+		require.NoError(t, err)
+		report.SetBytes[s.ID] = size
+	}
+
+	require.NoError(t, l.x.RecordSetSizes(l.ctx, report))
+
+	var got []string
+	q := index.SetQuery{BySize: true, Limit: 2}
+
+	for {
+		page, err := l.x.QuerySets(l.ctx, q)
+		require.NoError(t, err)
+
+		if len(page) == 0 {
+			break
+		}
+
+		got = append(got, setNames(page)...)
+		q.After, q.AfterSize = page[len(page)-1].Name, page[len(page)-1].PhysicalSize
+	}
+
+	require.Equal(t, []string{"b", "d", "a", "c"}, got, "largest first, by name within a size, unmeasured left out")
+}
+
+func TestGetSetFindsOneSetByName(t *testing.T) {
+	l := newLocalIndex(t)
+	l.commit("world", "world.dat", 1, 0, "hello")
+	l.commit("logs", "logs.dat", 1, 0, "hi")
+
+	s, err := l.x.GetSet(l.ctx, "world")
+	require.NoError(t, err)
+	require.Equal(t, "world", s.Name)
+	require.EqualValues(t, 5, s.LogicalSize)
+	require.Equal(t, index.SetActive, s.State)
+
+	_, err = l.x.GetSet(l.ctx, "nowhere")
+	require.ErrorIs(t, err, backup.ErrNotFound)
+}
+
+func TestGetCommitDetailFindsOnlyTheSetsLiveCommit(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	other := f.commit("logs", f.tree(f.file("b.txt", "three")), false)
+
+	got, err := f.x.GetCommitDetail(f.ctx, "world", a)
+	require.NoError(t, err)
+	require.True(t, got.Ref.Equal(a))
+	require.Equal(t, "world", got.Commit.BackupSet)
+
+	_, err = f.x.GetCommitDetail(f.ctx, "world", other)
+	require.ErrorIs(t, err, backup.ErrNotFound, "another set's commit")
+
+	_, err = f.x.GetTrashedCommit(f.ctx, "world", a)
+	require.ErrorIs(t, err, backup.ErrNotFound, "a live commit is not in the trash")
+
+	require.NoError(t, f.x.DeleteCommit(f.ctx, a))
+
+	_, err = f.x.GetCommitDetail(f.ctx, "world", a)
+	require.ErrorIs(t, err, backup.ErrNotFound, "a deleted commit")
+
+	trashed, err := f.x.GetTrashedCommit(f.ctx, "world", a)
+	require.NoError(t, err)
+	require.True(t, trashed.Ref.Equal(a))
+
+	_, err = f.x.GetTrashedCommit(f.ctx, "logs", a)
+	require.ErrorIs(t, err, backup.ErrNotFound)
+
+	_, err = f.x.GetCommitDetail(f.ctx, "world", b)
+	require.NoError(t, err)
+}
+
+func TestPinsOfListsThePinsOfTheTargets(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	f.advance(time.Hour)
+	c := f.commit("world", f.tree(f.file("a.txt", "three")), false)
+
+	pinA, err := f.pin(a)
+	require.NoError(t, err)
+	_, err = f.pin(b)
+	require.NoError(t, err)
+
+	pins, err := f.x.PinsOf(f.ctx, a, c)
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+	require.True(t, pins[0].GetRef().Equal(pinA))
+	require.True(t, pins[0].GetTarget().Equal(a))
+
+	pins, err = f.x.PinsOf(f.ctx)
+	require.NoError(t, err)
+	require.Empty(t, pins)
+}
+
+func setNames(sets []index.SetInfo) []string {
+	out := make([]string, len(sets))
+	for i, s := range sets {
+		out[i] = s.Name
+	}
+
+	return out
 }
 
 func names(nodes []*proto.TreeNode) []string {

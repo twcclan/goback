@@ -37,6 +37,27 @@ type SetInfo struct {
 	AloneSize, ExclusiveSize int64
 }
 
+// SetQuery picks and orders a page of sets. The zero SetQuery lists
+// every set by name.
+type SetQuery struct {
+	// States keeps the sets in one of these states; none keeps all.
+	States []string
+	// Match keeps the sets whose name holds it, ignoring case, and those
+	// Named lists; an empty Match keeps every set.
+	Match string
+	Named []string
+	// BySize lists only the sets a garbage collection measured, largest
+	// PhysicalSize first and by name within a size, instead of by name.
+	BySize bool
+	// After and AfterSize are the Name and PhysicalSize of the last set of
+	// the previous page; AfterSize counts only with BySize. An empty After
+	// starts at the first set.
+	After     string
+	AfterSize int64
+	// Limit is the most sets a page holds; zero holds every one.
+	Limit int
+}
+
 // StorePolicy is the store's write policy with its acknowledgement state.
 type StorePolicy struct {
 	Policy            storekey.Policy

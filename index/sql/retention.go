@@ -528,6 +528,26 @@ func (x *Index) Pins(ctx context.Context) ([]*proto.PinInfo, error) {
 	return mapAll(rows, m.Pin), nil
 }
 
+// PinsOf returns the pins Pins lists that hold one of the targets.
+func (x *Index) PinsOf(ctx context.Context, targets ...*proto.Ref) ([]*proto.PinInfo, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	hashes := make([][]byte, len(targets))
+	for i, t := range targets {
+		hashes[i] = t.GetHash()
+	}
+
+	rows, err := x.client.Pin.Query().Where(pin.TargetIn(hashes...), pin.DeletedAtIsNil(), inVisibleSets()).
+		Order(ent.Asc(pin.FieldReceivedAt)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapAll(rows, m.Pin), nil
+}
+
 // Retire implements backup.Retirer: every retired commit past its window
 // gets a tombstone, its set loses the rows no other commit holds, and a
 // closing set with nothing left becomes deleted. An active set whose
