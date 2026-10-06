@@ -152,6 +152,17 @@ type Locator interface {
 	Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error)
 }
 
+// A RecordLocator is a store that can say where the stored blobs of many
+// refs sit, neighbours under one location, so a reader fetches them
+// itself in a few range reads.
+type RecordLocator interface {
+	// LocateRecords returns runs holding the records of refs, each
+	// record's index naming its ref in refs. A ref it cannot locate is in
+	// no run and is read the ordinary way. It authorizes nothing: the
+	// caller has already decided the refs are readable.
+	LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error)
+}
+
 // Eraser deletes as an erasure: the tombstone asks garbage collection to
 // rewrite the archives holding the target's objects as soon as its rules
 // allow, instead of waiting for the dead ratio or the erasure bound.

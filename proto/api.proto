@@ -59,18 +59,35 @@ message Location {
 }
 
 // ReadFileRequest names a file object the store references; the
-// server streams the stored objects of its parts, in order, except the
-// indexes in skip_parts.
+// server streams its parts, except the indexes in skip_parts.
 message ReadFileRequest {
     Ref ref = 1;
     repeated uint32 skip_parts = 2;
 }
 
-// ReadFileResponse carries one part's stored object, sealed as it was
-// uploaded; index counts the parts of the whole file, splits flattened.
+// ReadFileResponse carries either one part's stored object, sealed as it
+// was uploaded, at index, or runs of parts whose stored records the
+// client fetches itself. Indexes count the parts of the whole file,
+// splits flattened.
 message ReadFileResponse {
     uint32 index = 1;
     Object object = 2;
+    repeated LocatedRun runs = 3;
+}
+
+// LocatedRun is a location whose body holds the stored records of
+// several objects, each at its offset into the body.
+message LocatedRun {
+    Location location = 1;
+    repeated LocatedRecord records = 2;
+}
+
+// LocatedRecord is where one object's stored record sits in the body of
+// a run; index names the object to whoever asked for the run.
+message LocatedRecord {
+    uint32 index = 1;
+    int64 offset = 2;
+    int64 length = 3;
 }
 
 message FileInfoRequest {

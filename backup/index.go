@@ -90,12 +90,12 @@ type CommitGate interface {
 	BeginCommit(ctx context.Context, set string) (*CommitGrant, error)
 }
 
-// PartReader streams the stored objects of a file's parts, in order,
-// skipping the given part indexes; the objects are as uploaded, sealed
-// when the store is encrypted.
+// PartReader streams the stored objects of a file's parts, skipping the
+// given part indexes; the objects are as uploaded, sealed when the store
+// is encrypted.
 type PartReader interface {
 	// ReadParts calls fn with every part of file whose index is not in
-	// skip, in part order.
+	// skip, in any order and possibly from several goroutines at once.
 	ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(index int, obj *proto.Object) error) error
 }
 

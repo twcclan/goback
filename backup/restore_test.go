@@ -3,9 +3,12 @@ package backup
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -349,11 +352,14 @@ func TestLiveMarkersIgnoreUnheldLocks(t *testing.T) {
 }
 
 // streamingStore serves parts through ReadParts and refuses blob Gets,
-// like the remote client.
+// like the remote client, and records the parts each call asked for.
 type streamingStore struct {
 	*memStore
+
+	mtx   sync.Mutex
 	calls int
 	gets  int
+	asked [][]int
 }
 
 func (s *streamingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
@@ -362,14 +368,14 @@ func (s *streamingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object
 		return nil, ErrNotFound
 	}
 
+	s.mtx.Lock()
 	s.gets++
+	s.mtx.Unlock()
 
 	return obj, err
 }
 
 func (s *streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
-	s.calls++
-
 	obj, err := s.memStore.Get(ctx, file)
 	if err != nil {
 		return err
@@ -385,12 +391,21 @@ func (s *streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []
 		skipped[i] = true
 	}
 
-	for i, part := range parts {
-		if skipped[i] || part.Ref == nil {
-			continue
-		}
+	var asked []int
 
-		blob, err := s.memStore.Get(ctx, part.Ref)
+	for i, part := range parts {
+		if !skipped[i] && part.Ref != nil {
+			asked = append(asked, i)
+		}
+	}
+
+	s.mtx.Lock()
+	s.calls++
+	s.asked = append(s.asked, asked)
+	s.mtx.Unlock()
+
+	for _, i := range asked {
+		blob, err := s.memStore.Get(ctx, parts[i].Ref)
 		if err != nil {
 			return err
 		}
@@ -401,6 +416,116 @@ func (s *streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []
 	}
 
 	return nil
+}
+
+// manyParts stores a file of count small parts, every tenth of them the
+// same as the first, and returns its content and ref.
+func manyParts(t *testing.T, store ObjectStore, count int) ([]byte, *proto.Ref) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	var (
+		data  []byte
+		parts []*proto.FilePart
+	)
+
+	for i := range count {
+		chunk := randomData(64, int64(i))
+		if i%10 == 0 {
+			chunk = randomData(64, 0)
+		}
+
+		blob := proto.NewObject(&proto.Blob{Data: chunk})
+		require.NoError(t, store.Put(ctx, blob))
+
+		parts = append(parts, &proto.FilePart{Offset: uint64(len(data)), Length: uint64(len(chunk)), Ref: blob.Ref()})
+		data = append(data, chunk...)
+	}
+
+	file := proto.NewObject(&proto.File{Parts: parts})
+	require.NoError(t, store.Put(ctx, file))
+
+	return data, file.Ref()
+}
+
+func TestAStripedStreamAsksForEveryDistinctPartOnce(t *testing.T) {
+	store := &streamingStore{memStore: newMemStore()}
+	data, ref := manyParts(t, store.memStore, 3*stripeParts+70)
+	stat := statFor(data)
+
+	var written atomic.Int64
+	ctx := WithWritten(context.Background(), func(n int64) { written.Add(n) })
+	path := filepath.Join(t.TempDir(), "region.mca")
+
+	r := &Restorer{Store: store, Workers: 8}
+	outcome, err := r.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeWritten, outcome)
+	requireRestored(t, path, data, stat)
+	require.EqualValues(t, len(data), written.Load(), "every copy of a part counts")
+
+	obj, err := store.memStore.Get(ctx, ref)
+	require.NoError(t, err)
+
+	parts := obj.GetFile().GetParts()
+	asked := map[string]int{}
+
+	for _, stripe := range store.asked {
+		require.True(t, sort.IntsAreSorted(stripe))
+		require.Less(t, stripe[len(stripe)-1]-stripe[0], len(parts)/2, "a stripe is a contiguous stretch of the file")
+
+		for _, i := range stripe {
+			asked[string(parts[i].Ref.Hash)]++
+		}
+	}
+
+	distinct := map[string]bool{}
+	for _, part := range parts {
+		distinct[string(part.Ref.Hash)] = true
+	}
+
+	require.Len(t, asked, len(distinct), "every distinct part is asked for")
+	require.Equal(t, len(distinct)/stripeParts, store.calls, "a stripe per stripeParts distinct parts")
+	require.Greater(t, store.calls, 1)
+
+	for _, n := range asked {
+		require.Equal(t, 1, n, "and only once")
+	}
+}
+
+func TestAPartMissingFromOneStripeFailsTheFile(t *testing.T) {
+	ctx := context.Background()
+	store := &streamingStore{memStore: newMemStore()}
+	data, ref := manyParts(t, store.memStore, 3*stripeParts)
+
+	obj, err := store.memStore.Get(ctx, ref)
+	require.NoError(t, err)
+	require.NoError(t, store.memStore.Delete(ctx, obj.GetFile().GetParts()[2*stripeParts+5].Ref))
+
+	path := filepath.Join(t.TempDir(), "region.mca")
+
+	_, err = (&Restorer{Store: store, Workers: 8}).RestoreFile(ctx, path, statFor(data), ref)
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), fmt.Sprintf("file %x", ref.Hash))
+
+	_, err = os.Stat(path)
+	require.True(t, os.IsNotExist(err), "nothing is left behind")
+}
+
+func TestAPartTheFileHoldsTwiceIsFetchedOnce(t *testing.T) {
+	ctx := context.Background()
+	store := &getCountingStore{memStore: newMemStore()}
+	data, ref := manyParts(t, store.memStore, 40)
+	stat := statFor(data)
+	path := filepath.Join(t.TempDir(), "region.mca")
+
+	r := &Restorer{Store: store, Workers: 4}
+	_, err := r.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	requireRestored(t, path, data, stat)
+	require.EqualValues(t, 1+40-3, store.reset(), "the file object and each distinct part")
+	require.EqualValues(t, len(data), r.Stats().BytesFromStore)
 }
 
 func TestRestoreFileStreamsPartsFromPartReader(t *testing.T) {
@@ -549,4 +674,19 @@ func TestRechunkTakesMovedPartsFromTheDestination(t *testing.T) {
 			require.Greater(t, straight.Stats().BytesFromStore, stats.BytesFromStore)
 		})
 	}
+}
+
+func TestAPartSealedAsAnotherRefIsRefused(t *testing.T) {
+	key := newKey(t)
+	part := SealBlob(key, []byte("the part"))
+	other := SealBlob(key, []byte("some other part"))
+
+	reader := newFileReader(context.Background(), newMemStore(), &proto.File{}, key)
+	filePart := &proto.FilePart{Length: 8, Ref: part.Ref}
+
+	_, err := reader.openPart(0, filePart, proto.NewObject(part))
+	require.NoError(t, err)
+
+	_, err = reader.openPart(0, filePart, proto.NewObject(other))
+	require.Error(t, err, "a part is only ever the object its ref names")
 }

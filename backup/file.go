@@ -874,6 +874,10 @@ func (bfr *fileReader) openPart(index int, part *proto.FilePart, obj *proto.Obje
 
 	switch {
 	case obj.GetSealed() != nil:
+		if !obj.GetSealed().GetRef().Equal(part.Ref) {
+			return nil, errors.Errorf("part %d (%x) of file %x is sealed as %x", index, part.Ref.Hash, bfr.fileRef(), obj.GetSealed().GetRef().GetHash())
+		}
+
 		if bfr.key == nil {
 			return nil, errors.Wrapf(storekey.ErrNoKey, "part %d (%x) of file %x", index, part.Ref.Hash, bfr.fileRef())
 		}

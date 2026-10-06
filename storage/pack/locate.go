@@ -3,6 +3,7 @@ package pack
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -76,6 +77,114 @@ func (ps *PackStorage) locate(ctx context.Context, ref *proto.Ref) (*proto.Locat
 	}
 
 	return location, nil
+}
+
+const (
+	// runGap is how far apart two records may sit and still share a run;
+	// runSpan bounds the bytes one run covers.
+	runGap  = 64 << 10
+	runSpan = 16 << 20
+
+	// runTTL outlasts locationTTL because a reader follows a file's runs
+	// a few at a time, so the last of them waits behind the others.
+	runTTL = 15 * time.Minute
+)
+
+var _ backup.RecordLocator = (*PackStorage)(nil)
+
+type locatedRecord struct {
+	index int
+	rec   *IndexRecord
+}
+
+// LocateRecords implements backup.RecordLocator for blobs in archives the
+// storage can sign ranges of.
+func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error) {
+	signer, ok := ps.storage.(RangeSigner)
+	if !ok {
+		return nil, nil
+	}
+
+	byArchive := make(map[*archive][]locatedRecord)
+
+	for i, ref := range refs {
+		a, rec, err := ps.committedCopy(ScopeOf(ctx), ref, true)
+		if err != nil {
+			return nil, err
+		}
+
+		if a == nil || proto.ObjectType(rec.Type) != proto.ObjectType_BLOB {
+			continue
+		}
+
+		byArchive[a] = append(byArchive[a], locatedRecord{index: i, rec: rec})
+	}
+
+	var runs []*proto.LocatedRun
+
+	for a, records := range byArchive {
+		sort.Slice(records, func(i, j int) bool { return records[i].rec.Offset < records[j].rec.Offset })
+
+		for start := 0; start < len(records); {
+			end, span := runOf(records, start)
+
+			run, err := ps.signRun(ctx, signer, a, records[start:end], span)
+			if errors.Is(err, ErrNoSignedURL) {
+				return nil, nil
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			runs = append(runs, run)
+			start = end
+		}
+	}
+
+	return runs, nil
+}
+
+// runOf extends the run starting at start while the records stay close
+// together, and returns where it ends and how many bytes it covers. The
+// same record twice overlaps itself, which a run takes in its stride.
+func runOf(records []locatedRecord, start int) (int, int64) {
+	from := int64(records[start].rec.Offset)
+	reach := from + int64(records[start].rec.Length)
+
+	end := start + 1
+	for ; end < len(records); end++ {
+		offset := int64(records[end].rec.Offset)
+		grown := max(reach, offset+int64(records[end].rec.Length))
+
+		if offset-reach > runGap || grown-from > runSpan {
+			break
+		}
+
+		reach = grown
+	}
+
+	return end, reach - from
+}
+
+func (ps *PackStorage) signRun(ctx context.Context, signer RangeSigner, a *archive, records []locatedRecord, span int64) (*proto.LocatedRun, error) {
+	from := int64(records[0].rec.Offset)
+
+	location, err := signer.SignRange(ctx, a.archiveName(), from, span, runTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.atRest != nil {
+		location.AtRestKey = a.atRest.shared
+	}
+
+	run := &proto.LocatedRun{Location: location, Records: make([]*proto.LocatedRecord, len(records))}
+	for i, r := range records {
+		run.Records[i] = &proto.LocatedRecord{Index: uint32(r.index), Offset: int64(r.rec.Offset) - from, Length: int64(r.rec.Length)}
+	}
+
+	return run, nil
 }
 
 // DecodeRecord turns the body a Location yields back into its object,

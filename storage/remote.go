@@ -20,6 +20,7 @@ import (
 	"github.com/twcclan/goback/storage/mapping/gen"
 	"github.com/twcclan/goback/storage/pack"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -48,14 +49,22 @@ func NewPlaintextClient(addr string, creds auth.Credentials) (*Client, error) {
 	return dialStore(addr, creds, insecure.NewCredentials(), false)
 }
 
+// downloadWindows let a stream have a long link's worth of parts in
+// flight; the windows grpc estimates on its own stay far smaller over a
+// distant store.
+var downloadWindows = []grpc.DialOption{
+	grpc.WithInitialWindowSize(16 << 20),
+	grpc.WithInitialConnWindowSize(64 << 20),
+}
+
 func dialStore(addr string, creds auth.Credentials, transport credentials.TransportCredentials, secure bool) (*Client, error) {
 	jar := newCookies(addr, secure)
-	con, err := grpc.NewClient(addr,
+	con, err := grpc.NewClient(addr, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(transport),
 		grpc.WithPerRPCCredentials(creds),
 		grpc.WithUnaryInterceptor(jar.unary()),
 		grpc.WithStreamInterceptor(jar.stream()),
-	)
+	}, downloadWindows...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +390,25 @@ func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 // fetch follows a location and decodes the record it yields, refusing an
 // object that is not the one asked for.
 func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Location) (*proto.Object, error) {
+	record, err := r.follow(ctx, location)
+	if err != nil {
+		return nil, fmt.Errorf("fetching object %x from its location: %w", ref.GetHash(), err)
+	}
+
+	object, err := pack.DecodeRecord(record, location.GetAtRestKey())
+	if err != nil {
+		return nil, fmt.Errorf("decoding object %x from its location: %w", ref.GetHash(), err)
+	}
+
+	if !object.Ref().Equal(ref) {
+		return nil, fmt.Errorf("%w: location for %x yielded %x", proto.ErrRefMismatch, ref.GetHash(), object.Ref().GetHash())
+	}
+
+	return object, nil
+}
+
+// open requests the body of a location.
+func (r *Client) open(ctx context.Context, location *proto.Location) (io.ReadCloser, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, location.GetUrl(), nil)
 	if err != nil {
 		return nil, err
@@ -399,27 +427,81 @@ func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Loca
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
-		return nil, fmt.Errorf("fetching object %x from its location: %s", ref.GetHash(), response.Status)
+		_ = response.Body.Close()
+
+		return nil, errors.New(response.Status)
 	}
 
-	record, err := io.ReadAll(io.LimitReader(response.Body, location.GetLength()))
+	return response.Body, nil
+}
+
+// follow reads the body of a location, which must be as long as it says.
+func (r *Client) follow(ctx context.Context, location *proto.Location) ([]byte, error) {
+	body, err := r.open(ctx, location)
 	if err != nil {
 		return nil, err
 	}
+	defer body.Close()
 
-	object, err := pack.DecodeRecord(record, location.GetAtRestKey())
+	record := make([]byte, location.GetLength())
+	if _, err := io.ReadFull(body, record); err != nil {
+		return nil, err
+	}
+
+	return record, nil
+}
+
+// fetchRun follows a run and hands fn each object its body holds, reading
+// the body one record at a time.
+func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(int, *proto.Object) error) error {
+	location := run.GetLocation()
+
+	body, err := r.open(ctx, location)
 	if err != nil {
-		return nil, fmt.Errorf("decoding object %x from its location: %w", ref.GetHash(), err)
+		return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+	}
+	defer body.Close()
+
+	var (
+		at       int64
+		previous *proto.LocatedRecord
+		record   []byte
+	)
+
+	for _, next := range run.GetRecords() {
+		// the same record twice is read once
+		if previous == nil || next.Offset != previous.Offset || next.Length != previous.Length {
+			if next.Offset < at || next.Length <= 0 || next.Offset+next.Length > location.GetLength() {
+				return fmt.Errorf("part %d lies outside its run or overlaps the one before", next.Index)
+			}
+
+			if _, err := io.CopyN(io.Discard, body, next.Offset-at); err != nil {
+				return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+			}
+
+			record = make([]byte, next.Length)
+			if _, err := io.ReadFull(body, record); err != nil {
+				return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+			}
+
+			at = next.Offset + next.Length
+		}
+
+		previous = next
+
+		object, err := pack.DecodeRecord(record, location.GetAtRestKey())
+		if err != nil {
+			return fmt.Errorf("decoding part %d from its run: %w", next.Index, err)
+		}
+
+		if err := fn(int(next.Index), object); err != nil {
+			return err
+		}
 	}
 
-	if !object.Ref().Equal(ref) {
-		return nil, fmt.Errorf("%w: location for %x yielded %x", proto.ErrRefMismatch, ref.GetHash(), object.Ref().GetHash())
-	}
-
-	return object, nil
+	return nil
 }
 
 // EscrowedKeys returns every escrowed copy of the store key the server
@@ -473,7 +555,11 @@ func (r *Client) BeginCommit(ctx context.Context, set string) (*backup.CommitGra
 	}, nil
 }
 
-// ReadParts implements backup.PartReader through the ReadFile stream.
+// runFetchers bounds the runs one ReadParts call fetches at once.
+const runFetchers = 8
+
+// ReadParts implements backup.PartReader through the ReadFile stream,
+// fetching the runs it is pointed at runFetchers at a time.
 func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(int, *proto.Object) error) error {
 	ctx, cancel := context.WithCancel(r.outgoing(ctx))
 	defer cancel()
@@ -488,6 +574,32 @@ func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn 
 		return err
 	}
 
+	runs, rctx := errgroup.WithContext(ctx)
+	runs.SetLimit(runFetchers)
+
+	err = receive(stream, func(resp *proto.ReadFileResponse) error {
+		if len(resp.GetRuns()) == 0 {
+			return fn(int(resp.Index), resp.Object)
+		}
+
+		for _, run := range resp.GetRuns() {
+			runs.Go(func() error { return r.fetchRun(rctx, run, fn) })
+		}
+
+		return rctx.Err()
+	})
+	if err != nil {
+		cancel()
+	}
+
+	if waited := runs.Wait(); waited != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		err = waited
+	}
+
+	return err
+}
+
+func receive(stream proto.Store_ReadFileClient, fn func(*proto.ReadFileResponse) error) error {
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -498,8 +610,7 @@ func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn 
 			return fromStatus(err)
 		}
 
-		err = fn(int(resp.Index), resp.Object)
-		if err != nil {
+		if err := fn(resp); err != nil {
 			return err
 		}
 	}
@@ -709,11 +820,11 @@ func (r *Server) Get(ctx context.Context, request *proto.GetRequest) (*proto.Get
 	return &proto.GetResponse{Body: &proto.GetResponse_Object{Object: object}}, nil
 }
 
-// ReadFile streams the stored objects of a file's parts in order, running
-// the fetch loop server-side so the client authorises once per file.
+// ReadFile streams a file's parts, as runs to fetch or as stored objects,
+// running the loop server-side so the client authorises once per file.
 func (r *Server) ReadFile(request *proto.ReadFileRequest, stream proto.Store_ReadFileServer) error {
-	return ToStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(index int, obj *proto.Object) error {
-		return stream.Send(&proto.ReadFileResponse{Index: uint32(index), Object: obj})
+	return ToStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(resp *proto.ReadFileResponse) error {
+		return stream.Send(resp)
 	}))
 }
 

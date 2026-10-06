@@ -321,6 +321,17 @@ func (x *Index) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto
 	return locator.Read(ctx, ref)
 }
 
+// LocateRecords implements backup.RecordLocator when the store does, and
+// otherwise locates nothing.
+func (x *Index) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error) {
+	locator, ok := storeAs[backup.RecordLocator](x.ObjectStore)
+	if !ok {
+		return nil, nil
+	}
+
+	return locator.LocateRecords(ctx, refs)
+}
+
 // PutEscrowedKey implements backup.KeyEscrow when the store does.
 func (x *Index) PutEscrowedKey(ctx context.Context, key backup.EscrowedKey) error {
 	escrow, ok := storeAs[backup.KeyEscrow](x.ObjectStore)

@@ -306,12 +306,18 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 	return nil
 }
 
-// readFileWorkers bounds the part fetches one ReadFile call has in flight.
-const readFileWorkers = 16
+const (
+	// readFileWorkers bounds the part fetches one ReadFile call has in
+	// flight.
+	readFileWorkers = 16
+	// readFileBatch is how many parts ReadFile locates at once.
+	readFileBatch = 1024
+)
 
-// ReadFile hands the stored objects of the file's parts to fn in order,
-// skipping the part indexes in skip.
-func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn func(int, *proto.Object) error) error {
+// ReadFile hands fn the file's parts except the indexes in skip: runs
+// of them the index can locate, and the stored objects of the rest in
+// order. An inline part is never handed over.
+func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn func(*proto.ReadFileResponse) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -334,47 +340,99 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 		skipped[i] = true
 	}
 
+	var wanted []int
+	for i, part := range parts {
+		if !skipped[uint32(i)] && part.Ref != nil {
+			wanted = append(wanted, i)
+		}
+	}
+
+	locator, _ := s.Index.(backup.RecordLocator)
+
 	type result struct {
-		obj *proto.Object
-		err error
+		resp *proto.ReadFileResponse
+		err  error
 	}
 
-	type fetch struct {
-		index int
-		done  chan result
+	pending := make(chan chan result, readFileWorkers)
+
+	push := func(done chan result) bool {
+		select {
+		case pending <- done:
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
 
-	pending := make(chan fetch, readFileWorkers)
+	ready := func(resp *proto.ReadFileResponse, err error) chan result {
+		done := make(chan result, 1)
+		done <- result{resp: resp, err: err}
+
+		return done
+	}
 
 	go func() {
 		defer close(pending)
 
-		for i, part := range parts {
-			if skipped[uint32(i)] || part.Ref == nil {
-				continue
+		for start := 0; start < len(wanted); start += readFileBatch {
+			batch := wanted[start:min(start+readFileBatch, len(wanted))]
+			located := make(map[int]bool)
+
+			if locator != nil {
+				refs := make([]*proto.Ref, len(batch))
+				for j, i := range batch {
+					refs[j] = parts[i].Ref
+				}
+
+				runs, err := locator.LocateRecords(ctx, refs)
+				if err != nil {
+					push(ready(nil, fmt.Errorf("locating parts of file %x: %w", ref.GetHash(), err)))
+					return
+				}
+
+				for _, run := range runs {
+					for _, record := range run.Records {
+						i := batch[record.Index]
+						record.Index = uint32(i)
+						located[i] = true
+					}
+				}
+
+				if len(runs) > 0 && !push(ready(&proto.ReadFileResponse{Runs: runs}, nil)) {
+					return
+				}
 			}
 
-			f := fetch{index: i, done: make(chan result, 1)}
-			select {
-			case pending <- f:
-			case <-ctx.Done():
-				return
-			}
+			for _, i := range batch {
+				if located[i] {
+					continue
+				}
 
-			go func(ref *proto.Ref) {
-				o, err := s.Index.Get(ctx, ref)
-				f.done <- result{obj: o, err: err}
-			}(part.Ref)
+				done := make(chan result, 1)
+				if !push(done) {
+					return
+				}
+
+				go func(ref *proto.Ref) {
+					o, err := s.Index.Get(ctx, ref)
+					done <- result{resp: &proto.ReadFileResponse{Index: uint32(i), Object: o}, err: err}
+				}(parts[i].Ref)
+			}
 		}
 	}()
 
-	for f := range pending {
-		res := <-f.done
+	for done := range pending {
+		res := <-done
 		if res.err != nil {
-			return fmt.Errorf("part %d of file %x: %w", f.index, ref.GetHash(), res.err)
+			if res.resp != nil {
+				return fmt.Errorf("part %d of file %x: %w", res.resp.Index, ref.GetHash(), res.err)
+			}
+
+			return res.err
 		}
 
-		err = fn(f.index, res.obj)
+		err = fn(res.resp)
 		if err != nil {
 			return err
 		}

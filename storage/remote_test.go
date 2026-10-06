@@ -251,7 +251,7 @@ func serveAs(t *testing.T, store *Store, register ...func(*grpc.Server)) func(se
 // testTLS mints a self-signed certificate for bufnet and the loopback
 // address and returns the server's configuration and a client
 // configuration that trusts it.
-func testTLS(t *testing.T) (server, client *tls.Config) {
+func testTLS(t testing.TB) (server, client *tls.Config) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

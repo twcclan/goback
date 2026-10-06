@@ -556,10 +556,12 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 		return nil, nil
 	}
 
+	copies := copiesOf(reader, fromStore)
+
 	// a stream reports the file, not the part, so salvage asks for each
 	// part on its own and learns exactly which ones are gone
 	if parts, ok := r.Store.(PartReader); ok && !r.Salvage {
-		return nil, r.stream(ctx, parts, dst, reader, fromStore, ref)
+		return nil, r.stream(ctx, parts, dst, reader, copies, ref)
 	}
 
 	var (
@@ -570,7 +572,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(r.workers())
 
-	for _, i := range fromStore {
+	for i, at := range copies {
 		grp.Go(func() error {
 			part := reader.parts[i]
 
@@ -578,7 +580,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 			if err != nil {
 				if r.Salvage && errors.Is(err, ErrNotFound) {
 					mu.Lock()
-					missing = append(missing, i)
+					missing = append(missing, at...)
 					mu.Unlock()
 
 					return nil
@@ -587,7 +589,7 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 				return errors.Wrapf(err, "part %d (%x) of file %x", i, part.Ref.Hash, reader.fileRef())
 			}
 
-			return r.writePart(gctx, dst, reader, i, obj)
+			return r.writePart(gctx, dst, reader, at, obj)
 		})
 	}
 
@@ -600,61 +602,120 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 	return missing, nil
 }
 
-// stream fetches the wanted parts through one ReadParts call, skipping
-// every other part of the file.
-func (r *Restorer) stream(ctx context.Context, parts PartReader, dst *os.File, reader *fileReader, wanted []int, ref *proto.Ref) error {
-	want := make(map[int]bool, len(wanted))
-	for _, i := range wanted {
-		want[i] = true
-	}
+// copiesOf groups the parts by ref under the first part holding it, so a
+// file holding the same part several times fetches it once.
+func copiesOf(reader *fileReader, indexes []int) map[int][]int {
+	first := make(map[string]int, len(indexes))
+	copies := make(map[int][]int, len(indexes))
 
-	skip := make([]int, 0, len(reader.parts)-len(wanted))
-	for i := range reader.parts {
-		if !want[i] {
-			skip = append(skip, i)
-		}
-	}
+	for _, i := range indexes {
+		key := string(reader.parts[i].Ref.Hash)
 
-	seen := 0
-	err := parts.ReadParts(ctx, ref, skip, func(i int, obj *proto.Object) error {
-		if !want[i] {
-			return errors.Errorf("file %x: unrequested part %d", ref.Hash, i)
+		leader, ok := first[key]
+		if !ok {
+			first[key] = i
+			leader = i
 		}
 
-		seen++
+		copies[leader] = append(copies[leader], i)
+	}
 
-		return r.writePart(ctx, dst, reader, i, obj)
-	})
-	if err != nil {
+	return copies
+}
+
+const (
+	// stripeParts is how many parts a file needs per ReadParts call it
+	// is read through, up to maxStripes calls: a server feeds one call
+	// only so fast when it reads the parts itself.
+	stripeParts = 256
+	maxStripes  = 8
+)
+
+// stream fetches one copy of every wanted part through ReadParts calls
+// that each ask for a contiguous stripe of them, skipping every other
+// part, so a server that can locate parts still finds them side by side.
+func (r *Restorer) stream(ctx context.Context, parts PartReader, dst *os.File, reader *fileReader, copies map[int][]int, ref *proto.Ref) error {
+	leaders := make([]int, 0, len(copies))
+	for i := range copies {
+		leaders = append(leaders, i)
+	}
+
+	sort.Ints(leaders)
+
+	n := min(maxStripes, r.workers(), max(1, len(leaders)/stripeParts))
+	stripe := make(map[int]int, len(leaders))
+
+	for k, i := range leaders {
+		stripe[i] = k * n / len(leaders)
+	}
+
+	var (
+		mu   sync.Mutex
+		seen = make(map[int]bool, len(copies))
+	)
+
+	grp, gctx := errgroup.WithContext(ctx)
+
+	for j := range n {
+		skip := make([]int, 0, len(reader.parts))
+		for i := range reader.parts {
+			if s, ok := stripe[i]; !ok || s != j {
+				skip = append(skip, i)
+			}
+		}
+
+		grp.Go(func() error {
+			return parts.ReadParts(gctx, ref, skip, func(i int, obj *proto.Object) error {
+				if s, ok := stripe[i]; !ok || s != j {
+					return errors.Errorf("file %x: unrequested part %d", ref.Hash, i)
+				}
+
+				mu.Lock()
+				again := seen[i]
+				seen[i] = true
+				mu.Unlock()
+
+				if again {
+					return errors.Errorf("file %x: part %d streamed twice", ref.Hash, i)
+				}
+
+				return r.writePart(gctx, dst, reader, copies[i], obj)
+			})
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
 		return errors.Wrapf(err, "file %x", ref.Hash)
 	}
 
-	if seen != len(wanted) {
-		return errors.Errorf("file %x: %d of %d parts streamed", ref.Hash, seen, len(wanted))
+	if len(seen) != len(copies) {
+		return errors.Errorf("file %x: %d of %d parts streamed", ref.Hash, len(seen), len(copies))
 	}
 
 	return nil
 }
 
-// writePart opens a part's stored object, writes it at its offset and
-// caches it.
-func (r *Restorer) writePart(ctx context.Context, dst *os.File, reader *fileReader, i int, obj *proto.Object) error {
-	part := reader.parts[i]
+// writePart opens a part's stored object, writes it at the offset of
+// every part in at, which all hold it, and caches it.
+func (r *Restorer) writePart(ctx context.Context, dst *os.File, reader *fileReader, at []int, obj *proto.Object) error {
+	part := reader.parts[at[0]]
 
-	data, err := reader.openPart(i, part, obj)
+	data, err := reader.openPart(at[0], part, obj)
 	if err != nil {
 		return err
 	}
 
-	if _, err := dst.WriteAt(data, int64(part.Offset)); err != nil {
-		return err
+	for _, i := range at {
+		if _, err := dst.WriteAt(data, int64(reader.parts[i].Offset)); err != nil {
+			return err
+		}
+
+		r.countBytes(ctx, &r.stats.BytesFromStore, "store", int64(len(data)))
 	}
 
 	if r.Cache != nil {
 		_ = r.Cache.Put(part.Ref, obj)
 	}
-
-	r.countBytes(ctx, &r.stats.BytesFromStore, "store", int64(len(data)))
 
 	return nil
 }

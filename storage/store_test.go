@@ -63,9 +63,9 @@ func TestStoreIsALibrary(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRequest, "a file is not a tree")
 
 	var parts []int
-	require.NoError(t, storeOf(first).ReadFile(first, file.Ref(), nil, func(index int, obj *proto.Object) error {
-		parts = append(parts, index)
-		require.True(t, obj.Ref().Equal(blob.Ref()))
+	require.NoError(t, storeOf(first).ReadFile(first, file.Ref(), nil, func(resp *proto.ReadFileResponse) error {
+		parts = append(parts, int(resp.Index))
+		require.True(t, resp.Object.Ref().Equal(blob.Ref()))
 		return nil
 	}))
 	require.Equal(t, []int{0}, parts)

@@ -186,3 +186,68 @@ func TestReadWithoutASignerServesTheBytes(t *testing.T) {
 	require.Nil(t, location)
 	require.NotNil(t, object)
 }
+
+func TestLocateRecordsRunsNeighbouringBlobsTogether(t *testing.T) {
+	ctx := context.Background()
+	store, settle := locatable(t, WithAtRestKey(atRestKey(t)))
+
+	var blobs []*proto.Object
+	for _, content := range []string{"one", "two", "three"} {
+		blob := proto.NewObject(&proto.Blob{Data: []byte(content)})
+		require.NoError(t, store.Put(ctx, blob))
+		blobs = append(blobs, blob)
+	}
+
+	file := proto.NewObject(&proto.File{Inline: []byte("not a blob")})
+	require.NoError(t, store.Put(ctx, file))
+
+	store = settle()
+
+	missing := proto.NewObject(&proto.Blob{Data: []byte("never stored")})
+	refs := []*proto.Ref{blobs[0].Ref(), blobs[1].Ref(), blobs[2].Ref(), file.Ref(), missing.Ref(), blobs[1].Ref()}
+
+	runs, err := store.LocateRecords(ctx, refs)
+	require.NoError(t, err)
+	require.Len(t, runs, 1, "records side by side in one archive are one run")
+	require.NotEmpty(t, runs[0].GetLocation().GetAtRestKey())
+
+	body := fetch(t, runs[0].GetLocation())
+
+	var located []int
+	for _, record := range runs[0].GetRecords() {
+		located = append(located, int(record.GetIndex()))
+
+		object, err := DecodeRecord(body[record.GetOffset():record.GetOffset()+record.GetLength()], runs[0].GetLocation().GetAtRestKey())
+		require.NoError(t, err)
+		require.True(t, object.Ref().Equal(refs[record.GetIndex()]), "each record is the ref it names")
+	}
+
+	require.ElementsMatch(t, []int{0, 1, 2, 5}, located, "a file object and an unknown ref are left to an ordinary read")
+}
+
+func TestARunEndsAtAGapOrItsSpan(t *testing.T) {
+	at := func(offsets ...uint32) []locatedRecord {
+		records := make([]locatedRecord, len(offsets))
+		for i, offset := range offsets {
+			records[i] = locatedRecord{index: i, rec: &IndexRecord{Offset: offset, Length: 100}}
+		}
+
+		return records
+	}
+
+	end, span := runOf(at(0, 100, 100, 250), 0)
+	require.Equal(t, 4, end, "a repeat and a small gap stay in the run")
+	require.EqualValues(t, 350, span)
+
+	end, _ = runOf(at(0, 100, 200+runGap+1), 0)
+	require.Equal(t, 2, end, "a wide gap ends it")
+
+	whole := make([]locatedRecord, runSpan/(1<<20)+1)
+	for i := range whole {
+		whole[i] = locatedRecord{index: i, rec: &IndexRecord{Offset: uint32(i << 20), Length: 1 << 20}}
+	}
+
+	end, span = runOf(whole, 0)
+	require.Equal(t, len(whole)-1, end, "so does its span")
+	require.EqualValues(t, runSpan, span)
+}
