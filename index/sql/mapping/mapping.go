@@ -63,6 +63,7 @@ type Mapper interface {
 
 	// field:LogicalSize from:"-"
 	// field:KeptLogicalSize from:"-"
+	// field:UniqueSize from:"-"
 	// field:PhysicalSize from:"-"
 	// field:DeduplicatedSize from:"-"
 	Set(in *ent.Set) index.SetInfo

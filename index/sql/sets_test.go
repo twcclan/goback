@@ -394,6 +394,28 @@ func TestLogicalSizeLeavesOutWhatHoldsNoContent(t *testing.T) {
 	require.EqualValues(t, 2, *f.commitRow(commit.Ref()).FileCount, "nor do they count as files")
 }
 
+func TestUniqueSizeCountsEachFileVersionOnce(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "first"), f.file("b.txt", "same")), false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "second!"), f.file("b.txt", "same"), f.file("copy.txt", "same"), f.symlink("link", "a.txt")), false)
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 5+7+4, sets[0].UniqueSize, "both versions of a.txt, and the content b.txt and copy.txt share once")
+	require.EqualValues(t, 7+4+4, sets[0].LogicalSize)
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	_, err = f.x.Retire(f.ctx, f.clock)
+	require.NoError(t, err)
+	require.NotNil(t, f.commitRow(a).TombstonedAt)
+
+	sets, err = f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 7+4, sets[0].UniqueSize, "a version only a tombstoned commit held is gone")
+}
+
 func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
 	f := newFixture(t)
 

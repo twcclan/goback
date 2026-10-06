@@ -201,6 +201,14 @@ var (
 					Where: "valid_until IS NULL",
 				},
 			},
+			{
+				Name:    "files_versions",
+				Unique:  false,
+				Columns: []*schema.Column{FilesColumns[14], FilesColumns[5], FilesColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "ref IS NOT NULL",
+				},
+			},
 		},
 	}
 	// ObjectsColumns holds the columns for the "objects" table.

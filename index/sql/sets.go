@@ -8,10 +8,13 @@ import (
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/storage/pack"
+
+	entsql "entgo.io/ent/dialect/sql"
 )
 
 // findSet returns the id of the named set, or backup.ErrNotFound.
@@ -212,6 +215,11 @@ func (x *Index) describeSets(ctx context.Context, rows []*ent.Set) ([]index.SetI
 			return nil, err
 		}
 
+		out[i].UniqueSize, err = x.uniqueSize(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
 		out[i].PhysicalSize = deref(rows[i].PhysicalSize)
 		out[i].DeduplicatedSize = deref(rows[i].DeduplicatedSize)
 		out[i].AloneSize = deref(rows[i].AloneSize)
@@ -303,6 +311,33 @@ func (x *Index) keptSize(ctx context.Context, setID int64) (int64, error) {
 	}
 
 	return deref(sums[0].Sum), nil
+}
+
+// uniqueSize sums the set's file versions once per file object. Rows no
+// untombstoned commit holds are already dropped, so every row counts.
+func (x *Index) uniqueSize(ctx context.Context, setID int64) (int64, error) {
+	d := entsql.Dialect(x.dialect)
+	t := d.Table(file.Table)
+	versions := d.Select().AppendSelectExprAs(entsql.Raw(entsql.Max(t.C(file.FieldSize))), "size").From(t).
+		Where(entsql.And(entsql.EQ(t.C(file.FieldSetID), setID), entsql.NotNull(t.C(file.FieldRef)))).
+		GroupBy(t.C(file.FieldRef)).As("versions")
+
+	query, args := d.Select().AppendSelectExpr(entsql.Raw("COALESCE(SUM(size), 0)")).From(versions).Query()
+
+	rows, err := x.client.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var sum int64
+	if rows.Next() {
+		if err := rows.Scan(&sum); err != nil {
+			return 0, err
+		}
+	}
+
+	return sum, rows.Err()
 }
 
 func (x *Index) latestSize(ctx context.Context, setID int64) (int64, error) {

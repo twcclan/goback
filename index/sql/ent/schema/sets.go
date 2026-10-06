@@ -163,6 +163,7 @@ func (File) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("set_id", "path", "valid_from").Unique(),
 		index.Fields("set_id", "dir").Annotations(entsql.IndexWhere("valid_until IS NULL")).StorageKey("files_open"),
+		index.Fields("set_id", "ref", "size").Annotations(entsql.IndexWhere("ref IS NOT NULL")).StorageKey("files_versions"),
 	}
 }
 

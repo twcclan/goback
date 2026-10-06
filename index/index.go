@@ -31,6 +31,10 @@ type SetInfo struct {
 	KeptLogicalSize  int64
 	PhysicalSize     int64
 	DeduplicatedSize int64
+	// UniqueSize is the size of every distinct file version an untombstoned
+	// commit of the set holds, each counted once: what storing each version
+	// of each file once would take. Deleted commits still restorable count.
+	UniqueSize int64
 	// AloneSize is what the set would take up were it the only set, and
 	// ExclusiveSize what of that no other set holds, as of the last
 	// garbage collection.
