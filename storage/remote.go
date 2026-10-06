@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/auth"
@@ -26,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	pb "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -60,19 +62,22 @@ var downloadWindows = []grpc.DialOption{
 
 func dialStore(addr string, creds auth.Credentials, transport credentials.TransportCredentials, secure bool) (*Client, error) {
 	jar := newCookies(addr, secure)
+	received := &downloads{}
 	con, err := grpc.NewClient(addr, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(transport),
 		grpc.WithPerRPCCredentials(creds),
 		grpc.WithUnaryInterceptor(jar.unary()),
 		grpc.WithStreamInterceptor(jar.stream()),
+		grpc.WithStatsHandler(received),
 	}, downloadWindows...)...)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		store: proto.NewStoreClient(con),
-		admin: adminpb.NewAdminClient(con),
+		store:     proto.NewStoreClient(con),
+		admin:     adminpb.NewAdminClient(con),
+		downloads: received,
 	}, nil
 }
 
@@ -143,6 +148,8 @@ type Client struct {
 	// HTTP fetches the locations a server answers with; nil uses the
 	// default client.
 	HTTP *http.Client
+
+	downloads *downloads
 }
 
 // Open is a no-op; the connection is dialed by NewClient.
@@ -462,7 +469,51 @@ func (r *Client) open(ctx context.Context, location *proto.Location) (io.ReadClo
 		return nil, errors.New(response.Status)
 	}
 
-	return response.Body, nil
+	return counted{ReadCloser: response.Body, n: &r.counter().n}, nil
+}
+
+// counted adds what is read through it to n.
+type counted struct {
+	io.ReadCloser
+	n *atomic.Int64
+}
+
+func (c counted) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	c.n.Add(int64(n))
+
+	return n, err
+}
+
+// downloads counts the bytes a client receives: the payloads of the
+// server's messages and the bodies of the locations it follows.
+type downloads struct {
+	n atomic.Int64
+}
+
+func (d *downloads) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context   { return ctx }
+func (d *downloads) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context { return ctx }
+func (d *downloads) HandleConn(context.Context, stats.ConnStats)                       {}
+
+func (d *downloads) HandleRPC(_ context.Context, s stats.RPCStats) {
+	if in, ok := s.(*stats.InPayload); ok {
+		d.n.Add(int64(in.WireLength))
+	}
+}
+
+func (r *Client) counter() *downloads {
+	if r.downloads == nil {
+		return &downloads{}
+	}
+
+	return r.downloads
+}
+
+// Downloaded returns how many bytes the client has received so far, from
+// the server and from the locations it followed, as they came over the
+// wire.
+func (r *Client) Downloaded() int64 {
+	return r.counter().n.Load()
 }
 
 // follow reads the body of a location, which must be as long as it says.

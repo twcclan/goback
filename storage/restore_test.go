@@ -376,15 +376,17 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 	go func() { _ = srv.Serve(listener) }()
 	tb.Cleanup(srv.Stop)
 
+	received := &downloads{}
 	con, err := grpc.NewClient("passthrough:///"+listener.Addr().String(), append([]grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)),
 		grpc.WithPerRPCCredentials(auth.Credentials{Secret: testSecret, AgentID: "bench"}),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return dial(ctx, "tcp", addr, &seen.served) }),
+		grpc.WithStatsHandler(received),
 	}, downloadWindows...)...)
 	require.NoError(tb, err)
 	tb.Cleanup(func() { _ = con.Close() })
 
-	return &Client{store: proto.NewStoreClient(con), admin: adminpb.NewAdminClient(con), HTTP: httpClient}, seen
+	return &Client{store: proto.NewStoreClient(con), admin: adminpb.NewAdminClient(con), HTTP: httpClient, downloads: received}, seen
 }
 
 // restoreAll restores every file of f into a new directory, workers files
@@ -486,6 +488,9 @@ func TestARestoreReadsLocatedPartsFromTheBucket(t *testing.T) {
 		} else {
 			require.Zero(t, seen.fetches.Load())
 		}
+
+		require.Greater(t, client.Downloaded(), f.total*9/10, "what came from the server and the bucket is counted")
+		require.LessOrEqual(t, client.Downloaded(), seen.received.Load(), "and no more than crossed the wire")
 
 		client, seen = serveShaped(t, repeats, link{}, located)
 		restoreAll(t, &backup.Restorer{Store: client, Key: repeats.key}, repeats, 1)

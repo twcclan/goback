@@ -41,6 +41,10 @@ type restoreEntry struct {
 type restoreProgress struct {
 	filesTotal, bytesTotal int64
 	filesDone, bytesDone   atomic.Int64
+
+	// downloaded, when set, is how many bytes the store has sent over the
+	// wire so far
+	downloaded func() int64
 }
 
 // file counts one file's parts into bytes_done as they are written; done
@@ -65,16 +69,26 @@ func (p *restoreProgress) file(size int64) (written func(int64), done func()) {
 func (p *restoreProgress) log() {
 	files, bytes := p.filesDone.Load(), p.bytesDone.Load()
 
+	attrs := []any{
+		slog.Int64("files_done", files), slog.Int64("files_total", p.filesTotal),
+		slog.Int64("bytes_done", bytes), slog.Int64("bytes_total", p.bytesTotal),
+	}
+
+	downloaded := ""
+	if p.downloaded != nil {
+		n := p.downloaded()
+		attrs = append(attrs, slog.Int64("bytes_downloaded", n))
+		downloaded = fmt.Sprintf(", %s downloaded", humanize.Bytes(uint64(n)))
+	}
+
 	if common.JSON() {
-		slog.Info("progress",
-			slog.Int64("files_done", files), slog.Int64("files_total", p.filesTotal),
-			slog.Int64("bytes_done", bytes), slog.Int64("bytes_total", p.bytesTotal))
+		slog.Info("progress", attrs...)
 
 		return
 	}
 
-	log.Printf("%d of %d files (%s of %s) restored",
-		files, p.filesTotal, humanize.Bytes(uint64(bytes)), humanize.Bytes(uint64(p.bytesTotal)))
+	log.Printf("%d of %d files (%s of %s) restored%s",
+		files, p.filesTotal, humanize.Bytes(uint64(bytes)), humanize.Bytes(uint64(p.bytesTotal)), downloaded)
 }
 
 // report logs the progress every interval, and once more when the returned
@@ -221,6 +235,9 @@ func (c *commit) restore() error {
 	// progress reports against are known from the start
 	var entries []restoreEntry
 	progress := &restoreProgress{}
+	if counted, ok := c.store.(interface{ Downloaded() int64 }); ok {
+		progress.downloaded = counted.Downloaded
+	}
 
 	err = c.reader.WalkTree(c.ctx, tree, parent, func(path string, info os.FileInfo, ref *proto.Ref) error {
 		entries = append(entries, restoreEntry{path: filepath.Join(c.base, path), info: info, ref: ref})
