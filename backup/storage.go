@@ -152,8 +152,8 @@ type Locator interface {
 	Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error)
 }
 
-// A RecordLocator is a store that can say where the stored blobs of many
-// refs sit, neighbours under one location, so a reader fetches them
+// A RecordLocator is a store that can say where the stored records of
+// many refs sit, neighbours under one location, so a reader fetches them
 // itself in a few range reads.
 type RecordLocator interface {
 	// LocateRecords returns runs holding the records of refs, each

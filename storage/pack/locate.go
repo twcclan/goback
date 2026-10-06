@@ -97,8 +97,8 @@ type locatedRecord struct {
 	rec   *IndexRecord
 }
 
-// LocateRecords implements backup.RecordLocator for blobs in archives the
-// storage can sign ranges of.
+// LocateRecords implements backup.RecordLocator for objects in archives
+// the storage can sign ranges of.
 func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error) {
 	signer, ok := ps.storage.(RangeSigner)
 	if !ok {
@@ -113,7 +113,7 @@ func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]
 			return nil, err
 		}
 
-		if a == nil || proto.ObjectType(rec.Type) != proto.ObjectType_BLOB {
+		if a == nil {
 			continue
 		}
 

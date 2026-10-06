@@ -246,9 +246,13 @@ func (s *Store) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto
 	return object, nil, err
 }
 
+// treeBatch is how many trees Tree locates at once.
+const treeBatch = 1024
+
 // Tree walks the tree at ref breadth-first, its splits, and the trees of
-// directories below it down to maxDepth levels, handing each to fn.
-func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn func(*proto.Ref, *proto.Object) error) error {
+// directories below it down to maxDepth levels, handing fn runs of those
+// the index can locate and the rest as objects.
+func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn func(*proto.GetTreeResponse) error) error {
 	type pending struct {
 		ref   *proto.Ref
 		depth uint32
@@ -257,6 +261,57 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 	root, err := s.Get(ctx, ref)
 	if err != nil {
 		return err
+	}
+
+	locator, _ := s.Index.(backup.RecordLocator)
+
+	var (
+		batch  []*proto.GetTreeResponse
+		walked int
+	)
+
+	flush := func() error {
+		located := make(map[int]bool)
+
+		if locator != nil {
+			refs := make([]*proto.Ref, len(batch))
+			for i, resp := range batch {
+				refs[i] = resp.Ref
+			}
+
+			runs, err := locator.LocateRecords(ctx, refs)
+			if err != nil {
+				return fmt.Errorf("locating trees below %x: %w", ref.GetHash(), err)
+			}
+
+			for _, run := range runs {
+				for _, record := range run.Records {
+					located[int(record.Index)] = true
+					record.Index += uint32(walked)
+				}
+			}
+
+			if len(runs) > 0 {
+				if err := fn(&proto.GetTreeResponse{Runs: runs}); err != nil {
+					return err
+				}
+			}
+		}
+
+		for i, resp := range batch {
+			if located[i] {
+				continue
+			}
+
+			if err := fn(resp); err != nil {
+				return err
+			}
+		}
+
+		walked += len(batch)
+		batch = batch[:0]
+
+		return nil
 	}
 
 	queue := []pending{{ref: ref}}
@@ -283,9 +338,11 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 			return fmt.Errorf("%w: object %x is not a tree", ErrInvalidRequest, next.ref.GetHash())
 		}
 
-		err = fn(next.ref, obj)
-		if err != nil {
-			return err
+		batch = append(batch, &proto.GetTreeResponse{Ref: next.ref, Object: obj})
+		if len(batch) == treeBatch {
+			if err := flush(); err != nil {
+				return err
+			}
 		}
 
 		for _, split := range tree.Splits {
@@ -303,7 +360,7 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 		}
 	}
 
-	return nil
+	return flush()
 }
 
 const (

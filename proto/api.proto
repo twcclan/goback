@@ -334,9 +334,13 @@ message GetTreeRequest {
     uint32 max_depth = 2;
 }
 
+// GetTreeResponse carries either one tree object or runs of trees whose
+// stored records the client fetches itself; a record's index is the
+// tree's place in the walk.
 message GetTreeResponse {
     Ref ref = 1;
     Object object = 2;
+    repeated LocatedRun runs = 3;
 }
 
 service Store {

@@ -53,13 +53,13 @@ func TestStoreIsALibrary(t *testing.T) {
 	require.ErrorIs(t, err, backup.ErrNotFound, "the second store never saw the upload")
 
 	var trees []*proto.Ref
-	require.NoError(t, storeOf(first).Tree(first, tree.Ref(), 1, func(ref *proto.Ref, _ *proto.Object) error {
-		trees = append(trees, ref)
+	require.NoError(t, storeOf(first).Tree(first, tree.Ref(), 1, func(resp *proto.GetTreeResponse) error {
+		trees = append(trees, resp.Ref)
 		return nil
 	}))
 	require.Len(t, trees, 1)
 
-	err = storeOf(first).Tree(first, file.Ref(), 1, func(*proto.Ref, *proto.Object) error { return nil })
+	err = storeOf(first).Tree(first, file.Ref(), 1, func(*proto.GetTreeResponse) error { return nil })
 	require.ErrorIs(t, err, ErrInvalidRequest, "a file is not a tree")
 
 	var parts []int

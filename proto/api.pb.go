@@ -2726,10 +2726,14 @@ func (x *GetTreeRequest) GetMaxDepth() uint32 {
 	return 0
 }
 
+// GetTreeResponse carries either one tree object or runs of trees whose
+// stored records the client fetches itself; a record's index is the
+// tree's place in the walk.
 type GetTreeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ref           *Ref                   `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	Object        *Object                `protobuf:"bytes,2,opt,name=object,proto3" json:"object,omitempty"`
+	Runs          []*LocatedRun          `protobuf:"bytes,3,rep,name=runs,proto3" json:"runs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2774,6 +2778,13 @@ func (x *GetTreeResponse) GetRef() *Ref {
 func (x *GetTreeResponse) GetObject() *Object {
 	if x != nil {
 		return x.Object
+	}
+	return nil
+}
+
+func (x *GetTreeResponse) GetRuns() []*LocatedRun {
+	if x != nil {
+		return x.Runs
 	}
 	return nil
 }
@@ -2968,11 +2979,12 @@ const file_api_proto_rawDesc = "" +
 	"\x0eGetTreeRequest\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12\x1b\n" +
-	"\tmax_depth\x18\x02 \x01(\rR\bmaxDepth\"V\n" +
+	"\tmax_depth\x18\x02 \x01(\rR\bmaxDepth\"}\n" +
 	"\x0fGetTreeResponse\x12\x1c\n" +
 	"\x03ref\x18\x01 \x01(\v2\n" +
 	".proto.RefR\x03ref\x12%\n" +
-	"\x06object\x18\x02 \x01(\v2\r.proto.ObjectR\x06object*d\n" +
+	"\x06object\x18\x02 \x01(\v2\r.proto.ObjectR\x06object\x12%\n" +
+	"\x04runs\x18\x03 \x03(\v2\x11.proto.LocatedRunR\x04runs*d\n" +
 	"\x06Period\x12\x16\n" +
 	"\x12PERIOD_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vPERIOD_YEAR\x10\x01\x12\x10\n" +
@@ -3126,53 +3138,54 @@ var file_api_proto_depIdxs = []int32{
 	55, // 41: proto.GetTreeRequest.ref:type_name -> proto.Ref
 	55, // 42: proto.GetTreeResponse.ref:type_name -> proto.Ref
 	54, // 43: proto.GetTreeResponse.object:type_name -> proto.Object
-	1,  // 44: proto.Store.Put:input_type -> proto.PutRequest
-	3,  // 45: proto.Store.Get:input_type -> proto.GetRequest
-	6,  // 46: proto.Store.ReadFile:input_type -> proto.ReadFileRequest
-	10, // 47: proto.Store.FileInfo:input_type -> proto.FileInfoRequest
-	12, // 48: proto.Store.ReadDir:input_type -> proto.ReadDirRequest
-	14, // 49: proto.Store.CommitInfo:input_type -> proto.CommitInfoRequest
-	17, // 50: proto.Store.LatestCommit:input_type -> proto.LatestCommitRequest
-	50, // 51: proto.Store.GetTree:input_type -> proto.GetTreeRequest
-	19, // 52: proto.Store.BeginCommit:input_type -> proto.BeginCommitRequest
-	22, // 53: proto.Store.BeginSession:input_type -> proto.BeginSessionRequest
-	24, // 54: proto.Store.EndSession:input_type -> proto.EndSessionRequest
-	26, // 55: proto.Store.GetPresence:input_type -> proto.GetPresenceRequest
-	28, // 56: proto.Store.DeleteCommit:input_type -> proto.DeleteCommitRequest
-	30, // 57: proto.Store.UndeleteCommit:input_type -> proto.UndeleteCommitRequest
-	32, // 58: proto.Store.ListTrash:input_type -> proto.ListTrashRequest
-	35, // 59: proto.Store.CountCommits:input_type -> proto.CountCommitsRequest
-	38, // 60: proto.Store.DeleteSet:input_type -> proto.DeleteSetRequest
-	40, // 61: proto.Store.UndeleteSet:input_type -> proto.UndeleteSetRequest
-	42, // 62: proto.Store.Unpin:input_type -> proto.UnpinRequest
-	47, // 63: proto.Store.ListPins:input_type -> proto.ListPinsRequest
-	45, // 64: proto.Store.EscrowedKeys:input_type -> proto.EscrowedKeysRequest
-	2,  // 65: proto.Store.Put:output_type -> proto.PutResponse
-	4,  // 66: proto.Store.Get:output_type -> proto.GetResponse
-	7,  // 67: proto.Store.ReadFile:output_type -> proto.ReadFileResponse
-	11, // 68: proto.Store.FileInfo:output_type -> proto.FileInfoResponse
-	13, // 69: proto.Store.ReadDir:output_type -> proto.ReadDirResponse
-	15, // 70: proto.Store.CommitInfo:output_type -> proto.CommitInfoResponse
-	18, // 71: proto.Store.LatestCommit:output_type -> proto.LatestCommitResponse
-	51, // 72: proto.Store.GetTree:output_type -> proto.GetTreeResponse
-	20, // 73: proto.Store.BeginCommit:output_type -> proto.BeginCommitResponse
-	23, // 74: proto.Store.BeginSession:output_type -> proto.BeginSessionResponse
-	25, // 75: proto.Store.EndSession:output_type -> proto.EndSessionResponse
-	27, // 76: proto.Store.GetPresence:output_type -> proto.GetPresenceResponse
-	29, // 77: proto.Store.DeleteCommit:output_type -> proto.DeleteCommitResponse
-	31, // 78: proto.Store.UndeleteCommit:output_type -> proto.UndeleteCommitResponse
-	34, // 79: proto.Store.ListTrash:output_type -> proto.ListTrashResponse
-	37, // 80: proto.Store.CountCommits:output_type -> proto.CountCommitsResponse
-	39, // 81: proto.Store.DeleteSet:output_type -> proto.DeleteSetResponse
-	41, // 82: proto.Store.UndeleteSet:output_type -> proto.UndeleteSetResponse
-	43, // 83: proto.Store.Unpin:output_type -> proto.UnpinResponse
-	49, // 84: proto.Store.ListPins:output_type -> proto.ListPinsResponse
-	46, // 85: proto.Store.EscrowedKeys:output_type -> proto.EscrowedKeysResponse
-	65, // [65:86] is the sub-list for method output_type
-	44, // [44:65] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	8,  // 44: proto.GetTreeResponse.runs:type_name -> proto.LocatedRun
+	1,  // 45: proto.Store.Put:input_type -> proto.PutRequest
+	3,  // 46: proto.Store.Get:input_type -> proto.GetRequest
+	6,  // 47: proto.Store.ReadFile:input_type -> proto.ReadFileRequest
+	10, // 48: proto.Store.FileInfo:input_type -> proto.FileInfoRequest
+	12, // 49: proto.Store.ReadDir:input_type -> proto.ReadDirRequest
+	14, // 50: proto.Store.CommitInfo:input_type -> proto.CommitInfoRequest
+	17, // 51: proto.Store.LatestCommit:input_type -> proto.LatestCommitRequest
+	50, // 52: proto.Store.GetTree:input_type -> proto.GetTreeRequest
+	19, // 53: proto.Store.BeginCommit:input_type -> proto.BeginCommitRequest
+	22, // 54: proto.Store.BeginSession:input_type -> proto.BeginSessionRequest
+	24, // 55: proto.Store.EndSession:input_type -> proto.EndSessionRequest
+	26, // 56: proto.Store.GetPresence:input_type -> proto.GetPresenceRequest
+	28, // 57: proto.Store.DeleteCommit:input_type -> proto.DeleteCommitRequest
+	30, // 58: proto.Store.UndeleteCommit:input_type -> proto.UndeleteCommitRequest
+	32, // 59: proto.Store.ListTrash:input_type -> proto.ListTrashRequest
+	35, // 60: proto.Store.CountCommits:input_type -> proto.CountCommitsRequest
+	38, // 61: proto.Store.DeleteSet:input_type -> proto.DeleteSetRequest
+	40, // 62: proto.Store.UndeleteSet:input_type -> proto.UndeleteSetRequest
+	42, // 63: proto.Store.Unpin:input_type -> proto.UnpinRequest
+	47, // 64: proto.Store.ListPins:input_type -> proto.ListPinsRequest
+	45, // 65: proto.Store.EscrowedKeys:input_type -> proto.EscrowedKeysRequest
+	2,  // 66: proto.Store.Put:output_type -> proto.PutResponse
+	4,  // 67: proto.Store.Get:output_type -> proto.GetResponse
+	7,  // 68: proto.Store.ReadFile:output_type -> proto.ReadFileResponse
+	11, // 69: proto.Store.FileInfo:output_type -> proto.FileInfoResponse
+	13, // 70: proto.Store.ReadDir:output_type -> proto.ReadDirResponse
+	15, // 71: proto.Store.CommitInfo:output_type -> proto.CommitInfoResponse
+	18, // 72: proto.Store.LatestCommit:output_type -> proto.LatestCommitResponse
+	51, // 73: proto.Store.GetTree:output_type -> proto.GetTreeResponse
+	20, // 74: proto.Store.BeginCommit:output_type -> proto.BeginCommitResponse
+	23, // 75: proto.Store.BeginSession:output_type -> proto.BeginSessionResponse
+	25, // 76: proto.Store.EndSession:output_type -> proto.EndSessionResponse
+	27, // 77: proto.Store.GetPresence:output_type -> proto.GetPresenceResponse
+	29, // 78: proto.Store.DeleteCommit:output_type -> proto.DeleteCommitResponse
+	31, // 79: proto.Store.UndeleteCommit:output_type -> proto.UndeleteCommitResponse
+	34, // 80: proto.Store.ListTrash:output_type -> proto.ListTrashResponse
+	37, // 81: proto.Store.CountCommits:output_type -> proto.CountCommitsResponse
+	39, // 82: proto.Store.DeleteSet:output_type -> proto.DeleteSetResponse
+	41, // 83: proto.Store.UndeleteSet:output_type -> proto.UndeleteSetResponse
+	43, // 84: proto.Store.Unpin:output_type -> proto.UnpinResponse
+	49, // 85: proto.Store.ListPins:output_type -> proto.ListPinsResponse
+	46, // 86: proto.Store.EscrowedKeys:output_type -> proto.EscrowedKeysResponse
+	66, // [66:87] is the sub-list for method output_type
+	45, // [45:66] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }

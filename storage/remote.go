@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/twcclan/goback/auth"
@@ -238,11 +239,10 @@ func (r *Client) LatestCommit(ctx context.Context, set string) (*proto.Ref, erro
 	return response.Ref, nil
 }
 
-// GetTree implements backup.TreeFetcher over the streaming RPC.
+// GetTree implements backup.TreeFetcher over the streaming RPC, fetching
+// the runs it is pointed at runFetchers at a time.
 func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
-	ctx = r.outgoing(ctx)
-
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(r.outgoing(ctx))
 	defer cancel()
 
 	stream, err := r.store.GetTree(ctx, &proto.GetTreeRequest{Ref: ref, MaxDepth: maxDepth})
@@ -250,19 +250,47 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 		return nil, err
 	}
 
-	var objects []*proto.Object
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			return objects, nil
-		}
+	var (
+		mtx     sync.Mutex
+		objects []*proto.Object
+	)
 
-		if err != nil {
-			return nil, fromStatus(err)
-		}
+	keep := func(_ int, obj *proto.Object) error {
+		mtx.Lock()
+		defer mtx.Unlock()
 
-		objects = append(objects, resp.Object)
+		objects = append(objects, obj)
+
+		return nil
 	}
+
+	runs, rctx := errgroup.WithContext(ctx)
+	runs.SetLimit(runFetchers)
+
+	err = receive(stream, func(resp *proto.GetTreeResponse) error {
+		if len(resp.GetRuns()) == 0 {
+			return keep(0, resp.Object)
+		}
+
+		for _, run := range resp.GetRuns() {
+			runs.Go(func() error { return r.fetchRun(rctx, run, keep) })
+		}
+
+		return rctx.Err()
+	})
+	if err != nil {
+		cancel()
+	}
+
+	if waited := runs.Wait(); waited != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		err = waited
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return objects, nil
 }
 
 // Put implements backup.ObjectStore.
@@ -460,7 +488,7 @@ func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(in
 
 	body, err := r.open(ctx, location)
 	if err != nil {
-		return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+		return fmt.Errorf("fetching a run of %d records: %w", len(run.GetRecords()), err)
 	}
 	defer body.Close()
 
@@ -474,16 +502,16 @@ func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(in
 		// the same record twice is read once
 		if previous == nil || next.Offset != previous.Offset || next.Length != previous.Length {
 			if next.Offset < at || next.Length <= 0 || next.Offset+next.Length > location.GetLength() {
-				return fmt.Errorf("part %d lies outside its run or overlaps the one before", next.Index)
+				return fmt.Errorf("record %d lies outside its run or overlaps the one before", next.Index)
 			}
 
 			if _, err := io.CopyN(io.Discard, body, next.Offset-at); err != nil {
-				return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+				return fmt.Errorf("fetching a run of %d records: %w", len(run.GetRecords()), err)
 			}
 
 			record = make([]byte, next.Length)
 			if _, err := io.ReadFull(body, record); err != nil {
-				return fmt.Errorf("fetching a run of %d parts: %w", len(run.GetRecords()), err)
+				return fmt.Errorf("fetching a run of %d records: %w", len(run.GetRecords()), err)
 			}
 
 			at = next.Offset + next.Length
@@ -493,7 +521,7 @@ func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(in
 
 		object, err := pack.DecodeRecord(record, location.GetAtRestKey())
 		if err != nil {
-			return fmt.Errorf("decoding part %d from its run: %w", next.Index, err)
+			return fmt.Errorf("decoding record %d from its run: %w", next.Index, err)
 		}
 
 		if err := fn(int(next.Index), object); err != nil {
@@ -599,7 +627,7 @@ func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn 
 	return err
 }
 
-func receive(stream proto.Store_ReadFileClient, fn func(*proto.ReadFileResponse) error) error {
+func receive[T any](stream grpc.ServerStreamingClient[T], fn func(*T) error) error {
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -801,9 +829,7 @@ func (r *Server) LatestCommit(ctx context.Context, request *proto.LatestCommitRe
 
 // GetTree implements proto.StoreServer.
 func (r *Server) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTreeServer) error {
-	return ToStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, func(ref *proto.Ref, obj *proto.Object) error {
-		return stream.Send(&proto.GetTreeResponse{Ref: ref, Object: obj})
-	}))
+	return ToStatus(r.store.Tree(stream.Context(), request.Ref, request.MaxDepth, stream.Send))
 }
 
 // Get implements proto.StoreServer.

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -35,12 +36,12 @@ import (
 // shapedConn delays every byte crossing it by delay in each direction and,
 // with rate above zero, lets at most rate bytes a second through each way,
 // the way a long link between an agent and its store does. It counts the
-// bytes it receives into received.
+// bytes it receives into each of received.
 type shapedConn struct {
 	net.Conn
 	delay    time.Duration
 	rate     float64
-	received *atomic.Int64
+	received []*atomic.Int64
 
 	out  chan packet
 	in   chan packet
@@ -62,7 +63,7 @@ type packet struct {
 	at   time.Time
 }
 
-func shape(conn net.Conn, delay time.Duration, rate float64, received *atomic.Int64) *shapedConn {
+func shape(conn net.Conn, delay time.Duration, rate float64, received ...*atomic.Int64) *shapedConn {
 	c := &shapedConn{
 		Conn:     conn,
 		delay:    delay,
@@ -124,7 +125,9 @@ func (c *shapedConn) receive() {
 
 		n, err := c.Conn.Read(buf)
 		if n > 0 {
-			c.received.Add(int64(n))
+			for _, r := range c.received {
+				r.Add(int64(n))
+			}
 			c.in <- packet{data: buf[:n], at: c.release(&busy, time.Now(), n)}
 
 			// a link queues little before it drops, so the sender must
@@ -306,9 +309,10 @@ func (r *readerOf) Read(p []byte) (int, error) {
 }
 
 // traffic is what a client of serveShaped received: bytes over every
-// connection, and requests to the bucket.
+// connection, bytes from the store server alone, and requests to the
+// bucket.
 type traffic struct {
-	received, fetches atomic.Int64
+	received, served, fetches atomic.Int64
 }
 
 // serveShaped runs a TLS store server over f's archives on loopback TCP
@@ -318,14 +322,13 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 	tb.Helper()
 
 	seen := &traffic{}
-	received := &seen.received
-	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dial := func(ctx context.Context, network, addr string, counters ...*atomic.Int64) (net.Conn, error) {
 		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
 		if err != nil {
 			return nil, err
 		}
 
-		return shape(conn, l.rtt/2, l.rate, received), nil
+		return shape(conn, l.rtt/2, l.rate, append(counters, &seen.received)...), nil
 	}
 
 	bucket, err := fileblob.OpenBucket(f.dir, nil)
@@ -347,7 +350,7 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 		tb.Cleanup(server.Close)
 
 		transport := server.Client().Transport.(*http.Transport).Clone()
-		transport.DialContext = dial
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) { return dial(ctx, network, addr) }
 		transport.ForceAttemptHTTP2 = true
 		httpClient = &http.Client{Transport: transport}
 
@@ -376,7 +379,7 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 	con, err := grpc.NewClient("passthrough:///"+listener.Addr().String(), append([]grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)),
 		grpc.WithPerRPCCredentials(auth.Credentials{Secret: testSecret, AgentID: "bench"}),
-		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return dial(ctx, "tcp", addr) }),
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return dial(ctx, "tcp", addr, &seen.served) }),
 	}, downloadWindows...)...)
 	require.NoError(tb, err)
 	tb.Cleanup(func() { _ = con.Close() })
@@ -487,5 +490,120 @@ func TestARestoreReadsLocatedPartsFromTheBucket(t *testing.T) {
 		client, seen = serveShaped(t, repeats, link{}, located)
 		restoreAll(t, &backup.Restorer{Store: client, Key: repeats.key}, repeats, 1)
 		require.Less(t, seen.received.Load(), repeats.total/2, "a part the file repeats crosses the wire once")
+	}
+}
+
+// newTreeFixture stores a directory of dirs directories, each of subs
+// directories of files files, with names as random as sealed ones, and
+// returns it beside the root's ref.
+func newTreeFixture(tb testing.TB, dirs, subs, files int) (*restoreFixture, *proto.Ref) {
+	tb.Helper()
+
+	f := &restoreFixture{dir: tb.TempDir()}
+
+	bucket, err := fileblob.OpenBucket(f.dir, nil)
+	require.NoError(tb, err)
+
+	store := openPack(tb, NewBucketStore(bucket))
+	rnd := rand.New(rand.NewSource(1))
+	ctx := context.Background()
+
+	name := func() []byte {
+		b := make([]byte, 32)
+		rnd.Read(b)
+
+		return b
+	}
+
+	node := func(kind proto.NodeType, ref *proto.Ref) *proto.TreeNode {
+		return &proto.TreeNode{
+			Stat: &proto.FileInfo{Name: name(), Mode: 0o644, Size: rnd.Int63n(1 << 30), MtimeNs: rnd.Int63(), Type: kind},
+			Ref:  ref,
+		}
+	}
+
+	put := func(nodes []*proto.TreeNode) *proto.Ref {
+		slices.SortFunc(nodes, func(a, b *proto.TreeNode) int { return bytes.Compare(a.Stat.Name, b.Stat.Name) })
+		tree := proto.NewObject(&proto.Tree{Nodes: nodes})
+		require.NoError(tb, store.Put(ctx, tree))
+
+		return tree.Ref()
+	}
+
+	var top []*proto.TreeNode
+	for range dirs {
+		var mid []*proto.TreeNode
+		for range subs {
+			var leaves []*proto.TreeNode
+			for range files {
+				leaves = append(leaves, node(proto.NodeType_NODE_FILE, &proto.Ref{Hash: name()}))
+			}
+
+			mid = append(mid, node(proto.NodeType_NODE_DIRECTORY, put(leaves)))
+		}
+
+		top = append(top, node(proto.NodeType_NODE_DIRECTORY, put(mid)))
+	}
+
+	root := put(top)
+	require.NoError(tb, store.Close())
+
+	return f, root
+}
+
+// BenchmarkRemoteGetTree prefetches a tree of 64 directories of 16
+// directories of 64 files two levels deep, as a backup does its base
+// commit, the trees served by the store or read from the bucket.
+func BenchmarkRemoteGetTree(b *testing.B) {
+	f, root := sync.OnceValues(func() (*restoreFixture, *proto.Ref) { return newTreeFixture(b, 64, 16, 64) })()
+
+	for _, l := range append([]link{{}}, benchLinks...) {
+		for _, mode := range []string{"proxied", "located"} {
+			b.Run(mode+"/"+l.String(), func(b *testing.B) {
+				client, seen := serveShaped(b, f, l, mode == "located")
+				b.ResetTimer()
+
+				for range b.N {
+					objects, err := client.GetTree(context.Background(), root, 2)
+					require.NoError(b, err)
+					require.Len(b, objects, 1+64+64*16)
+				}
+
+				b.ReportMetric(float64(seen.received.Load())/float64(b.N), "wire-B/op")
+				b.ReportMetric(float64(seen.served.Load())/float64(b.N), "served-B/op")
+				b.ReportMetric(float64(seen.fetches.Load())/float64(b.N), "fetches/op")
+			})
+		}
+	}
+}
+
+func TestGetTreeReadsLocatedTreesFromTheBucket(t *testing.T) {
+	f, root := newTreeFixture(t, 3, 4, 5)
+
+	for _, located := range []bool{false, true} {
+		client, seen := serveShaped(t, f, link{}, located)
+
+		objects, err := client.GetTree(context.Background(), root, 2)
+		require.NoError(t, err)
+		require.Len(t, objects, 1+3+3*4)
+
+		var dirs int
+		for _, obj := range objects {
+			require.NotNil(t, obj.GetTree())
+
+			for _, node := range obj.GetTree().GetNodes() {
+				if node.GetStat().IsDir() {
+					dirs++
+				}
+			}
+		}
+
+		require.Equal(t, 3+3*4, dirs, "every directory's tree is among them")
+
+		if located {
+			require.NotZero(t, seen.fetches.Load(), "the trees come from the bucket")
+		} else {
+			require.Zero(t, seen.fetches.Load())
+		}
 	}
 }

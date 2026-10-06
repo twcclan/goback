@@ -187,7 +187,7 @@ func TestReadWithoutASignerServesTheBytes(t *testing.T) {
 	require.NotNil(t, object)
 }
 
-func TestLocateRecordsRunsNeighbouringBlobsTogether(t *testing.T) {
+func TestLocateRecordsRunsNeighbouringRecordsTogether(t *testing.T) {
 	ctx := context.Background()
 	store, settle := locatable(t, WithAtRestKey(atRestKey(t)))
 
@@ -198,7 +198,7 @@ func TestLocateRecordsRunsNeighbouringBlobsTogether(t *testing.T) {
 		blobs = append(blobs, blob)
 	}
 
-	file := proto.NewObject(&proto.File{Inline: []byte("not a blob")})
+	file := proto.NewObject(&proto.File{Inline: []byte("any object")})
 	require.NoError(t, store.Put(ctx, file))
 
 	store = settle()
@@ -222,7 +222,7 @@ func TestLocateRecordsRunsNeighbouringBlobsTogether(t *testing.T) {
 		require.True(t, object.Ref().Equal(refs[record.GetIndex()]), "each record is the ref it names")
 	}
 
-	require.ElementsMatch(t, []int{0, 1, 2, 5}, located, "a file object and an unknown ref are left to an ordinary read")
+	require.ElementsMatch(t, []int{0, 1, 2, 3, 5}, located, "an unknown ref is left to an ordinary read")
 }
 
 func TestARunEndsAtAGapOrItsSpan(t *testing.T) {
