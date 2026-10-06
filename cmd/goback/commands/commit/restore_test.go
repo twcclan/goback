@@ -139,6 +139,17 @@ func TestRemoveUnrestoredKeepsWhatTheRestoreWroteUnderAnotherSpelling(t *testing
 	}
 }
 
+func TestRemoveUnrestoredKeepsThePartialsOfRestoredFiles(t *testing.T) {
+	base := t.TempDir()
+	level, gone := filepath.Join(base, "level.dat"), filepath.Join(base, "gone.dat")
+	write(t, backup.PartialPath(level))
+	write(t, backup.PartialPath(gone))
+
+	require.NoError(t, removeUnrestored(base, map[string]bool{level: true}, false))
+	require.FileExists(t, backup.PartialPath(level))
+	require.NoFileExists(t, backup.PartialPath(gone))
+}
+
 func TestRestoreDirReplacesWhatIsNotADirectory(t *testing.T) {
 	base := t.TempDir()
 	outside := filepath.Join(base, "outside")

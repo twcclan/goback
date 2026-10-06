@@ -210,7 +210,9 @@ func (r *Restorer) workers() int {
 }
 
 // RestoreFile puts the file ref describes at path with the recorded mode
-// and mtime, writing next to the destination and renaming into place.
+// and mtime, assembling it at PartialPath(path) and renaming into place.
+// A failed restore leaves the partial file behind, and the next one takes
+// every part from it that still hashes to its ref.
 func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.FileInfo, ref *proto.Ref) (Outcome, error) {
 	obj, err := r.Store.Get(ctx, ref)
 	if err != nil {
@@ -230,6 +232,10 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 	hasFile := err == nil && existing.Mode().IsRegular()
 
 	if hasFile && r.Overwrite == OverwriteIfChanged && existing.Size() == stat.Size && existing.ModTime().UnixNano() == stat.MtimeNs {
+		if err := r.dropPartial(path); err != nil {
+			return 0, err
+		}
+
 		r.countFile(ctx, OutcomeSkipped)
 		return OutcomeSkipped, nil
 	}
@@ -247,6 +253,10 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 		matched = r.verifyParts(source, reader)
 
 		if existing.Size() == reader.size() && allTrue(matched) {
+			if err := r.dropPartial(path); err != nil {
+				return 0, err
+			}
+
 			if !r.DryRun {
 				if err := applyStat(path, stat); err != nil {
 					return 0, err
@@ -267,14 +277,16 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 
 	local := r.rechunked(path, hasFile, matched)
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".goback-*")
+	tmp, err := openPartial(PartialPath(path))
 	if err != nil {
 		return 0, err
 	}
 
-	missing, err := r.assemble(ctx, tmp, source, reader, matched, local, ref)
-	if err == nil && len(missing) > 0 {
-		// a hole at the end would otherwise leave the file short
+	held := r.verifyParts(tmp, reader)
+
+	missing, err := r.assemble(ctx, tmp, source, reader, matched, held, local, ref)
+	if err == nil {
+		// the partial may be longer, from another version, or end in a hole
 		err = tmp.Truncate(reader.size())
 	}
 
@@ -304,7 +316,6 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 	}
 
 	if err != nil {
-		_ = os.Remove(tmp.Name())
 		return 0, errors.Wrapf(err, "restoring %s", path)
 	}
 
@@ -318,6 +329,47 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 	r.countFile(ctx, OutcomeWritten)
 
 	return OutcomeWritten, nil
+}
+
+// PartialPath is the file RestoreFile assembles path in, next to it.
+func PartialPath(path string) string {
+	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".goback.partial")
+}
+
+// openPartial opens the partial file for writing, keeping what an earlier
+// restore left in it; a partial left read-only by a failed rename is made
+// writable, and anything there that is not a regular file is removed
+// rather than written through.
+func openPartial(name string) (*os.File, error) {
+	if info, err := os.Lstat(name); err == nil {
+		switch {
+		case !info.Mode().IsRegular():
+			if err := os.Remove(name); err != nil {
+				return nil, err
+			}
+		case info.Mode()&0o200 == 0:
+			if err := os.Chmod(name, 0o600); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0o600)
+}
+
+// dropPartial removes the partial file of a destination that turned out
+// not to need writing.
+func (r *Restorer) dropPartial(path string) error {
+	if r.DryRun {
+		return nil
+	}
+
+	err := os.Remove(PartialPath(path))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
 }
 
 // reportHoles counts the parts a salvaged file went without and hands each
@@ -397,7 +449,16 @@ func applyStat(path string, stat *proto.FileInfo) error {
 func (r *Restorer) verifyParts(file *os.File, reader *fileReader) []bool {
 	matched := make([]bool, len(reader.parts))
 
+	info, err := file.Stat()
+	if err != nil {
+		return matched
+	}
+
 	for i, part := range reader.parts {
+		if int64(part.Offset+part.Length) > info.Size() {
+			continue
+		}
+
 		buf := make([]byte, part.Length)
 
 		_, err := file.ReadAt(buf, int64(part.Offset))
@@ -473,11 +534,11 @@ func (r *Restorer) rechunked(path string, hasFile bool, matched []bool) *SeedMap
 	return local
 }
 
-// assemble writes every part at its offset: matched parts are copied from
-// source, the rest come from the re-cut destination, the seeds, the cache
-// or the store. It returns the parts no source held, which is empty unless
-// Salvage is set.
-func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched []bool, local *SeedMap, ref *proto.Ref) ([]int, error) {
+// assemble writes every part at its offset that dst does not already hold:
+// matched parts are copied from source, the rest come from the re-cut
+// destination, the seeds, the cache or the store. It returns the parts no
+// source held, which is empty unless Salvage is set.
+func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *fileReader, matched, held []bool, local *SeedMap, ref *proto.Ref) ([]int, error) {
 	var fromStore []int
 
 	for i, part := range reader.parts {
@@ -489,6 +550,12 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 			}
 
 			r.countBytes(ctx, &r.stats.BytesFromStore, "store", int64(len(reader.inline)))
+
+			continue
+		}
+
+		if held[i] {
+			r.countBytes(ctx, &r.stats.BytesFromDestination, "partial", int64(part.Length))
 
 			continue
 		}

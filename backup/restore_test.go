@@ -3,6 +3,7 @@ package backup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -360,6 +361,10 @@ type streamingStore struct {
 	calls int
 	gets  int
 	asked [][]int
+
+	// failAfter, when set, makes the stream fail once it has handed out
+	// that many parts
+	failAfter, handed int
 }
 
 func (s *streamingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
@@ -405,6 +410,15 @@ func (s *streamingStore) ReadParts(ctx context.Context, file *proto.Ref, skip []
 	s.mtx.Unlock()
 
 	for _, i := range asked {
+		s.mtx.Lock()
+		s.handed++
+		failed := s.failAfter > 0 && s.handed > s.failAfter
+		s.mtx.Unlock()
+
+		if failed {
+			return errStreamReset
+		}
+
 		blob, err := s.memStore.Get(ctx, parts[i].Ref)
 		if err != nil {
 			return err
@@ -689,4 +703,202 @@ func TestAPartSealedAsAnotherRefIsRefused(t *testing.T) {
 
 	_, err = reader.openPart(0, filePart, proto.NewObject(other))
 	require.Error(t, err, "a part is only ever the object its ref names")
+}
+
+var errStreamReset = errors.New("stream reset")
+
+// failingStore serves the file object and the first ok parts asked for,
+// then fails every part, like a connection that dropped part way.
+type failingStore struct {
+	*memStore
+
+	mtx sync.Mutex
+	ok  int
+}
+
+func (f *failingStore) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	obj, err := f.memStore.Get(ctx, ref)
+	if err != nil || obj.GetFile() != nil {
+		return obj, err
+	}
+
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+
+	if f.ok == 0 {
+		return nil, errStreamReset
+	}
+
+	f.ok--
+
+	return obj, nil
+}
+
+func partsOf(t *testing.T, store ObjectStore, ref *proto.Ref) []*proto.FilePart {
+	t.Helper()
+
+	obj, err := store.Get(context.Background(), ref)
+	require.NoError(t, err)
+
+	return obj.GetFile().GetParts()
+}
+
+// intactParts are the parts the file at path holds as data has them.
+func intactParts(t *testing.T, path string, data []byte, parts []*proto.FilePart) []int {
+	t.Helper()
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var intact []int
+
+	for i, part := range parts {
+		end := part.Offset + part.Length
+		if end <= uint64(len(got)) && bytes.Equal(got[part.Offset:end], data[part.Offset:end]) {
+			intact = append(intact, i)
+		}
+	}
+
+	return intact
+}
+
+// failPartWay restores data's file through a store that fails after ok
+// parts and returns where the restore was headed.
+func failPartWay(t *testing.T, store *memStore, key *storekey.Key, data []byte, ref *proto.Ref, ok int) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "region.mca")
+
+	_, err := (&Restorer{Store: &failingStore{memStore: store, ok: ok}, Key: key, Workers: 1}).RestoreFile(context.Background(), path, statFor(data), ref)
+	require.ErrorIs(t, err, errStreamReset)
+	require.NoFileExists(t, path)
+	require.Len(t, intactParts(t, PartialPath(path), data, partsOf(t, store, ref)), ok, "the parts written before the failure stay")
+
+	return path
+}
+
+func TestARestoreResumesFromItsPartial(t *testing.T) {
+	for name, key := range keyCases(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newMemStore()
+			data := randomData(6*maxBlobSize+777, 5)
+			ref := putFile(t, store, key, data)
+			parts := partsOf(t, store, ref)
+			stat := statFor(data)
+
+			path := failPartWay(t, store, key, data, ref, 3)
+
+			var written atomic.Int64
+			counting := &getCountingStore{memStore: store}
+			r := &Restorer{Store: counting, Key: key, Workers: 4}
+
+			outcome, err := r.RestoreFile(WithWritten(ctx, func(n int64) { written.Add(n) }), path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeWritten, outcome)
+			requireRestored(t, path, data, stat)
+			require.EqualValues(t, 1+len(parts)-3, counting.reset(), "only the parts the partial lacks are fetched")
+			require.EqualValues(t, len(data), written.Load(), "the parts kept count too")
+
+			entries, err := os.ReadDir(filepath.Dir(path))
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "the partial became the file")
+
+			require.NoError(t, os.WriteFile(PartialPath(path), []byte("left over"), 0o644))
+
+			outcome, err = r.RestoreFile(ctx, path, stat, ref)
+			require.NoError(t, err)
+			require.Equal(t, OutcomeUnchanged, outcome)
+			require.NoFileExists(t, PartialPath(path), "a destination that needs no writing drops its partial")
+		})
+	}
+}
+
+func TestAStreamedRestoreResumesFromItsPartial(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	data := randomData(6*maxBlobSize+777, 6)
+	ref := putFile(t, store, nil, data)
+	parts := partsOf(t, store, ref)
+	stat := statFor(data)
+	path := filepath.Join(t.TempDir(), "region.mca")
+
+	_, err := (&Restorer{Store: &streamingStore{memStore: store, failAfter: 4}}).RestoreFile(ctx, path, stat, ref)
+	require.ErrorIs(t, err, errStreamReset)
+	require.Len(t, intactParts(t, PartialPath(path), data, parts), 4)
+
+	resumed := &streamingStore{memStore: store}
+	_, err = (&Restorer{Store: resumed}).RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	requireRestored(t, path, data, stat)
+	require.NoFileExists(t, PartialPath(path))
+
+	asked := 0
+	for _, stripe := range resumed.asked {
+		asked += len(stripe)
+	}
+
+	require.Equal(t, len(parts)-4, asked, "only the parts the partial lacks are streamed")
+}
+
+func TestADamagedOrShortPartialIsRefetched(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	data := randomData(8*maxBlobSize+31, 7)
+	ref := putFile(t, store, nil, data)
+	parts := partsOf(t, store, ref)
+	stat := statFor(data)
+
+	path := failPartWay(t, store, nil, data, ref, 5)
+	partial := PartialPath(path)
+	intact := intactParts(t, partial, data, parts)
+
+	first, last := parts[intact[0]], parts[intact[len(intact)-1]]
+
+	file, err := os.OpenFile(partial, os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = file.WriteAt([]byte{^data[first.Offset]}, int64(first.Offset))
+	require.NoError(t, err)
+	require.NoError(t, file.Truncate(int64(last.Offset+last.Length/2)))
+	require.NoError(t, file.Close())
+
+	kept := intactParts(t, partial, data, parts)
+	require.Len(t, kept, 3)
+
+	counting := &getCountingStore{memStore: store}
+	r := &Restorer{Store: counting, Workers: 4}
+
+	_, err = r.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	requireRestored(t, path, data, stat)
+	require.EqualValues(t, 1+len(parts)-len(kept), counting.reset(), "the damaged and the cut part are fetched again")
+
+	var keptBytes uint64
+	for _, i := range kept {
+		keptBytes += parts[i].Length
+	}
+
+	require.EqualValues(t, keptBytes, r.Stats().BytesFromDestination)
+}
+
+func TestAPartialOfAnotherVersionIsNotTrusted(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	older := randomData(6*maxBlobSize+777, 8)
+	path := failPartWay(t, store, nil, older, putFile(t, store, nil, older), 4)
+
+	// longer than the version restored next, with a hole in it
+	require.NoError(t, os.Truncate(PartialPath(path), int64(len(older))))
+
+	data := randomData(3*maxBlobSize+5, 9)
+	ref := putFile(t, store, nil, data)
+	stat := statFor(data)
+
+	r := &Restorer{Store: store, Verify: true}
+	outcome, err := r.RestoreFile(ctx, path, stat, ref)
+	require.NoError(t, err)
+	require.Equal(t, OutcomeWritten, outcome)
+	requireRestored(t, path, data, stat)
+	require.EqualValues(t, len(data), r.Stats().BytesFromStore)
+	require.NoFileExists(t, PartialPath(path))
 }

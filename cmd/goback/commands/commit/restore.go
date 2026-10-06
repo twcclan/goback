@@ -410,17 +410,24 @@ func restoreSymlink(path, target string) error {
 }
 
 // removeUnrestored deletes everything under base that the restore did not
-// write, deepest entries first.
+// write, deepest entries first, except the partial files a later restore
+// of the same paths resumes from.
 func removeUnrestored(base string, restored map[string]bool, dryRun bool) error {
-	folded := make(map[string]string, len(restored))
+	keep := make(map[string]bool, 2*len(restored))
 	for path := range restored {
+		keep[path] = true
+		keep[backup.PartialPath(path)] = true
+	}
+
+	folded := make(map[string]string, len(keep))
+	for path := range keep {
 		folded[strings.ToLower(path)] = path
 	}
 
 	// kept reports whether the restore wrote path under any spelling the
 	// filesystem treats as the same name
 	kept := func(path string) bool {
-		if restored[path] {
+		if keep[path] {
 			return true
 		}
 
