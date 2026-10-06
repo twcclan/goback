@@ -246,13 +246,20 @@ func (s *Store) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto
 	return object, nil, err
 }
 
-// treeBatch is how many trees Tree locates at once.
-const treeBatch = 1024
+const (
+	// treeBatch is how many trees Tree locates at once.
+	treeBatch = 1024
+	// treeWorkers bounds the tree reads one Tree call has in flight.
+	treeWorkers = 16
+)
 
 // Tree walks the tree at ref breadth-first, its splits, and the trees of
 // directories below it down to maxDepth levels, handing fn runs of those
 // the index can locate and the rest as objects.
 func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn func(*proto.GetTreeResponse) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	type pending struct {
 		ref   *proto.Ref
 		depth uint32
@@ -314,25 +321,49 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 		return nil
 	}
 
-	queue := []pending{{ref: ref}}
-	loaded := map[string]*proto.Object{string(ref.GetHash()): root}
+	type fetched struct {
+		pending
+		obj *proto.Object
+		err error
+	}
 
-	for len(queue) > 0 {
-		next := queue[0]
-		queue = queue[1:]
+	fetch := func(next pending) chan fetched {
+		done := make(chan fetched, 1)
 
-		obj := loaded[string(next.ref.GetHash())]
-		if obj == nil {
-			obj, err = s.Index.Get(ctx, next.ref)
-			if errors.Is(err, backup.ErrNotFound) {
-				return fmt.Errorf("tree %x: %w", next.ref.GetHash(), backup.ErrNotFound)
-			}
+		go func() {
+			obj, err := s.Index.Get(ctx, next.ref)
+			done <- fetched{pending: next, obj: obj, err: err}
+		}()
 
-			if err != nil {
-				return err
-			}
+		return done
+	}
+
+	// the reads run ahead of the walk, but their results are taken in queue
+	// order so the walk, and the record indexes, are those of a serial one
+	rootDone := make(chan fetched, 1)
+	rootDone <- fetched{pending: pending{ref: ref}, obj: root}
+
+	var queue []pending
+	inFlight := []chan fetched{rootDone}
+
+	for len(inFlight) > 0 || len(queue) > 0 {
+		for len(queue) > 0 && len(inFlight) < treeWorkers {
+			inFlight = append(inFlight, fetch(queue[0]))
+			queue = queue[1:]
 		}
 
+		next := <-inFlight[0]
+		inFlight = inFlight[1:]
+
+		if errors.Is(next.err, backup.ErrNotFound) {
+			return fmt.Errorf("tree %x: %w", next.ref.GetHash(), backup.ErrNotFound)
+		}
+
+		if next.err != nil {
+			return next.err
+		}
+
+		obj := next.obj
 		tree := obj.GetTree()
 		if tree == nil {
 			return fmt.Errorf("%w: object %x is not a tree", ErrInvalidRequest, next.ref.GetHash())
