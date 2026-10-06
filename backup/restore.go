@@ -171,6 +171,19 @@ func (r *Restorer) Stats() RestoreStats {
 func (r *Restorer) countBytes(ctx context.Context, counter *int64, source string, n int64) {
 	atomic.AddInt64(counter, n)
 	restoreBytes.Add(ctx, n, metric.WithAttributes(keySource.String(source)))
+
+	if written, ok := ctx.Value(writtenKey{}).(func(int64)); ok {
+		written(n)
+	}
+}
+
+type writtenKey struct{}
+
+// WithWritten makes a RestoreFile called with the returned context hand
+// written the size of each part as it lands in the file, from whichever
+// source, possibly from several goroutines at once.
+func WithWritten(ctx context.Context, written func(n int64)) context.Context {
+	return context.WithValue(ctx, writtenKey{}, written)
 }
 
 func (r *Restorer) countFile(ctx context.Context, outcome Outcome) {

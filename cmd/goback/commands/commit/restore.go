@@ -43,9 +43,23 @@ type restoreProgress struct {
 	filesDone, bytesDone   atomic.Int64
 }
 
-func (p *restoreProgress) done(size int64) {
-	p.filesDone.Add(1)
-	p.bytesDone.Add(size)
+// file counts one file's parts into bytes_done as they are written; done
+// then adds whatever of size its parts did not, as for a file found
+// unchanged.
+func (p *restoreProgress) file(size int64) (written func(int64), done func()) {
+	var landed atomic.Int64
+
+	written = func(n int64) {
+		landed.Add(n)
+		p.bytesDone.Add(n)
+	}
+
+	done = func() {
+		p.filesDone.Add(1)
+		p.bytesDone.Add(max(size-landed.Load(), 0))
+	}
+
+	return written, done
 }
 
 func (p *restoreProgress) log() {
@@ -274,9 +288,10 @@ func (c *commit) restore() error {
 		}
 
 		files.Go(func() error {
-			defer progress.done(stat.Size)
+			written, done := progress.file(stat.Size)
+			defer done()
 
-			outcome, err := c.restorer.RestoreFile(fctx, path, stat, ref)
+			outcome, err := c.restorer.RestoreFile(backup.WithWritten(fctx, written), path, stat, ref)
 			if err != nil {
 				if lost[string(ref.GetHash())] {
 					err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)

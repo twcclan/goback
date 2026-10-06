@@ -106,6 +106,24 @@ func TestRestoreFileReplacesAReadOnlyDestination(t *testing.T) {
 	require.Zero(t, info.Mode()&0o200)
 }
 
+func TestRestoreFileReportsEachPartAsItLands(t *testing.T) {
+	store := newMemStore()
+	data := randomData(3*maxBlobSize+7, 1)
+	ref := putFile(t, store, nil, data)
+
+	var calls, written atomic.Int64
+	ctx := WithWritten(context.Background(), func(n int64) {
+		calls.Add(1)
+		written.Add(n)
+	})
+
+	r := &Restorer{Store: store, Workers: 2}
+	_, err := r.RestoreFile(ctx, filepath.Join(t.TempDir(), "region.mca"), statFor(data), ref)
+	require.NoError(t, err)
+	require.Equal(t, int64(fileParts(t, store, ref)), calls.Load(), "once per part, not once per file")
+	require.Equal(t, int64(len(data)), written.Load())
+}
+
 func TestRestoreFileRejectsAPartThatDoesNotHashToItsRef(t *testing.T) {
 	store := newMemStore()
 	data := randomData(3*maxBlobSize, 1)

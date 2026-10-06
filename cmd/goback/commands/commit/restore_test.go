@@ -211,6 +211,25 @@ func lastProgress(t *testing.T, c *commit, dst string) restoreProgressRecord {
 	return *last
 }
 
+func TestRestoreProgressCountsAFilesBytesWhileItIsWritten(t *testing.T) {
+	p := &restoreProgress{}
+
+	written, done := p.file(100)
+	written(30)
+	written(30)
+	require.Equal(t, int64(60), p.bytesDone.Load(), "parts count before the file is through")
+	require.Zero(t, p.filesDone.Load())
+
+	done()
+	require.Equal(t, int64(100), p.bytesDone.Load(), "what no part wrote, as for a file found unchanged, counts at the end")
+	require.Equal(t, int64(1), p.filesDone.Load())
+
+	written, done = p.file(10)
+	written(15)
+	done()
+	require.Equal(t, int64(115), p.bytesDone.Load(), "a file never takes back what its parts counted")
+}
+
 func TestRestoreProgressCountsWhatTheRestoreCovers(t *testing.T) {
 	ctx := context.Background()
 
