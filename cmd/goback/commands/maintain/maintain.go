@@ -20,7 +20,7 @@ import (
 var Command = cli.Command{
 	Name:        "maintain",
 	Usage:       "Run the housekeeping that is due, as a store server does on its schedule; run it from cron",
-	Description: "Without a subcommand: sweep, retire, compact and build presence filters, and garbage collect once the last collection is older than --gc-interval. A subcommand runs one operation",
+	Description: "Without a subcommand: sweep, retire, compact and build presence filters, garbage collect once the last collection is older than --gc-interval, and rebuild the index's indexes of tables that churned. A subcommand runs one operation",
 	Flags: []cli.Flag{
 		cli.DurationFlag{
 			Name:  "gc-interval",
@@ -46,6 +46,7 @@ var Command = cli.Command{
 					common.Fatal(err)
 				}
 
+				common.Reindex(m.c, m.index)
 				common.Result(common.Done{Action: "compacted"}, func() {})
 			}),
 		},
@@ -63,6 +64,7 @@ var Command = cli.Command{
 					common.Fatalf("Retirement failed after %d commits: %v", n, err)
 				}
 
+				common.Reindex(m.c, m.index)
 				common.Result(counted{"retired", n}, func() { log.Printf("Retired %d commits", n) })
 			}),
 		},
@@ -114,6 +116,7 @@ func due(m *members) {
 	runner.Retirer, _ = m.index.(backup.Retirer)
 	runner.Presence, _ = m.index.(maintenance.Presence)
 	runner.Attributor, _ = m.index.(maintenance.Attributor)
+	runner.Reindexer, _ = m.index.(maintenance.Reindexer)
 
 	ran, err := runner.Due(common.Context(m.c))
 

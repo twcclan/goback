@@ -279,6 +279,19 @@ var (
 			},
 		},
 	}
+	// ReindexesColumns holds the columns for the "reindexes" table.
+	ReindexesColumns = []*schema.Column{
+		{Name: "table_name", Type: field.TypeString},
+		{Name: "churn", Type: field.TypeInt64},
+		{Name: "stats_reset", Type: field.TypeTime, Nullable: true},
+		{Name: "reindexed_at", Type: field.TypeTime},
+	}
+	// ReindexesTable holds the schema information for the "reindexes" table.
+	ReindexesTable = &schema.Table{
+		Name:       "reindexes",
+		Columns:    ReindexesColumns,
+		PrimaryKey: []*schema.Column{ReindexesColumns[0]},
+	}
 	// SessionsColumns holds the columns for the "sessions" table.
 	SessionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -428,6 +441,7 @@ var (
 		FilesTable,
 		ObjectsTable,
 		PinsTable,
+		ReindexesTable,
 		SessionsTable,
 		SetsTable,
 		SetRefsTable,
@@ -465,6 +479,9 @@ func init() {
 	PinsTable.Annotation.Checks = map[string]string{
 		"pins_ref_width":    "length(ref) = 32",
 		"pins_target_width": "length(target) = 32",
+	}
+	ReindexesTable.Annotation = &entsql.Annotation{
+		Table: "reindexes",
 	}
 	SetRefsTable.ForeignKeys[0].RefTable = SetsTable
 	SetRefsTable.Annotation = &entsql.Annotation{}

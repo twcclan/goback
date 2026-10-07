@@ -93,6 +93,18 @@ func (f PinFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PinMutation", m)
 }
 
+// The ReindexFunc type is an adapter to allow the use of ordinary
+// function as Reindex mutator.
+type ReindexFunc func(context.Context, *ent.ReindexMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReindexFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReindexMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReindexMutation", m)
+}
+
 // The SessionFunc type is an adapter to allow the use of ordinary
 // function as Session mutator.
 type SessionFunc func(context.Context, *ent.SessionMutation) (ent.Value, error)

@@ -44,6 +44,11 @@ type Mapper interface {
 	// field:Collected from:"-"
 	Maintenance(in maintenance.Ran) MaintenanceView
 
+	// field:Seconds from:"Took" using:"Seconds"
+	Reindexed(in index.Reindexed) ReindexedView
+
+	RebuiltIndex(in index.RebuiltIndex) RebuiltIndexView
+
 	// field:Keep from:"Brackets"
 	// field:KeepWithin using:"Within"
 	// field:Flags from:"-"
@@ -226,11 +231,30 @@ type ReportView struct {
 // MaintenanceView is what goback maintain did; collected is absent when
 // no collection was due.
 type MaintenanceView struct {
-	Swept     bool        `json:"swept"`
-	Compacted bool        `json:"compacted"`
-	Retired   int         `json:"retired"`
-	Presence  int         `json:"presence"`
-	Collected *ReportView `json:"collected,omitempty"`
+	Swept     bool            `json:"swept"`
+	Compacted bool            `json:"compacted"`
+	Retired   int             `json:"retired"`
+	Presence  int             `json:"presence"`
+	Collected *ReportView     `json:"collected,omitempty"`
+	Reindexed []ReindexedView `json:"reindexed,omitempty"`
+}
+
+// ReindexedView is a table whose indexes maintenance rebuilt, as JSON
+// output shows it.
+type ReindexedView struct {
+	Table   string             `json:"table"`
+	Churn   int64              `json:"churn"`
+	Live    int64              `json:"live"`
+	Indexes []RebuiltIndexView `json:"indexes"`
+	Seconds float64            `json:"seconds"`
+}
+
+// RebuiltIndexView is a rebuilt index with its size in bytes before and
+// after, as JSON output shows it.
+type RebuiltIndexView struct {
+	Name   string `json:"name"`
+	Before int64  `json:"before"`
+	After  int64  `json:"after"`
 }
 
 // PolicyView is a retention policy as JSON output shows it.

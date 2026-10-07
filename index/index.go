@@ -169,3 +169,21 @@ type CommitDetail struct {
 	// longer holds, which cannot be restored whole.
 	Incomplete bool
 }
+
+// Reindexed is a table whose indexes a reindex rebuilt because enough of
+// its rows changed since the last one.
+type Reindexed struct {
+	Table string
+	// Churn is the rows inserted, updated and deleted since the table's
+	// last reindex, and Live the rows it holds.
+	Churn, Live int64
+	Indexes     []RebuiltIndex
+	Took        time.Duration
+}
+
+// RebuiltIndex is one index a reindex rebuilt, with its size in bytes
+// before and after.
+type RebuiltIndex struct {
+	Name          string
+	Before, After int64
+}

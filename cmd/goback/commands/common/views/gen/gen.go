@@ -39,12 +39,17 @@ func (m MapperImpl) Commit(in *proto.Commit) views.CommitView {
 }
 
 func (m MapperImpl) Maintenance(in maintenance.Ran) views.MaintenanceView {
+	tmp0 := make([]views.ReindexedView, len(in.Reindexed))
+	for i := range in.Reindexed {
+		tmp0[i] = m.Reindexed(in.Reindexed[i])
+	}
 
 	return views.MaintenanceView{
 		Swept:     in.Swept,
 		Compacted: in.Compacted,
 		Retired:   in.Retired,
 		Presence:  in.Presence,
+		Reindexed: tmp0,
 	}
 }
 
@@ -116,6 +121,30 @@ func (m MapperImpl) Policy(in retention.Policy) views.PolicyView {
 		KeepLast:   in.KeepLast,
 		Keep:       tmp0,
 		KeepWithin: views.Within(in.KeepWithin),
+	}
+}
+
+func (m MapperImpl) RebuiltIndex(in index.RebuiltIndex) views.RebuiltIndexView {
+
+	return views.RebuiltIndexView{
+		Name:   in.Name,
+		Before: in.Before,
+		After:  in.After,
+	}
+}
+
+func (m MapperImpl) Reindexed(in index.Reindexed) views.ReindexedView {
+	tmp0 := make([]views.RebuiltIndexView, len(in.Indexes))
+	for i := range in.Indexes {
+		tmp0[i] = m.RebuiltIndex(in.Indexes[i])
+	}
+
+	return views.ReindexedView{
+		Table:   in.Table,
+		Churn:   in.Churn,
+		Live:    in.Live,
+		Indexes: tmp0,
+		Seconds: views.Seconds(in.Took),
 	}
 }
 

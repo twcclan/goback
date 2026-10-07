@@ -161,6 +161,7 @@ func serverAction(ctx *cli.Context) {
 	}
 	runner.Store, _ = base.(maintenance.Store)
 	runner.Presence, _ = idx.(maintenance.Presence)
+	runner.Reindexer, _ = idx.(maintenance.Reindexer)
 	go runner.Run(context.Background())
 
 	if x, ok := idx.(*sql.Index); ok {
@@ -202,7 +203,16 @@ func adminServer(x *sql.Index, retirer backup.Retirer, collector pack.Collector)
 	server := &admin.Server{Index: x, Escrow: x}
 
 	if retirer != nil {
-		server.RetireJob = func(ctx context.Context) (int, error) { return retirer.Retire(ctx, time.Now()) }
+		server.RetireJob = func(ctx context.Context) (int, error) {
+			n, err := retirer.Retire(ctx, time.Now())
+			if err != nil {
+				return n, err
+			}
+
+			_, err = x.Reindex(ctx)
+
+			return n, err
+		}
 	}
 
 	if collector != nil {
@@ -214,7 +224,9 @@ func adminServer(x *sql.Index, retirer backup.Retirer, collector pack.Collector)
 
 			gc.Log(report)
 
-			return report.Summary(), nil
+			_, err = x.Reindex(ctx)
+
+			return report.Summary(), err
 		}
 	}
 

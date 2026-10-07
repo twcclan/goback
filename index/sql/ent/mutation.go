@@ -19,6 +19,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/object"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
+	"github.com/twcclan/goback/index/sql/ent/reindex"
 	"github.com/twcclan/goback/index/sql/ent/session"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
@@ -42,6 +43,7 @@ const (
 	TypeFile        = "File"
 	TypeObject      = "Object"
 	TypePin         = "Pin"
+	TypeReindex     = "Reindex"
 	TypeSession     = "Session"
 	TypeSet         = "Set"
 	TypeSetRef      = "SetRef"
@@ -6339,6 +6341,504 @@ func (m *PinMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *PinMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Pin edge %s", name)
+}
+
+// ReindexMutation represents an operation that mutates the Reindex nodes in the graph.
+type ReindexMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *string
+	churn         *int64
+	addchurn      *int64
+	stats_reset   *time.Time
+	reindexed_at  *time.Time
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*Reindex, error)
+	predicates    []predicate.Reindex
+}
+
+var _ ent.Mutation = (*ReindexMutation)(nil)
+
+// reindexOption allows management of the mutation configuration using functional options.
+type reindexOption func(*ReindexMutation)
+
+// newReindexMutation creates new mutation for the Reindex entity.
+func newReindexMutation(c config, op Op, opts ...reindexOption) *ReindexMutation {
+	m := &ReindexMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeReindex,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withReindexID sets the ID field of the mutation.
+func withReindexID(id string) reindexOption {
+	return func(m *ReindexMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Reindex
+		)
+		m.oldValue = func(ctx context.Context) (*Reindex, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Reindex.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withReindex sets the old Reindex of the mutation.
+func withReindex(node *Reindex) reindexOption {
+	return func(m *ReindexMutation) {
+		m.oldValue = func(context.Context) (*Reindex, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ReindexMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ReindexMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Reindex entities.
+func (m *ReindexMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ReindexMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ReindexMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Reindex.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetChurn sets the "churn" field.
+func (m *ReindexMutation) SetChurn(i int64) {
+	m.churn = &i
+	m.addchurn = nil
+}
+
+// Churn returns the value of the "churn" field in the mutation.
+func (m *ReindexMutation) Churn() (r int64, exists bool) {
+	v := m.churn
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChurn returns the old "churn" field's value of the Reindex entity.
+// If the Reindex object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReindexMutation) OldChurn(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChurn is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChurn requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChurn: %w", err)
+	}
+	return oldValue.Churn, nil
+}
+
+// AddChurn adds i to the "churn" field.
+func (m *ReindexMutation) AddChurn(i int64) {
+	if m.addchurn != nil {
+		*m.addchurn += i
+	} else {
+		m.addchurn = &i
+	}
+}
+
+// AddedChurn returns the value that was added to the "churn" field in this mutation.
+func (m *ReindexMutation) AddedChurn() (r int64, exists bool) {
+	v := m.addchurn
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChurn resets all changes to the "churn" field.
+func (m *ReindexMutation) ResetChurn() {
+	m.churn = nil
+	m.addchurn = nil
+}
+
+// SetStatsReset sets the "stats_reset" field.
+func (m *ReindexMutation) SetStatsReset(t time.Time) {
+	m.stats_reset = &t
+}
+
+// StatsReset returns the value of the "stats_reset" field in the mutation.
+func (m *ReindexMutation) StatsReset() (r time.Time, exists bool) {
+	v := m.stats_reset
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatsReset returns the old "stats_reset" field's value of the Reindex entity.
+// If the Reindex object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReindexMutation) OldStatsReset(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatsReset is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatsReset requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatsReset: %w", err)
+	}
+	return oldValue.StatsReset, nil
+}
+
+// ClearStatsReset clears the value of the "stats_reset" field.
+func (m *ReindexMutation) ClearStatsReset() {
+	m.stats_reset = nil
+	m.clearedFields[reindex.FieldStatsReset] = struct{}{}
+}
+
+// StatsResetCleared returns if the "stats_reset" field was cleared in this mutation.
+func (m *ReindexMutation) StatsResetCleared() bool {
+	_, ok := m.clearedFields[reindex.FieldStatsReset]
+	return ok
+}
+
+// ResetStatsReset resets all changes to the "stats_reset" field.
+func (m *ReindexMutation) ResetStatsReset() {
+	m.stats_reset = nil
+	delete(m.clearedFields, reindex.FieldStatsReset)
+}
+
+// SetReindexedAt sets the "reindexed_at" field.
+func (m *ReindexMutation) SetReindexedAt(t time.Time) {
+	m.reindexed_at = &t
+}
+
+// ReindexedAt returns the value of the "reindexed_at" field in the mutation.
+func (m *ReindexMutation) ReindexedAt() (r time.Time, exists bool) {
+	v := m.reindexed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReindexedAt returns the old "reindexed_at" field's value of the Reindex entity.
+// If the Reindex object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReindexMutation) OldReindexedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReindexedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReindexedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReindexedAt: %w", err)
+	}
+	return oldValue.ReindexedAt, nil
+}
+
+// ResetReindexedAt resets all changes to the "reindexed_at" field.
+func (m *ReindexMutation) ResetReindexedAt() {
+	m.reindexed_at = nil
+}
+
+// Where appends a list predicates to the ReindexMutation builder.
+func (m *ReindexMutation) Where(ps ...predicate.Reindex) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ReindexMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ReindexMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Reindex, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ReindexMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ReindexMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Reindex).
+func (m *ReindexMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ReindexMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.churn != nil {
+		fields = append(fields, reindex.FieldChurn)
+	}
+	if m.stats_reset != nil {
+		fields = append(fields, reindex.FieldStatsReset)
+	}
+	if m.reindexed_at != nil {
+		fields = append(fields, reindex.FieldReindexedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ReindexMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case reindex.FieldChurn:
+		return m.Churn()
+	case reindex.FieldStatsReset:
+		return m.StatsReset()
+	case reindex.FieldReindexedAt:
+		return m.ReindexedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ReindexMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case reindex.FieldChurn:
+		return m.OldChurn(ctx)
+	case reindex.FieldStatsReset:
+		return m.OldStatsReset(ctx)
+	case reindex.FieldReindexedAt:
+		return m.OldReindexedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown Reindex field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ReindexMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case reindex.FieldChurn:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChurn(v)
+		return nil
+	case reindex.FieldStatsReset:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatsReset(v)
+		return nil
+	case reindex.FieldReindexedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReindexedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Reindex field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ReindexMutation) AddedFields() []string {
+	var fields []string
+	if m.addchurn != nil {
+		fields = append(fields, reindex.FieldChurn)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ReindexMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case reindex.FieldChurn:
+		return m.AddedChurn()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ReindexMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case reindex.FieldChurn:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChurn(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Reindex numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ReindexMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(reindex.FieldStatsReset) {
+		fields = append(fields, reindex.FieldStatsReset)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ReindexMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ReindexMutation) ClearField(name string) error {
+	switch name {
+	case reindex.FieldStatsReset:
+		m.ClearStatsReset()
+		return nil
+	}
+	return fmt.Errorf("unknown Reindex nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ReindexMutation) ResetField(name string) error {
+	switch name {
+	case reindex.FieldChurn:
+		m.ResetChurn()
+		return nil
+	case reindex.FieldStatsReset:
+		m.ResetStatsReset()
+		return nil
+	case reindex.FieldReindexedAt:
+		m.ResetReindexedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown Reindex field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ReindexMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ReindexMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ReindexMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ReindexMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ReindexMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ReindexMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ReindexMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown Reindex unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ReindexMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown Reindex edge %s", name)
 }
 
 // SessionMutation represents an operation that mutates the Session nodes in the graph.

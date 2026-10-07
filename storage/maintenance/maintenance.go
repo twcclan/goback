@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage/pack"
 )
 
@@ -29,6 +30,12 @@ type Presence interface {
 type Attributor interface {
 	RootOwner(ctx context.Context) (func(root []byte) pack.Attribution, error)
 	RecordSetSizes(ctx context.Context, report *pack.CollectReport) error
+}
+
+// Reindexer is an index that rebuilds the indexes of its tables a
+// maintenance run churned, and reports the tables it rebuilt.
+type Reindexer interface {
+	Reindex(ctx context.Context) ([]index.Reindexed, error)
 }
 
 // Collected is a store that knows when it was last garbage collected.
@@ -89,6 +96,7 @@ type Runner struct {
 	Attributor Attributor
 	Retirer    backup.Retirer
 	Presence   Presence
+	Reindexer  Reindexer
 	Schedule   Schedule
 	// OnCollect sees every garbage collection report; nil ignores them.
 	OnCollect func(*pack.CollectReport)
@@ -124,9 +132,9 @@ func (r *Runner) Run(ctx context.Context) {
 		run   func(context.Context)
 	}{
 		{r.Schedule.Sweep, func(context.Context) { r.Sweep() }},
-		{r.Schedule.Compact, func(context.Context) { r.Compact() }},
-		{r.Schedule.Collect, r.Collect},
-		{r.Schedule.Retire, r.Retire},
+		{r.Schedule.Compact, func(ctx context.Context) { r.Compact(); r.Reindex(ctx) }},
+		{r.Schedule.Collect, func(ctx context.Context) { r.Collect(ctx); r.Reindex(ctx) }},
+		{r.Schedule.Retire, func(ctx context.Context) { r.Retire(ctx); r.Reindex(ctx) }},
 		{r.Schedule.Presence, r.BuildPresence},
 	}
 
@@ -172,11 +180,14 @@ type Ran struct {
 	Retired, Presence int
 	// Collected is nil when no collection was due.
 	Collected *pack.CollectReport
+	// Reindexed are the tables whose indexes the run's churn rebuilt.
+	Reindexed []index.Reindexed
 }
 
 // Due runs every scheduled job once, except a collection, which runs only
-// when the store's last one is at least Schedule.Collect old. It is what
-// a cron job calls; errors are joined and every job still runs.
+// when the store's last one is at least Schedule.Collect old, and then
+// reindexes what they churned. It is what a cron job calls; errors are
+// joined and every job still runs.
 func (r *Runner) Due(ctx context.Context) (Ran, error) {
 	var ran Ran
 	var errs []error
@@ -209,6 +220,11 @@ func (r *Runner) Due(ctx context.Context) (Ran, error) {
 
 	if due {
 		ran.Collected, err = Collect(ctx, r.Collector, r.Attributor, pack.CollectOptions{})
+		errs = append(errs, err)
+	}
+
+	if r.Reindexer != nil {
+		ran.Reindexed, err = r.Reindexer.Reindex(ctx)
 		errs = append(errs, err)
 	}
 
@@ -293,5 +309,16 @@ func (r *Runner) Retire(ctx context.Context) {
 
 	if n > 0 {
 		r.logger().Info("retired commits", "count", n)
+	}
+}
+
+// Reindex rebuilds the indexes the jobs churned.
+func (r *Runner) Reindex(ctx context.Context) {
+	if r.Reindexer == nil {
+		return
+	}
+
+	if _, err := r.Reindexer.Reindex(ctx); err != nil {
+		r.logger().Error("reindexing failed", "err", err)
 	}
 }

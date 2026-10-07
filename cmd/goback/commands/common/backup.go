@@ -20,6 +20,7 @@ import (
 	"github.com/twcclan/goback/index/sql"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage"
+	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/storage/wrapped"
 
@@ -568,4 +569,17 @@ func OpenIndex(c *cli.Context, store backup.ObjectStore) backup.Index {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// Reindex rebuilds the indexes of the tables a maintenance operation
+// churned, when idx keeps any, and exits on failure.
+func Reindex(c *cli.Context, idx backup.Index) {
+	r, ok := idx.(maintenance.Reindexer)
+	if !ok {
+		return
+	}
+
+	if _, err := r.Reindex(Context(c)); err != nil {
+		Fatalf("Reindexing failed: %v", err)
+	}
 }

@@ -90,3 +90,26 @@ func (DeletedRef) Indexes() []ent.Index {
 func (DeletedRef) Annotations() []schema.Annotation {
 	return []schema.Annotation{refWidth("deleted_refs", "ref")}
 }
+
+// Reindex is a table's statistics counters as they stood when its
+// indexes were last rebuilt.
+type Reindex struct {
+	ent.Schema
+}
+
+// Fields of Reindex.
+func (Reindex) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("id").StorageKey("table_name"),
+		// rows inserted, updated outside HOT and deleted, as counted
+		field.Int64("churn"),
+		// when the database's statistics were last reset, nil for never
+		field.Time("stats_reset").Optional().Nillable(),
+		field.Time("reindexed_at"),
+	}
+}
+
+// Annotations of Reindex.
+func (Reindex) Annotations() []schema.Annotation {
+	return []schema.Annotation{entsql.Table("reindexes")}
+}

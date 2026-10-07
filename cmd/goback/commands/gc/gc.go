@@ -77,6 +77,8 @@ func gcAction(c *cli.Context) {
 		common.Fatal(err)
 	}
 
+	common.Reindex(c, index)
+
 	common.Result(common.View.Report(report), func() { Log(report) })
 
 	common.CloseStore(store)

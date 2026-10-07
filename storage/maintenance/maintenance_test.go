@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
@@ -41,8 +42,15 @@ func (f *fakeRetirer) Retire(context.Context, time.Time) (int, error) {
 	return 2, nil
 }
 
+type fakeReindexer struct{ runs atomic.Int32 }
+
+func (f *fakeReindexer) Reindex(context.Context) ([]index.Reindexed, error) {
+	f.runs.Add(1)
+	return []index.Reindexed{{Table: "objects"}}, nil
+}
+
 func TestRunnerTicksEveryScheduledJob(t *testing.T) {
-	store, collector, retirer, presence := &fakeStore{}, &fakeCollector{}, &fakeRetirer{}, &fakePresence{}
+	store, collector, retirer, presence, reindexer := &fakeStore{}, &fakeCollector{}, &fakeRetirer{}, &fakePresence{}, &fakeReindexer{}
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	var reports atomic.Int32
 
@@ -51,6 +59,7 @@ func TestRunnerTicksEveryScheduledJob(t *testing.T) {
 		Collector: collector,
 		Retirer:   retirer,
 		Presence:  presence,
+		Reindexer: reindexer,
 		Schedule:  Schedule{Sweep: 10 * time.Millisecond, Compact: 10 * time.Millisecond, Collect: 10 * time.Millisecond, Presence: 10 * time.Millisecond},
 		OnCollect: func(report *pack.CollectReport) { reports.Add(int32(report.Objects)) },
 		Now:       func() time.Time { return now },
@@ -67,6 +76,7 @@ func TestRunnerTicksEveryScheduledJob(t *testing.T) {
 	require.Equal(t, reports.Load(), 7*collector.runs.Load())
 	require.GreaterOrEqual(t, presence.runs.Load(), int32(1))
 	require.Zero(t, retirer.runs.Load(), "retirement was not scheduled")
+	require.Equal(t, collector.runs.Load()+store.compactions.Load(), reindexer.runs.Load(), "every compaction and collection is followed by a reindex")
 }
 
 func TestRunnerSkipsWhatItDoesNotHave(t *testing.T) {
@@ -122,12 +132,13 @@ func TestDueCollectsOnlyOnceTheLastCollectionIsOldEnough(t *testing.T) {
 }
 
 func TestDueRunsEveryJobPastAFailingOne(t *testing.T) {
-	store, retirer := &fakeStore{}, &fakeRetirer{}
-	r := &Runner{Store: store, Retirer: retirer, Schedule: DefaultSchedule}
+	store, retirer, reindexer := &fakeStore{}, &fakeRetirer{}, &fakeReindexer{}
+	r := &Runner{Store: store, Retirer: retirer, Reindexer: reindexer, Schedule: DefaultSchedule}
 
 	ran, err := r.Due(context.Background())
 	require.ErrorContains(t, err, "disk full")
 	require.True(t, ran.Swept)
 	require.False(t, ran.Compacted)
 	require.Equal(t, 2, ran.Retired)
+	require.Len(t, ran.Reindexed, 1, "what the jobs churned is reindexed after them")
 }

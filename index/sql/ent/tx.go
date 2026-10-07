@@ -28,6 +28,8 @@ type Tx struct {
 	Object *ObjectClient
 	// Pin is the client for interacting with the Pin builders.
 	Pin *PinClient
+	// Reindex is the client for interacting with the Reindex builders.
+	Reindex *ReindexClient
 	// Session is the client for interacting with the Session builders.
 	Session *SessionClient
 	// Set is the client for interacting with the Set builders.
@@ -176,6 +178,7 @@ func (tx *Tx) init() {
 	tx.File = NewFileClient(tx.config)
 	tx.Object = NewObjectClient(tx.config)
 	tx.Pin = NewPinClient(tx.config)
+	tx.Reindex = NewReindexClient(tx.config)
 	tx.Session = NewSessionClient(tx.config)
 	tx.Set = NewSetClient(tx.config)
 	tx.SetRef = NewSetRefClient(tx.config)

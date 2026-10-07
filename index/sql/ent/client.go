@@ -22,6 +22,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/object"
 	"github.com/twcclan/goback/index/sql/ent/pin"
+	"github.com/twcclan/goback/index/sql/ent/reindex"
 	"github.com/twcclan/goback/index/sql/ent/session"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
@@ -50,6 +51,8 @@ type Client struct {
 	Object *ObjectClient
 	// Pin is the client for interacting with the Pin builders.
 	Pin *PinClient
+	// Reindex is the client for interacting with the Reindex builders.
+	Reindex *ReindexClient
 	// Session is the client for interacting with the Session builders.
 	Session *SessionClient
 	// Set is the client for interacting with the Set builders.
@@ -78,6 +81,7 @@ func (c *Client) init() {
 	c.File = NewFileClient(c.config)
 	c.Object = NewObjectClient(c.config)
 	c.Pin = NewPinClient(c.config)
+	c.Reindex = NewReindexClient(c.config)
 	c.Session = NewSessionClient(c.config)
 	c.Set = NewSetClient(c.config)
 	c.SetRef = NewSetRefClient(c.config)
@@ -182,6 +186,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		File:        NewFileClient(cfg),
 		Object:      NewObjectClient(cfg),
 		Pin:         NewPinClient(cfg),
+		Reindex:     NewReindexClient(cfg),
 		Session:     NewSessionClient(cfg),
 		Set:         NewSetClient(cfg),
 		SetRef:      NewSetRefClient(cfg),
@@ -213,6 +218,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		File:        NewFileClient(cfg),
 		Object:      NewObjectClient(cfg),
 		Pin:         NewPinClient(cfg),
+		Reindex:     NewReindexClient(cfg),
 		Session:     NewSessionClient(cfg),
 		Set:         NewSetClient(cfg),
 		SetRef:      NewSetRefClient(cfg),
@@ -248,7 +254,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.Archive, c.CommitRow, c.DamagedPath, c.DeletedRef, c.File, c.Object, c.Pin,
-		c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
+		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
 	} {
 		n.Use(hooks...)
 	}
@@ -259,7 +265,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.Archive, c.CommitRow, c.DamagedPath, c.DeletedRef, c.File, c.Object, c.Pin,
-		c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
+		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -282,6 +288,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Object.mutate(ctx, m)
 	case *PinMutation:
 		return c.Pin.mutate(ctx, m)
+	case *ReindexMutation:
+		return c.Reindex.mutate(ctx, m)
 	case *SessionMutation:
 		return c.Session.mutate(ctx, m)
 	case *SetMutation:
@@ -1324,6 +1332,139 @@ func (c *PinClient) mutate(ctx context.Context, m *PinMutation) (Value, error) {
 	}
 }
 
+// ReindexClient is a client for the Reindex schema.
+type ReindexClient struct {
+	config
+}
+
+// NewReindexClient returns a client for the Reindex from the given config.
+func NewReindexClient(c config) *ReindexClient {
+	return &ReindexClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `reindex.Hooks(f(g(h())))`.
+func (c *ReindexClient) Use(hooks ...Hook) {
+	c.hooks.Reindex = append(c.hooks.Reindex, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `reindex.Intercept(f(g(h())))`.
+func (c *ReindexClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Reindex = append(c.inters.Reindex, interceptors...)
+}
+
+// Create returns a builder for creating a Reindex entity.
+func (c *ReindexClient) Create() *ReindexCreate {
+	mutation := newReindexMutation(c.config, OpCreate)
+	return &ReindexCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Reindex entities.
+func (c *ReindexClient) CreateBulk(builders ...*ReindexCreate) *ReindexCreateBulk {
+	return &ReindexCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ReindexClient) MapCreateBulk(slice any, setFunc func(*ReindexCreate, int)) *ReindexCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ReindexCreateBulk{err: fmt.Errorf("calling to ReindexClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ReindexCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ReindexCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Reindex.
+func (c *ReindexClient) Update() *ReindexUpdate {
+	mutation := newReindexMutation(c.config, OpUpdate)
+	return &ReindexUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ReindexClient) UpdateOne(_m *Reindex) *ReindexUpdateOne {
+	mutation := newReindexMutation(c.config, OpUpdateOne, withReindex(_m))
+	return &ReindexUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ReindexClient) UpdateOneID(id string) *ReindexUpdateOne {
+	mutation := newReindexMutation(c.config, OpUpdateOne, withReindexID(id))
+	return &ReindexUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Reindex.
+func (c *ReindexClient) Delete() *ReindexDelete {
+	mutation := newReindexMutation(c.config, OpDelete)
+	return &ReindexDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ReindexClient) DeleteOne(_m *Reindex) *ReindexDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ReindexClient) DeleteOneID(id string) *ReindexDeleteOne {
+	builder := c.Delete().Where(reindex.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ReindexDeleteOne{builder}
+}
+
+// Query returns a query builder for Reindex.
+func (c *ReindexClient) Query() *ReindexQuery {
+	return &ReindexQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeReindex},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Reindex entity by its id.
+func (c *ReindexClient) Get(ctx context.Context, id string) (*Reindex, error) {
+	return c.Query().Where(reindex.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ReindexClient) GetX(ctx context.Context, id string) *Reindex {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ReindexClient) Hooks() []Hook {
+	return c.hooks.Reindex
+}
+
+// Interceptors returns the client interceptors.
+func (c *ReindexClient) Interceptors() []Interceptor {
+	return c.inters.Reindex
+}
+
+func (c *ReindexClient) mutate(ctx context.Context, m *ReindexMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ReindexCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ReindexUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ReindexUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ReindexDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Reindex mutation op: %q", m.Op())
+	}
+}
+
 // SessionClient is a client for the Session schema.
 type SessionClient struct {
 	config
@@ -2104,12 +2245,12 @@ func (c *TreeClient) mutate(ctx context.Context, m *TreeMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Session, Set,
-		SetRef, Settings, Tree []ent.Hook
+		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Reindex,
+		Session, Set, SetRef, Settings, Tree []ent.Hook
 	}
 	inters struct {
-		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Session, Set,
-		SetRef, Settings, Tree []ent.Interceptor
+		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Reindex,
+		Session, Set, SetRef, Settings, Tree []ent.Interceptor
 	}
 )
 
