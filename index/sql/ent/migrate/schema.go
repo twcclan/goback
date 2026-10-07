@@ -59,6 +59,7 @@ var (
 		{Name: "incomplete", Type: field.TypeBool, Default: false},
 		{Name: "retained_by", Type: field.TypeString, Default: ""},
 		{Name: "retire_at", Type: field.TypeTime, Nullable: true},
+		{Name: "retire_policy", Type: field.TypeString, Nullable: true},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "tombstoned_at", Type: field.TypeTime, Nullable: true},
@@ -75,7 +76,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "commits_sets_set",
-				Columns:    []*schema.Column{CommitsColumns[22]},
+				Columns:    []*schema.Column{CommitsColumns[23]},
 				RefColumns: []*schema.Column{SetsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -89,12 +90,12 @@ var (
 			{
 				Name:    "commitrow_set_id_received_at",
 				Unique:  false,
-				Columns: []*schema.Column{CommitsColumns[22], CommitsColumns[3]},
+				Columns: []*schema.Column{CommitsColumns[23], CommitsColumns[3]},
 			},
 			{
 				Name:    "commits_presence",
 				Unique:  false,
-				Columns: []*schema.Column{CommitsColumns[22]},
+				Columns: []*schema.Column{CommitsColumns[23]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "presence IS NOT NULL",
 				},
@@ -102,7 +103,7 @@ var (
 			{
 				Name:    "commits_expiring",
 				Unique:  false,
-				Columns: []*schema.Column{CommitsColumns[17]},
+				Columns: []*schema.Column{CommitsColumns[18]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "tombstoned_at IS NULL AND expires_at IS NOT NULL",
 				},

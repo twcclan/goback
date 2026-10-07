@@ -191,6 +191,20 @@ func (_c *CommitRowCreate) SetNillableRetireAt(v *time.Time) *CommitRowCreate {
 	return _c
 }
 
+// SetRetirePolicy sets the "retire_policy" field.
+func (_c *CommitRowCreate) SetRetirePolicy(v string) *CommitRowCreate {
+	_c.mutation.SetRetirePolicy(v)
+	return _c
+}
+
+// SetNillableRetirePolicy sets the "retire_policy" field if the given value is not nil.
+func (_c *CommitRowCreate) SetNillableRetirePolicy(v *string) *CommitRowCreate {
+	if v != nil {
+		_c.SetRetirePolicy(*v)
+	}
+	return _c
+}
+
 // SetDeletedAt sets the "deleted_at" field.
 func (_c *CommitRowCreate) SetDeletedAt(v time.Time) *CommitRowCreate {
 	_c.mutation.SetDeletedAt(v)
@@ -464,6 +478,10 @@ func (_c *CommitRowCreate) createSpec() (*CommitRow, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RetireAt(); ok {
 		_spec.SetField(commitrow.FieldRetireAt, field.TypeTime, value)
 		_node.RetireAt = &value
+	}
+	if value, ok := _c.mutation.RetirePolicy(); ok {
+		_spec.SetField(commitrow.FieldRetirePolicy, field.TypeString, value)
+		_node.RetirePolicy = &value
 	}
 	if value, ok := _c.mutation.DeletedAt(); ok {
 		_spec.SetField(commitrow.FieldDeletedAt, field.TypeTime, value)
@@ -771,6 +789,24 @@ func (u *CommitRowUpsert) UpdateRetireAt() *CommitRowUpsert {
 // ClearRetireAt clears the value of the "retire_at" field.
 func (u *CommitRowUpsert) ClearRetireAt() *CommitRowUpsert {
 	u.SetNull(commitrow.FieldRetireAt)
+	return u
+}
+
+// SetRetirePolicy sets the "retire_policy" field.
+func (u *CommitRowUpsert) SetRetirePolicy(v string) *CommitRowUpsert {
+	u.Set(commitrow.FieldRetirePolicy, v)
+	return u
+}
+
+// UpdateRetirePolicy sets the "retire_policy" field to the value that was provided on create.
+func (u *CommitRowUpsert) UpdateRetirePolicy() *CommitRowUpsert {
+	u.SetExcluded(commitrow.FieldRetirePolicy)
+	return u
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (u *CommitRowUpsert) ClearRetirePolicy() *CommitRowUpsert {
+	u.SetNull(commitrow.FieldRetirePolicy)
 	return u
 }
 
@@ -1188,6 +1224,27 @@ func (u *CommitRowUpsertOne) UpdateRetireAt() *CommitRowUpsertOne {
 func (u *CommitRowUpsertOne) ClearRetireAt() *CommitRowUpsertOne {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.ClearRetireAt()
+	})
+}
+
+// SetRetirePolicy sets the "retire_policy" field.
+func (u *CommitRowUpsertOne) SetRetirePolicy(v string) *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetRetirePolicy(v)
+	})
+}
+
+// UpdateRetirePolicy sets the "retire_policy" field to the value that was provided on create.
+func (u *CommitRowUpsertOne) UpdateRetirePolicy() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateRetirePolicy()
+	})
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (u *CommitRowUpsertOne) ClearRetirePolicy() *CommitRowUpsertOne {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearRetirePolicy()
 	})
 }
 
@@ -1791,6 +1848,27 @@ func (u *CommitRowUpsertBulk) UpdateRetireAt() *CommitRowUpsertBulk {
 func (u *CommitRowUpsertBulk) ClearRetireAt() *CommitRowUpsertBulk {
 	return u.Update(func(s *CommitRowUpsert) {
 		s.ClearRetireAt()
+	})
+}
+
+// SetRetirePolicy sets the "retire_policy" field.
+func (u *CommitRowUpsertBulk) SetRetirePolicy(v string) *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.SetRetirePolicy(v)
+	})
+}
+
+// UpdateRetirePolicy sets the "retire_policy" field to the value that was provided on create.
+func (u *CommitRowUpsertBulk) UpdateRetirePolicy() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.UpdateRetirePolicy()
+	})
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (u *CommitRowUpsertBulk) ClearRetirePolicy() *CommitRowUpsertBulk {
+	return u.Update(func(s *CommitRowUpsert) {
+		s.ClearRetirePolicy()
 	})
 }
 

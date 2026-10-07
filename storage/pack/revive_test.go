@@ -86,3 +86,20 @@ func TestARevivalRefusesWhatIsNoCommit(t *testing.T) {
 	_, err := store.Revive(context.Background(), []*proto.Ref{chain[0].Ref()}, true)
 	require.ErrorContains(t, err, "not a commit")
 }
+
+func TestHoldsSeesATombstonedCommitButNoUnknownOne(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	chain := makeChain(makeTestData(t, 3))
+	putAll(t, store, chain)
+	commit := chain[len(chain)-1]
+
+	require.NoError(t, store.Delete(ctx, commit.Ref()))
+	require.NoError(t, store.Flush())
+
+	held, err := store.Holds(ctx, []*proto.Ref{commit.Ref(), makeChain(makeTestData(t, 1))[0].Ref()})
+	require.NoError(t, err)
+	require.Equal(t, []bool{true, false}, held)
+}

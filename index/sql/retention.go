@@ -122,14 +122,21 @@ func (x *Index) evaluateSet(ctx context.Context, tx *ent.Tx, setID int64, now ti
 		commits[i] = retention.Commit{ReceivedAt: row.ReceivedAt, Partial: row.Partial, Pinned: held[string(row.Ref)]}
 	}
 
+	policy, err := json.Marshal(cfg.policy)
+	if err != nil {
+		return err
+	}
+
 	for i, d := range retention.Evaluate(commits, cfg.policy, now) {
 		switch {
 		case d.Keep:
-			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy(d.RetainedBy()).ClearRetireAt().ClearExpiresAt().Exec(ctx)
+			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy(d.RetainedBy()).ClearRetireAt().ClearRetirePolicy().
+				ClearExpiresAt().Exec(ctx)
 		case rows[i].RetireAt != nil:
 			continue
 		default:
-			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy("").SetRetireAt(now).SetExpiresAt(now).Exec(ctx)
+			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy("").SetRetireAt(now).SetRetirePolicy(string(policy)).
+				SetExpiresAt(now).Exec(ctx)
 		}
 
 		if err != nil {
@@ -355,7 +362,7 @@ func (x *Index) UndeleteCommit(ctx context.Context, ref *proto.Ref) error {
 // untrashCommit takes a commit out of the trash, for retention to decide
 // on again.
 func untrashCommit(ctx context.Context, tx *ent.Tx, ref []byte) error {
-	return tx.CommitRow.Update().Where(commitrow.Ref(ref)).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
+	return tx.CommitRow.Update().Where(commitrow.Ref(ref)).ClearDeletedAt().ClearRetireAt().ClearRetirePolicy().ClearExpiresAt().Exec(ctx)
 }
 
 func (x *Index) lockOwnSet(ctx context.Context, tx *ent.Tx, name string) (int64, *setConfig, error) {
@@ -458,7 +465,7 @@ func reopenSet(ctx context.Context, tx *ent.Tx, setID int64) (*ent.Set, error) {
 		return nil, err
 	}
 
-	return s, tx.CommitRow.Update().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).ClearDeletedAt().ClearRetireAt().ClearExpiresAt().Exec(ctx)
+	return s, tx.CommitRow.Update().Where(commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).ClearDeletedAt().ClearRetireAt().ClearRetirePolicy().ClearExpiresAt().Exec(ctx)
 }
 
 // inVisibleSets keeps the pins whose commit belongs to a set the query
@@ -548,11 +555,19 @@ func (x *Index) PinsOf(ctx context.Context, targets ...*proto.Ref) ([]*proto.Pin
 	return mapAll(rows, m.Pin), nil
 }
 
-// Retire implements backup.Retirer: every retired commit past its window
-// gets a tombstone, its set loses the rows no other commit holds, and a
-// closing set with nothing left becomes deleted. An active set whose
-// retention is paused is skipped; a deleted set proceeds regardless.
+// Retire implements backup.Retirer as RetireCommits does.
 func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
+	retired, err := x.RetireCommits(ctx, now)
+
+	return len(retired), err
+}
+
+// RetireCommits gives every retired commit past its window a tombstone,
+// drops the rows of its set no other commit holds, and makes a closing
+// set with nothing left deleted. An active set whose retention is paused
+// is skipped; a deleted set proceeds regardless. It returns the commits
+// it tombstoned, those before a failure included.
+func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retired, error) {
 	now = now.UTC()
 
 	ctx, span := tracer.Start(ctx, "Index.Retire")
@@ -569,7 +584,7 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 
 	held, err := x.restoreLeases(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	due, err := x.client.CommitRow.Query().
@@ -577,14 +592,14 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 			commitrow.HasSetWith(set.Or(set.RetentionPaused(false), set.StateNEQ(set.StateActive)))).
 		WithSet().All(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	phases.done("due")
 
 	pinned, err := x.storedPins(ctx, due)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	phases.done("pins")
@@ -599,7 +614,7 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 
 	written, err := x.writeTombstones(ctx, eligible, now)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	tombstoned = len(written)
@@ -610,28 +625,39 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 	// before this point leaves commits that the next run tombstones again
 	if len(written) > 0 {
 		if err := x.flush(); err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
 
 	phases.done("flush")
 
-	count := 0
+	var retired []index.Retired
 	sets := make(map[int64][][]byte)
+	names := make(map[int64]string)
 
 	for _, c := range written {
 		sets[c.SetID] = append(sets[c.SetID], c.Ref)
+		names[c.SetID] = c.Edges.Set.Name
 	}
 
 	for setID, refs := range sets {
 		for start := 0; start < len(refs); start += retireBatch {
 			chunk := refs[start:min(start+retireBatch, len(refs))]
 
-			if err := x.markTombstoned(ctx, setID, chunk, now); err != nil {
-				return count, err
+			marked, err := x.markTombstoned(ctx, setID, chunk, now)
+			if err != nil {
+				return retired, err
 			}
 
-			count += len(chunk)
+			for _, row := range marked {
+				r, err := retiredOf(row, names[setID])
+				if err != nil {
+					return retired, err
+				}
+
+				r.TombstonedAt, r.State = now, index.RetiredHeld
+				retired = append(retired, r)
+			}
 		}
 	}
 
@@ -639,17 +665,116 @@ func (x *Index) Retire(ctx context.Context, now time.Time) (int, error) {
 
 	for setID, refs := range sets {
 		if err := x.pruneRefs(ctx, setID, refs); err != nil {
-			return count, err
+			return retired, err
 		}
 
 		if err := x.dropDeadRows(ctx, setID); err != nil {
-			return count, err
+			return retired, err
 		}
 	}
 
 	phases.done("prune")
 
-	return count, x.closeEmptySets(ctx)
+	return retired, x.closeEmptySets(ctx)
+}
+
+// RetiredCommits reports the retirement of each of the commits whose set
+// the caller sees, in the order given, leaving out the others; a commit
+// live now, unretired or never retired, is RetiredLive.
+func (x *Index) RetiredCommits(ctx context.Context, refs []*proto.Ref) ([]index.Retired, error) {
+	hashes := make([][]byte, len(refs))
+	for i, ref := range refs {
+		hashes[i] = ref.GetHash()
+	}
+
+	rows, err := x.client.CommitRow.Query().Where(commitrow.RefIn(hashes...), commitrow.HasSet()).WithSet().All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	byRef := make(map[string]*ent.CommitRow, len(rows))
+	var tombstoned []*proto.Ref
+
+	for _, row := range rows {
+		byRef[string(row.Ref)] = row
+
+		if row.TombstonedAt != nil {
+			tombstoned = append(tombstoned, &proto.Ref{Hash: row.Ref})
+		}
+	}
+
+	held := make(map[string]bool, len(tombstoned))
+
+	if reviver, ok := storeAs[backup.Reviver](x.ObjectStore); ok && len(tombstoned) > 0 {
+		holds, err := reviver.Holds(ctx, tombstoned)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, ref := range tombstoned {
+			held[string(ref.Hash)] = holds[i]
+		}
+	}
+
+	var retired []index.Retired
+
+	for _, hash := range hashes {
+		row := byRef[string(hash)]
+		if row == nil {
+			continue
+		}
+
+		r, err := retiredOf(row, row.Edges.Set.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case row.TombstonedAt != nil && held[string(hash)]:
+			r.State = index.RetiredHeld
+		case row.TombstonedAt != nil:
+			r.State = index.RetiredGone
+		case row.RetireAt != nil || row.DeletedAt != nil:
+			r.State = index.RetiredPending
+		default:
+			r.State = index.RetiredLive
+		}
+
+		retired = append(retired, r)
+	}
+
+	return retired, nil
+}
+
+// retiredOf is the retirement a commit row records.
+func retiredOf(row *ent.CommitRow, setName string) (index.Retired, error) {
+	r := index.Retired{
+		Ref:        &proto.Ref{Hash: row.Ref},
+		SetID:      row.SetID,
+		Set:        setName,
+		Timestamp:  row.Timestamp,
+		ReceivedAt: row.ReceivedAt,
+		Deleted:    row.DeletedAt != nil,
+	}
+
+	if row.RetireAt != nil {
+		r.RetiredAt = *row.RetireAt
+	}
+
+	if row.TombstonedAt != nil {
+		r.TombstonedAt = *row.TombstonedAt
+	}
+
+	if row.RetirePolicy != nil {
+		p, err := retention.Parse([]byte(*row.RetirePolicy))
+		if err != nil {
+			return index.Retired{}, fmt.Errorf("commit %x: %w", row.Ref, err)
+		}
+
+		r.Policy = &p
+	}
+
+	return r, nil
 }
 
 // storedPins indexes every pin in the store that holds a commit of an
@@ -833,13 +958,17 @@ func (x *Index) tombstone(ctx context.Context, ref []byte, erase bool) error {
 
 // markTombstoned records durable tombstones on the rows of the set's
 // commits and drops the commit refs from what the store's sets reach.
-func (x *Index) markTombstoned(ctx context.Context, setID int64, refs [][]byte, now time.Time) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+func (x *Index) markTombstoned(ctx context.Context, setID int64, refs [][]byte, now time.Time) ([]*ent.CommitRow, error) {
+	var rows []*ent.CommitRow
+
+	err := x.tx(ctx, func(tx *ent.Tx) error {
 		if _, err := x.lockSet(ctx, tx, setID); err != nil {
 			return err
 		}
 
-		rows, err := forUpdate(x, tx.CommitRow.Query().
+		var err error
+
+		rows, err = forUpdate(x, tx.CommitRow.Query().
 			Where(commitrow.RefIn(refs...), commitrow.SetID(setID), commitrow.TombstonedAtIsNil()).
 			Order(ent.Asc(commitrow.FieldID))).All(ctx)
 		if err != nil {
@@ -868,6 +997,11 @@ func (x *Index) markTombstoned(ctx context.Context, setID int64, refs [][]byte, 
 
 		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return rows, nil
 }
 
 // recordDeleted adds refs to deleted_refs, the durable set of refs a

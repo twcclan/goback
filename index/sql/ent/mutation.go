@@ -801,6 +801,7 @@ type CommitRowMutation struct {
 	incomplete        *bool
 	retained_by       *string
 	retire_at         *time.Time
+	retire_policy     *string
 	deleted_at        *time.Time
 	expires_at        *time.Time
 	tombstoned_at     *time.Time
@@ -1583,6 +1584,55 @@ func (m *CommitRowMutation) ResetRetireAt() {
 	delete(m.clearedFields, commitrow.FieldRetireAt)
 }
 
+// SetRetirePolicy sets the "retire_policy" field.
+func (m *CommitRowMutation) SetRetirePolicy(s string) {
+	m.retire_policy = &s
+}
+
+// RetirePolicy returns the value of the "retire_policy" field in the mutation.
+func (m *CommitRowMutation) RetirePolicy() (r string, exists bool) {
+	v := m.retire_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetirePolicy returns the old "retire_policy" field's value of the CommitRow entity.
+// If the CommitRow object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CommitRowMutation) OldRetirePolicy(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetirePolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetirePolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetirePolicy: %w", err)
+	}
+	return oldValue.RetirePolicy, nil
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (m *CommitRowMutation) ClearRetirePolicy() {
+	m.retire_policy = nil
+	m.clearedFields[commitrow.FieldRetirePolicy] = struct{}{}
+}
+
+// RetirePolicyCleared returns if the "retire_policy" field was cleared in this mutation.
+func (m *CommitRowMutation) RetirePolicyCleared() bool {
+	_, ok := m.clearedFields[commitrow.FieldRetirePolicy]
+	return ok
+}
+
+// ResetRetirePolicy resets all changes to the "retire_policy" field.
+func (m *CommitRowMutation) ResetRetirePolicy() {
+	m.retire_policy = nil
+	delete(m.clearedFields, commitrow.FieldRetirePolicy)
+}
+
 // SetDeletedAt sets the "deleted_at" field.
 func (m *CommitRowMutation) SetDeletedAt(t time.Time) {
 	m.deleted_at = &t
@@ -1980,7 +2030,7 @@ func (m *CommitRowMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CommitRowMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.ref != nil {
 		fields = append(fields, commitrow.FieldRef)
 	}
@@ -2028,6 +2078,9 @@ func (m *CommitRowMutation) Fields() []string {
 	}
 	if m.retire_at != nil {
 		fields = append(fields, commitrow.FieldRetireAt)
+	}
+	if m.retire_policy != nil {
+		fields = append(fields, commitrow.FieldRetirePolicy)
 	}
 	if m.deleted_at != nil {
 		fields = append(fields, commitrow.FieldDeletedAt)
@@ -2087,6 +2140,8 @@ func (m *CommitRowMutation) Field(name string) (ent.Value, bool) {
 		return m.RetainedBy()
 	case commitrow.FieldRetireAt:
 		return m.RetireAt()
+	case commitrow.FieldRetirePolicy:
+		return m.RetirePolicy()
 	case commitrow.FieldDeletedAt:
 		return m.DeletedAt()
 	case commitrow.FieldExpiresAt:
@@ -2140,6 +2195,8 @@ func (m *CommitRowMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldRetainedBy(ctx)
 	case commitrow.FieldRetireAt:
 		return m.OldRetireAt(ctx)
+	case commitrow.FieldRetirePolicy:
+		return m.OldRetirePolicy(ctx)
 	case commitrow.FieldDeletedAt:
 		return m.OldDeletedAt(ctx)
 	case commitrow.FieldExpiresAt:
@@ -2272,6 +2329,13 @@ func (m *CommitRowMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRetireAt(v)
+		return nil
+	case commitrow.FieldRetirePolicy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetirePolicy(v)
 		return nil
 	case commitrow.FieldDeletedAt:
 		v, ok := value.(time.Time)
@@ -2408,6 +2472,9 @@ func (m *CommitRowMutation) ClearedFields() []string {
 	if m.FieldCleared(commitrow.FieldRetireAt) {
 		fields = append(fields, commitrow.FieldRetireAt)
 	}
+	if m.FieldCleared(commitrow.FieldRetirePolicy) {
+		fields = append(fields, commitrow.FieldRetirePolicy)
+	}
 	if m.FieldCleared(commitrow.FieldDeletedAt) {
 		fields = append(fields, commitrow.FieldDeletedAt)
 	}
@@ -2451,6 +2518,9 @@ func (m *CommitRowMutation) ClearField(name string) error {
 		return nil
 	case commitrow.FieldRetireAt:
 		m.ClearRetireAt()
+		return nil
+	case commitrow.FieldRetirePolicy:
+		m.ClearRetirePolicy()
 		return nil
 	case commitrow.FieldDeletedAt:
 		m.ClearDeletedAt()
@@ -2525,6 +2595,9 @@ func (m *CommitRowMutation) ResetField(name string) error {
 		return nil
 	case commitrow.FieldRetireAt:
 		m.ResetRetireAt()
+		return nil
+	case commitrow.FieldRetirePolicy:
+		m.ResetRetirePolicy()
 		return nil
 	case commitrow.FieldDeletedAt:
 		m.ResetDeletedAt()

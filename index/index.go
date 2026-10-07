@@ -104,6 +104,48 @@ type Unretired struct {
 	RetainedBy string
 }
 
+// Retired is a commit retention let go: when the set's policy retired it,
+// when its tombstone became durable and under which policy.
+type Retired struct {
+	Ref *proto.Ref
+	// SetID and Set name the commit's set; a set's name is unique only
+	// among the sets a caller sees.
+	SetID int64
+	Set   string
+	// Timestamp is when the commit was taken and ReceivedAt when the store
+	// received it.
+	Timestamp, ReceivedAt time.Time
+	// RetiredAt is when the policy retired the commit, zero for one deleted
+	// by hand, and TombstonedAt when its tombstone became durable, zero
+	// while none has.
+	RetiredAt, TombstonedAt time.Time
+	// Policy is the set's policy that retired the commit; nil when the
+	// retirement predates its recording.
+	Policy *retention.Policy
+	// Deleted marks a commit deleted by hand, whose trash window let it go
+	// unless retention did first.
+	Deleted bool
+	// State is where the commit stands now.
+	State RetiredState
+}
+
+// RetiredState is where a retired commit stands.
+type RetiredState int
+
+// The states of a retired commit.
+const (
+	// RetiredPending is retired with its tombstone still to be written.
+	RetiredPending RetiredState = iota
+	// RetiredHeld is tombstoned while the store still holds the commit
+	// object, so UnretireCommits may bring it back.
+	RetiredHeld
+	// RetiredGone is tombstoned and collected: the store holds no copy of
+	// the commit object.
+	RetiredGone
+	// RetiredLive is live again, unretired since.
+	RetiredLive
+)
+
 // CommitDetail is a commit together with what the index knows about it
 // beyond the stored object: how big the set was when it was taken, and
 // which retention rule is keeping it.

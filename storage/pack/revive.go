@@ -137,6 +137,27 @@ func (ps *PackStorage) Revived(_ context.Context, commit *proto.Ref) (bool, erro
 	return len(standing) == 0, err
 }
 
+// Holds implements backup.Reviver.
+func (ps *PackStorage) Holds(_ context.Context, commits []*proto.Ref) ([]bool, error) {
+	found, err := ps.index.LocateCopies(commits, Scope{})
+	if err != nil {
+		return nil, err
+	}
+
+	held := make([]bool, len(commits))
+
+	for i, c := range commits {
+		rec, err := ps.usableCopy(found[string(c.GetHash())])
+		if err != nil {
+			return nil, err
+		}
+
+		held[i] = rec != nil
+	}
+
+	return held, nil
+}
+
 // unrevived returns the commits a tombstone still stands against.
 func (ps *PackStorage) unrevived(commits []*proto.Ref) ([]*proto.Ref, error) {
 	var refs []*proto.Ref

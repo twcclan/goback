@@ -6,6 +6,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
@@ -158,4 +159,59 @@ func TestUnretireCompletesARevivalThatCrashedBeforeItsRows(t *testing.T) {
 		require.Nil(t, f.commitRow(u.Commit).TombstonedAt)
 	}
 	require.Equal(t, files, f.ranges(f.x, "files"))
+}
+
+func TestRetireReportsEachCommitWithThePolicyThatRetiredIt(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(f.file("a.txt", "two")), false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "three")), false)
+
+	policy := retention.Policy{KeepLast: 1}
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &policy))
+	decided := f.commitRow(a).RetireAt
+	require.NotNil(t, decided)
+
+	later := f.clock.Add(15 * 24 * time.Hour)
+	retired, err := f.x.RetireCommits(f.ctx, later)
+	require.NoError(t, err)
+	require.Len(t, retired, 2)
+
+	byRef := map[string]index.Retired{}
+	for _, r := range retired {
+		byRef[string(r.Ref.Hash)] = r
+	}
+
+	for _, ref := range []*proto.Ref{a, b} {
+		r := byRef[string(ref.Hash)]
+		row := f.commitRow(ref)
+		require.Equal(t, "world", r.Set)
+		require.Equal(t, f.setID("world"), r.SetID)
+		require.True(t, row.Timestamp.Equal(r.Timestamp))
+		require.True(t, row.ReceivedAt.Equal(r.ReceivedAt))
+		require.True(t, decided.Equal(r.RetiredAt))
+		require.True(t, later.Equal(r.TombstonedAt))
+		require.Equal(t, &policy, r.Policy)
+		require.False(t, r.Deleted)
+		require.Equal(t, index.RetiredHeld, r.State)
+	}
+
+	f.store.mu.Lock()
+	delete(f.store.objects, string(a.Hash))
+	f.store.mu.Unlock()
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 100}))
+	_, err = f.x.UnretireCommits(f.ctx, []*proto.Ref{b}, false)
+	require.NoError(t, err)
+
+	states, err := f.x.RetiredCommits(f.ctx, []*proto.Ref{a, b, {Hash: make([]byte, 32)}})
+	require.NoError(t, err)
+	require.Len(t, states, 2, "an unknown commit is left out")
+	require.Equal(t, index.RetiredGone, states[0].State, "the store holds no copy of a")
+	require.Equal(t, &policy, states[0].Policy)
+	require.Equal(t, index.RetiredLive, states[1].State)
+	require.Nil(t, states[1].Policy)
 }

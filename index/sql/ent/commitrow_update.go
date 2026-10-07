@@ -253,6 +253,26 @@ func (_u *CommitRowUpdate) ClearRetireAt() *CommitRowUpdate {
 	return _u
 }
 
+// SetRetirePolicy sets the "retire_policy" field.
+func (_u *CommitRowUpdate) SetRetirePolicy(v string) *CommitRowUpdate {
+	_u.mutation.SetRetirePolicy(v)
+	return _u
+}
+
+// SetNillableRetirePolicy sets the "retire_policy" field if the given value is not nil.
+func (_u *CommitRowUpdate) SetNillableRetirePolicy(v *string) *CommitRowUpdate {
+	if v != nil {
+		_u.SetRetirePolicy(*v)
+	}
+	return _u
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (_u *CommitRowUpdate) ClearRetirePolicy() *CommitRowUpdate {
+	_u.mutation.ClearRetirePolicy()
+	return _u
+}
+
 // SetDeletedAt sets the "deleted_at" field.
 func (_u *CommitRowUpdate) SetDeletedAt(v time.Time) *CommitRowUpdate {
 	_u.mutation.SetDeletedAt(v)
@@ -501,6 +521,12 @@ func (_u *CommitRowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.RetireAtCleared() {
 		_spec.ClearField(commitrow.FieldRetireAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RetirePolicy(); ok {
+		_spec.SetField(commitrow.FieldRetirePolicy, field.TypeString, value)
+	}
+	if _u.mutation.RetirePolicyCleared() {
+		_spec.ClearField(commitrow.FieldRetirePolicy, field.TypeString)
 	}
 	if value, ok := _u.mutation.DeletedAt(); ok {
 		_spec.SetField(commitrow.FieldDeletedAt, field.TypeTime, value)
@@ -817,6 +843,26 @@ func (_u *CommitRowUpdateOne) ClearRetireAt() *CommitRowUpdateOne {
 	return _u
 }
 
+// SetRetirePolicy sets the "retire_policy" field.
+func (_u *CommitRowUpdateOne) SetRetirePolicy(v string) *CommitRowUpdateOne {
+	_u.mutation.SetRetirePolicy(v)
+	return _u
+}
+
+// SetNillableRetirePolicy sets the "retire_policy" field if the given value is not nil.
+func (_u *CommitRowUpdateOne) SetNillableRetirePolicy(v *string) *CommitRowUpdateOne {
+	if v != nil {
+		_u.SetRetirePolicy(*v)
+	}
+	return _u
+}
+
+// ClearRetirePolicy clears the value of the "retire_policy" field.
+func (_u *CommitRowUpdateOne) ClearRetirePolicy() *CommitRowUpdateOne {
+	_u.mutation.ClearRetirePolicy()
+	return _u
+}
+
 // SetDeletedAt sets the "deleted_at" field.
 func (_u *CommitRowUpdateOne) SetDeletedAt(v time.Time) *CommitRowUpdateOne {
 	_u.mutation.SetDeletedAt(v)
@@ -1095,6 +1141,12 @@ func (_u *CommitRowUpdateOne) sqlSave(ctx context.Context) (_node *CommitRow, er
 	}
 	if _u.mutation.RetireAtCleared() {
 		_spec.ClearField(commitrow.FieldRetireAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RetirePolicy(); ok {
+		_spec.SetField(commitrow.FieldRetirePolicy, field.TypeString, value)
+	}
+	if _u.mutation.RetirePolicyCleared() {
+		_spec.ClearField(commitrow.FieldRetirePolicy, field.TypeString)
 	}
 	if value, ok := _u.mutation.DeletedAt(); ok {
 		_spec.SetField(commitrow.FieldDeletedAt, field.TypeTime, value)

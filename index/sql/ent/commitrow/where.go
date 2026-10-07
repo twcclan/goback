@@ -135,6 +135,11 @@ func RetireAt(v time.Time) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldRetireAt, v))
 }
 
+// RetirePolicy applies equality check predicate on the "retire_policy" field. It's identical to RetirePolicyEQ.
+func RetirePolicy(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldRetirePolicy, v))
+}
+
 // DeletedAt applies equality check predicate on the "deleted_at" field. It's identical to DeletedAtEQ.
 func DeletedAt(v time.Time) predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldEQ(FieldDeletedAt, v))
@@ -803,6 +808,81 @@ func RetireAtIsNil() predicate.CommitRow {
 // RetireAtNotNil applies the NotNil predicate on the "retire_at" field.
 func RetireAtNotNil() predicate.CommitRow {
 	return predicate.CommitRow(sql.FieldNotNull(FieldRetireAt))
+}
+
+// RetirePolicyEQ applies the EQ predicate on the "retire_policy" field.
+func RetirePolicyEQ(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEQ(FieldRetirePolicy, v))
+}
+
+// RetirePolicyNEQ applies the NEQ predicate on the "retire_policy" field.
+func RetirePolicyNEQ(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNEQ(FieldRetirePolicy, v))
+}
+
+// RetirePolicyIn applies the In predicate on the "retire_policy" field.
+func RetirePolicyIn(vs ...string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIn(FieldRetirePolicy, vs...))
+}
+
+// RetirePolicyNotIn applies the NotIn predicate on the "retire_policy" field.
+func RetirePolicyNotIn(vs ...string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotIn(FieldRetirePolicy, vs...))
+}
+
+// RetirePolicyGT applies the GT predicate on the "retire_policy" field.
+func RetirePolicyGT(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGT(FieldRetirePolicy, v))
+}
+
+// RetirePolicyGTE applies the GTE predicate on the "retire_policy" field.
+func RetirePolicyGTE(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldGTE(FieldRetirePolicy, v))
+}
+
+// RetirePolicyLT applies the LT predicate on the "retire_policy" field.
+func RetirePolicyLT(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLT(FieldRetirePolicy, v))
+}
+
+// RetirePolicyLTE applies the LTE predicate on the "retire_policy" field.
+func RetirePolicyLTE(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldLTE(FieldRetirePolicy, v))
+}
+
+// RetirePolicyContains applies the Contains predicate on the "retire_policy" field.
+func RetirePolicyContains(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldContains(FieldRetirePolicy, v))
+}
+
+// RetirePolicyHasPrefix applies the HasPrefix predicate on the "retire_policy" field.
+func RetirePolicyHasPrefix(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldHasPrefix(FieldRetirePolicy, v))
+}
+
+// RetirePolicyHasSuffix applies the HasSuffix predicate on the "retire_policy" field.
+func RetirePolicyHasSuffix(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldHasSuffix(FieldRetirePolicy, v))
+}
+
+// RetirePolicyIsNil applies the IsNil predicate on the "retire_policy" field.
+func RetirePolicyIsNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldIsNull(FieldRetirePolicy))
+}
+
+// RetirePolicyNotNil applies the NotNil predicate on the "retire_policy" field.
+func RetirePolicyNotNil() predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldNotNull(FieldRetirePolicy))
+}
+
+// RetirePolicyEqualFold applies the EqualFold predicate on the "retire_policy" field.
+func RetirePolicyEqualFold(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldEqualFold(FieldRetirePolicy, v))
+}
+
+// RetirePolicyContainsFold applies the ContainsFold predicate on the "retire_policy" field.
+func RetirePolicyContainsFold(v string) predicate.CommitRow {
+	return predicate.CommitRow(sql.FieldContainsFold(FieldRetirePolicy, v))
 }
 
 // DeletedAtEQ applies the EQ predicate on the "deleted_at" field.

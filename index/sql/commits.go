@@ -784,7 +784,7 @@ func (x *Index) indexPin(ctx context.Context, p *proto.Pin, ref *proto.Ref, stri
 		}
 
 		if setID != 0 && !tombstoned {
-			err = c.CommitRow.Update().Where(commitrow.Ref(target)).ClearRetireAt().ClearDeletedAt().ClearExpiresAt().Exec(ctx)
+			err = c.CommitRow.Update().Where(commitrow.Ref(target)).ClearRetireAt().ClearRetirePolicy().ClearDeletedAt().ClearExpiresAt().Exec(ctx)
 			if err != nil {
 				return err
 			}

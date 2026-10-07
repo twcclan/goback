@@ -44,6 +44,8 @@ const (
 	FieldRetainedBy = "retained_by"
 	// FieldRetireAt holds the string denoting the retire_at field in the database.
 	FieldRetireAt = "retire_at"
+	// FieldRetirePolicy holds the string denoting the retire_policy field in the database.
+	FieldRetirePolicy = "retire_policy"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
 	FieldDeletedAt = "deleted_at"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
@@ -88,6 +90,7 @@ var Columns = []string{
 	FieldIncomplete,
 	FieldRetainedBy,
 	FieldRetireAt,
+	FieldRetirePolicy,
 	FieldDeletedAt,
 	FieldExpiresAt,
 	FieldTombstonedAt,
@@ -189,6 +192,11 @@ func ByRetainedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByRetireAt orders the results by the retire_at field.
 func ByRetireAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRetireAt, opts...).ToFunc()
+}
+
+// ByRetirePolicy orders the results by the retire_policy field.
+func ByRetirePolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRetirePolicy, opts...).ToFunc()
 }
 
 // ByDeletedAt orders the results by the deleted_at field.

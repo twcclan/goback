@@ -279,7 +279,7 @@ func (r recordTrees) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, er
 
 // liveAgain clears every mark of the commit's retirement and its tombstone.
 func liveAgain(ctx context.Context, tx *ent.Tx, ref []byte) error {
-	err := tx.CommitRow.Update().Where(commitrow.Ref(ref)).ClearTombstonedAt().ClearRetireAt().ClearExpiresAt().
+	err := tx.CommitRow.Update().Where(commitrow.Ref(ref)).ClearTombstonedAt().ClearRetireAt().ClearRetirePolicy().ClearExpiresAt().
 		ClearDeletedAt().SetRetainedBy("").Exec(ctx)
 	if err != nil {
 		return err

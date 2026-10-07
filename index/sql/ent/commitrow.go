@@ -51,6 +51,8 @@ type CommitRow struct {
 	RetainedBy string `json:"retained_by,omitempty"`
 	// RetireAt holds the value of the "retire_at" field.
 	RetireAt *time.Time `json:"retire_at,omitempty"`
+	// RetirePolicy holds the value of the "retire_policy" field.
+	RetirePolicy *string `json:"retire_policy,omitempty"`
 	// DeletedAt holds the value of the "deleted_at" field.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
@@ -100,7 +102,7 @@ func (*CommitRow) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case commitrow.FieldID, commitrow.FieldScanStartNs, commitrow.FieldPolicyVersion, commitrow.FieldSetID, commitrow.FieldLogicalSize, commitrow.FieldFileCount:
 			values[i] = new(sql.NullInt64)
-		case commitrow.FieldAgentID, commitrow.FieldKeyID, commitrow.FieldRetainedBy:
+		case commitrow.FieldAgentID, commitrow.FieldKeyID, commitrow.FieldRetainedBy, commitrow.FieldRetirePolicy:
 			values[i] = new(sql.NullString)
 		case commitrow.FieldTimestamp, commitrow.FieldReceivedAt, commitrow.FieldRetireAt, commitrow.FieldDeletedAt, commitrow.FieldExpiresAt, commitrow.FieldTombstonedAt:
 			values[i] = new(sql.NullTime)
@@ -222,6 +224,13 @@ func (_m *CommitRow) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RetireAt = new(time.Time)
 				*_m.RetireAt = value.Time
+			}
+		case commitrow.FieldRetirePolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field retire_policy", values[i])
+			} else if value.Valid {
+				_m.RetirePolicy = new(string)
+				*_m.RetirePolicy = value.String
 			}
 		case commitrow.FieldDeletedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -357,6 +366,11 @@ func (_m *CommitRow) String() string {
 	if v := _m.RetireAt; v != nil {
 		builder.WriteString("retire_at=")
 		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.RetirePolicy; v != nil {
+		builder.WriteString("retire_policy=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	if v := _m.DeletedAt; v != nil {

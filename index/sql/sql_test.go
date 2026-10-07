@@ -165,6 +165,19 @@ func (m *memStore) Revived(_ context.Context, commit *proto.Ref) (bool, error) {
 	return ok, nil
 }
 
+// Holds implements backup.Reviver.
+func (m *memStore) Holds(_ context.Context, commits []*proto.Ref) ([]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	held := make([]bool, len(commits))
+	for i, c := range commits {
+		_, held[i] = m.objects[string(c.Hash)]
+	}
+
+	return held, nil
+}
+
 func (m *memStore) Walk(_ context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
 	m.mu.Lock()
 	objects := make([]*proto.Object, 0, len(m.objects))

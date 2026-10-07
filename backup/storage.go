@@ -181,6 +181,10 @@ type Reviver interface {
 	Revive(ctx context.Context, commits []*proto.Ref, dryRun bool) ([]Revival, error)
 	// Revived reports whether a revival takes back the commit's tombstone.
 	Revived(ctx context.Context, commit *proto.Ref) (bool, error)
+	// Holds reports, for each commit, whether the store still holds a copy
+	// of the commit object, tombstoned or not; one it does not hold cannot
+	// be revived.
+	Holds(ctx context.Context, commits []*proto.Ref) ([]bool, error)
 }
 
 // Revival is what Revive found under one commit.

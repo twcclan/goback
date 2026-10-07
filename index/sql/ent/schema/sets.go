@@ -88,6 +88,9 @@ func (CommitRow) Fields() []ent.Field {
 		field.Bool("incomplete").Default(false),
 		field.String("retained_by").Default(""),
 		field.Time("retire_at").Optional().Nillable(),
+		// the policy that retired the commit, as the set's retention_policy
+		// keeps one
+		field.String("retire_policy").Optional().Nillable(),
 		field.Time("deleted_at").Optional().Nillable(),
 		field.Time("expires_at").Optional().Nillable(),
 		field.Time("tombstoned_at").Optional().Nillable(),
