@@ -255,6 +255,18 @@ func openPack(tb testing.TB, archives pack.ArchiveStorage) *pack.PackStorage {
 func newRestoreFixture(tb testing.TB, count int, size int64, content func(data []byte, i int)) *restoreFixture {
 	tb.Helper()
 
+	sizes := make([]int64, count)
+	for i := range sizes {
+		sizes[i] = size
+	}
+
+	return newSizedFixture(tb, sizes, content)
+}
+
+// newSizedFixture stores a file of each of sizes.
+func newSizedFixture(tb testing.TB, sizes []int64, content func(data []byte, i int)) *restoreFixture {
+	tb.Helper()
+
 	key, err := storekey.Generate("bench")
 	require.NoError(tb, err)
 
@@ -265,7 +277,7 @@ func newRestoreFixture(tb testing.TB, count int, size int64, content func(data [
 
 	store := openPack(tb, NewBucketStore(bucket))
 
-	for i := range count {
+	for i, size := range sizes {
 		data := make([]byte, size)
 		content(data, i)
 
@@ -310,9 +322,10 @@ func (r *readerOf) Read(p []byte) (int, error) {
 
 // traffic is what a client of serveShaped received: bytes over every
 // connection, bytes from the store server alone, requests to the bucket,
-// and the calls it made to the store server.
+// and the calls it made to the store server. While failing is above zero
+// the bucket refuses requests, counting it down.
 type traffic struct {
-	received, served, fetches, calls atomic.Int64
+	received, served, fetches, calls, failing atomic.Int64
 }
 
 // serveShaped runs a TLS store server over f's archives on loopback TCP
@@ -343,6 +356,12 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			seen.fetches.Add(1)
 			time.Sleep(l.get)
+
+			if seen.failing.Add(-1) >= 0 {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
 			files.ServeHTTP(w, r)
 		}))
 		server.EnableHTTP2 = true
@@ -647,4 +666,137 @@ func TestWalkTreeReadsTheWholeTreeInOneCall(t *testing.T) {
 			require.LessOrEqual(t, seen.fetches.Load(), int64(1), "the trees sit side by side in one run")
 		}
 	}
+}
+
+// mixedSizes are the sizes of count small files: empty, inline, one part
+// and a few.
+func mixedSizes(count int) []int64 {
+	pattern := []int64{0, 100, 4000, 9000, 20_000, 50_000}
+
+	sizes := make([]int64, count)
+	for i := range sizes {
+		sizes[i] = pattern[i%len(pattern)]
+	}
+
+	return sizes
+}
+
+// restoreFiles restores every file of f into into through RestoreFiles.
+func restoreFiles(tb testing.TB, restorer *backup.Restorer, f *restoreFixture, into string) {
+	tb.Helper()
+
+	files := make([]backup.FileToRestore, len(f.files))
+	for i, ref := range f.files {
+		files[i] = backup.FileToRestore{
+			Path: filepath.Join(into, fmt.Sprintf("file%d", i)),
+			Stat: &proto.FileInfo{Size: f.sizes[i], Mode: 0o644, MtimeNs: time.Unix(1_700_000_000, 0).UnixNano()},
+			Ref:  ref,
+		}
+	}
+
+	require.NoError(tb, restorer.RestoreFiles(context.Background(), files, func(_ int, _ backup.Outcome, err error) error { return err }))
+}
+
+func requireRestored(tb testing.TB, f *restoreFixture, into string) {
+	tb.Helper()
+
+	for i := range f.files {
+		want := make([]byte, f.sizes[i])
+		random(want, i)
+
+		got, err := os.ReadFile(filepath.Join(into, fmt.Sprintf("file%d", i)))
+		require.NoError(tb, err)
+		require.True(tb, bytes.Equal(want, got), "file %d restores whole", i)
+
+		_, err = os.Lstat(backup.PartialPath(filepath.Join(into, fmt.Sprintf("file%d", i))))
+		require.True(tb, os.IsNotExist(err), "file %d leaves no partial file", i)
+	}
+}
+
+func TestRestoreFilesReadsSmallFilesInGroups(t *testing.T) {
+	f := newSizedFixture(t, mixedSizes(3000), random)
+
+	for _, located := range []bool{false, true} {
+		client, seen := serveShaped(t, f, link{}, located)
+		into := t.TempDir()
+		restoreFiles(t, &backup.Restorer{Store: client, Key: f.key, Workers: 8}, f, into)
+		requireRestored(t, f, into)
+
+		require.LessOrEqual(t, seen.calls.Load(), int64(20))
+		require.LessOrEqual(t, seen.fetches.Load(), int64(20))
+	}
+}
+
+func TestRestoreFilesFallsBackFileByFileWhenAGroupFails(t *testing.T) {
+	f := newSizedFixture(t, mixedSizes(200), random)
+
+	client, seen := serveShaped(t, f, link{}, true)
+	seen.failing.Store(1)
+
+	into := t.TempDir()
+	restoreFiles(t, &backup.Restorer{Store: client, Key: f.key, Workers: 8}, f, into)
+	requireRestored(t, f, into)
+
+	require.Greater(t, seen.calls.Load(), int64(100), "the files were read one by one")
+}
+
+func TestRestoreFilesReadsLargeFilesOnTheirOwn(t *testing.T) {
+	sizes := append(mixedSizes(300), 3<<20, 2<<20, 5<<20)
+	f := newSizedFixture(t, sizes, random)
+
+	client, seen := serveShaped(t, f, link{}, true)
+	into := t.TempDir()
+	restoreFiles(t, &backup.Restorer{Store: client, Key: f.key, Workers: 8}, f, into)
+	requireRestored(t, f, into)
+
+	require.LessOrEqual(t, seen.calls.Load(), int64(1+3*2), "one ReadFiles, and a Get and a ReadFile per large file")
+}
+
+func TestRestoreFilesTakesInlineFilesFromTheirObjects(t *testing.T) {
+	sizes := make([]int64, 100)
+	for i := range sizes {
+		sizes[i] = int64(1 + i*proto.InlineLimit/len(sizes))
+	}
+
+	f := newSizedFixture(t, sizes, random)
+
+	client, seen := serveShaped(t, f, link{}, true)
+	into := t.TempDir()
+	restoreFiles(t, &backup.Restorer{Store: client, Key: f.key, Workers: 8}, f, into)
+	requireRestored(t, f, into)
+
+	require.EqualValues(t, 1, seen.calls.Load())
+	require.Zero(t, seen.fetches.Load(), "an inline file's content comes with its object")
+}
+
+func TestRestoreFilesOverADestinationFetchesOnlyWhatItLacks(t *testing.T) {
+	sizes := mixedSizes(120)
+	sizes[10], sizes[11] = 600_000, 900_000
+
+	f := newSizedFixture(t, sizes, random)
+	path := func(into string, i int) string { return filepath.Join(into, fmt.Sprintf("file%d", i)) }
+
+	client, _ := serveShaped(t, f, link{}, true)
+	into := t.TempDir()
+	restoreFiles(t, &backup.Restorer{Store: client, Key: f.key, Workers: 8}, f, into)
+
+	require.NoError(t, os.Remove(path(into, 4)))
+	require.NoError(t, os.WriteFile(path(into, 5), make([]byte, f.sizes[5]), 0o644))
+	require.NoError(t, os.Truncate(path(into, 10), f.sizes[10]/2))
+
+	content := make([]byte, f.sizes[11])
+	random(content, 11)
+	require.NoError(t, os.Remove(path(into, 11)))
+	require.NoError(t, os.WriteFile(backup.PartialPath(path(into, 11)), content[:len(content)/2], 0o600))
+
+	client, seen := serveShaped(t, f, link{}, true)
+	restorer := &backup.Restorer{Store: client, Key: f.key, Workers: 8}
+	restoreFiles(t, restorer, f, into)
+	requireRestored(t, f, into)
+
+	stats := restorer.Stats()
+	require.EqualValues(t, len(f.files)-4, stats.Unchanged)
+	require.EqualValues(t, 4, stats.Written)
+	require.Less(t, stats.BytesFromStore, f.sizes[4]+f.sizes[5]+f.sizes[10]+f.sizes[11])
+	require.LessOrEqual(t, seen.calls.Load(), int64(2), "the file objects, then the parts the destination lacks")
 }

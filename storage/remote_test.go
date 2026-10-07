@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -118,6 +119,21 @@ func (m *memIndex) References(ctx context.Context, ref *proto.Ref) (bool, error)
 	defer m.mtx.Unlock()
 
 	return m.referenced[string(ref.Hash)], nil
+}
+
+// ReferencesAll implements backup.RefScope.
+func (m *memIndex) ReferencesAll(ctx context.Context, refs []*proto.Ref) ([]bool, error) {
+	referenced := make([]bool, len(refs))
+	for i, ref := range refs {
+		ok, err := m.References(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+
+		referenced[i] = ok
+	}
+
+	return referenced, nil
 }
 
 func (m *memIndex) unreference(ref *proto.Ref) {
@@ -368,6 +384,79 @@ func TestRemoteReadFileStreamsParts(t *testing.T) {
 	require.ErrorIs(t, client.Delete(ctx, file.Ref()), backup.ErrNotImplemented)
 	_, err = client.Has(ctx, file.Ref())
 	require.ErrorIs(t, err, backup.ErrNotImplemented)
+}
+
+func TestRemoteReadFilesStreamsObjectsThenParts(t *testing.T) {
+	index, dial := startServer(t)
+	ctx := context.Background()
+	client := dial("node-1")
+
+	blobs := map[string]*proto.Ref{}
+	for _, content := range []string{"one", "two", "three"} {
+		blob := proto.NewObject(&proto.Blob{Data: []byte(content)})
+		require.NoError(t, client.Put(ctx, blob))
+		blobs[content] = blob.Ref()
+	}
+
+	file := func(contents ...string) *proto.Object {
+		var parts []*proto.FilePart
+		var offset uint64
+		for _, content := range contents {
+			parts = append(parts, &proto.FilePart{Offset: offset, Length: uint64(len(content)), Ref: blobs[content]})
+			offset += uint64(len(content))
+		}
+
+		obj := proto.NewObject(&proto.File{Parts: parts})
+		require.NoError(t, client.Put(ctx, obj))
+
+		return obj
+	}
+
+	first, second := file("one", "two"), file("two", "three", "one")
+
+	read := func(files []backup.FileRead, objectsOnly bool) ([]string, []string, error) {
+		var (
+			mtx            sync.Mutex
+			objects, parts []string
+		)
+
+		err := client.ReadFiles(ctx, files, objectsOnly, func(i int, obj *proto.Object) error {
+			objects = append(objects, fmt.Sprintf("%d:%x", i, obj.Ref().Hash))
+			return nil
+		}, func(i, j int, obj *proto.Object) error {
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			parts = append(parts, fmt.Sprintf("%d.%d:%s", i, j, obj.GetBlob().GetData()))
+			return nil
+		})
+
+		slices.Sort(parts)
+
+		return objects, parts, err
+	}
+
+	objects, parts, err := read([]backup.FileRead{{Ref: first.Ref()}, {Ref: second.Ref(), Skip: []int{1}}}, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{fmt.Sprintf("0:%x", first.Ref().Hash), fmt.Sprintf("1:%x", second.Ref().Hash)}, objects)
+	require.Equal(t, []string{"0.0:one", "0.1:two"}, parts, "a part both files hold comes once, and a skipped one not at all")
+
+	objects, parts, err = read([]backup.FileRead{{Ref: first.Ref(), Skip: []int{0}}, {Ref: second.Ref()}}, false)
+	require.NoError(t, err)
+	require.Len(t, objects, 2)
+	require.Equal(t, []string{"0.1:two", "1.1:three", "1.2:one"}, parts, "a part is sent for a file that wants it")
+
+	objects, parts, err = read([]backup.FileRead{{Ref: first.Ref()}, {Ref: second.Ref()}}, true)
+	require.NoError(t, err)
+	require.Len(t, objects, 2)
+	require.Empty(t, parts)
+
+	_, _, err = read(make([]backup.FileRead, backup.MaxFilesPerRead+1), true)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	index.unreference(second.Ref())
+	_, _, err = read([]backup.FileRead{{Ref: first.Ref()}, {Ref: second.Ref()}}, false)
+	require.ErrorIs(t, err, backup.ErrNotFound)
 }
 
 func TestRemoteReadsOverQuotaFailAsQuotaExceeded(t *testing.T) {

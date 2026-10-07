@@ -83,11 +83,38 @@ message LocatedRun {
 }
 
 // LocatedRecord is where one object's stored record sits in the body of
-// a run; index names the object to whoever asked for the run.
+// a run; index names the object to whoever asked for the run, and in a
+// ReadFiles answer file names the file whose part index it is.
 message LocatedRecord {
     uint32 index = 1;
     int64 offset = 2;
     int64 length = 3;
+    uint32 file = 4;
+}
+
+// ReadFilesRequest names up to 1024 file objects the store references.
+// The server streams every file object in order and then, unless
+// objects_only, the parts of each except the indexes in its skip_parts,
+// a part several of the files hold once.
+message ReadFilesRequest {
+    repeated ReadFilesEntry files = 1;
+    bool objects_only = 2;
+}
+
+message ReadFilesEntry {
+    Ref ref = 1;
+    repeated uint32 skip_parts = 2;
+}
+
+// ReadFilesResponse carries the object of the file at place file in the
+// request, or with part set the stored object of that file's part at
+// index, or runs of parts whose records name the file and the part.
+message ReadFilesResponse {
+    uint32 file = 1;
+    Object object = 2;
+    bool part = 3;
+    uint32 index = 4;
+    repeated LocatedRun runs = 5;
 }
 
 message FileInfoRequest {
@@ -349,6 +376,8 @@ service Store {
     // are read through ReadFile
     rpc Get (GetRequest) returns (GetResponse) {}
     rpc ReadFile (ReadFileRequest) returns (stream ReadFileResponse) {}
+    // ReadFiles reads many small files in one call
+    rpc ReadFiles (ReadFilesRequest) returns (stream ReadFilesResponse) {}
     rpc FileInfo(FileInfoRequest) returns (FileInfoResponse) {}
     // ReadDir lists what a set held directly under a path, as of a time
     rpc ReadDir(ReadDirRequest) returns (ReadDirResponse) {}

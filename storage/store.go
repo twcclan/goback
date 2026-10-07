@@ -10,6 +10,8 @@ import (
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // ErrInvalidRequest is a call the store cannot act on as given: a malformed
@@ -395,8 +397,8 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 }
 
 const (
-	// readFileWorkers bounds the part fetches one ReadFile call has in
-	// flight.
+	// readFileWorkers bounds the reads one ReadFile or ReadFiles call has
+	// in flight.
 	readFileWorkers = 16
 	// readFileBatch is how many parts ReadFile locates at once.
 	readFileBatch = 1024
@@ -406,9 +408,6 @@ const (
 // of them the index can locate, and the stored objects of the rest in
 // order. An inline part is never handed over.
 func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn func(*proto.ReadFileResponse) error) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	obj, err := s.Get(ctx, ref)
 	if err != nil {
 		return err
@@ -428,17 +427,158 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 		skipped[i] = true
 	}
 
-	var wanted []int
+	var (
+		wanted []int
+		refs   []*proto.Ref
+	)
+
 	for i, part := range parts {
 		if !skipped[uint32(i)] && part.Ref != nil {
 			wanted = append(wanted, i)
+			refs = append(refs, part.Ref)
 		}
 	}
+
+	err = s.streamParts(ctx, refs, readFileBatch, func(i int) string {
+		return fmt.Sprintf("part %d", wanted[i])
+	}, func(runs []*proto.LocatedRun) error {
+		for _, run := range runs {
+			for _, record := range run.Records {
+				record.Index = uint32(wanted[record.Index])
+			}
+		}
+
+		return fn(&proto.ReadFileResponse{Runs: runs})
+	}, func(i int, obj *proto.Object) error {
+		return fn(&proto.ReadFileResponse{Index: uint32(wanted[i]), Object: obj})
+	})
+	if err != nil {
+		return fmt.Errorf("file %x: %w", ref.GetHash(), err)
+	}
+
+	return nil
+}
+
+// ReadFiles hands fn the object of each of files in order and then, unless
+// objectsOnly, the parts of each except the indexes in its skip, a part
+// several of them hold once: runs of those the index can locate, all
+// located together, and the stored objects of the rest in order. An inline
+// part is never handed over.
+func (s *Store) ReadFiles(ctx context.Context, files []*proto.ReadFilesEntry, objectsOnly bool, fn func(*proto.ReadFilesResponse) error) error {
+	if len(files) > backup.MaxFilesPerRead {
+		return fmt.Errorf("%w: %d files in one read, at most %d", ErrInvalidRequest, len(files), backup.MaxFilesPerRead)
+	}
+
+	refs := make([]*proto.Ref, len(files))
+	for i, file := range files {
+		refs[i] = file.GetRef()
+	}
+
+	if err := s.readableAll(ctx, refs); err != nil {
+		return err
+	}
+
+	objects := make([]*proto.Object, len(files))
+	parts := make([][]*proto.FilePart, len(files))
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(readFileWorkers)
+
+	for i, ref := range refs {
+		grp.Go(func() error {
+			obj, err := s.Index.Get(gctx, ref)
+
+			obj, err = offered(ref, obj, err)
+			if err != nil {
+				return err
+			}
+
+			if obj.GetFile() == nil {
+				return fmt.Errorf("%w: object %x is not a file", ErrInvalidRequest, ref.GetHash())
+			}
+
+			objects[i] = obj
+
+			if objectsOnly {
+				return nil
+			}
+
+			parts[i], err = backup.FileParts(gctx, s.Index, obj.GetFile())
+
+			return err
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return err
+	}
+
+	for i, obj := range objects {
+		if err := fn(&proto.ReadFilesResponse{File: uint32(i), Object: obj}); err != nil {
+			return err
+		}
+	}
+
+	if objectsOnly {
+		return nil
+	}
+
+	type slot struct{ file, index int }
+
+	var (
+		slots  []slot
+		wanted []*proto.Ref
+		seen   = map[string]bool{}
+	)
+
+	for i, file := range files {
+		skipped := make(map[uint32]bool, len(file.GetSkipParts()))
+		for _, j := range file.GetSkipParts() {
+			skipped[j] = true
+		}
+
+		for j, part := range parts[i] {
+			if part.Ref == nil || skipped[uint32(j)] || seen[string(part.Ref.Hash)] {
+				continue
+			}
+
+			seen[string(part.Ref.Hash)] = true
+			slots = append(slots, slot{file: i, index: j})
+			wanted = append(wanted, part.Ref)
+		}
+	}
+
+	return s.streamParts(ctx, wanted, max(1, len(wanted)), func(i int) string {
+		return fmt.Sprintf("part %d of file %x", slots[i].index, refs[slots[i].file].GetHash())
+	}, func(runs []*proto.LocatedRun) error {
+		for _, run := range runs {
+			for _, record := range run.Records {
+				at := slots[record.Index]
+				record.File, record.Index = uint32(at.file), uint32(at.index)
+			}
+		}
+
+		return fn(&proto.ReadFilesResponse{Runs: runs})
+	}, func(i int, obj *proto.Object) error {
+		return fn(&proto.ReadFilesResponse{File: uint32(slots[i].file), Part: true, Index: uint32(slots[i].index), Object: obj})
+	})
+}
+
+// streamParts hands runs the runs of refs the index can locate, batch refs
+// at a time, their record indexes counting refs, and object the stored
+// objects of the rest in order, read readFileWorkers at a time. name says
+// which part a failed read was.
+func (s *Store) streamParts(ctx context.Context, refs []*proto.Ref, batch int, name func(i int) string,
+	runs func([]*proto.LocatedRun) error, object func(i int, obj *proto.Object) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	locator, _ := s.Index.(backup.RecordLocator)
 
 	type result struct {
-		resp *proto.ReadFileResponse
+		i    int
+		obj  *proto.Object
+		runs []*proto.LocatedRun
 		err  error
 	}
 
@@ -453,9 +593,9 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 		}
 	}
 
-	ready := func(resp *proto.ReadFileResponse, err error) chan result {
+	ready := func(res result) chan result {
 		done := make(chan result, 1)
-		done <- result{resp: resp, err: err}
+		done <- res
 
 		return done
 	}
@@ -463,36 +603,30 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 	go func() {
 		defer close(pending)
 
-		for start := 0; start < len(wanted); start += readFileBatch {
-			batch := wanted[start:min(start+readFileBatch, len(wanted))]
+		for start := 0; start < len(refs); start += batch {
+			end := min(start+batch, len(refs))
 			located := make(map[int]bool)
 
 			if locator != nil {
-				refs := make([]*proto.Ref, len(batch))
-				for j, i := range batch {
-					refs[j] = parts[i].Ref
-				}
-
-				runs, err := locator.LocateRecords(ctx, refs)
+				found, err := locator.LocateRecords(ctx, refs[start:end])
 				if err != nil {
-					push(ready(nil, fmt.Errorf("locating parts of file %x: %w", ref.GetHash(), err)))
+					push(ready(result{err: fmt.Errorf("locating parts: %w", err)}))
 					return
 				}
 
-				for _, run := range runs {
+				for _, run := range found {
 					for _, record := range run.Records {
-						i := batch[record.Index]
-						record.Index = uint32(i)
-						located[i] = true
+						record.Index += uint32(start)
+						located[int(record.Index)] = true
 					}
 				}
 
-				if len(runs) > 0 && !push(ready(&proto.ReadFileResponse{Runs: runs}, nil)) {
+				if len(found) > 0 && !push(ready(result{runs: found})) {
 					return
 				}
 			}
 
-			for _, i := range batch {
+			for i := start; i < end; i++ {
 				if located[i] {
 					continue
 				}
@@ -502,10 +636,14 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 					return
 				}
 
-				go func(ref *proto.Ref) {
-					o, err := s.Index.Get(ctx, ref)
-					done <- result{resp: &proto.ReadFileResponse{Index: uint32(i), Object: o}, err: err}
-				}(parts[i].Ref)
+				go func() {
+					obj, err := s.Index.Get(ctx, refs[i])
+					if err != nil {
+						err = fmt.Errorf("%s: %w", name(i), err)
+					}
+
+					done <- result{i: i, obj: obj, err: err}
+				}()
 			}
 		}
 	}()
@@ -513,20 +651,49 @@ func (s *Store) ReadFile(ctx context.Context, ref *proto.Ref, skip []uint32, fn 
 	for done := range pending {
 		res := <-done
 		if res.err != nil {
-			if res.resp != nil {
-				return fmt.Errorf("part %d of file %x: %w", res.resp.Index, ref.GetHash(), res.err)
-			}
-
 			return res.err
 		}
 
-		err = fn(res.resp)
+		var err error
+		if res.runs != nil {
+			err = runs(res.runs)
+		} else {
+			err = object(res.i, res.obj)
+		}
+
 		if err != nil {
 			return err
 		}
 	}
 
 	return ctx.Err()
+}
+
+// readableAll is readable for many refs, asking the index once.
+func (s *Store) readableAll(ctx context.Context, refs []*proto.Ref) error {
+	for _, ref := range refs {
+		if !ref.Valid() {
+			return fmt.Errorf("%w: malformed ref", ErrInvalidRequest)
+		}
+	}
+
+	scope, ok := s.Index.(backup.RefScope)
+	if !ok {
+		return nil
+	}
+
+	referenced, err := scope.ReferencesAll(ctx, refs)
+	if err != nil {
+		return err
+	}
+
+	for i, ok := range referenced {
+		if !ok {
+			return notFound(refs[i])
+		}
+	}
+
+	return nil
 }
 
 // Retention is the index's retention state, backup.ErrNotImplemented for

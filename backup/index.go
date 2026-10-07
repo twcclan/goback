@@ -61,6 +61,8 @@ type HeaderWalker interface {
 type RefScope interface {
 	// References reports whether a set of the store references ref.
 	References(ctx context.Context, ref *proto.Ref) (bool, error)
+	// ReferencesAll reports the same for each of refs, in their order.
+	ReferencesAll(ctx context.Context, refs []*proto.Ref) ([]bool, error)
 }
 
 // SetScope narrows RefScope to named sets, for a server that grants a
@@ -97,6 +99,26 @@ type PartReader interface {
 	// ReadParts calls fn with every part of file whose index is not in
 	// skip, in any order and possibly from several goroutines at once.
 	ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn func(index int, obj *proto.Object) error) error
+}
+
+// MaxFilesPerRead is the most files one ReadFiles call names.
+const MaxFilesPerRead = 1024
+
+// FileRead names a file to FilesReader and the indexes of the parts not
+// to send.
+type FileRead struct {
+	Ref  *proto.Ref
+	Skip []int
+}
+
+// FilesReader reads many files in one call: their file objects and the
+// stored objects of their parts, sealed when the store is encrypted.
+type FilesReader interface {
+	// ReadFiles calls object with each file's object in order, then,
+	// unless objectsOnly, part with every part of each file not in its
+	// Skip, in any order and possibly from several goroutines at once. A
+	// part several of the files hold is handed over once, for any of them.
+	ReadFiles(ctx context.Context, files []FileRead, objectsOnly bool, object func(file int, obj *proto.Object) error, part func(file, index int, obj *proto.Object) error) error
 }
 
 // Retention is implemented by indexes that keep the commit lifecycle: live,

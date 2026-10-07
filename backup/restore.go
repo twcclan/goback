@@ -286,9 +286,33 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 
 	missing, err := r.assemble(ctx, tmp, source, reader, matched, held, local, ref)
 	if err == nil {
-		// the partial may be longer, from another version, or end in a hole
-		err = tmp.Truncate(reader.size())
+		err = r.settle(tmp, source, path, stat, reader, missing)
+	} else {
+		_ = tmp.Close()
 	}
+
+	if err != nil {
+		return 0, errors.Wrapf(err, "restoring %s", path)
+	}
+
+	if len(missing) > 0 {
+		r.reportHoles(path, reader, missing)
+		r.countFile(ctx, OutcomeSalvaged)
+
+		return OutcomeSalvaged, nil
+	}
+
+	r.countFile(ctx, OutcomeWritten)
+
+	return OutcomeWritten, nil
+}
+
+// settle cuts the assembled partial file to the file's size, rehashes it
+// when Verify is set, applies stat and renames it over path, closing tmp
+// and source, the destination it was read from, on the way.
+func (r *Restorer) settle(tmp, source *os.File, path string, stat *proto.FileInfo, reader *fileReader, missing []int) error {
+	// the partial may be longer, from another version, or end in a hole
+	err := tmp.Truncate(reader.size())
 
 	if err == nil && r.Verify {
 		err = r.verifyWritten(tmp, reader, missing)
@@ -315,20 +339,7 @@ func (r *Restorer) RestoreFile(ctx context.Context, path string, stat *proto.Fil
 		err = replace(tmp.Name(), path)
 	}
 
-	if err != nil {
-		return 0, errors.Wrapf(err, "restoring %s", path)
-	}
-
-	if len(missing) > 0 {
-		r.reportHoles(path, reader, missing)
-		r.countFile(ctx, OutcomeSalvaged)
-
-		return OutcomeSalvaged, nil
-	}
-
-	r.countFile(ctx, OutcomeWritten)
-
-	return OutcomeWritten, nil
+	return err
 }
 
 // PartialPath is the file RestoreFile assembles path in, next to it.
@@ -575,45 +586,14 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 			continue
 		}
 
-		if local != nil {
-			if buf, ok := local.read(part); ok && r.matches(reader, i, buf) {
-				if _, err := dst.WriteAt(buf, offset); err != nil {
-					return nil, err
-				}
-
-				r.countBytes(ctx, &r.stats.BytesFromDestination, "destination", int64(part.Length))
-
-				continue
+		if data, counter, source, ok := r.localCopy(reader, i, local); ok {
+			if _, err := dst.WriteAt(data, offset); err != nil {
+				return nil, err
 			}
-		}
 
-		if r.Seeds != nil {
-			if buf, ok := r.Seeds.read(part); ok && r.matches(reader, i, buf) {
-				if _, err := dst.WriteAt(buf, offset); err != nil {
-					return nil, err
-				}
+			r.countBytes(ctx, counter, source, int64(len(data)))
 
-				r.countBytes(ctx, &r.stats.BytesFromSeeds, "seed", int64(part.Length))
-
-				continue
-			}
-		}
-
-		if r.Cache != nil {
-			if obj, ok := r.Cache.Get(part.Ref); ok {
-				data, err := reader.openPart(i, part, obj)
-				if err == nil {
-					if _, err := dst.WriteAt(data, offset); err != nil {
-						return nil, err
-					}
-
-					r.countBytes(ctx, &r.stats.BytesFromCache, "cache", int64(len(data)))
-
-					continue
-				}
-
-				r.Cache.Drop(part.Ref)
-			}
+			continue
 		}
 
 		fromStore = append(fromStore, i)
@@ -667,6 +647,38 @@ func (r *Restorer) assemble(ctx context.Context, dst, source *os.File, reader *f
 	sort.Ints(missing)
 
 	return missing, nil
+}
+
+// localCopy returns part i from the re-cut destination, the seeds or the
+// cache, whichever holds it first, with the counter and source it is
+// counted under.
+func (r *Restorer) localCopy(reader *fileReader, i int, local *SeedMap) ([]byte, *int64, string, bool) {
+	part := reader.parts[i]
+
+	if local != nil {
+		if buf, ok := local.read(part); ok && r.matches(reader, i, buf) {
+			return buf, &r.stats.BytesFromDestination, "destination", true
+		}
+	}
+
+	if r.Seeds != nil {
+		if buf, ok := r.Seeds.read(part); ok && r.matches(reader, i, buf) {
+			return buf, &r.stats.BytesFromSeeds, "seed", true
+		}
+	}
+
+	if r.Cache != nil {
+		if obj, ok := r.Cache.Get(part.Ref); ok {
+			data, err := reader.openPart(i, part, obj)
+			if err == nil {
+				return data, &r.stats.BytesFromCache, "cache", true
+			}
+
+			r.Cache.Drop(part.Ref)
+		}
+	}
+
+	return nil, nil, "", false
 }
 
 // copiesOf groups the parts by ref under the first part holding it, so a

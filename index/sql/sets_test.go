@@ -263,6 +263,11 @@ func TestStorePolicyVersionsAndAcknowledgement(t *testing.T) {
 func (f *fixture) references(ctx context.Context, ref *proto.Ref) bool {
 	ok, err := f.x.References(ctx, ref)
 	require.NoError(f.t, err)
+
+	all, err := f.x.ReferencesAll(ctx, []*proto.Ref{{Hash: []byte("unknown")}, ref})
+	require.NoError(f.t, err)
+	require.Equal(f.t, []bool{false, ok}, all, "a batch answers as one ref at a time")
+
 	return ok
 }
 

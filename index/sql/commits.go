@@ -1050,6 +1050,35 @@ func (x *Index) References(ctx context.Context, ref *proto.Ref) (bool, error) {
 	return x.client.SetRef.Query().Where(setref.Ref(ref.GetHash()), setref.HasSetWith()).Exist(ctx)
 }
 
+// ReferencesAll implements backup.RefScope in one query.
+func (x *Index) ReferencesAll(ctx context.Context, refs []*proto.Ref) ([]bool, error) {
+	hashes := make([][]byte, len(refs))
+	for i, ref := range refs {
+		hashes[i] = ref.GetHash()
+	}
+
+	var rows []struct {
+		Ref []byte `json:"ref"`
+	}
+
+	err := x.client.SetRef.Query().Where(setref.RefIn(hashes...), setref.HasSetWith()).Unique(true).Select(setref.FieldRef).Scan(ctx, &rows)
+	if err != nil {
+		return nil, err
+	}
+
+	found := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		found[string(row.Ref)] = true
+	}
+
+	referenced := make([]bool, len(refs))
+	for i, hash := range hashes {
+		referenced[i] = found[string(hash)]
+	}
+
+	return referenced, nil
+}
+
 // Reachable reports whether a commit of one of the named sets references
 // ref, which is what a caller limited to those sets may read.
 func (x *Index) Reachable(ctx context.Context, sets []string, ref *proto.Ref) (bool, error) {

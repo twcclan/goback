@@ -21,7 +21,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
-	"golang.org/x/sync/errgroup"
 )
 
 type restoredDir struct {
@@ -259,13 +258,12 @@ func (c *commit) restore() error {
 	var dirs []restoredDir
 	var unrestored atomic.Int64
 
-	// a file costs a round trip to the store and an fsync, neither of
-	// which overlaps on its own, so files go several at a time while the
-	// entries stay in order: a directory is made before its contents
-	files, fctx := errgroup.WithContext(c.ctx)
-	if c.restorer.Workers > 0 {
-		files.SetLimit(c.restorer.Workers)
-	}
+	// every directory and link is made before the files go to the
+	// restorer, which takes several at a time
+	var (
+		files    []backup.FileToRestore
+		finished []func()
+	)
 
 	for _, entry := range entries {
 		path, info, ref := entry.path, entry.info, entry.ref
@@ -304,11 +302,17 @@ func (c *commit) restore() error {
 			continue
 		}
 
-		files.Go(func() error {
-			written, done := progress.file(stat.Size)
-			defer done()
+		written, done := progress.file(stat.Size)
+		files = append(files, backup.FileToRestore{Path: path, Stat: stat, Ref: ref, Written: written})
+		finished = append(finished, done)
+	}
 
-			outcome, err := c.restorer.RestoreFile(backup.WithWritten(fctx, written), path, stat, ref)
+	if err == nil {
+		err = c.restorer.RestoreFiles(c.ctx, files, func(i int, outcome backup.Outcome, err error) error {
+			defer finished[i]()
+
+			path, ref := files[i].Path, files[i].Ref
+
 			if err != nil {
 				if lost[string(ref.GetHash())] {
 					err = fmt.Errorf("%w (repair recorded this version as unrecoverable)", err)
@@ -332,16 +336,6 @@ func (c *commit) restore() error {
 
 			return nil
 		})
-
-		// the restore stops once a file has failed, rather than queueing
-		// the rest of the tree behind an error already on its way out
-		if err = fctx.Err(); err != nil {
-			break
-		}
-	}
-
-	if waited := files.Wait(); err == nil || errors.Is(err, context.Canceled) {
-		err = waited
 	}
 
 	stopProgress()

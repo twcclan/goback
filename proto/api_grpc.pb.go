@@ -22,6 +22,7 @@ const (
 	Store_Put_FullMethodName            = "/proto.Store/Put"
 	Store_Get_FullMethodName            = "/proto.Store/Get"
 	Store_ReadFile_FullMethodName       = "/proto.Store/ReadFile"
+	Store_ReadFiles_FullMethodName      = "/proto.Store/ReadFiles"
 	Store_FileInfo_FullMethodName       = "/proto.Store/FileInfo"
 	Store_ReadDir_FullMethodName        = "/proto.Store/ReadDir"
 	Store_CommitInfo_FullMethodName     = "/proto.Store/CommitInfo"
@@ -51,6 +52,8 @@ type StoreClient interface {
 	// are read through ReadFile
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFileResponse], error)
+	// ReadFiles reads many small files in one call
+	ReadFiles(ctx context.Context, in *ReadFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFilesResponse], error)
 	FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error)
 	// ReadDir lists what a set held directly under a path, as of a time
 	ReadDir(ctx context.Context, in *ReadDirRequest, opts ...grpc.CallOption) (*ReadDirResponse, error)
@@ -128,6 +131,25 @@ func (c *storeClient) ReadFile(ctx context.Context, in *ReadFileRequest, opts ..
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Store_ReadFileClient = grpc.ServerStreamingClient[ReadFileResponse]
 
+func (c *storeClient) ReadFiles(ctx context.Context, in *ReadFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFilesResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[1], Store_ReadFiles_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ReadFilesRequest, ReadFilesResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Store_ReadFilesClient = grpc.ServerStreamingClient[ReadFilesResponse]
+
 func (c *storeClient) FileInfo(ctx context.Context, in *FileInfoRequest, opts ...grpc.CallOption) (*FileInfoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FileInfoResponse)
@@ -170,7 +192,7 @@ func (c *storeClient) LatestCommit(ctx context.Context, in *LatestCommitRequest,
 
 func (c *storeClient) GetTree(ctx context.Context, in *GetTreeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetTreeResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[1], Store_GetTree_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[2], Store_GetTree_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +241,7 @@ func (c *storeClient) EndSession(ctx context.Context, in *EndSessionRequest, opt
 
 func (c *storeClient) GetPresence(ctx context.Context, in *GetPresenceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetPresenceResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[2], Store_GetPresence_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Store_ServiceDesc.Streams[3], Store_GetPresence_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +357,8 @@ type StoreServer interface {
 	// are read through ReadFile
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error
+	// ReadFiles reads many small files in one call
+	ReadFiles(*ReadFilesRequest, grpc.ServerStreamingServer[ReadFilesResponse]) error
 	FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error)
 	// ReadDir lists what a set held directly under a path, as of a time
 	ReadDir(context.Context, *ReadDirRequest) (*ReadDirResponse, error)
@@ -381,6 +405,9 @@ func (UnimplementedStoreServer) Get(context.Context, *GetRequest) (*GetResponse,
 }
 func (UnimplementedStoreServer) ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error {
 	return status.Error(codes.Unimplemented, "method ReadFile not implemented")
+}
+func (UnimplementedStoreServer) ReadFiles(*ReadFilesRequest, grpc.ServerStreamingServer[ReadFilesResponse]) error {
+	return status.Error(codes.Unimplemented, "method ReadFiles not implemented")
 }
 func (UnimplementedStoreServer) FileInfo(context.Context, *FileInfoRequest) (*FileInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FileInfo not implemented")
@@ -503,6 +530,17 @@ func _Store_ReadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Store_ReadFileServer = grpc.ServerStreamingServer[ReadFileResponse]
+
+func _Store_ReadFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ReadFilesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StoreServer).ReadFiles(m, &grpc.GenericServerStream[ReadFilesRequest, ReadFilesResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Store_ReadFilesServer = grpc.ServerStreamingServer[ReadFilesResponse]
 
 func _Store_FileInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FileInfoRequest)
@@ -898,6 +936,11 @@ var Store_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "ReadFile",
 			Handler:       _Store_ReadFile_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ReadFiles",
+			Handler:       _Store_ReadFiles_Handler,
 			ServerStreams: true,
 		},
 		{

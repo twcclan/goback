@@ -132,12 +132,13 @@ func ServerTLS(certFile, keyFile string, plaintextBehindProxy bool) (credentials
 var m = gen.MapperImpl{}
 
 var (
-	_ backup.KeyEscrow  = (*Client)(nil)
-	_ backup.Index      = (*Client)(nil)
-	_ backup.Retention  = (*Client)(nil)
-	_ backup.PartReader = (*Client)(nil)
-	_ backup.DirLister  = (*Client)(nil)
-	_ backup.CommitGate = (*Client)(nil)
+	_ backup.KeyEscrow   = (*Client)(nil)
+	_ backup.Index       = (*Client)(nil)
+	_ backup.Retention   = (*Client)(nil)
+	_ backup.PartReader  = (*Client)(nil)
+	_ backup.FilesReader = (*Client)(nil)
+	_ backup.DirLister   = (*Client)(nil)
+	_ backup.CommitGate  = (*Client)(nil)
 )
 
 // Client is a backup.Index over a store server's gRPC API.
@@ -262,7 +263,7 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 		objects []*proto.Object
 	)
 
-	keep := func(_ int, obj *proto.Object) error {
+	keep := func(_ *proto.LocatedRecord, obj *proto.Object) error {
 		mtx.Lock()
 		defer mtx.Unlock()
 
@@ -276,7 +277,7 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 
 	err = receive(stream, func(resp *proto.GetTreeResponse) error {
 		if len(resp.GetRuns()) == 0 {
-			return keep(0, resp.Object)
+			return keep(nil, resp.Object)
 		}
 
 		for _, run := range resp.GetRuns() {
@@ -532,9 +533,9 @@ func (r *Client) follow(ctx context.Context, location *proto.Location) ([]byte, 
 	return record, nil
 }
 
-// fetchRun follows a run and hands fn each object its body holds, reading
-// the body one record at a time.
-func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(int, *proto.Object) error) error {
+// fetchRun follows a run and hands fn each object its body holds with its
+// record, reading the body one record at a time.
+func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(*proto.LocatedRecord, *proto.Object) error) error {
 	location := run.GetLocation()
 
 	body, err := r.open(ctx, location)
@@ -575,7 +576,7 @@ func (r *Client) fetchRun(ctx context.Context, run *proto.LocatedRun, fn func(in
 			return fmt.Errorf("decoding record %d from its run: %w", next.Index, err)
 		}
 
-		if err := fn(int(next.Index), object); err != nil {
+		if err := fn(next, object); err != nil {
 			return err
 		}
 	}
@@ -662,10 +663,67 @@ func (r *Client) ReadParts(ctx context.Context, file *proto.Ref, skip []int, fn 
 		}
 
 		for _, run := range resp.GetRuns() {
-			runs.Go(func() error { return r.fetchRun(rctx, run, fn) })
+			runs.Go(func() error {
+				return r.fetchRun(rctx, run, func(record *proto.LocatedRecord, obj *proto.Object) error {
+					return fn(int(record.Index), obj)
+				})
+			})
 		}
 
 		return rctx.Err()
+	})
+	if err != nil {
+		cancel()
+	}
+
+	if waited := runs.Wait(); waited != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		err = waited
+	}
+
+	return err
+}
+
+// ReadFiles implements backup.FilesReader through the ReadFiles stream,
+// fetching the runs it is pointed at runFetchers at a time.
+func (r *Client) ReadFiles(ctx context.Context, files []backup.FileRead, objectsOnly bool, object func(int, *proto.Object) error, part func(int, int, *proto.Object) error) error {
+	ctx, cancel := context.WithCancel(r.outgoing(ctx))
+	defer cancel()
+
+	request := &proto.ReadFilesRequest{Files: make([]*proto.ReadFilesEntry, len(files)), ObjectsOnly: objectsOnly}
+	for i, file := range files {
+		entry := &proto.ReadFilesEntry{Ref: file.Ref, SkipParts: make([]uint32, len(file.Skip))}
+		for j, skip := range file.Skip {
+			entry.SkipParts[j] = uint32(skip)
+		}
+
+		request.Files[i] = entry
+	}
+
+	stream, err := r.store.ReadFiles(ctx, request)
+	if err != nil {
+		return err
+	}
+
+	runs, rctx := errgroup.WithContext(ctx)
+	runs.SetLimit(runFetchers)
+
+	err = receive(stream, func(resp *proto.ReadFilesResponse) error {
+		switch {
+		case len(resp.GetRuns()) > 0:
+			for _, run := range resp.GetRuns() {
+				runs.Go(func() error {
+					return r.fetchRun(rctx, run, func(record *proto.LocatedRecord, obj *proto.Object) error {
+						return part(int(record.File), int(record.Index), obj)
+					})
+				})
+			}
+
+			return rctx.Err()
+		case resp.GetPart():
+			return part(int(resp.File), int(resp.Index), resp.Object)
+		}
+
+		return object(int(resp.File), resp.Object)
 	})
 	if err != nil {
 		cancel()
@@ -903,6 +961,12 @@ func (r *Server) ReadFile(request *proto.ReadFileRequest, stream proto.Store_Rea
 	return ToStatus(r.store.ReadFile(stream.Context(), request.Ref, request.SkipParts, func(resp *proto.ReadFileResponse) error {
 		return stream.Send(resp)
 	}))
+}
+
+// ReadFiles streams many files' objects and then their parts, as runs to
+// fetch or as stored objects.
+func (r *Server) ReadFiles(request *proto.ReadFilesRequest, stream proto.Store_ReadFilesServer) error {
+	return ToStatus(r.store.ReadFiles(stream.Context(), request.GetFiles(), request.GetObjectsOnly(), stream.Send))
 }
 
 // ToStatus maps the store's sentinel errors to gRPC codes; an error that
