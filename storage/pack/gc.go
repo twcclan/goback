@@ -1781,8 +1781,8 @@ func (r *gcRun) notNewer(targets map[refKey]Version) (map[refKey]Version, error)
 }
 
 // horizon lists, once the tombstones are stored, the versions of the
-// committed archives there are and the sessions that have begun and not
-// ended.
+// committed archives there are and of the snapshot's tombstones, and the
+// sessions that have begun and not ended.
 func (r *gcRun) horizon() ([]time.Time, []string, error) {
 	if err := r.ps.refreshArchives(); err != nil {
 		return nil, nil, errors.Wrap(err, "catching up with the storage's archives")
@@ -1791,13 +1791,11 @@ func (r *gcRun) horizon() ([]time.Time, []string, error) {
 	seen := make(map[int64]bool)
 	var condemned []time.Time
 
-	if r.prev != nil {
-		for _, t := range r.prev.Condemned {
-			if r.tombTimes[t.UnixNano()] && !seen[t.UnixNano()] {
-				seen[t.UnixNano()] = true
-				condemned = append(condemned, t)
-			}
-		}
+	// a compaction may have moved a tombstone out of its archive before
+	// any horizon listed that archive
+	for ns := range r.tombTimes {
+		seen[ns] = true
+		condemned = append(condemned, time.Unix(0, ns).UTC())
 	}
 
 	r.ps.mtx.RLock()

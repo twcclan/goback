@@ -28,9 +28,9 @@ type gcState struct {
 	Snapshot   time.Time `json:"snapshot"`
 	Swept      bool      `json:"swept"`
 	// Condemned are the versions of the committed archives there were once
-	// the generation's tombstones were stored, or once an earlier
-	// generation's were; only tombstones of these versions, wherever
-	// compaction moved them, let a later generation drop a copy.
+	// the generation's tombstones were stored, and of the tombstones its
+	// snapshot held; only tombstones of these versions, wherever compaction
+	// moved them, let a later generation drop a copy.
 	Condemned []time.Time `json:"condemned,omitempty"`
 	// Horizon are the sessions that had begun and not ended once the
 	// generation's tombstones were stored. A later generation drops

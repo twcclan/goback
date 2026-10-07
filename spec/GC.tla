@@ -7,10 +7,13 @@
    being waited out; with Pipelined, each mark confirms the previous
    generation and condemns for the next, as the store runs it. With
    Unretiring, an operator revives a retired backup whose objects all still
-   have copies, while no maintainer runs, and it is a root again.
+   have copies, while no maintainer runs, and it is a root again. With
+   Compaction, a rewrite moves a tombstone out of the archive it was written
+   in, keeping its version.
 
    Safe: no committed backup ever references an object without a committed
-   copy. *)
+   copy. Collectable: no horizon passes over a tombstone the store holds, so
+   none stands for ever over what it condemns. *)
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS
@@ -41,7 +44,9 @@ CONSTANTS
     SkipCover,   \* mutation: a session's un-tombstones need not reach all it deduplicated
     Unretiring,  \* an operator revives retired backups
     SkipReviveCheck, \* mutation: a revival does not check that every object it reaches has a copy
-    SkipReviveLock   \* mutation: a revival runs while a maintainer is mid-run
+    SkipReviveLock,  \* mutation: a revival runs while a maintainer is mid-run
+    Compaction,  \* compaction moves tombstones out of the archives they were written in
+    SkipCarried  \* mutation: a horizon covers a moved tombstone only if an earlier one did
 
 None == "none"
 
@@ -60,9 +65,10 @@ VARIABLES
     rw,       \* per rewriter
     state,    \* the previous generation's record in the bucket, for a pipelined mark
     seen,     \* per session: the tombstones sealed before it began
-    retired   \* the roots retired, which a revival may take back
+    retired,  \* the roots retired, which a revival may take back
+    moved     \* the tombstones compaction moved out of the archive they were written in
 
-vars == <<records, clock, phase, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+vars == <<records, clock, phase, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired, moved>>
 
 \* writer tells copies apart: each session writes an object at most once, and
 \* the maintainer writes tombstones
@@ -94,9 +100,9 @@ Present(s, o) ==
         /\ SkipTombs \/ \A t \in Visible(s) :
               (t.kind = "tomb" /\ t.obj = o) => (t.ver < c.ver \/ Revoked(t, untombs, {}))
 
-Idle == [pc |-> "idle", m1 |-> {}, m2 |-> {}, snap |-> {}, tombs |-> {}, untombs |-> {}, older |-> {}, live |-> {}, drop |-> {}]
+Idle == [pc |-> "idle", m1 |-> {}, m2 |-> {}, snap |-> {}, tombs |-> {}, untombs |-> {}, older |-> {}, live |-> {}, drop |-> {}, stood |-> {}]
 
-NoState == [valid |-> FALSE, snap |-> {}, m1 |-> {}, tombs |-> {}, untombs |-> {}, live |-> {}]
+NoState == [valid |-> FALSE, snap |-> {}, m1 |-> {}, tombs |-> {}, untombs |-> {}, live |-> {}, stood |-> {}]
 
 Ended(s) == phase[s] \in {"committed", "aborted"}
 
@@ -118,6 +124,7 @@ Init ==
     /\ state = NoState
     /\ seen = [s \in Sessions |-> {}]
     /\ retired = {}
+    /\ moved = {}
 
 (* sessions *)
 
@@ -125,7 +132,7 @@ Begin(s) ==
     /\ phase[s] = "new"
     /\ phase' = [phase EXCEPT ![s] = "active"]
     /\ seen' = [seen EXCEPT ![s] = sealed]
-    /\ UNCHANGED <<records, clock, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, retired>>
+    /\ UNCHANGED <<moved, records, clock, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, retired>>
 
 \* the session needs o: it deduplicates when the store says o is present and
 \* uploads its own copy otherwise
@@ -135,12 +142,12 @@ Use(s, o) ==
     /\ refs' = [refs EXCEPT ![s] = @ \cup {o}]
     /\ IF Present(s, o)
          THEN /\ dedup' = [dedup EXCEPT ![s] = @ \cup {o}]
-              /\ UNCHANGED <<records, clock, state, seen>>
+              /\ UNCHANGED <<moved, records, clock, state, seen>>
          ELSE /\ \E v \in NewVersions :
                    /\ records' = records \cup {Record("copy", o, v, s, s)}
                    /\ clock' = IF v > clock THEN v ELSE clock
               /\ UNCHANGED dedup
-    /\ UNCHANGED <<phase, roots, gc, lease, cycles, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, phase, roots, gc, lease, cycles, sealed, plans, rw, state, seen, retired>>
 
 \* before committing, take back what the session deduplicated: un-tombstone
 \* objects whose closure holds all of it, the session's own commit among
@@ -158,7 +165,7 @@ Untomb(s) ==
                  /\ clock' = IF U = {} THEN clock ELSE
                                LET top == CHOOSE v \in {ver[o] : o \in U} : \A o \in U : ver[o] <= v
                                IN IF top > clock THEN top ELSE clock
-       /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+       /\ UNCHANGED <<moved, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* after its un-tombstones are written, a session uploads again whatever a
 \* sealed tombstone condemns among what it deduplicated and all that
@@ -176,7 +183,7 @@ Check(s) ==
             /\ clock' = IF redo = {} THEN clock ELSE
                           LET top == CHOOSE v \in {ver[o] : o \in redo} : \A o \in redo : ver[o] <= v
                           IN IF top > clock THEN top ELSE clock
-       /\ UNCHANGED <<refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+       /\ UNCHANGED <<moved, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* an agent uploads an object only after handling what it references
 Commit(s) ==
@@ -185,7 +192,7 @@ Commit(s) ==
     /\ phase' = [phase EXCEPT ![s] = "committed"]
     /\ records' = {IF r.owner = s THEN [r EXCEPT !.owner = None] ELSE r : r \in records}
     /\ roots' = roots \cup {<<s, o>> : o \in refs[s]}
-    /\ UNCHANGED <<clock, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, clock, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* a session ends without committing, by choice or because the reaper ended
 \* it after a crash; its end marker keeps it from ever committing
@@ -193,13 +200,13 @@ Abort(s) ==
     /\ phase[s] \in {"active", "untombed", "checked"}
     /\ phase' = [phase EXCEPT ![s] = "aborted"]
     /\ records' = {r \in records : r.owner # s}
-    /\ UNCHANGED <<clock, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, clock, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* a backup is deleted, so what only it referenced becomes unreachable
 Retire(p) ==
     /\ roots' = roots \ {p}
     /\ retired' = retired \cup {p}
-    /\ UNCHANGED <<records, clock, phase, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
 
 \* the revival is written under the collector's lock, after a check that
 \* every object the backup reaches has a committed copy; the next mark
@@ -214,7 +221,7 @@ Unretire(p) ==
     /\ SkipReviveCheck \/ \A o \in Closure({p[2]}) : \E c \in Committed : c.kind = "copy" /\ c.obj = o
     /\ roots' = roots \cup {p}
     /\ retired' = retired \ {p}
-    /\ UNCHANGED <<records, clock, phase, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, gc, lease, cycles, dedup, sealed, plans, rw, state, seen>>
 
 (* the maintainers: one holds the lease at a time, but a maintainer whose
    lease ran out may not know it yet *)
@@ -229,13 +236,13 @@ Acquire(m) ==
     /\ cycles < MaxCycles
     /\ lease' = m
     /\ cycles' = cycles + 1
-    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, gc, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* the holder stalls past its lease
 Expire ==
     /\ lease # None
     /\ lease' = None
-    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, gc, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 Mark(m) ==
     /\ gc[m].pc = "idle"
@@ -243,7 +250,7 @@ Mark(m) ==
     /\ SkipPlanWait \/ plans = {}
     /\ gc' = [gc EXCEPT ![m].pc = "marked", ![m].m1 = Reachable,
                         ![m].snap = {c \in Committed : c.kind = "copy"}]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* one tombstone archive for every unmarked object with a copy in the snapshot
 Condemn(m) ==
@@ -252,6 +259,7 @@ Condemn(m) ==
        /\ Holds(m)
        /\ \E ver \in [doomed -> NewVersions] :
             /\ records' = records \cup {Record("tomb", o, ver[o], m, None) : o \in doomed}
+            /\ moved' = moved \ {Record("tomb", o, ver[o], m, None) : o \in doomed}
             /\ clock' = IF doomed = {} THEN clock ELSE
                           LET top == CHOOSE v \in {ver[o] : o \in doomed} : \A o \in doomed : ver[o] <= v
                           IN IF top > clock THEN top ELSE clock
@@ -267,7 +275,7 @@ Horizon(m) ==
                         ![m].older = {s \in Sessions : ~Ended(s)},
                         ![m].tombs = {r \in Committed : r.kind = "tomb"},
                         ![m].untombs = {r \in Committed : r.kind = "untomb"}]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* sessions check the seal after writing their un-tombstones, and the
 \* maintainer reads un-tombstones after sealing: one side sees the other
@@ -277,14 +285,14 @@ Seal(m) ==
     /\ Holds(m)
     /\ sealed' = sealed \cup gc[m].tombs
     /\ gc' = [gc EXCEPT ![m].pc = "sealed", ![m].live = {s \in Sessions : ~Ended(s)}]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, plans, rw, state, seen, retired>>
 
 Confirm(m) ==
     /\ gc[m].pc = IF Resurrect THEN "sealed" ELSE "listed"
     /\ Holds(m)
     /\ SkipWait \/ Resurrect \/ \A s \in gc[m].older : Ended(s)
     /\ gc' = [gc EXCEPT ![m].pc = "confirmed", ![m].m2 = IF SkipConfirm THEN gc[m].m1 ELSE Reachable]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* pick the snapshot copies older than a tombstone of an object still
 \* unmarked, and the tombstones whose object is marked again or has no older
@@ -311,7 +319,7 @@ Plan(m) ==
     IN /\ g.pc = "confirmed"
        /\ Holds(m)
        /\ gc' = [gc EXCEPT ![m].pc = "planned", ![m].drop = dead \cup spent \cup idle]
-       /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+       /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 Delete(m) ==
     /\ ~Handoff
@@ -319,7 +327,7 @@ Delete(m) ==
     /\ records' = records \ gc[m].drop
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
-    /\ UNCHANGED <<clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* the plan goes to the bucket, and the lease is let go for a rewriter
 Publish(m) ==
@@ -329,7 +337,7 @@ Publish(m) ==
     /\ plans' = plans \cup {gc[m].drop}
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
-    /\ UNCHANGED <<records, clock, phase, refs, roots, cycles, dedup, sealed, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, cycles, dedup, sealed, rw, state, seen, retired>>
 
 TakePlan(w, plan) ==
     /\ rw[w].pc = "idle"
@@ -339,14 +347,14 @@ TakePlan(w, plan) ==
     /\ lease' = w
     /\ cycles' = cycles + 1
     /\ rw' = [rw EXCEPT ![w] = [pc |-> "loaded", plan |-> plan]]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, dedup, sealed, plans, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, gc, dedup, sealed, plans, state, seen, retired>>
 
 \* the deletes follow the last lease check, as a maintainer's do
 Rewrite(w) ==
     /\ rw[w].pc = "loaded"
     /\ records' = records \ rw[w].plan
     /\ rw' = [rw EXCEPT ![w].pc = "rewritten"]
-    /\ UNCHANGED <<clock, phase, refs, roots, gc, lease, cycles, dedup, sealed, plans, state, seen, retired>>
+    /\ UNCHANGED <<moved, clock, phase, refs, roots, gc, lease, cycles, dedup, sealed, plans, state, seen, retired>>
 
 \* a rewriter that dies before this leaves the plan to be run again
 Finish(w) ==
@@ -354,13 +362,13 @@ Finish(w) ==
     /\ plans' = plans \ {rw[w].plan}
     /\ rw' = [rw EXCEPT ![w] = [pc |-> "idle", plan |-> {}]]
     /\ lease' = IF lease = w THEN None ELSE lease
-    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, cycles, dedup, sealed, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, gc, cycles, dedup, sealed, state, seen, retired>>
 
 RewriterCrash(w) ==
     /\ rw[w].pc # "idle"
     /\ rw' = [rw EXCEPT ![w] = [pc |-> "idle", plan |-> {}]]
     /\ lease' = IF lease = w THEN None ELSE lease
-    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, cycles, dedup, sealed, plans, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, gc, cycles, dedup, sealed, plans, state, seen, retired>>
 
 (* pipelined generations: a mark confirms what the previous generation
    condemned and condemns for the next; un-tombstones carry no writer, so
@@ -380,7 +388,7 @@ PMark(m) ==
        /\ gc' = [gc EXCEPT ![m].pc = "marked", ![m].m1 = Reachable \cup kept,
                            ![m].snap = {c \in Committed : c.kind = "copy"},
                            ![m].untombs = Untombs]
-       /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+       /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* drop the previous snapshot's copies both marks left unmarked that a
 \* tombstone of the previous horizon condemns and no un-tombstone takes
@@ -406,7 +414,7 @@ PPlan(m) ==
     IN /\ g.pc = "marked"
        /\ Holds(m)
        /\ gc' = [gc EXCEPT ![m].pc = "planned", ![m].drop = IF state.valid THEN dead \cup spent \cup idle ELSE {}]
-       /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+       /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 PCondemn(m) ==
     LET doomed == {o \in Objects \ gc[m].m1 : \E r \in gc[m].snap : r.obj = o}
@@ -415,19 +423,24 @@ PCondemn(m) ==
        /\ \E ver \in [doomed -> NewVersions] :
             /\ TombsNewer => \A o \in doomed : \A c \in gc[m].snap : c.obj = o => c.ver < ver[o]
             /\ records' = records \cup {Record("tomb", o, ver[o], m, None) : o \in doomed}
+            /\ moved' = moved \ {Record("tomb", o, ver[o], m, None) : o \in doomed}
             /\ clock' = IF doomed = {} THEN clock ELSE
                           LET top == CHOOSE v \in {ver[o] : o \in doomed} : \A o \in doomed : ver[o] <= v
                           IN IF top > clock THEN top ELSE clock
        /\ gc' = [gc EXCEPT ![m].pc = "condemned"]
        /\ UNCHANGED <<phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
+\* every tombstone the store holds was stored before this horizon, wherever
+\* compaction moved it
 PHorizon(m) ==
-    /\ gc[m].pc = "condemned"
-    /\ Holds(m)
-    /\ gc' = [gc EXCEPT ![m].pc = "listed",
-                        ![m].tombs = {r \in Committed : r.kind = "tomb"},
-                        ![m].older = Untombs]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    LET stood == {r \in Committed : r.kind = "tomb"}
+    IN /\ gc[m].pc = "condemned"
+       /\ Holds(m)
+       /\ gc' = [gc EXCEPT ![m].pc = "listed",
+                           ![m].tombs = IF SkipCarried THEN {r \in stood : r \notin moved \/ r \in state.tombs} ELSE stood,
+                           ![m].stood = stood,
+                           ![m].older = Untombs]
+       /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* the seal and the generation's record are written after the sessions are
 \* listed
@@ -436,9 +449,9 @@ PSeal(m) ==
     /\ Holds(m)
     /\ sealed' = sealed \cup gc[m].tombs
     /\ state' = [valid |-> TRUE, snap |-> gc[m].snap, m1 |-> gc[m].m1, tombs |-> gc[m].tombs,
-                 untombs |-> gc[m].older, live |-> {s \in Sessions : ~Ended(s)}]
+                 untombs |-> gc[m].older, live |-> {s \in Sessions : ~Ended(s)}, stood |-> gc[m].stood]
     /\ gc' = [gc EXCEPT ![m].pc = "sealed"]
-    /\ UNCHANGED <<records, clock, phase, refs, roots, lease, cycles, dedup, plans, rw, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, lease, cycles, dedup, plans, rw, seen, retired>>
 
 PDelete(m) ==
     /\ ~Handoff
@@ -446,7 +459,7 @@ PDelete(m) ==
     /\ records' = records \ gc[m].drop
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
-    /\ UNCHANGED <<clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* the plan goes to the bucket for a rewriter, as Publish does
 PPublish(m) ==
@@ -456,14 +469,22 @@ PPublish(m) ==
     /\ plans' = plans \cup {gc[m].drop}
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
-    /\ UNCHANGED <<records, clock, phase, refs, roots, cycles, dedup, sealed, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, cycles, dedup, sealed, rw, state, seen, retired>>
+
+\* a rewrite moves a tombstone into a new archive with the version it had
+Compact(t) ==
+    /\ Compaction
+    /\ t \in Committed \ moved
+    /\ t.kind = "tomb"
+    /\ moved' = moved \cup {t}
+    /\ UNCHANGED <<records, clock, phase, refs, roots, gc, lease, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 \* a maintainer dies anywhere; what it wrote stays, its lease runs out
 Crash(m) ==
     /\ gc[m].pc # "idle"
     /\ gc' = [gc EXCEPT ![m] = Idle]
     /\ lease' = IF lease = m THEN None ELSE lease
-    /\ UNCHANGED <<records, clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
+    /\ UNCHANGED <<moved, records, clock, phase, refs, roots, cycles, dedup, sealed, plans, rw, state, seen, retired>>
 
 Next ==
     \/ \E s \in Sessions : Begin(s) \/ Untomb(s) \/ Check(s) \/ Commit(s) \/ Abort(s)
@@ -471,6 +492,7 @@ Next ==
     \/ \E p \in roots : Retire(p)
     \/ \E p \in retired : Unretire(p)
     \/ Expire
+    \/ \E t \in records : Compact(t)
     \/ \E m \in Maintainers :
          \/ Acquire(m) \/ Crash(m)
          \/ ~Pipelined /\ (Mark(m) \/ Condemn(m) \/ Horizon(m) \/ Seal(m) \/ Confirm(m) \/ Plan(m) \/ Delete(m) \/ Publish(m))
@@ -482,6 +504,10 @@ Spec == Init /\ [][Next]_vars
 (* properties *)
 
 Safe == \A o \in Reachable : \E r \in Committed : r.kind = "copy" /\ r.obj = o
+
+\* the next generation condemns with every tombstone that stood at the last
+\* horizon and stands still
+Collectable == state.stood \cap records \subseteq state.tombs
 
 TypeOK ==
     /\ phase \in [Sessions -> {"new", "active", "untombed", "checked", "committed", "aborted"}]

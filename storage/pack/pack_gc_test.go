@@ -432,6 +432,51 @@ func TestCollectReclaimsTombstonedCommit(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
+func TestCollectReclaimsACommitWhoseTombstoneACompactionMovedFirst(t *testing.T) {
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(t.TempDir())),
+		WithArchiveIndex(NewInMemoryIndex()),
+		WithMaxSize(256*1024),
+		WithCompaction(CompactionConfig{MinimumCandidates: 0}),
+	)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	ctx := context.Background()
+
+	blobs := makeTestData(t, 40)
+	gone := makeChain(blobs[:20])
+	kept := makeChain(blobs[20:])
+	putAll(t, store, append(append([]*proto.Object{}, gone...), kept...))
+
+	commit := gone[len(gone)-1].Ref()
+	require.NoError(t, store.Delete(ctx, commit))
+	require.NoError(t, store.Flush())
+	require.NoError(t, store.Compact())
+
+	tomb := proto.TombstoneRef(commit)
+	found, err := store.index.LocateTombstones([]*proto.Ref{tomb}, Scope{})
+	require.NoError(t, err)
+	require.Len(t, found[string(tomb.Hash)], 1)
+	require.NotZero(t, found[string(tomb.Hash)][0].Record.CarriedTime, "the compaction moved the tombstone")
+
+	_, err = store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	second, err := store.Collect(ctx, gcOptions(t, 48*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, len(gone), second.ReclaimedObjects)
+	requireStored(t, store, gone, false)
+	requireStored(t, store, kept, true)
+
+	third, err := store.Collect(ctx, gcOptions(t, 72*time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, len(gone), third.ReclaimedObjects, "the tombstones are spent")
+	require.Equal(t, 0, countTombstones(t, store))
+	requireStored(t, store, kept, true)
+
+	require.NoError(t, store.Close())
+}
+
 func TestCollectSweepsErasedArchivesEarly(t *testing.T) {
 	for _, erase := range []bool{false, true} {
 		t.Run(fmt.Sprintf("erase=%v", erase), func(t *testing.T) {
