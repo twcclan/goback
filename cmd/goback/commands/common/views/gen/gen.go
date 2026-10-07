@@ -38,6 +38,23 @@ func (m MapperImpl) Commit(in *proto.Commit) views.CommitView {
 	}
 }
 
+func (m MapperImpl) IndexedSet(in index.IndexedSet) views.IndexedSetView {
+
+	return views.IndexedSetView{
+		SetID:       in.SetID,
+		Set:         in.Set,
+		Created:     in.Created,
+		Placeholder: in.Placeholder,
+		Commits:     in.Commits,
+		Chained:     in.Chained,
+		Oldest:      in.Oldest,
+		Newest:      in.Newest,
+		Indexed:     in.Indexed,
+		Tied:        in.Tied,
+		Behind:      in.Behind,
+	}
+}
+
 func (m MapperImpl) Maintenance(in maintenance.Ran) views.MaintenanceView {
 	tmp0 := make([]views.ReindexedView, len(in.Reindexed))
 	for i := range in.Reindexed {

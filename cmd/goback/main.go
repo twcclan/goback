@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/cmd/goback/commands/file"
 	"github.com/twcclan/goback/cmd/goback/commands/fix"
 	"github.com/twcclan/goback/cmd/goback/commands/gc"
+	"github.com/twcclan/goback/cmd/goback/commands/indexing"
 	"github.com/twcclan/goback/cmd/goback/commands/key"
 	"github.com/twcclan/goback/cmd/goback/commands/maintain"
 	"github.com/twcclan/goback/cmd/goback/commands/object"
@@ -36,6 +37,7 @@ func main() {
 		file.Command,
 		fix.Command,
 		gc.Command,
+		indexing.Command,
 		key.Command,
 		maintain.Command,
 		object.Command,

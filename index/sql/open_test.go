@@ -197,6 +197,8 @@ func TestPostgres(t *testing.T) {
 		"PresenceFilterNeverLands":         TestPresenceFilterNeverLandsOnATombstonedCommit,
 		"EnsureSetFindsASetByName":         TestEnsureSetFindsASetByName,
 		"EnsureSetRecreatesUnderCarriedID": TestEnsureSetRecreatesUnderCarriedID,
+		"RebuildPlacesUnnamedCommits":      TestReIndexPutsTheCommitsThatNameNoSetUnderAPlaceholderSet,
+		"IndexCommitsPlacesUnnamed":        TestIndexCommitsPutsCommitsThatNameNoSetUnderAPlaceholderSet,
 		"PresenceFollowsTheHead":           TestPresenceFollowsTheHead,
 		"LogicalSizeFollowsCommits":        TestLogicalSizeFollowsCommits,
 		"LogicalSizeBeforeMaintenance":     TestLogicalSizeIsKnownBeforeMaintenanceRuns,

@@ -39,7 +39,8 @@ type ReIndexReport struct {
 	// Behind counts the commits received before their set's newest,
 	// left out of the index.
 	Behind int
-	// Unnamed counts the commits that name no set, left out of the index.
+	// Unnamed counts the commits that name no set, indexed under a
+	// placeholder set.
 	Unnamed int
 }
 

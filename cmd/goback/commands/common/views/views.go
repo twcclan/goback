@@ -54,6 +54,8 @@ type Mapper interface {
 
 	ReIndex(in backup.ReIndexReport) ReIndexView
 
+	IndexedSet(in index.IndexedSet) IndexedSetView
+
 	// field:Keep from:"Brackets"
 	// field:KeepWithin using:"Within"
 	// field:Flags from:"-"
@@ -248,6 +250,22 @@ type ReIndexView struct {
 	Tied    int `json:"tied"`
 	Behind  int `json:"behind"`
 	Unnamed int `json:"unnamed"`
+}
+
+// IndexedSetView is what goback index commits did, or would do, with the
+// commits of one set, as JSON output shows it.
+type IndexedSetView struct {
+	SetID       int64     `json:"set_id"`
+	Set         string    `json:"set"`
+	Created     bool      `json:"created"`
+	Placeholder bool      `json:"placeholder"`
+	Commits     int       `json:"commits"`
+	Chained     bool      `json:"chained"`
+	Oldest      time.Time `json:"oldest"`
+	Newest      time.Time `json:"newest"`
+	Indexed     int       `json:"indexed"`
+	Tied        int       `json:"tied"`
+	Behind      int       `json:"behind"`
 }
 
 // MaintenanceView is what goback maintain did; collected is absent when

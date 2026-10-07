@@ -1193,15 +1193,3 @@ func TestReIndexPlacesACommitReceivedWithTheSetsNewestJustAfterIt(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, versions, 2, "each commit keeps its own version")
 }
-
-func TestReIndexCountsTheCommitsThatNameNoSet(t *testing.T) {
-	f := newFixture(t)
-
-	obj := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", "one")).Ref(),
-		AgentId: "node-1", ReceivedAtNs: f.clock.UnixNano()})
-	require.NoError(t, f.store.Put(f.ctx, obj))
-
-	report, err := f.index().ReIndex(f.ctx)
-	require.NoError(t, err)
-	require.Equal(t, backup.ReIndexReport{Unnamed: 1}, report)
-}

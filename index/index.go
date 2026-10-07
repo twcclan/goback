@@ -3,6 +3,12 @@
 package index
 
 import (
+	"bufio"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -197,4 +203,56 @@ type OrphanCommit struct {
 	// what those copies take up.
 	Copies int
 	Bytes  int64
+}
+
+// PlaceholderSet names the set commits that name no set are indexed
+// under; when a set of that name exists, the first free of
+// PlaceholderSet-2, PlaceholderSet-3, … is used instead.
+const PlaceholderSet = "legacy"
+
+// ErrIndexed refuses to index a commit the index already has a row for.
+var ErrIndexed = errors.New("commit is already indexed")
+
+// IndexedSet is what indexing a list of commits did, or on a dry run
+// would do, with those of one set.
+type IndexedSet struct {
+	// SetID is 0 for a set a dry run would create under a fresh id.
+	SetID int64
+	Set   string
+	// Created is a set that did not exist before.
+	Created bool
+	// Placeholder is a set the commits went to because they name none.
+	Placeholder bool
+	Commits     int
+	// Chained is whether each commit names the one received before it as
+	// its parent.
+	Chained bool
+	// Oldest and Newest are the receipt times of the first and last commit.
+	Oldest, Newest time.Time
+	// Indexed counts the commits indexed, Tied those of them indexed a
+	// microsecond after their set's newest, and Behind those received
+	// before the set's newest and left out; all 0 on a dry run.
+	Indexed, Tied, Behind int
+}
+
+// ReadRefs reads refs printed as hex, one per line, skipping blank lines.
+func ReadRefs(r io.Reader) ([]*proto.Ref, error) {
+	var refs []*proto.Ref
+
+	lines := bufio.NewScanner(r)
+	for n := 1; lines.Scan(); n++ {
+		line := strings.TrimSpace(lines.Text())
+		if line == "" {
+			continue
+		}
+
+		hash, err := hex.DecodeString(line)
+		if err != nil || len(hash) != proto.HashSize {
+			return nil, fmt.Errorf("line %d: %q is not a ref: want %d hex bytes", n, line, proto.HashSize)
+		}
+
+		refs = append(refs, &proto.Ref{Hash: hash})
+	}
+
+	return refs, lines.Err()
 }

@@ -137,17 +137,11 @@ func (x *Index) checkPinTarget(ctx context.Context, c *ent.Client, target *proto
 }
 
 // ensureSet resolves the set a commit belongs to from the name in its
-// body. A commit without a set name is rejected in strict mode and
-// skipped (returning set id 0) otherwise; strict mode also refuses a set
-// that is not active.
+// body; strict mode refuses a set that is not active. A commit without a
+// set name is refused: the rebuild names it after a placeholder set first.
 func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Commit, ref *proto.Ref, strict bool) (int64, error) {
 	if commit.GetBackupSet() == "" {
-		if strict {
-			return 0, fmt.Errorf("%w: commit names no set", backup.ErrDanglingRef)
-		}
-
-		x.logger().Error("leaving out of the index a commit that names no set", "ref", fmt.Sprintf("%x", ref.GetHash()))
-		return 0, nil
+		return 0, fmt.Errorf("%w: commit %x names no set", backup.ErrDanglingRef, ref.GetHash())
 	}
 
 	var wantID int64
@@ -198,10 +192,6 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 		return unplaced, err
 	}
 
-	if setID == 0 {
-		return unnamed, nil
-	}
-
 	start := time.Now()
 
 	for attempt := 1; ; attempt++ {
@@ -238,8 +228,6 @@ const (
 	tied
 	// behind is a commit received before the set's newest, not indexed.
 	behind
-	// unnamed is a commit that names no set, not indexed.
-	unnamed
 )
 
 // receiptGrain is the precision Postgres keeps receipt times to.
@@ -957,17 +945,7 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		return err
 	}
 
-	type pending struct {
-		commit *proto.Commit
-		ref    *proto.Ref
-	}
-
-	type setKey struct {
-		id   int64
-		name string
-	}
-
-	bySet := make(map[setKey][]pending)
+	var commits []pending
 
 	err = x.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
 		ref := obj.Ref()
@@ -987,13 +965,7 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 			}
 		}
 
-		commit := obj.GetCommit()
-		key := setKey{id: int64(commit.GetSetId())}
-		if key.id == 0 {
-			key.name = commit.GetBackupSet()
-		}
-
-		bySet[key] = append(bySet[key], pending{commit: commit, ref: ref})
+		commits = append(commits, pending{commit: obj.GetCommit(), ref: ref})
 
 		return nil
 	})
@@ -1001,43 +973,21 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		return err
 	}
 
-	for _, commits := range bySet {
-		sort.Slice(commits, func(i, j int) bool {
-			if a, b := commits[i].commit.GetReceivedAtNs(), commits[j].commit.GetReceivedAtNs(); a != b {
-				return a < b
-			}
-
-			return bytes.Compare(commits[i].ref.Hash, commits[j].ref.Hash) < 0
-		})
-
-		for _, c := range commits {
-			placed, err := x.indexCommit(ctx, c.commit, c.ref, false, false)
-			if err != nil {
-				return err
-			}
-
-			switch placed {
-			case tied:
-				report.Tied++
-			case behind:
-				report.Behind++
-			case unnamed:
-				report.Unnamed++
-			}
-		}
-
-		setID, err := x.ensureSet(ctx, x.client, commits[0].commit, commits[0].ref, false)
+	for _, group := range groupBySet(commits) {
+		target, err := x.groupSet(ctx, group, false)
 		if err != nil {
 			return err
 		}
 
-		if setID == 0 {
-			continue
-		}
-
-		err = x.reevaluateSet(ctx, setID)
+		counts, err := x.indexGroup(ctx, target, group)
 		if err != nil {
 			return err
+		}
+
+		report.Tied += counts[tied]
+		report.Behind += counts[behind]
+		if target.Placeholder {
+			report.Unnamed += counts[inOrder] + counts[tied]
 		}
 	}
 
