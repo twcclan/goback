@@ -75,7 +75,7 @@ func (m *memIndex) CommitInfo(context.Context, string, time.Time, int) ([]*proto
 	return nil, ErrNotImplemented
 }
 
-func (m *memIndex) ReIndex(context.Context) error { return nil }
+func (m *memIndex) ReIndex(context.Context) (ReIndexReport, error) { return ReIndexReport{}, nil }
 
 func (m *memIndex) LatestCommit(_ context.Context, set string) (*proto.Ref, error) {
 	m.mtx.Lock()

@@ -80,6 +80,7 @@ func (Object) Indexes() []ent.Index {
 		index.Fields("ref", "archive_id").Unique(),
 		index.Fields("archive_id"),
 		index.Fields("ref").Annotations(entsql.IndexWhere(fmt.Sprintf("type = %d", proto.ObjectType_TOMBSTONE))).StorageKey("objects_tombstones"),
+		index.Fields("ref").Annotations(entsql.IndexWhere(fmt.Sprintf("type = %d", proto.ObjectType_COMMIT))).StorageKey("objects_commits"),
 	}
 }
 

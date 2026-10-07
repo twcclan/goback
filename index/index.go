@@ -187,3 +187,14 @@ type RebuiltIndex struct {
 	Name          string
 	Before, After int64
 }
+
+// OrphanCommit is a commit the store holds that the index has no row for
+// and no tombstone retires: retention never sees it, and every collection
+// keeps what it reaches.
+type OrphanCommit struct {
+	Ref *proto.Ref
+	// Copies is how many committed archives hold the commit, and Bytes
+	// what those copies take up.
+	Copies int
+	Bytes  int64
+}

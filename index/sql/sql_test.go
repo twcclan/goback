@@ -453,3 +453,7 @@ func TestReadPassesOnWhatTheStoreAnswers(t *testing.T) {
 	require.Nil(t, got)
 	require.Equal(t, placed.GetUrl(), location.GetUrl())
 }
+
+func reindexErr(_ backup.ReIndexReport, err error) error {
+	return err
+}

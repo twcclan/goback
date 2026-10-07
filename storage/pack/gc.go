@@ -142,6 +142,9 @@ type CollectReport struct {
 	// SetDeduplicatedAlone is the uncompressed size of the distinct file
 	// content each set's live objects carry were it the only set of its group.
 	SetDeduplicatedAlone map[int64]uint64
+	// Unattributed is what the live objects no set reaches take up, such
+	// as those only a commit without an owner reaches; zero without Owner.
+	Unattributed uint64
 	// Condemned counts the unreachable objects the run stored tombstones for.
 	Condemned int
 	// Waiting is the generation whose published plan has not been
@@ -313,6 +316,7 @@ type gcRun struct {
 	// it reaches within its group.
 	setAlone, setExclusive map[int64]uint64
 	setDeduplicatedAlone   map[int64]uint64
+	unattributed           uint64
 	// classes are the output classes of the sweep
 	classes *classes
 }
@@ -431,6 +435,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	if err != nil {
 		return nil, err
 	}
+	report.Unattributed = run.unattributed
 
 	if err := run.flagErased(ctx); err != nil {
 		return nil, err
@@ -461,6 +466,11 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		report.ArchiveBytes += ga.a.size
 	}
 	gcDeadBytes.Record(ctx, int64(report.DeadBytes))
+
+	if report.Unattributed*100 > report.ArchiveBytes {
+		ps.logger.Warn("gc reached more than 1% of the archives from no set", "generation", run.gen,
+			"unattributed", humanize.Bytes(report.Unattributed), "archives", humanize.Bytes(report.ArchiveBytes))
+	}
 
 	if err := run.condemn(ctx); err != nil {
 		return nil, err
@@ -1317,20 +1327,25 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 		first := rec.Sum != counted
 		counted = rec.Sum
 
-		// owners come in group order, so the first of each group is the
-		// set that group carries the object in
+		// owners come in group order, so the first set of each group is
+		// the one that group carries the object in
 		group := int64(0)
-		for i, owner := range owners {
-			if owner.Set == 0 || (i > 0 && owner.Group == group) {
+		attributed := false
+		for _, owner := range owners {
+			if owner.Set == 0 || (attributed && owner.Group == group) {
 				continue
 			}
 
-			group = owner.Group
+			group, attributed = owner.Group, true
 			r.setBytes[owner.Set] += uint64(rec.Length)
 
 			if first {
 				r.setDeduplicated[owner.Set] += size
 			}
+		}
+
+		if !attributed && r.opts.Owner != nil {
+			r.unattributed += uint64(rec.Length)
 		}
 
 		content := uint64(0)

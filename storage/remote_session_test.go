@@ -28,7 +28,9 @@ type packIndex struct {
 func (p *packIndex) Open() error  { return nil }
 func (p *packIndex) Close() error { return nil }
 
-func (p *packIndex) ReIndex(context.Context) error { return nil }
+func (p *packIndex) ReIndex(context.Context) (backup.ReIndexReport, error) {
+	return backup.ReIndexReport{}, nil
+}
 func (p *packIndex) FileInfo(context.Context, string, string, time.Time, int) ([]*proto.TreeNode, error) {
 	return nil, backup.ErrNotImplemented
 }

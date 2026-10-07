@@ -275,9 +275,14 @@ func (x *Index) RootOwner(ctx context.Context) (func(root []byte) pack.Attributi
 
 // RecordSetSizes records what a garbage collection attributed to each set:
 // the physical, deduplicated, alone, exclusive and deduplicated alone sizes; a set it did not
-// name holds nothing of its own.
+// name holds nothing of its own. What it attributed to a set the index
+// does not hold is added to report.Unattributed.
 func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) error {
-	return x.tx(ctx, func(tx *ent.Tx) error {
+	var unknown uint64
+
+	err := x.tx(ctx, func(tx *ent.Tx) error {
+		unknown = 0
+
 		err := tx.Set.Update().ClearPhysicalSize().ClearDeduplicatedSize().ClearAloneSize().ClearExclusiveSize().
 			ClearDeduplicatedAloneSize().Exec(ctx)
 		if err != nil {
@@ -289,6 +294,9 @@ func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) 
 				SetAloneSize(int64(report.SetAlone[id])).SetExclusiveSize(int64(report.SetExclusive[id])).
 				SetDeduplicatedAloneSize(int64(report.SetDeduplicatedAlone[id])).Exec(ctx)
 			if ent.IsNotFound(err) {
+				x.logger().Warn("gc attributed objects to a set the index does not hold", "set", id, "bytes", size)
+				unknown += size
+
 				continue
 			}
 
@@ -299,6 +307,13 @@ func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) 
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	report.Unattributed += unknown
+
+	return nil
 }
 
 func (x *Index) keptSize(ctx context.Context, setID int64) (int64, error) {

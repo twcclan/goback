@@ -229,7 +229,9 @@ func (r *Client) CommitSizes(ctx context.Context, set string, notAfter time.Time
 }
 
 // ReIndex is not offered by the server.
-func (r *Client) ReIndex(context.Context) error { return backup.ErrNotImplemented }
+func (r *Client) ReIndex(context.Context) (backup.ReIndexReport, error) {
+	return backup.ReIndexReport{}, backup.ErrNotImplemented
+}
 
 // LatestCommit implements backup.Index.
 func (r *Client) LatestCommit(ctx context.Context, set string) (*proto.Ref, error) {

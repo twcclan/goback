@@ -818,6 +818,44 @@ func TestCollectAttributesObjectsToTheSetThatReachesThemFirst(t *testing.T) {
 	require.EqualValues(t, report.Marked, 9, "every object is live")
 	require.EqualValues(t, storedBytes(t, store, shared, mine, yours, myFile, yourFile, myTree, yourTree, myCommit, yourCommit), attributed,
 		"what the sets hold adds up to what the store holds")
+	require.Zero(t, report.Unattributed)
+
+	require.NoError(t, store.Close())
+}
+
+func TestCollectReportsWhatOnlyCommitsWithoutAnOwnerReach(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	ctx := context.Background()
+
+	shared := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("s"), 512)})
+	lone := proto.NewObject(&proto.Blob{Data: bytes.Repeat([]byte("l"), 1024)})
+
+	ownedFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Ref: shared.Ref(), Length: 512}}})
+	loneFile := proto.NewObject(&proto.File{Parts: []*proto.FilePart{
+		{Ref: shared.Ref(), Length: 512},
+		{Ref: lone.Ref(), Offset: 512, Length: 1024},
+	}})
+
+	ownedTree := treeOf([]*proto.Object{ownedFile})
+	loneTree := treeOf([]*proto.Object{loneFile})
+
+	owned := proto.NewObject(&proto.Commit{Tree: ownedTree.Ref(), Timestamp: 1, BackupSet: "mine"})
+	orphan := proto.NewObject(&proto.Commit{Tree: loneTree.Ref(), Timestamp: 2, BackupSet: "mine"})
+
+	putAll(t, store, []*proto.Object{shared, lone, ownedFile, loneFile, ownedTree, loneTree, owned, orphan})
+
+	opts := gcOptions(t, 0)
+	opts.Owner = func(root []byte) Attribution {
+		if bytes.Equal(root, owned.Ref().Hash) {
+			return Attribution{Set: 7}
+		}
+
+		return Attribution{}
+	}
+
+	report, err := store.Collect(ctx, opts)
+	require.NoError(t, err)
+	require.EqualValues(t, storedBytes(t, store, orphan, loneTree, loneFile, lone), report.Unattributed)
 
 	require.NoError(t, store.Close())
 }

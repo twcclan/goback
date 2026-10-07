@@ -30,6 +30,6 @@ func TestRebuildKeepsASetNamedLikeAnID(t *testing.T) {
 	require.NoError(t, f.store.Put(f.ctx, proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: root.Ref(), BackupSet: "2026", SetId: 9})))
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 	require.Equal(t, "active", f.setState(y, "2026"))
 }

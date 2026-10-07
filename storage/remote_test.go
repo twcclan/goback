@@ -171,7 +171,9 @@ func (m *memIndex) Delete(context.Context, *proto.Ref) error { return backup.Err
 func (m *memIndex) Walk(context.Context, bool, proto.ObjectType, backup.ObjectReceiver) error {
 	return backup.ErrNotImplemented
 }
-func (m *memIndex) ReIndex(context.Context) error { return nil }
+func (m *memIndex) ReIndex(context.Context) (backup.ReIndexReport, error) {
+	return backup.ReIndexReport{}, nil
+}
 func (m *memIndex) FileInfo(context.Context, string, string, time.Time, int) ([]*proto.TreeNode, error) {
 	return nil, backup.ErrNotImplemented
 }

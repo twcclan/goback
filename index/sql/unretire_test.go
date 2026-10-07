@@ -85,7 +85,7 @@ func TestUnretireBringsTombstonedCommitsBackWithTheirRows(t *testing.T) {
 	require.Zero(t, n)
 
 	rebuilt := f.index()
-	require.NoError(t, rebuilt.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(rebuilt.ReIndex(f.ctx)))
 	for _, ref := range retired {
 		require.Nil(t, f.commitRowIn(rebuilt, ref).TombstonedAt, "a rebuild honours the revival")
 	}
@@ -149,7 +149,7 @@ func TestUnretireCompletesARevivalThatCrashedBeforeItsRows(t *testing.T) {
 	require.NotNil(t, f.commitRow(retired[0]).TombstonedAt)
 
 	rebuilt := f.index()
-	require.NoError(t, rebuilt.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(rebuilt.ReIndex(f.ctx)))
 	require.Nil(t, f.commitRowIn(rebuilt, retired[0]).TombstonedAt)
 
 	done, err := f.x.UnretireCommits(f.ctx, retired, false)

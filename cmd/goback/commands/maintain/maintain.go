@@ -9,10 +9,13 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/twcclan/goback/cmd/goback/commands/common/views"
 	"github.com/twcclan/goback/cmd/goback/commands/gc"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
 
+	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"
 )
 
@@ -31,8 +34,8 @@ var Command = cli.Command{
 	Action: action(due),
 	Subcommands: []cli.Command{
 		{
-			Name:   "sweep",
-			Usage:  "Finalize idle archives and end sessions whose lease ran out",
+			Name:  "sweep",
+			Usage: "Finalize idle archives and end sessions whose lease ran out",
 			Action: action(func(m *members) {
 				m.store().Sweep(time.Now())
 				common.Result(common.Done{Action: "swept"}, func() {})
@@ -83,6 +86,36 @@ var Command = cli.Command{
 				}
 
 				common.Result(counted{"built_presence", n}, func() { log.Printf("Built %d presence filters", n) })
+			}),
+		},
+		{
+			Name:  "check",
+			Usage: "Report the commits the store holds that the index has no row for and no tombstone retires",
+			Action: action(func(m *members) {
+				checker, ok := m.index.(orphanFinder)
+				if !ok {
+					common.Fatalf("Index %T keeps no commit rows", m.index)
+				}
+
+				orphans, err := checker.OrphanCommits(common.Context(m.c))
+				if err != nil {
+					common.Fatal(err)
+				}
+
+				found := make([]views.OrphanCommitView, len(orphans))
+				var size int64
+				for i, orphan := range orphans {
+					found[i] = common.View.OrphanCommit(orphan)
+					size += orphan.Bytes
+				}
+
+				common.Result(found, func() {
+					for _, orphan := range found {
+						log.Printf("Commit %s has no row: %d copies, %s", orphan.Ref, orphan.Copies, humanize.Bytes(uint64(orphan.Bytes)))
+					}
+
+					log.Printf("%d commits without a row (%s); a collection reports what only they reach as unattributed", len(orphans), humanize.Bytes(uint64(size)))
+				})
 			}),
 		},
 		{
@@ -145,6 +178,12 @@ func due(m *members) {
 type counted struct {
 	Action string `json:"action"`
 	Count  int    `json:"count"`
+}
+
+// orphanFinder is an index that finds the commits the store holds and it
+// has no row for.
+type orphanFinder interface {
+	OrphanCommits(ctx context.Context) ([]index.OrphanCommit, error)
 }
 
 // sizeFiller is an index that can work out the size of a commit it

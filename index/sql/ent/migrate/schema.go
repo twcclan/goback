@@ -255,6 +255,14 @@ var (
 					Where: "type = 5",
 				},
 			},
+			{
+				Name:    "objects_commits",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "type = 1",
+				},
+			},
 		},
 	}
 	// PinsColumns holds the columns for the "pins" table.

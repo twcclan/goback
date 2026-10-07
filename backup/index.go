@@ -28,7 +28,17 @@ type Index interface {
 	// LatestCommit returns the ref of the set's newest commit, or ErrNotFound.
 	LatestCommit(ctx context.Context, set string) (*proto.Ref, error)
 	// ReIndex rebuilds the index from the store's objects.
-	ReIndex(ctx context.Context) error
+	ReIndex(ctx context.Context) (ReIndexReport, error)
+}
+
+// ReIndexReport is what a rebuild of the index found out of order.
+type ReIndexReport struct {
+	// Tied counts the commits received at the same time as their set's
+	// newest, indexed a microsecond after it.
+	Tied int
+	// Behind counts the commits received before their set's newest,
+	// left out of the index.
+	Behind int
 }
 
 // CommitSizer is implemented by indexes that measure how big a set was

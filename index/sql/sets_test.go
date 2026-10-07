@@ -330,7 +330,7 @@ func TestSetRefsFollowCommits(t *testing.T) {
 
 	// a rebuilt index reproduces the rows
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 	count, err := y.client.SetRef.Query().Count(f.ctx)
 	require.NoError(t, err)
 	want, err := f.x.client.SetRef.Query().Count(f.ctx)

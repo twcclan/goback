@@ -49,6 +49,11 @@ type Mapper interface {
 
 	RebuiltIndex(in index.RebuiltIndex) RebuiltIndexView
 
+	// field:Ref using:"Hex"
+	OrphanCommit(in index.OrphanCommit) OrphanCommitView
+
+	ReIndex(in backup.ReIndexReport) ReIndexView
+
 	// field:Keep from:"Brackets"
 	// field:KeepWithin using:"Within"
 	// field:Flags from:"-"
@@ -226,6 +231,22 @@ type ReportView struct {
 	SetAlone             map[int64]uint64 `json:"set_alone,omitempty"`
 	SetExclusive         map[int64]uint64 `json:"set_exclusive,omitempty"`
 	SetDeduplicatedAlone map[int64]uint64 `json:"set_deduplicated_alone,omitempty"`
+	Unattributed         uint64           `json:"unattributed"`
+}
+
+// OrphanCommitView is a commit the store holds that the index has no row
+// for, as JSON output shows it.
+type OrphanCommitView struct {
+	Ref    string `json:"ref"`
+	Copies int    `json:"copies"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// ReIndexView is what a rebuild of the index found out of order, as JSON
+// output shows it.
+type ReIndexView struct {
+	Tied   int `json:"tied"`
+	Behind int `json:"behind"`
 }
 
 // MaintenanceView is what goback maintain did; collected is absent when

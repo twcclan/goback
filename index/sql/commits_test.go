@@ -300,7 +300,7 @@ func TestRebuiltSetKeepsEverythingWhilePaused(t *testing.T) {
 	}
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 
 	commits, err := y.CommitInfo(f.ctx, "world", f.clock, 10)
 	require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestDeletedSetProceedsWhilePaused(t *testing.T) {
 	f.commit("world", f.tree(f.file("a.txt", "two")), false)
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 	require.NoError(t, y.DeleteSet(f.ctx, "world", true))
 
 	n, err := y.Retire(f.ctx, f.clock)
@@ -388,7 +388,7 @@ func TestReIndexReconcilesTombstonesOnAnExistingDatabase(t *testing.T) {
 
 	// a database backup taken while both commits were live
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 	require.NoError(t, y.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 100}))
 	require.Len(t, f.ranges(y, "files"), 2)
 
@@ -399,7 +399,7 @@ func TestReIndexReconcilesTombstonesOnAnExistingDatabase(t *testing.T) {
 	require.Equal(t, 1, n)
 
 	// the backup, restored and rebuilt, honours the tombstone it predates
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 
 	require.NotNil(t, f.commitRowIn(y, a).TombstonedAt)
 
@@ -550,7 +550,7 @@ func TestDeleteSetAndRebuild(t *testing.T) {
 
 	// a rebuild from the archives alone
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 
 	count, err := y.client.CommitRow.Query().Count(f.ctx)
 	require.NoError(t, err)
@@ -595,7 +595,7 @@ func TestReIndexReproducesRanges(t *testing.T) {
 	f.commit("world", f.tree(f.dir("world", f.file("level.dat", "w2"))), false)
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 
 	for _, table := range []string{"files", "trees"} {
 		require.Equal(t, f.ranges(f.x, table), f.ranges(y, table), table)
@@ -1101,7 +1101,7 @@ func TestARebuildPointsEachSetAtItsCommits(t *testing.T) {
 
 	keeper := &headKeeper{ObjectStore: f.store}
 	y := openIndex(t, keeper)
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 
 	require.ElementsMatch(t, []*proto.Ref{first, second}, keeper.heads)
 }
@@ -1165,4 +1165,31 @@ func TestRetiringKeepsTheRefsOfACommitThatLandsWhileItWalks(t *testing.T) {
 	held, err := f.x.client.SetRef.Query().Where(setref.Ref(shared.Ref.Hash)).Exist(f.ctx)
 	require.NoError(t, err)
 	require.True(t, held, "a ref a live commit holds was dropped")
+}
+
+func TestReIndexPlacesACommitReceivedWithTheSetsNewestJustAfterIt(t *testing.T) {
+	f := newFixture(t)
+
+	received := f.clock.UnixNano()
+	put := func(content string) {
+		obj := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", content)).Ref(),
+			BackupSet: "world", AgentId: "node-1", ReceivedAtNs: received})
+		require.NoError(t, f.store.Put(f.ctx, obj))
+	}
+
+	put("one")
+	put("two")
+
+	y := f.index()
+	report, err := y.ReIndex(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, backup.ReIndexReport{Tied: 1}, report)
+
+	commits, err := y.CommitInfo(f.ctx, "world", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, commits, 2)
+
+	versions, err := y.FileInfo(f.ctx, "world", "a.txt", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, versions, 2, "each commit keeps its own version")
 }

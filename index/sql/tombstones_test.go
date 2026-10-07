@@ -83,6 +83,6 @@ func TestTombstonesAreFoundThroughCompactionAndRebuild(t *testing.T) {
 	present(packs, index, "compacted")
 
 	rebuilt, rebuiltIndex := openPacks(t, bucket)
-	require.NoError(t, rebuiltIndex.ReIndex(ctx))
+	require.NoError(t, reindexErr(rebuiltIndex.ReIndex(ctx)))
 	present(rebuilt, rebuiltIndex, "rebuilt")
 }

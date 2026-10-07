@@ -155,7 +155,7 @@ func TestARebuildFindsWhatTheStoreLost(t *testing.T) {
 	f.store.mu.Unlock()
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(ctx))
+	require.NoError(t, reindexErr(y.ReIndex(ctx)))
 
 	grant, err := y.BeginCommit(ctx, "world")
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestARebuildAsksAboutAPartTheVersionsShareOnce(t *testing.T) {
 	f.store.mu.Unlock()
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(ctx))
+	require.NoError(t, reindexErr(y.ReIndex(ctx)))
 
 	f.store.mu.Lock()
 	require.Equal(t, 1, f.store.asked[string(shared.Ref().Hash)])
@@ -236,7 +236,7 @@ func TestARebuildIndexesACommitAroundALostDirectory(t *testing.T) {
 	f.forget(region.Ref)
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(ctx))
+	require.NoError(t, reindexErr(y.ReIndex(ctx)))
 
 	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestARebuildIndexesACommitWhoseRootIsLost(t *testing.T) {
 	f.forget(root.Ref())
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(ctx))
+	require.NoError(t, reindexErr(y.ReIndex(ctx)))
 
 	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestAWholeRebuildIsComplete(t *testing.T) {
 	f.commit("world", f.tree(f.file("level.dat", "intact")), false)
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(ctx))
+	require.NoError(t, reindexErr(y.ReIndex(ctx)))
 
 	held, err := y.CommitDetails(ctx, "world", f.clock.Add(time.Hour), 10)
 	require.NoError(t, err)

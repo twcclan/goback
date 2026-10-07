@@ -98,6 +98,15 @@ func (m MapperImpl) Node(in *proto.TreeNode) views.NodeView {
 	}
 }
 
+func (m MapperImpl) OrphanCommit(in index.OrphanCommit) views.OrphanCommitView {
+
+	return views.OrphanCommitView{
+		Ref:    views.Hex(in.Ref),
+		Copies: in.Copies,
+		Bytes:  in.Bytes,
+	}
+}
+
 func (m MapperImpl) Pin(in *proto.PinInfo) views.PinView {
 	if in == nil {
 		return views.PinView{}
@@ -121,6 +130,14 @@ func (m MapperImpl) Policy(in retention.Policy) views.PolicyView {
 		KeepLast:   in.KeepLast,
 		Keep:       tmp0,
 		KeepWithin: views.Within(in.KeepWithin),
+	}
+}
+
+func (m MapperImpl) ReIndex(in backup.ReIndexReport) views.ReIndexView {
+
+	return views.ReIndexView{
+		Tied:   in.Tied,
+		Behind: in.Behind,
 	}
 }
 
@@ -178,6 +195,7 @@ func (m MapperImpl) Report(in *pack.CollectReport) views.ReportView {
 		SetAlone:             in.SetAlone,
 		SetExclusive:         in.SetExclusive,
 		SetDeduplicatedAlone: in.SetDeduplicatedAlone,
+		Unattributed:         in.Unattributed,
 	}
 }
 

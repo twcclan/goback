@@ -103,10 +103,10 @@ func TestRebuildRestoresWhatOperatorsChanged(t *testing.T) {
 	require.Nil(t, want.Commits[string(logsA.Hash)]["deleted"])
 
 	y := f.index()
-	require.NoError(t, y.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(y.ReIndex(f.ctx)))
 	require.Equal(t, want, f.policyState(y))
 
-	require.NoError(t, f.x.ReIndex(f.ctx))
+	require.NoError(t, reindexErr(f.x.ReIndex(f.ctx)))
 	require.Equal(t, want, f.policyState(f.x), "an index replays only what it has not seen")
 }
 

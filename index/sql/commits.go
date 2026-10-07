@@ -96,7 +96,8 @@ func (x *Index) Put(ctx context.Context, object *proto.Object) error {
 
 	switch object.Type() {
 	case proto.ObjectType_COMMIT:
-		return x.indexCommit(ctx, object.GetCommit(), object.Ref(), true, true)
+		_, err := x.indexCommit(ctx, object.GetCommit(), object.Ref(), true, true)
+		return err
 	case proto.ObjectType_PIN:
 		return x.indexPin(ctx, object.GetPin(), object.Ref(), true)
 	}
@@ -179,14 +180,14 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 // store lost and marked incomplete, and a set with directories it can no
 // longer list is read in full by its next run. Commits of a set are
 // indexed one at a time, in receipt order.
-func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, strict, evaluate bool) error {
+func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, strict, evaluate bool) (placement, error) {
 	treeObj, err := x.ObjectStore.Get(ctx, commit.Tree)
 	if errors.Is(err, backup.ErrNotFound) && strict {
-		return fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.GetHash())
+		return unplaced, fmt.Errorf("%w: root tree %x", backup.ErrDanglingRef, commit.Tree.GetHash())
 	}
 
 	if err != nil && !errors.Is(err, backup.ErrNotFound) {
-		return err
+		return unplaced, err
 	}
 
 	// the set is created outside the transaction: a unique violation
@@ -194,31 +195,58 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	// harmless
 	setID, err := x.ensureSet(ctx, x.client, commit, ref, strict)
 	if err != nil || setID == 0 {
-		return err
+		return unplaced, err
 	}
 
 	start := time.Now()
-	at := time.Unix(0, commit.ReceivedAtNs).UTC()
 
 	for attempt := 1; ; attempt++ {
-		diff, newest, err := x.planCommit(ctx, commit, ref, treeObj, setID, at, strict)
-		if err != nil || diff == nil {
-			return err
+		plan, err := x.planCommit(ctx, commit, ref, treeObj, setID, strict)
+		if err != nil || plan.diff == nil {
+			return plan.placement, err
 		}
 
-		indexed, err := x.applyCommit(ctx, commit, ref, setID, at, strict, evaluate, diff, newest)
+		indexed, err := x.applyCommit(ctx, commit, ref, setID, strict, evaluate, plan)
 		if errors.Is(err, errSetMoved) && attempt < planAttempts {
 			continue
 		}
 
 		if err != nil || !indexed {
-			return err
+			return unplaced, err
 		}
 
 		x.logger().Info("indexed commit", "set", commit.GetBackupSet(), "took", time.Since(start))
 
-		return nil
+		return plan.placement, nil
 	}
+}
+
+// placement is where indexCommit put a commit on its set's timeline.
+type placement int
+
+const (
+	// unplaced is a commit left as it was: not indexed, or indexed before.
+	unplaced placement = iota
+	// inOrder is a commit received after the set's newest.
+	inOrder
+	// tied is a commit received at the same time as the set's newest,
+	// indexed a microsecond after it.
+	tied
+	// behind is a commit received before the set's newest, not indexed.
+	behind
+)
+
+// receiptGrain is the precision Postgres keeps receipt times to.
+const receiptGrain = time.Microsecond
+
+// commitPlan is what planCommit decided for a commit: the writes that
+// index it, when it goes on the set's timeline and the set's newest
+// commit the writes assume, 0 for none.
+type commitPlan struct {
+	diff      *treeDiff
+	placement placement
+	at        time.Time
+	newest    int
 }
 
 // planAttempts bounds how often a commit is planned again because another
@@ -231,27 +259,36 @@ var errSetMoved = errors.New("the set moved on while the commit was planned")
 
 // planCommit walks the commit's tree against the set's open rows outside
 // any transaction, so reading the store holds no lock and no connection,
-// and returns the writes that index it and the set's newest commit they
-// assume, 0 for none. It returns no diff for a commit there is nothing to
-// do for.
-func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, treeObj *proto.Object, setID int64, at time.Time, strict bool) (*treeDiff, int, error) {
+// and returns its plan. It returns no diff for a commit there is nothing
+// to do for.
+func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, treeObj *proto.Object, setID int64, strict bool) (commitPlan, error) {
 	c := x.client
+	plan := commitPlan{placement: inOrder, at: time.Unix(0, commit.ReceivedAtNs).UTC()}
 
 	skip, err := x.skipCommit(ctx, c, commit, ref, setID, strict)
 	if err != nil || skip {
-		return nil, 0, err
+		return commitPlan{}, err
 	}
 
 	newest, err := newestCommit(ctx, c, setID)
 	if err != nil {
-		return nil, 0, err
+		return commitPlan{}, err
 	}
 
-	if newest != nil && !at.After(newest.ReceivedAt) {
-		x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", at, "newest", newest.ReceivedAt)
-		return nil, 0, nil
+	switch received := plan.at.Truncate(receiptGrain); {
+	case newest == nil || received.After(newest.ReceivedAt.Truncate(receiptGrain)):
+	case received.Equal(newest.ReceivedAt.Truncate(receiptGrain)):
+		// versions are valid from their commit's receipt, so two commits
+		// at one instant would leave the older none of its own
+		x.logger().Error("commit received at the same time as the set's newest, indexing it a microsecond after",
+			"ref", fmt.Sprintf("%x", ref.Hash), "received", plan.at, "newest", fmt.Sprintf("%x", newest.Ref))
+		plan.placement, plan.at = tied, received.Add(receiptGrain)
+	default:
+		x.logger().Warn("ignoring commit received before the set's newest", "ref", fmt.Sprintf("%x", ref.Hash), "received", plan.at, "newest", newest.ReceivedAt)
+		return commitPlan{placement: behind}, nil
 	}
 
+	at := plan.at
 	diff := &treeDiff{read: c, store: x.ObjectStore, setID: setID, at: at, tolerant: !strict}
 
 	root := &proto.Tree{}
@@ -267,19 +304,19 @@ func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto
 
 	if err != nil {
 		if strict {
-			return nil, 0, fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
+			return commitPlan{}, fmt.Errorf("%w: %v", backup.ErrDanglingRef, err)
 		}
 
 		x.logger().Warn("ignoring commit, traversing its tree failed", "ref", fmt.Sprintf("%x", ref.Hash), "err", err)
-		return nil, 0, nil
+		return commitPlan{}, nil
 	}
 
-	var newestID int
+	plan.diff = diff
 	if newest != nil {
-		newestID = newest.ID
+		plan.newest = newest.ID
 	}
 
-	return diff, newestID, nil
+	return plan, nil
 }
 
 // skipCommit reports whether a commit is already indexed or tombstoned,
@@ -332,8 +369,9 @@ func newestCommit(ctx context.Context, c *ent.Client, setID int64) (*ent.CommitR
 // applyCommit writes a planned commit under its set's lock, provided the
 // set's newest commit is still the one the plan assumed, and reports
 // whether it indexed it.
-func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, setID int64, at time.Time, strict, evaluate bool, diff *treeDiff, newestID int) (bool, error) {
+func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *proto.Ref, setID int64, strict, evaluate bool, plan commitPlan) (bool, error) {
 	indexed := false
+	diff, at, newestID := plan.diff, plan.at, plan.newest
 
 	err := x.tx(ctx, func(tx *ent.Tx) error {
 		c := tx.Client()
@@ -855,7 +893,14 @@ func (x *Index) lockCommitRow(ctx context.Context, tx *ent.Tx, ref []byte) (*ent
 // ReIndex rebuilds the caches from the archives in three passes:
 // tombstones, then pins, then commits per set in receipt order. Sets it
 // has to create come up with retention paused.
-func (x *Index) ReIndex(ctx context.Context) error {
+func (x *Index) ReIndex(ctx context.Context) (backup.ReIndexReport, error) {
+	var report backup.ReIndexReport
+	err := x.reIndex(ctx, &report)
+
+	return report, err
+}
+
+func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error {
 	// sets that lose a commit to a tombstone this database had not seen
 	touched := map[int64][][]byte{}
 
@@ -952,13 +997,24 @@ func (x *Index) ReIndex(ctx context.Context) error {
 
 	for _, commits := range bySet {
 		sort.Slice(commits, func(i, j int) bool {
-			return commits[i].commit.GetReceivedAtNs() < commits[j].commit.GetReceivedAtNs()
+			if a, b := commits[i].commit.GetReceivedAtNs(), commits[j].commit.GetReceivedAtNs(); a != b {
+				return a < b
+			}
+
+			return bytes.Compare(commits[i].ref.Hash, commits[j].ref.Hash) < 0
 		})
 
 		for _, c := range commits {
-			err := x.indexCommit(ctx, c.commit, c.ref, false, false)
+			placed, err := x.indexCommit(ctx, c.commit, c.ref, false, false)
 			if err != nil {
 				return err
+			}
+
+			switch placed {
+			case tied:
+				report.Tied++
+			case behind:
+				report.Behind++
 			}
 		}
 
