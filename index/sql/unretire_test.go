@@ -196,6 +196,7 @@ func TestRetireReportsEachCommitWithThePolicyThatRetiredIt(t *testing.T) {
 		require.True(t, later.Equal(r.TombstonedAt))
 		require.Equal(t, &policy, r.Policy)
 		require.False(t, r.Deleted)
+		require.False(t, r.Partial)
 		require.Equal(t, index.RetiredHeld, r.State)
 	}
 

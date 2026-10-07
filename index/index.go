@@ -125,6 +125,8 @@ type Retired struct {
 	// Deleted marks a commit deleted by hand, whose trash window let it go
 	// unless retention did first.
 	Deleted bool
+	// Partial marks a checkpoint along the way of a backup.
+	Partial bool
 	// State is where the commit stands now.
 	State RetiredState
 }

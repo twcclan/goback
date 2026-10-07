@@ -755,6 +755,7 @@ func retiredOf(row *ent.CommitRow, setName string) (index.Retired, error) {
 		Timestamp:  row.Timestamp,
 		ReceivedAt: row.ReceivedAt,
 		Deleted:    row.DeletedAt != nil,
+		Partial:    row.Partial,
 	}
 
 	if row.RetireAt != nil {
