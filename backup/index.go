@@ -39,6 +39,8 @@ type ReIndexReport struct {
 	// Behind counts the commits received before their set's newest,
 	// left out of the index.
 	Behind int
+	// Unnamed counts the commits that name no set, left out of the index.
+	Unnamed int
 }
 
 // CommitSizer is implemented by indexes that measure how big a set was

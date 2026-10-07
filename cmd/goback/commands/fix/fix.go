@@ -28,8 +28,9 @@ func fixAction(c *cli.Context) {
 	common.CloseAll(store, index)
 
 	common.Result(reindexed{Done: common.Done{Action: "reindexed"}, ReIndexView: common.View.ReIndex(report)}, func() {
-		if report.Tied > 0 || report.Behind > 0 {
-			log.Printf("%d commits shared their set's newest receipt time and were indexed a microsecond after it, %d were received before it and left out", report.Tied, report.Behind)
+		if report.Tied > 0 || report.Behind > 0 || report.Unnamed > 0 {
+			log.Printf("%d commits shared their set's newest receipt time and were indexed a microsecond after it, %d were received before it and %d name no set, both left out",
+				report.Tied, report.Behind, report.Unnamed)
 		}
 	})
 }

@@ -136,8 +136,9 @@ func (m MapperImpl) Policy(in retention.Policy) views.PolicyView {
 func (m MapperImpl) ReIndex(in backup.ReIndexReport) views.ReIndexView {
 
 	return views.ReIndexView{
-		Tied:   in.Tied,
-		Behind: in.Behind,
+		Tied:    in.Tied,
+		Behind:  in.Behind,
+		Unnamed: in.Unnamed,
 	}
 }
 

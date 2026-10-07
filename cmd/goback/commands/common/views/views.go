@@ -245,8 +245,9 @@ type OrphanCommitView struct {
 // ReIndexView is what a rebuild of the index found out of order, as JSON
 // output shows it.
 type ReIndexView struct {
-	Tied   int `json:"tied"`
-	Behind int `json:"behind"`
+	Tied    int `json:"tied"`
+	Behind  int `json:"behind"`
+	Unnamed int `json:"unnamed"`
 }
 
 // MaintenanceView is what goback maintain did; collected is absent when

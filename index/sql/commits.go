@@ -146,7 +146,7 @@ func (x *Index) ensureSet(ctx context.Context, c *ent.Client, commit *proto.Comm
 			return 0, fmt.Errorf("%w: commit names no set", backup.ErrDanglingRef)
 		}
 
-		x.logger().Warn("ignoring commit that names no set", "ref", fmt.Sprintf("%x", ref.GetHash()))
+		x.logger().Error("leaving out of the index a commit that names no set", "ref", fmt.Sprintf("%x", ref.GetHash()))
 		return 0, nil
 	}
 
@@ -194,8 +194,12 @@ func (x *Index) indexCommit(ctx context.Context, commit *proto.Commit, ref *prot
 	// would abort a Postgres transaction, and a set without commits is
 	// harmless
 	setID, err := x.ensureSet(ctx, x.client, commit, ref, strict)
-	if err != nil || setID == 0 {
+	if err != nil {
 		return unplaced, err
+	}
+
+	if setID == 0 {
+		return unnamed, nil
 	}
 
 	start := time.Now()
@@ -234,6 +238,8 @@ const (
 	tied
 	// behind is a commit received before the set's newest, not indexed.
 	behind
+	// unnamed is a commit that names no set, not indexed.
+	unnamed
 )
 
 // receiptGrain is the precision Postgres keeps receipt times to.
@@ -1015,6 +1021,8 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 				report.Tied++
 			case behind:
 				report.Behind++
+			case unnamed:
+				report.Unnamed++
 			}
 		}
 
