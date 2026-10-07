@@ -1071,3 +1071,86 @@ func TestCollectKeepsPoliciesWithoutWhatTheyName(t *testing.T) {
 	requireStored(t, store, []*proto.Object{named}, false)
 	require.NoError(t, store.Close())
 }
+
+func TestACollectionTakesNoRootFromTheUntombstoneOfACommitThatIsGone(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	blobs := makeTestData(t, 10)
+	putAll(t, store, blobs)
+
+	chain := makeChain(blobs)
+	own := chain[len(blobs):]
+	commit := own[len(own)-1]
+
+	sctx, _ := beginSession(t, store, "agent-a")
+	for _, obj := range own {
+		require.NoError(t, store.Put(sctx, obj))
+	}
+
+	require.NoError(t, store.Delete(ctx, commit.Ref()))
+	require.NoError(t, store.Flush())
+
+	for _, ahead := range []time.Duration{0, 48 * time.Hour} {
+		_, err := store.Collect(ctx, gcOptions(t, ahead))
+		require.NoError(t, err)
+	}
+
+	requireStored(t, store, []*proto.Object{commit}, false)
+	requireUntombed(t, store, []*proto.Object{commit}, true)
+
+	report, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, report.Roots)
+}
+
+func TestAnErasureFlagsOnlyWhatNoGroupReaches(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	sharedBlobs := makeTestData(t, 5)
+	shared := makeGCFiles(sharedBlobs)
+	sharedTree := treeOf(shared)
+	sharedCommit := proto.NewObject(&proto.Commit{Tree: sharedTree.Ref(), Timestamp: 1, BackupSet: "first"})
+	first := append(append(append([]*proto.Object{}, sharedBlobs...), shared...), sharedTree, sharedCommit)
+	putAll(t, store, first)
+
+	other := makeChain(makeTestData(t, 5))
+	putAll(t, store, other)
+
+	ownBlobs := makeTestData(t, 5)
+	own := makeGCFiles(ownBlobs)
+	erasedTree := treeOf(append(append([]*proto.Object{}, shared...), own...))
+	erased := proto.NewObject(&proto.Commit{Tree: erasedTree.Ref(), Timestamp: 2, BackupSet: "erased"})
+	putAll(t, store, append(append(append([]*proto.Object{}, ownBlobs...), own...), erasedTree, erased))
+
+	require.NoError(t, store.Erase(ctx, erased.Ref()))
+	require.NoError(t, store.Flush())
+
+	opts := gcOptions(t, 0)
+	opts.Owner = func(root []byte) Attribution {
+		switch {
+		case bytes.Equal(root, sharedCommit.Ref().Hash):
+			return Attribution{Group: 1, Set: 1}
+		case bytes.Equal(root, other[len(other)-1].Ref().Hash):
+			return Attribution{Group: 2, Set: 2}
+		}
+
+		return Attribution{}
+	}
+
+	_, err := store.Collect(ctx, opts)
+	require.NoError(t, err)
+
+	for _, obj := range first {
+		a, _, err := store.indexLocation(ctx, obj.Ref())
+		require.NoError(t, err)
+		require.Falsef(t, a.gcResult().Erase, "archive %s holds only what the first group reaches", a.name)
+	}
+
+	a, _, err := store.indexLocation(ctx, erased.Ref())
+	require.NoError(t, err)
+	require.True(t, a.gcResult().Erase)
+}

@@ -279,10 +279,9 @@ type gcRun struct {
 	// session un-tombstoned before committing it
 	pending   []*archive
 	pendingAt map[refKey]placed
-	erased  []refKey
-	visited  *visitedSet
-	runDir   string
-	resumed  int
+	erased    []refKey
+	runDir    string
+	resumed   int
 
 	roots      []gcRoot
 	tombstones []gcTombstone
@@ -714,15 +713,6 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		}
 	}
 
-	// a committed session's commit is a root of its own, so the
-	// un-tombstone it wrote of the commit never takes back the
-	// tombstone that retires it
-	for _, t := range r.tombstones {
-		if untombed, ok := tombOf[t.target]; ok && !commits[untombed] {
-			keep(untombed)
-		}
-	}
-
 	// a session commits only after copying what it relies on, so its
 	// un-tombstones stay its own until then; they keep what they take
 	// back from the moment they are written
@@ -799,6 +789,26 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrapf(err, "reading index of %s", ga.a.name)
 		}
+	}
+
+	// a committed session's un-tombstone of its own commit is older than
+	// the tombstone that retires the commit, so only a revival, newer than
+	// it, takes a commit back; an object without a copy left is no root
+	for _, t := range r.tombstones {
+		untombed, ok := tombOf[t.target]
+		if !ok {
+			continue
+		}
+
+		if _, held := r.oldestCopy[untombed]; !held {
+			continue
+		}
+
+		if commits[untombed] && !r.newestTomb[untombed].Before(r.newestTomb[t.target]) {
+			continue
+		}
+
+		keep(untombed)
 	}
 
 	r.spendTombstones(tombOf)
@@ -993,12 +1003,10 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	// one being walked is ever held
 	var group int64
 	visited := newVisitedSet()
-	r.visited = visited
 
 	for batch, roots := range batches {
 		if owner := roots[0].owner; owner.Group != group {
 			group, visited = owner.Group, newVisitedSet()
-			r.visited = visited
 		}
 
 		if done[batch] {
@@ -1455,8 +1463,8 @@ func (r *gcRun) scanOf(archives []*gcArchive, runs *liveRuns, hit func(ga *gcArc
 }
 
 // flagErased walks the subtrees of the erased commits still in the
-// snapshot, skipping everything the live mark reached, and flags the
-// archives holding what is left.
+// snapshot and flags the archives holding what of it the live mark left
+// unmarked.
 func (r *gcRun) flagErased(ctx context.Context) error {
 	var roots []refKey
 	for _, target := range r.erased {
@@ -1473,11 +1481,16 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 	runs.begin("erased-", Attribution{})
 	defer runs.close()
 
-	if err := r.markBatch(ctx, r.visited.claimUnreached(roots), r.visited.claimUnreached, runs); err != nil {
+	visited := newVisitedSet()
+	if err := r.markBatch(ctx, visited.claimUnreached(roots), visited.claimUnreached, runs); err != nil {
 		return err
 	}
 
-	return r.scan(runs, func(ga *gcArchive, _ int, _ *IndexRecord, _ []Attribution, _ uint64) { ga.erase = true }, nil)
+	return r.scan(runs, func(ga *gcArchive, pos int, _ *IndexRecord, _ []Attribution, _ uint64) {
+		if !ga.cur.Test(uint(pos)) {
+			ga.erase = true
+		}
+	}, nil)
 }
 
 func (r *gcRun) writeResults() error {
