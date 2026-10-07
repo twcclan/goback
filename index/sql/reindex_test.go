@@ -65,7 +65,7 @@ func TestReindexRebuildsChurnedTablesOnPostgres(t *testing.T) {
 	exec(`DELETE FROM churn WHERE id % 4 <> 0`)
 	counted(70_000)
 
-	reindexed, err := x.Reindex(ctx)
+	reindexed, err := x.ReindexChurned(ctx)
 	require.NoError(t, err)
 	require.Len(t, reindexed, 1, "only the churned table is rebuilt")
 	require.Equal(t, "churn", reindexed[0].Table)
@@ -74,7 +74,7 @@ func TestReindexRebuildsChurnedTablesOnPostgres(t *testing.T) {
 		require.Less(t, idx.After, idx.Before, "%s shrinks", idx.Name)
 	}
 
-	reindexed, err = x.Reindex(ctx)
+	reindexed, err = x.ReindexChurned(ctx)
 	require.NoError(t, err)
 	require.Empty(t, reindexed, "the churn before the last reindex counts no more")
 
@@ -82,7 +82,7 @@ func TestReindexRebuildsChurnedTablesOnPostgres(t *testing.T) {
 	exec(`INSERT INTO churn SELECT i, sha256(int8send(i)) FROM generate_series(100001, 112000) i`)
 	counted(12_000)
 
-	reindexed, err = x.Reindex(ctx)
+	reindexed, err = x.ReindexChurned(ctx)
 	require.NoError(t, err)
 	require.Len(t, reindexed, 1, "after a reset the churn counts from the reset")
 
@@ -90,7 +90,7 @@ func TestReindexRebuildsChurnedTablesOnPostgres(t *testing.T) {
 	_, err = x.db.ExecContext(ctx, `CREATE UNIQUE INDEX CONCURRENTLY churn_v_ccnew ON churn (v)`)
 	require.Error(t, err, "a failed concurrent build leaves an invalid index")
 
-	_, err = x.Reindex(ctx)
+	_, err = x.ReindexChurned(ctx)
 	require.NoError(t, err)
 
 	var left bool

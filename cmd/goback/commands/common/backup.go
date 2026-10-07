@@ -579,7 +579,7 @@ func Reindex(c *cli.Context, idx backup.Index) {
 		return
 	}
 
-	if _, err := r.Reindex(Context(c)); err != nil {
+	if _, err := r.ReindexChurned(Context(c)); err != nil {
 		Fatalf("Reindexing failed: %v", err)
 	}
 }

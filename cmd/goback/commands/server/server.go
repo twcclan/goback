@@ -209,7 +209,7 @@ func adminServer(x *sql.Index, retirer backup.Retirer, collector pack.Collector)
 				return n, err
 			}
 
-			_, err = x.Reindex(ctx)
+			_, err = x.ReindexChurned(ctx)
 
 			return n, err
 		}
@@ -224,7 +224,7 @@ func adminServer(x *sql.Index, retirer backup.Retirer, collector pack.Collector)
 
 			gc.Log(report)
 
-			_, err = x.Reindex(ctx)
+			_, err = x.ReindexChurned(ctx)
 
 			return report.Summary(), err
 		}

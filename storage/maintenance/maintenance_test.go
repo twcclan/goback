@@ -44,7 +44,7 @@ func (f *fakeRetirer) Retire(context.Context, time.Time) (int, error) {
 
 type fakeReindexer struct{ runs atomic.Int32 }
 
-func (f *fakeReindexer) Reindex(context.Context) ([]index.Reindexed, error) {
+func (f *fakeReindexer) ReindexChurned(context.Context) ([]index.Reindexed, error) {
 	f.runs.Add(1)
 	return []index.Reindexed{{Table: "objects"}}, nil
 }

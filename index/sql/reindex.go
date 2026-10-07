@@ -52,14 +52,14 @@ func reindexDue(churn, live int64) bool {
 	return churn >= reindexFloor && churn*100 >= live*reindexPercent
 }
 
-// Reindex rebuilds, one at a time and without blocking writes, the
+// ReindexChurned rebuilds, one at a time and without blocking writes, the
 // indexes of every table of the index whose rows changed by at least 30%
 // of its live rows, and at least 10,000, since its last reindex, and
 // reports each table it rebuilt. It is meant for the end of a maintenance
 // run that churned the index, such as a compaction, retirement or
-// collection. Only one Reindex of a database schema runs at a time;
+// collection. Only one ReindexChurned of a database schema runs at a time;
 // another returns nothing. On SQLite it does nothing.
-func (x *Index) Reindex(ctx context.Context) ([]index.Reindexed, error) {
+func (x *Index) ReindexChurned(ctx context.Context) ([]index.Reindexed, error) {
 	if x.dialect != dialect.Postgres {
 		return nil, nil
 	}

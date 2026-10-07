@@ -35,7 +35,7 @@ type Attributor interface {
 // Reindexer is an index that rebuilds the indexes of its tables a
 // maintenance run churned, and reports the tables it rebuilt.
 type Reindexer interface {
-	Reindex(ctx context.Context) ([]index.Reindexed, error)
+	ReindexChurned(ctx context.Context) ([]index.Reindexed, error)
 }
 
 // Collected is a store that knows when it was last garbage collected.
@@ -224,7 +224,7 @@ func (r *Runner) Due(ctx context.Context) (Ran, error) {
 	}
 
 	if r.Reindexer != nil {
-		ran.Reindexed, err = r.Reindexer.Reindex(ctx)
+		ran.Reindexed, err = r.Reindexer.ReindexChurned(ctx)
 		errs = append(errs, err)
 	}
 
@@ -318,7 +318,7 @@ func (r *Runner) Reindex(ctx context.Context) {
 		return
 	}
 
-	if _, err := r.Reindexer.Reindex(ctx); err != nil {
+	if _, err := r.Reindexer.ReindexChurned(ctx); err != nil {
 		r.logger().Error("reindexing failed", "err", err)
 	}
 }
