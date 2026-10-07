@@ -309,10 +309,10 @@ func (r *readerOf) Read(p []byte) (int, error) {
 }
 
 // traffic is what a client of serveShaped received: bytes over every
-// connection, bytes from the store server alone, and requests to the
-// bucket.
+// connection, bytes from the store server alone, requests to the bucket,
+// and the calls it made to the store server.
 type traffic struct {
-	received, served, fetches atomic.Int64
+	received, served, fetches, calls atomic.Int64
 }
 
 // serveShaped runs a TLS store server over f's archives on loopback TCP
@@ -382,6 +382,14 @@ func serveShaped(tb testing.TB, f *restoreFixture, l link, located bool) (*Clien
 		grpc.WithPerRPCCredentials(auth.Credentials{Secret: testSecret, AgentID: "bench"}),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return dial(ctx, "tcp", addr, &seen.served) }),
 		grpc.WithStatsHandler(received),
+		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			seen.calls.Add(1)
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}),
+		grpc.WithStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			seen.calls.Add(1)
+			return streamer(ctx, desc, cc, method, opts...)
+		}),
 	}, downloadWindows...)...)
 	require.NoError(tb, err)
 	tb.Cleanup(func() { _ = con.Close() })
@@ -609,6 +617,34 @@ func TestGetTreeReadsLocatedTreesFromTheBucket(t *testing.T) {
 			require.NotZero(t, seen.fetches.Load(), "the trees come from the bucket")
 		} else {
 			require.Zero(t, seen.fetches.Load())
+		}
+	}
+}
+
+func TestWalkTreeReadsTheWholeTreeInOneCall(t *testing.T) {
+	f, root := newTreeFixture(t, 3, 4, 5)
+
+	for _, located := range []bool{false, true} {
+		client, seen := serveShaped(t, f, link{}, located)
+
+		var dirs, files int
+		err := backup.NewBackupReader(client).WalkTree(context.Background(), root, nil, func(_ string, info os.FileInfo, _ *proto.Ref) error {
+			if info.IsDir() {
+				dirs++
+			} else {
+				files++
+			}
+
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, 3+3*4, dirs)
+		require.Equal(t, 3*4*5, files)
+
+		require.EqualValues(t, 1, seen.calls.Load(), "one GetTree")
+
+		if located {
+			require.LessOrEqual(t, seen.fetches.Load(), int64(1), "the trees sit side by side in one run")
 		}
 	}
 }

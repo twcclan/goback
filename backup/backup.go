@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -75,7 +76,7 @@ type WalkFn func(path string, info os.FileInfo, ref *proto.Ref) error
 
 // walk visits an opened tree; parent is the token of the directory the
 // tree describes, which opens the names of its subdirectories.
-func (br *BackupReader) walk(ctx context.Context, path string, parent []byte, tree *proto.Tree, walkFn WalkFn) error {
+func (br *BackupReader) walk(ctx context.Context, trees Getter, path string, parent []byte, tree *proto.Tree, walkFn WalkFn) error {
 	for _, node := range tree.GetNodes() {
 		info := node.Stat
 		absPath := filepath.Join(path, string(info.Name))
@@ -88,12 +89,12 @@ func (br *BackupReader) walk(ctx context.Context, path string, parent []byte, tr
 		if info.IsDir() {
 			token := NameToken(br.key, parent, info.Name)
 
-			subTree, err := OpenTree(ctx, br.store, node.Ref, br.key, token)
+			subTree, err := OpenTree(ctx, trees, node.Ref, br.key, token)
 			if err != nil {
 				return errors.Wrapf(err, "Failed retrieving sub-tree %x for %s", node.Ref.Hash, absPath)
 			}
 
-			err = br.walk(ctx, absPath, token, subTree, walkFn)
+			err = br.walk(ctx, trees, absPath, token, subTree, walkFn)
 			if err != nil {
 				return err
 			}
@@ -130,12 +131,44 @@ func (br *BackupReader) getTree(ctx context.Context, ref *proto.Ref, parent []by
 }
 
 // WalkTree walks the tree at ref, whose directory has the given token (nil
-// for the root of a commit).
+// for the root of a commit). A store that can stream a subtree hands over
+// every tree below ref in one call.
 func (br *BackupReader) WalkTree(ctx context.Context, ref *proto.Ref, parent []byte, walkFn WalkFn) error {
-	tree, err := OpenTree(ctx, br.store, ref, br.key, parent)
+	trees := &subtree{store: br.store}
+	trees.fetcher, _ = br.store.(TreeFetcher)
+
+	tree, err := OpenTree(ctx, trees, ref, br.key, parent)
 	if err != nil {
 		return errors.Wrapf(err, "Couldn't get tree %x from store", ref.Hash)
 	}
 
-	return br.walk(ctx, "", parent, tree, walkFn)
+	return br.walk(ctx, trees, "", parent, tree, walkFn)
+}
+
+// subtree serves the trees below the first ref it is asked for from one
+// GetTree of all of them, and anything it did not get from the store.
+type subtree struct {
+	store   Getter
+	fetcher TreeFetcher
+	objects map[string]*proto.Object
+}
+
+func (s *subtree) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	if s.objects == nil && s.fetcher != nil {
+		s.objects = map[string]*proto.Object{}
+
+		// a store that fails the prefetch still serves each tree on its own
+		objects, err := s.fetcher.GetTree(ctx, ref, math.MaxUint32)
+		if err == nil {
+			for _, obj := range objects {
+				s.objects[string(obj.Ref().Hash)] = obj
+			}
+		}
+	}
+
+	if obj, ok := s.objects[string(ref.GetHash())]; ok {
+		return obj, nil
+	}
+
+	return s.store.Get(ctx, ref)
 }
