@@ -8,6 +8,7 @@ import (
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
 	"github.com/twcclan/goback/storage/pack/packtest"
+	"github.com/twcclan/goback/testing/testpg"
 
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,18 @@ func TestArchiveIndexExclusion(t *testing.T) {
 
 func TestArchiveIndexCopies(t *testing.T) {
 	packtest.TestArchiveIndexCopies(t, openIndex(t, newMemStore()))
+}
+
+func TestArchiveIndexTombstones(t *testing.T) {
+	packtest.TestArchiveIndexTombstones(t, openIndex(t, newMemStore()))
+}
+
+func TestArchiveIndexTombstonesOnPostgres(t *testing.T) {
+	x := New(testpg.Start(t), newMemStore())
+	require.NoError(t, x.Open())
+	t.Cleanup(func() { _ = x.Close() })
+
+	packtest.TestArchiveIndexTombstones(t, x)
 }
 
 func TestArchiveVersions(t *testing.T) {

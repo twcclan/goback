@@ -1759,7 +1759,7 @@ func (r *gcRun) notNewer(targets map[refKey]Version) (map[refKey]Version, error)
 		tombs = append(tombs, proto.TombstoneRef(&proto.Ref{Hash: append([]byte(nil), target[:]...)}))
 	}
 
-	found, err := r.ps.index.LocateCopies(tombs, Scope{})
+	found, err := r.ps.index.LocateTombstones(tombs, Scope{})
 	if err != nil {
 		return nil, err
 	}

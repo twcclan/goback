@@ -247,6 +247,14 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{ObjectsColumns[7]},
 			},
+			{
+				Name:    "objects_tombstones",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "type = 5",
+				},
+			},
 		},
 	}
 	// PinsColumns holds the columns for the "pins" table.

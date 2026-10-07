@@ -1,12 +1,15 @@
 package schema
 
 import (
+	"fmt"
+
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+	"github.com/twcclan/goback/proto"
 )
 
 // Archive is a pack archive with its state and owning session: a pending
@@ -76,6 +79,7 @@ func (Object) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("ref", "archive_id").Unique(),
 		index.Fields("archive_id"),
+		index.Fields("ref").Annotations(entsql.IndexWhere(fmt.Sprintf("type = %d", proto.ObjectType_TOMBSTONE))).StorageKey("objects_tombstones"),
 	}
 }
 

@@ -88,3 +88,34 @@ func TestArchiveIndexCopies(t *testing.T, idx pack.ArchiveIndex) {
 
 	require.ElementsMatch(t, []string{big.name, other.name, pendingName}, archives, "its session sees its pending copy")
 }
+
+// TestArchiveIndexTombstones checks that LocateTombstones finds the
+// tombstone records of the refs and passes over every other record.
+func TestArchiveIndexTombstones(t *testing.T, idx pack.ArchiveIndex) {
+	archive := RandomArchive(6)
+	for i := range archive.index {
+		archive.index[i].Type = uint32(proto.ObjectType_BLOB)
+		if i%2 == 0 {
+			archive.index[i].Type = uint32(proto.ObjectType_TOMBSTONE)
+		}
+	}
+
+	require.NoError(t, idx.IndexArchive(pack.ArchiveInfo{Name: archive.name}, archive.index))
+
+	refs := make([]*proto.Ref, len(archive.index))
+	for i, record := range archive.index {
+		refs[i] = &proto.Ref{Hash: append([]byte(nil), record.Sum[:]...)}
+	}
+
+	found, err := idx.LocateTombstones(refs, pack.Scope{})
+	require.NoError(t, err)
+	require.Len(t, found, 3)
+
+	for i, record := range archive.index {
+		if i%2 == 0 {
+			require.Equal(t, []pack.IndexLocation{{Archive: archive.name, Record: record}}, found[string(record.Sum[:])])
+		} else {
+			require.NotContains(t, found, string(record.Sum[:]))
+		}
+	}
+}

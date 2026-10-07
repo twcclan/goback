@@ -47,6 +47,20 @@ func (x *Index) LocateObject(ref *proto.Ref, scope pack.Scope, exclude ...string
 func (x *Index) LocateCopies(refs []*proto.Ref, scope pack.Scope) (map[string][]pack.IndexLocation, error) {
 	ctx := context.Background()
 	defer recordLookup(ctx, "copies", time.Now())
+
+	return x.locateCopies(ctx, refs, scope)
+}
+
+// LocateTombstones implements pack.ArchiveIndex through the index of
+// tombstone rows alone.
+func (x *Index) LocateTombstones(refs []*proto.Ref, scope pack.Scope) (map[string][]pack.IndexLocation, error) {
+	ctx := context.Background()
+	defer recordLookup(ctx, "tombstones", time.Now())
+
+	return x.locateCopies(ctx, refs, scope, object.Type(uint32(proto.ObjectType_TOMBSTONE)))
+}
+
+func (x *Index) locateCopies(ctx context.Context, refs []*proto.Ref, scope pack.Scope, where ...predicate.Object) (map[string][]pack.IndexLocation, error) {
 	copies := make(map[string][]pack.IndexLocation)
 
 	for start := 0; start < len(refs); start += objectBatch {
@@ -58,7 +72,7 @@ func (x *Index) LocateCopies(refs []*proto.Ref, scope pack.Scope) (map[string][]
 		}
 
 		rows, err := x.client.Object.Query().
-			Where(object.RefIn(hashes...), object.HasArchiveWith(visibleTo(scope))).
+			Where(append(where, object.RefIn(hashes...), object.HasArchiveWith(visibleTo(scope)))...).
 			All(ctx)
 		if err != nil {
 			return nil, err

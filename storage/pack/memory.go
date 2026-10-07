@@ -78,6 +78,17 @@ outer:
 
 // LocateCopies implements pack.ArchiveIndex.
 func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error) {
+	return i.locateCopies(refs, scope, func(IndexRecord) bool { return true })
+}
+
+// LocateTombstones implements pack.ArchiveIndex.
+func (i *InMemoryIndex) LocateTombstones(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error) {
+	return i.locateCopies(refs, scope, func(record IndexRecord) bool {
+		return proto.ObjectType(record.Type) == proto.ObjectType_TOMBSTONE
+	})
+}
+
+func (i *InMemoryIndex) locateCopies(refs []*proto.Ref, scope Scope, match func(IndexRecord) bool) (map[string][]IndexLocation, error) {
 	i.mtx.RLock()
 	defer i.mtx.RUnlock()
 
@@ -92,7 +103,7 @@ func (i *InMemoryIndex) LocateCopies(refs []*proto.Ref, scope Scope) (map[string
 				continue
 			}
 
-			if record, ok := records[sum]; ok {
+			if record, ok := records[sum]; ok && match(record) {
 				copies[string(ref.Hash)] = append(copies[string(ref.Hash)], IndexLocation{Archive: archive, Record: record})
 			}
 		}

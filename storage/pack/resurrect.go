@@ -134,7 +134,7 @@ func (ps *PackStorage) tombstoned(ctx context.Context, refs []*proto.Ref) ([]*pr
 		tombs[i] = proto.TombstoneRef(ref)
 	}
 
-	found, err := ps.index.LocateCopies(tombs, ScopeOf(ctx))
+	found, err := ps.index.LocateTombstones(tombs, ScopeOf(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func (ps *PackStorage) sealedTombstones(refs []*proto.Ref, sealed map[int64]bool
 		tombs[i] = proto.TombstoneRef(ref)
 	}
 
-	found, err := ps.index.LocateCopies(tombs, Scope{})
+	found, err := ps.index.LocateTombstones(tombs, Scope{})
 	if err != nil {
 		return nil, err
 	}

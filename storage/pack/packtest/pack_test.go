@@ -19,3 +19,7 @@ func TestInMemoryIndexCopies(t *testing.T) {
 func TestInMemoryIndexSessions(t *testing.T) {
 	TestArchiveIndexSessions(t, pack.NewInMemoryIndex())
 }
+
+func TestInMemoryIndexTombstones(t *testing.T) {
+	TestArchiveIndexTombstones(t, pack.NewInMemoryIndex())
+}

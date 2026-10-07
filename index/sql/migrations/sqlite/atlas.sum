@@ -1,4 +1,4 @@
-h1:2aKv6nOZA0v3z8P1MucyB9ezsuxzqrkdqJQ4PlB3l9Y=
+h1:baj+6arxLcssBR1j36H9w5CxpiySXKEyTLI8MjlNrto=
 20260917165456_init.sql h1:PTj+mf/QIWqV1eD4e34Lg9KU2/gc8MDUkRH30aYka2w=
 20260918005534_index_symlinks.sql h1:Ii6fcjAqohSRVtgo7pUvC5MDq0hhdL60hjllMoYfnXY=
 20260918073700_damaged_paths.sql h1:7qTzF/skZ3Uk+BNq11aR2FS1z8RmeiUxft50nLUS1e0=
@@ -20,3 +20,4 @@ h1:2aKv6nOZA0v3z8P1MucyB9ezsuxzqrkdqJQ4PlB3l9Y=
 20261007011249_set_deduplicated_alone.sql h1:Y1liv+16fS4/41FTteoZu83svIKH1gnIBQuw8tyDIFE=
 20261007105017_commit_retire_policy.sql h1:8zUmn0Vn8iVaRQo39Yxo+vIp5vOhumZh9qxSVHy4gIY=
 20261007184341_reindexes.sql h1:IVPg3AZbm6R6CPAgz3e/6bTRhIgjJsdOW0meWTl4HQU=
+20261007195501_objects_tombstones.sql h1:fzyrKjvD26U3uWFWt+q+x0VoWLYc5kqKs75nVuATmfc=

@@ -167,12 +167,17 @@ func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 	tomb := proto.TombstoneRef(ref)
 	untomb := proto.TombstoneRef(tomb)
 
-	found, err := ps.index.LocateCopies([]*proto.Ref{ref, tomb, untomb}, scope)
+	tombs, err := ps.index.LocateTombstones([]*proto.Ref{tomb, untomb}, scope)
 	if err != nil {
 		return false, err
 	}
 
-	bound, err := ps.tombstoneBound(found[string(tomb.Hash)], found[string(untomb.Hash)])
+	bound, err := ps.tombstoneBound(tombs[string(tomb.Hash)], tombs[string(untomb.Hash)])
+	if err != nil {
+		return false, err
+	}
+
+	found, err := ps.index.LocateCopies([]*proto.Ref{ref}, scope)
 	if err != nil {
 		return false, err
 	}
@@ -1400,6 +1405,9 @@ type ArchiveIndex interface {
 	// LocateCopies returns every copy the archives visible to scope hold
 	// of each ref, keyed by its hash; a ref none holds is absent.
 	LocateCopies(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error)
+	// LocateTombstones is LocateCopies for refs of tombstones and
+	// un-tombstones: it finds tombstone records only.
+	LocateTombstones(refs []*proto.Ref, scope Scope) (map[string][]IndexLocation, error)
 	LookupArchive(archive string) (ArchiveInfo, bool, error)
 	// IndexArchive registers an archive; a pending one needs a live session.
 	// Of an archive it already knows, it only records a creation time the
