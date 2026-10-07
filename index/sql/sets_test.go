@@ -421,6 +421,24 @@ func TestUniqueSizeCountsEachFileVersionOnce(t *testing.T) {
 	require.EqualValues(t, 7+4, sets[0].UniqueSize, "a version only a tombstoned commit held is gone")
 }
 
+func TestUniqueSizeLeavesOutVersionsOnlyARetiringCommitHolds(t *testing.T) {
+	f := newFixture(t)
+
+	a := f.commit("world", f.tree(f.file("a.txt", "first")), false)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "second!")), false)
+
+	row := f.commitRow(a)
+	require.NotNil(t, row.RetireAt)
+	require.Nil(t, row.TombstonedAt)
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 7, sets[0].UniqueSize, "the version only the retiring commit holds is left out")
+	require.LessOrEqual(t, sets[0].UniqueSize, sets[0].KeptLogicalSize)
+}
+
 func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {
 	f := newFixture(t)
 

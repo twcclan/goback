@@ -330,14 +330,15 @@ func (x *Index) keptSize(ctx context.Context, setID int64) (int64, error) {
 	return deref(sums[0].Sum), nil
 }
 
-// uniqueSize sums the set's file versions once per file object. Rows no
-// untombstoned commit holds are already dropped, so every row counts.
+// uniqueSize sums, once per file object, the set's file versions a live
+// commit holds.
 func (x *Index) uniqueSize(ctx context.Context, setID int64) (int64, error) {
 	d := entsql.Dialect(x.dialect)
 	t := d.Table(file.Table)
-	versions := d.Select().AppendSelectExprAs(entsql.Raw(entsql.Max(t.C(file.FieldSize))), "size").From(t).
-		Where(entsql.And(entsql.EQ(t.C(file.FieldSetID), setID), entsql.NotNull(t.C(file.FieldRef)))).
-		GroupBy(t.C(file.FieldRef)).As("versions")
+	held := d.Select().AppendSelectExprAs(entsql.Raw(entsql.Max(t.C(file.FieldSize))), "size").From(t).
+		Where(entsql.And(entsql.EQ(t.C(file.FieldSetID), setID), entsql.NotNull(t.C(file.FieldRef))))
+	heldByCommit(liveCommitColumns)(held)
+	versions := held.GroupBy(t.C(file.FieldRef)).As("versions")
 
 	query, args := d.Select().AppendSelectExpr(entsql.Raw("COALESCE(SUM(size), 0)")).From(versions).Query()
 
