@@ -5,6 +5,7 @@ package index
 import (
 	"time"
 
+	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
 	"github.com/twcclan/goback/proto"
@@ -90,6 +91,17 @@ type Windows struct {
 type Version struct {
 	Node *proto.TreeNode
 	From time.Time
+}
+
+// Unretired is what UnretireCommits did with one commit.
+type Unretired struct {
+	backup.Revival
+	// Set names the commit's set.
+	Set string
+	// RetainedBy is why the set's policy keeps the commit once it is back,
+	// as CommitDetail names it; empty when the policy retires it again or
+	// the commit stays tombstoned.
+	RetainedBy string
 }
 
 // CommitDetail is a commit together with what the index knows about it

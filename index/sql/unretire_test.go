@@ -1,0 +1,161 @@
+package sql
+
+import (
+	"testing"
+	"time"
+
+	"github.com/twcclan/goback/backup"
+	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/proto"
+
+	"github.com/stretchr/testify/require"
+)
+
+// retiredHistory commits three versions of a set, the last of which alone
+// a policy keeps, retires the other two and returns them with the files
+// and trees rows the set had before.
+func retiredHistory(t *testing.T, f *fixture) ([]*proto.Ref, []rangeRow, []rangeRow) {
+	t.Helper()
+
+	one := f.file("a.txt", "one")
+	a := f.commit("world", f.tree(one, f.dir("sub", f.file("b.txt", "x"))), false)
+	f.advance(time.Hour)
+	b := f.commit("world", f.tree(one, f.dir("sub", f.file("b.txt", "y"))), false)
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "two"), f.dir("sub", f.file("b.txt", "y"))), false)
+
+	files, trees := f.ranges(f.x, "files"), f.ranges(f.x, "trees")
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 1}))
+	n, err := f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	require.Less(t, len(f.ranges(f.x, "files")), len(files))
+
+	return []*proto.Ref{a, b}, files, trees
+}
+
+func TestUnretireBringsTombstonedCommitsBackWithTheirRows(t *testing.T) {
+	f := newFixture(t)
+	retired, files, trees := retiredHistory(t, f)
+
+	since := f.commitRow(retired[0]).TombstonedAt.Add(-time.Second)
+	listed, err := f.x.TombstonedCommits(f.ctx, "world", since)
+	require.NoError(t, err)
+	require.Equal(t, retired, listed)
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 100}))
+
+	dry, err := f.x.UnretireCommits(f.ctx, retired, true)
+	require.NoError(t, err)
+	require.Len(t, dry, 2)
+	for _, u := range dry {
+		require.True(t, u.Whole())
+		require.Equal(t, "world", u.Set)
+		require.NotEmpty(t, u.RetainedBy, "the new policy keeps it")
+		require.NotNil(t, f.commitRow(u.Commit).TombstonedAt, "a dry run changes nothing")
+	}
+
+	done, err := f.x.UnretireCommits(f.ctx, retired, false)
+	require.NoError(t, err)
+	require.Equal(t, dry, done)
+
+	for _, ref := range retired {
+		row := f.commitRow(ref)
+		require.Nil(t, row.TombstonedAt)
+		require.Nil(t, row.RetireAt)
+		require.Nil(t, row.ExpiresAt)
+		require.False(t, f.deleted(f.x, ref))
+
+		readable, err := f.x.References(f.ctx, ref)
+		require.NoError(t, err)
+		require.True(t, readable)
+	}
+
+	require.Equal(t, files, f.ranges(f.x, "files"), "the versions rows are what they were before the retirement")
+	require.Equal(t, trees, f.ranges(f.x, "trees"))
+
+	commits, err := f.x.CommitInfo(f.ctx, "world", f.clock.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, commits, 3)
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(30*24*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	rebuilt := f.index()
+	require.NoError(t, rebuilt.ReIndex(f.ctx))
+	for _, ref := range retired {
+		require.Nil(t, f.commitRowIn(rebuilt, ref).TombstonedAt, "a rebuild honours the revival")
+	}
+	require.Equal(t, files, f.ranges(rebuilt, "files"))
+}
+
+func TestUnretireLeavesACommitMissingAnObjectTombstoned(t *testing.T) {
+	f := newFixture(t)
+	retired, _, _ := retiredHistory(t, f)
+
+	broken := retired[0]
+	commit, err := f.x.ObjectStore.Get(f.ctx, broken)
+	require.NoError(t, err)
+	f.store.mu.Lock()
+	delete(f.store.objects, string(commit.GetCommit().GetTree().Hash))
+	f.store.mu.Unlock()
+
+	flushed := f.store.flushed
+
+	done, err := f.x.UnretireCommits(f.ctx, retired, false)
+	require.NoError(t, err)
+	require.Equal(t, 1, done[0].MissingCount)
+	require.Equal(t, commit.GetCommit().GetTree().Hash, done[0].Missing[0].Hash)
+	require.Empty(t, done[0].RetainedBy)
+	require.True(t, done[1].Whole())
+
+	require.NotNil(t, f.commitRow(broken).TombstonedAt)
+	require.True(t, f.deleted(f.x, broken))
+	revived, err := f.store.Revived(f.ctx, broken)
+	require.NoError(t, err)
+	require.False(t, revived, "nothing takes the broken commit back")
+	require.Nil(t, f.commitRow(retired[1]).TombstonedAt)
+	require.Equal(t, flushed+1, f.store.flushed, "one policy, for the commit brought back")
+}
+
+func TestUnretireRefusesALiveCommit(t *testing.T) {
+	f := newFixture(t)
+	live := f.commit("world", f.tree(f.file("a.txt", "one")), false)
+
+	_, err := f.x.UnretireCommits(f.ctx, []*proto.Ref{live}, true)
+	require.ErrorContains(t, err, "not tombstoned")
+
+	_, err = f.x.UnretireCommits(f.ctx, []*proto.Ref{{Hash: make([]byte, proto.HashSize)}}, true)
+	require.ErrorIs(t, err, backup.ErrNotFound)
+}
+
+// TestUnretireCompletesARevivalThatCrashedBeforeItsRows: the store holds the
+// revival but the rows still say tombstoned. Retirement leaves the commit
+// alone, a rebuild brings it back, and unretiring it again finishes the job.
+func TestUnretireCompletesARevivalThatCrashedBeforeItsRows(t *testing.T) {
+	f := newFixture(t)
+	retired, files, _ := retiredHistory(t, f)
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 100}))
+
+	_, err := f.store.Revive(f.ctx, retired, false)
+	require.NoError(t, err)
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(30*24*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.NotNil(t, f.commitRow(retired[0]).TombstonedAt)
+
+	rebuilt := f.index()
+	require.NoError(t, rebuilt.ReIndex(f.ctx))
+	require.Nil(t, f.commitRowIn(rebuilt, retired[0]).TombstonedAt)
+
+	done, err := f.x.UnretireCommits(f.ctx, retired, false)
+	require.NoError(t, err)
+	for _, u := range done {
+		require.True(t, u.Whole())
+		require.Nil(t, f.commitRow(u.Commit).TombstonedAt)
+	}
+	require.Equal(t, files, f.ranges(f.x, "files"))
+}

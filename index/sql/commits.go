@@ -922,6 +922,10 @@ func (x *Index) ReIndex(ctx context.Context) error {
 		ref := obj.Ref()
 
 		gone, err := isDeleted(ctx, x.client, ref.Hash)
+		if err == nil && gone {
+			gone, err = x.stillDeleted(ctx, ref.Hash)
+		}
+
 		if err != nil || gone {
 			return err
 		}
@@ -1004,12 +1008,21 @@ func (x *Index) resetSetSequence(ctx context.Context) error {
 }
 
 // applyTombstone records a tombstone found in the archives and marks the
-// commit or pin row it names when this database still has it live; it
-// returns the set of a commit it marked.
+// commit or pin row it names when this database still has it live, unless
+// the commit was revived since; it returns the set of a commit it marked.
 func (x *Index) applyTombstone(ctx context.Context, ref []byte, at time.Time) (int64, error) {
+	live, err := x.client.CommitRow.Query().Where(commitrow.Ref(ref), commitrow.TombstonedAtIsNil()).Exist(ctx)
+	if err == nil && live {
+		live, err = x.revived(ctx, ref)
+	}
+
+	if err != nil || live {
+		return 0, err
+	}
+
 	var setID int64
 
-	err := x.tx(ctx, func(tx *ent.Tx) error {
+	err = x.tx(ctx, func(tx *ent.Tx) error {
 		c := tx.Client()
 
 		err := recordDeleted(ctx, c, [][]byte{ref}, at)

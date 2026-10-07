@@ -6,6 +6,7 @@ import (
 	backup "github.com/twcclan/goback/backup"
 	retention "github.com/twcclan/goback/backup/retention"
 	views "github.com/twcclan/goback/cmd/goback/commands/common/views"
+	index "github.com/twcclan/goback/index"
 	proto "github.com/twcclan/goback/proto"
 	maintenance "github.com/twcclan/goback/storage/maintenance"
 	pack "github.com/twcclan/goback/storage/pack"
@@ -160,6 +161,17 @@ func (m MapperImpl) TrashedCommit(in *proto.TrashedCommit) views.TrashedCommitVi
 		CommitView: m.Commit(in.Commit),
 		Deleted:    views.UnixNano(in.DeletedAtNs),
 		Expires:    views.UnixNano(in.ExpiresAtNs),
+	}
+}
+
+func (m MapperImpl) Unretired(in index.Unretired) views.UnretiredView {
+
+	return views.UnretiredView{
+		Commit:       views.Hex(in.Revival.Commit),
+		Set:          in.Set,
+		Missing:      views.Hexes(in.Revival.Missing),
+		MissingCount: in.Revival.MissingCount,
+		RetainedBy:   in.RetainedBy,
 	}
 }
 

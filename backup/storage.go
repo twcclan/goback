@@ -171,6 +171,30 @@ type Eraser interface {
 	Erase(context.Context, *proto.Ref) error
 }
 
+// Reviver is a store that can take tombstoned commits back while it still
+// holds everything they reach.
+type Reviver interface {
+	// Revive checks what each commit reaches and, unless dryRun, takes back
+	// the tombstones of every commit missing nothing and of what it
+	// reaches, so collections keep them again. A commit missing anything is
+	// reported and left as it is.
+	Revive(ctx context.Context, commits []*proto.Ref, dryRun bool) ([]Revival, error)
+	// Revived reports whether a revival takes back the commit's tombstone.
+	Revived(ctx context.Context, commit *proto.Ref) (bool, error)
+}
+
+// Revival is what Revive found under one commit.
+type Revival struct {
+	Commit *proto.Ref
+	// Missing names some of the objects the commit reaches that the store
+	// holds no copy of, and MissingCount counts them all.
+	Missing      []*proto.Ref
+	MissingCount int
+}
+
+// Whole reports whether the commit misses nothing.
+func (r Revival) Whole() bool { return r.MissingCount == 0 }
+
 // Counter is implemented by stores that can count their objects.
 type Counter interface {
 	// Count reports how many objects the store holds, in total and distinct.

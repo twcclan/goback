@@ -36,5 +36,6 @@ var Command = cli.Command{
 		restoreCmd,
 		deleteCmd,
 		undeleteCmd,
+		unretireCmd,
 	},
 }

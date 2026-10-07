@@ -44,10 +44,13 @@ type memStore struct {
 	objects    map[string]*proto.Object
 	tombstones map[string]struct{}
 	erased     map[string]struct{}
-	leases     []*proto.Ref
-	flushed    int
-	flushErr   error
-	deleteErr  error
+	// revived are the tombstoned refs an un-tombstone newer than their
+	// tombstone takes back
+	revived   map[string]struct{}
+	leases    []*proto.Ref
+	flushed   int
+	flushErr  error
+	deleteErr error
 	// asked counts the Has calls for each ref, and read the Get calls
 	asked map[string]int
 	read  map[string]int
@@ -56,7 +59,7 @@ type memStore struct {
 }
 
 func newMemStore() *memStore {
-	return &memStore{objects: map[string]*proto.Object{}, tombstones: map[string]struct{}{}, erased: map[string]struct{}{}, asked: map[string]int{}, read: map[string]int{}}
+	return &memStore{objects: map[string]*proto.Object{}, tombstones: map[string]struct{}{}, erased: map[string]struct{}{}, revived: map[string]struct{}{}, asked: map[string]int{}, read: map[string]int{}}
 }
 
 func (m *memStore) Erase(ctx context.Context, ref *proto.Ref) error {
@@ -115,7 +118,51 @@ func (m *memStore) Delete(_ context.Context, ref *proto.Ref) error {
 		return m.deleteErr
 	}
 	m.tombstones[string(ref.Hash)] = struct{}{}
+	delete(m.revived, string(ref.Hash))
 	return nil
+}
+
+// Revive implements backup.Reviver over the objects the store holds.
+func (m *memStore) Revive(_ context.Context, commits []*proto.Ref, dryRun bool) ([]backup.Revival, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	revivals := make([]backup.Revival, len(commits))
+
+	for i, c := range commits {
+		revivals[i].Commit = c
+
+		for frontier := []*proto.Ref{c}; len(frontier) > 0; {
+			ref := frontier[0]
+			frontier = frontier[1:]
+
+			obj, ok := m.objects[string(ref.Hash)]
+			if !ok {
+				revivals[i].Missing = append(revivals[i].Missing, ref)
+				revivals[i].MissingCount++
+
+				continue
+			}
+
+			frontier = append(frontier, backup.References(obj)...)
+		}
+
+		if !dryRun && revivals[i].Whole() {
+			m.revived[string(c.Hash)] = struct{}{}
+		}
+	}
+
+	return revivals, nil
+}
+
+// Revived implements backup.Reviver.
+func (m *memStore) Revived(_ context.Context, commit *proto.Ref) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok := m.revived[string(commit.Hash)]
+
+	return ok, nil
 }
 
 func (m *memStore) Walk(_ context.Context, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {

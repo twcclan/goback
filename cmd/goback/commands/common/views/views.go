@@ -7,6 +7,7 @@ import (
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/backup/retention"
+	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/maintenance"
 	"github.com/twcclan/goback/storage/pack"
@@ -59,6 +60,10 @@ type Mapper interface {
 	// field:Deleted from:"DeletedAtNs" using:"UnixNano"
 	// field:Expires from:"ExpiresAtNs" using:"UnixNano"
 	TrashedCommit(in *proto.TrashedCommit) TrashedCommitView
+	// field:Commit from:"Revival.Commit" using:"Hex"
+	// field:Missing from:"Revival.Missing" using:"Hexes"
+	// field:MissingCount from:"Revival.MissingCount"
+	Unretired(in index.Unretired) UnretiredView
 }
 
 // Hex is a ref as the hex its hash prints as, empty for none.
@@ -68,6 +73,16 @@ func Hex(ref *proto.Ref) string {
 	}
 
 	return hex.EncodeToString(ref.Hash)
+}
+
+// Hexes is each ref as Hex prints it.
+func Hexes(refs []*proto.Ref) []string {
+	out := make([]string, len(refs))
+	for i, ref := range refs {
+		out[i] = Hex(ref)
+	}
+
+	return out
 }
 
 // CommitRef is the hex of the ref commit is stored under.
@@ -139,6 +154,16 @@ type TrashedCommitView struct {
 	CommitView
 	Deleted time.Time `json:"deleted"`
 	Expires time.Time `json:"expires"`
+}
+
+// UnretiredView is what unretiring did with one commit, as JSON output
+// shows it: a commit missing anything stays tombstoned.
+type UnretiredView struct {
+	Commit       string   `json:"commit"`
+	Set          string   `json:"set"`
+	Missing      []string `json:"missing,omitempty"`
+	MissingCount int      `json:"missing_count,omitempty"`
+	RetainedBy   string   `json:"retained_by,omitempty"`
 }
 
 // NodeView is a file or directory as JSON output shows it.
