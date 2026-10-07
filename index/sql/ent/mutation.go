@@ -6934,39 +6934,41 @@ func (m *SessionMutation) ResetEdge(name string) error {
 // SetMutation represents an operation that mutates the Set nodes in the graph.
 type SetMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int64
-	name                 *string
-	state                *set.State
-	retention_policy     *string
-	retention_paused     *bool
-	erase                *bool
-	rescan               *bool
-	physical_size        *int64
-	addphysical_size     *int64
-	deduplicated_size    *int64
-	adddeduplicated_size *int64
-	alone_size           *int64
-	addalone_size        *int64
-	exclusive_size       *int64
-	addexclusive_size    *int64
-	clearedFields        map[string]struct{}
-	files                map[int]struct{}
-	removedfiles         map[int]struct{}
-	clearedfiles         bool
-	trees                map[int]struct{}
-	removedtrees         map[int]struct{}
-	clearedtrees         bool
-	refs                 map[int]struct{}
-	removedrefs          map[int]struct{}
-	clearedrefs          bool
-	damaged              map[int]struct{}
-	removeddamaged       map[int]struct{}
-	cleareddamaged       bool
-	done                 bool
-	oldValue             func(context.Context) (*Set, error)
-	predicates           []predicate.Set
+	op                         Op
+	typ                        string
+	id                         *int64
+	name                       *string
+	state                      *set.State
+	retention_policy           *string
+	retention_paused           *bool
+	erase                      *bool
+	rescan                     *bool
+	physical_size              *int64
+	addphysical_size           *int64
+	deduplicated_size          *int64
+	adddeduplicated_size       *int64
+	alone_size                 *int64
+	addalone_size              *int64
+	exclusive_size             *int64
+	addexclusive_size          *int64
+	deduplicated_alone_size    *int64
+	adddeduplicated_alone_size *int64
+	clearedFields              map[string]struct{}
+	files                      map[int]struct{}
+	removedfiles               map[int]struct{}
+	clearedfiles               bool
+	trees                      map[int]struct{}
+	removedtrees               map[int]struct{}
+	clearedtrees               bool
+	refs                       map[int]struct{}
+	removedrefs                map[int]struct{}
+	clearedrefs                bool
+	damaged                    map[int]struct{}
+	removeddamaged             map[int]struct{}
+	cleareddamaged             bool
+	done                       bool
+	oldValue                   func(context.Context) (*Set, error)
+	predicates                 []predicate.Set
 }
 
 var _ ent.Mutation = (*SetMutation)(nil)
@@ -7582,6 +7584,76 @@ func (m *SetMutation) ResetExclusiveSize() {
 	delete(m.clearedFields, set.FieldExclusiveSize)
 }
 
+// SetDeduplicatedAloneSize sets the "deduplicated_alone_size" field.
+func (m *SetMutation) SetDeduplicatedAloneSize(i int64) {
+	m.deduplicated_alone_size = &i
+	m.adddeduplicated_alone_size = nil
+}
+
+// DeduplicatedAloneSize returns the value of the "deduplicated_alone_size" field in the mutation.
+func (m *SetMutation) DeduplicatedAloneSize() (r int64, exists bool) {
+	v := m.deduplicated_alone_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeduplicatedAloneSize returns the old "deduplicated_alone_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldDeduplicatedAloneSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeduplicatedAloneSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeduplicatedAloneSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeduplicatedAloneSize: %w", err)
+	}
+	return oldValue.DeduplicatedAloneSize, nil
+}
+
+// AddDeduplicatedAloneSize adds i to the "deduplicated_alone_size" field.
+func (m *SetMutation) AddDeduplicatedAloneSize(i int64) {
+	if m.adddeduplicated_alone_size != nil {
+		*m.adddeduplicated_alone_size += i
+	} else {
+		m.adddeduplicated_alone_size = &i
+	}
+}
+
+// AddedDeduplicatedAloneSize returns the value that was added to the "deduplicated_alone_size" field in this mutation.
+func (m *SetMutation) AddedDeduplicatedAloneSize() (r int64, exists bool) {
+	v := m.adddeduplicated_alone_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDeduplicatedAloneSize clears the value of the "deduplicated_alone_size" field.
+func (m *SetMutation) ClearDeduplicatedAloneSize() {
+	m.deduplicated_alone_size = nil
+	m.adddeduplicated_alone_size = nil
+	m.clearedFields[set.FieldDeduplicatedAloneSize] = struct{}{}
+}
+
+// DeduplicatedAloneSizeCleared returns if the "deduplicated_alone_size" field was cleared in this mutation.
+func (m *SetMutation) DeduplicatedAloneSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldDeduplicatedAloneSize]
+	return ok
+}
+
+// ResetDeduplicatedAloneSize resets all changes to the "deduplicated_alone_size" field.
+func (m *SetMutation) ResetDeduplicatedAloneSize() {
+	m.deduplicated_alone_size = nil
+	m.adddeduplicated_alone_size = nil
+	delete(m.clearedFields, set.FieldDeduplicatedAloneSize)
+}
+
 // AddFileIDs adds the "files" edge to the File entity by ids.
 func (m *SetMutation) AddFileIDs(ids ...int) {
 	if m.files == nil {
@@ -7832,7 +7904,7 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
 	}
@@ -7863,6 +7935,9 @@ func (m *SetMutation) Fields() []string {
 	if m.exclusive_size != nil {
 		fields = append(fields, set.FieldExclusiveSize)
 	}
+	if m.deduplicated_alone_size != nil {
+		fields = append(fields, set.FieldDeduplicatedAloneSize)
+	}
 	return fields
 }
 
@@ -7891,6 +7966,8 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 		return m.AloneSize()
 	case set.FieldExclusiveSize:
 		return m.ExclusiveSize()
+	case set.FieldDeduplicatedAloneSize:
+		return m.DeduplicatedAloneSize()
 	}
 	return nil, false
 }
@@ -7920,6 +7997,8 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldAloneSize(ctx)
 	case set.FieldExclusiveSize:
 		return m.OldExclusiveSize(ctx)
+	case set.FieldDeduplicatedAloneSize:
+		return m.OldDeduplicatedAloneSize(ctx)
 	}
 	return nil, fmt.Errorf("unknown Set field %s", name)
 }
@@ -7999,6 +8078,13 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetExclusiveSize(v)
 		return nil
+	case set.FieldDeduplicatedAloneSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeduplicatedAloneSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
 }
@@ -8019,6 +8105,9 @@ func (m *SetMutation) AddedFields() []string {
 	if m.addexclusive_size != nil {
 		fields = append(fields, set.FieldExclusiveSize)
 	}
+	if m.adddeduplicated_alone_size != nil {
+		fields = append(fields, set.FieldDeduplicatedAloneSize)
+	}
 	return fields
 }
 
@@ -8035,6 +8124,8 @@ func (m *SetMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAloneSize()
 	case set.FieldExclusiveSize:
 		return m.AddedExclusiveSize()
+	case set.FieldDeduplicatedAloneSize:
+		return m.AddedDeduplicatedAloneSize()
 	}
 	return nil, false
 }
@@ -8072,6 +8163,13 @@ func (m *SetMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddExclusiveSize(v)
 		return nil
+	case set.FieldDeduplicatedAloneSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDeduplicatedAloneSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set numeric field %s", name)
 }
@@ -8094,6 +8192,9 @@ func (m *SetMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(set.FieldExclusiveSize) {
 		fields = append(fields, set.FieldExclusiveSize)
+	}
+	if m.FieldCleared(set.FieldDeduplicatedAloneSize) {
+		fields = append(fields, set.FieldDeduplicatedAloneSize)
 	}
 	return fields
 }
@@ -8123,6 +8224,9 @@ func (m *SetMutation) ClearField(name string) error {
 		return nil
 	case set.FieldExclusiveSize:
 		m.ClearExclusiveSize()
+		return nil
+	case set.FieldDeduplicatedAloneSize:
+		m.ClearDeduplicatedAloneSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set nullable field %s", name)
@@ -8161,6 +8265,9 @@ func (m *SetMutation) ResetField(name string) error {
 		return nil
 	case set.FieldExclusiveSize:
 		m.ResetExclusiveSize()
+		return nil
+	case set.FieldDeduplicatedAloneSize:
+		m.ResetDeduplicatedAloneSize()
 		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)

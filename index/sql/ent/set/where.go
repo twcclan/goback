@@ -98,6 +98,11 @@ func ExclusiveSize(v int64) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldExclusiveSize, v))
 }
 
+// DeduplicatedAloneSize applies equality check predicate on the "deduplicated_alone_size" field. It's identical to DeduplicatedAloneSizeEQ.
+func DeduplicatedAloneSize(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldDeduplicatedAloneSize, v))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldName, v))
@@ -486,6 +491,56 @@ func ExclusiveSizeIsNil() predicate.Set {
 // ExclusiveSizeNotNil applies the NotNil predicate on the "exclusive_size" field.
 func ExclusiveSizeNotNil() predicate.Set {
 	return predicate.Set(sql.FieldNotNull(FieldExclusiveSize))
+}
+
+// DeduplicatedAloneSizeEQ applies the EQ predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeNEQ applies the NEQ predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeNEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeIn applies the In predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldDeduplicatedAloneSize, vs...))
+}
+
+// DeduplicatedAloneSizeNotIn applies the NotIn predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeNotIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldDeduplicatedAloneSize, vs...))
+}
+
+// DeduplicatedAloneSizeGT applies the GT predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeGT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeGTE applies the GTE predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeGTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeLT applies the LT predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeLT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeLTE applies the LTE predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeLTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldDeduplicatedAloneSize, v))
+}
+
+// DeduplicatedAloneSizeIsNil applies the IsNil predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldDeduplicatedAloneSize))
+}
+
+// DeduplicatedAloneSizeNotNil applies the NotNil predicate on the "deduplicated_alone_size" field.
+func DeduplicatedAloneSizeNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldDeduplicatedAloneSize))
 }
 
 // HasFiles applies the HasEdge predicate on the "files" edge.

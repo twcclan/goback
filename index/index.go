@@ -39,6 +39,8 @@ type SetInfo struct {
 	// ExclusiveSize what of that no other set holds, as of the last
 	// garbage collection.
 	AloneSize, ExclusiveSize int64
+	// DeduplicatedAloneSize is DeduplicatedSize were the set the only set.
+	DeduplicatedAloneSize int64
 }
 
 // SetQuery picks and orders a page of sets. The zero SetQuery lists

@@ -77,14 +77,15 @@ func (m MapperImpl) Retention(in retention.Policy) *admin.RetentionPolicy {
 func (m MapperImpl) Set(in index.SetInfo) *admin.BackupSet {
 
 	return &admin.BackupSet{
-		Name:             in.Name,
-		State:            in.State,
-		LogicalSize:      in.LogicalSize,
-		PhysicalSize:     in.PhysicalSize,
-		DeduplicatedSize: in.DeduplicatedSize,
-		AloneSize:        in.AloneSize,
-		ExclusiveSize:    in.ExclusiveSize,
-		UniqueSize:       in.UniqueSize,
+		Name:                  in.Name,
+		State:                 in.State,
+		LogicalSize:           in.LogicalSize,
+		PhysicalSize:          in.PhysicalSize,
+		DeduplicatedSize:      in.DeduplicatedSize,
+		AloneSize:             in.AloneSize,
+		ExclusiveSize:         in.ExclusiveSize,
+		UniqueSize:            in.UniqueSize,
+		DeduplicatedAloneSize: in.DeduplicatedAloneSize,
 	}
 }
 

@@ -184,12 +184,18 @@ func (m MapperImpl) Set(in *ent.Set) index.SetInfo {
 		tmp1 = *(in.ExclusiveSize)
 	}
 
+	var tmp2 int64
+	if in.DeduplicatedAloneSize != nil {
+		tmp2 = *(in.DeduplicatedAloneSize)
+	}
+
 	return index.SetInfo{
-		ID:            in.ID,
-		Name:          in.Name,
-		State:         string(in.State),
-		AloneSize:     tmp0,
-		ExclusiveSize: tmp1,
+		ID:                    in.ID,
+		Name:                  in.Name,
+		State:                 string(in.State),
+		AloneSize:             tmp0,
+		ExclusiveSize:         tmp1,
+		DeduplicatedAloneSize: tmp2,
 	}
 }
 

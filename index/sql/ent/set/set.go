@@ -34,6 +34,8 @@ const (
 	FieldAloneSize = "alone_size"
 	// FieldExclusiveSize holds the string denoting the exclusive_size field in the database.
 	FieldExclusiveSize = "exclusive_size"
+	// FieldDeduplicatedAloneSize holds the string denoting the deduplicated_alone_size field in the database.
+	FieldDeduplicatedAloneSize = "deduplicated_alone_size"
 	// EdgeFiles holds the string denoting the files edge name in mutations.
 	EdgeFiles = "files"
 	// EdgeTrees holds the string denoting the trees edge name in mutations.
@@ -87,6 +89,7 @@ var Columns = []string{
 	FieldDeduplicatedSize,
 	FieldAloneSize,
 	FieldExclusiveSize,
+	FieldDeduplicatedAloneSize,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -191,6 +194,11 @@ func ByAloneSize(opts ...sql.OrderTermOption) OrderOption {
 // ByExclusiveSize orders the results by the exclusive_size field.
 func ByExclusiveSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldExclusiveSize, opts...).ToFunc()
+}
+
+// ByDeduplicatedAloneSize orders the results by the deduplicated_alone_size field.
+func ByDeduplicatedAloneSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeduplicatedAloneSize, opts...).ToFunc()
 }
 
 // ByFilesCount orders the results by files count.

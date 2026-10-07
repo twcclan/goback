@@ -56,6 +56,9 @@ message BackupSet {
     // the size of every distinct file version the set's untombstoned
     // commits hold, each counted once
     int64 unique_size = 10;
+    // the size of the distinct content the set's objects carry before
+    // compression were it the only set, as of the last garbage collection
+    int64 deduplicated_alone_size = 11;
 }
 
 message ListSetsRequest {}

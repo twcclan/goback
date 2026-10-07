@@ -68,7 +68,8 @@ func (r *gcRun) confirmDrops(ctx context.Context) error {
 		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
 		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
 		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
-		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64)}
+		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
+		setDeduplicatedAlone: make(map[int64]uint64)}
 
 	if err := check.takeSnapshot(); err != nil {
 		return err

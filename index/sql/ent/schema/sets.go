@@ -33,6 +33,7 @@ func (Set) Fields() []ent.Field {
 		field.Int64("deduplicated_size").Optional().Nillable(),
 		field.Int64("alone_size").Optional().Nillable(),
 		field.Int64("exclusive_size").Optional().Nillable(),
+		field.Int64("deduplicated_alone_size").Optional().Nillable(),
 	}
 }
 

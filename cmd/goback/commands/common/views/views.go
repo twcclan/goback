@@ -172,29 +172,30 @@ type WalkView struct {
 // ReportView is a collection report as JSON output shows it; the per-set
 // maps are keyed by set id.
 type ReportView struct {
-	Generation       uint64           `json:"generation"`
-	Waiting          uint64           `json:"waiting,omitempty"`
-	Archives         int              `json:"archives"`
-	Objects          uint64           `json:"objects"`
-	Roots            int              `json:"roots"`
-	Marked           uint64           `json:"marked"`
-	DeadObjects      uint64           `json:"dead_objects"`
-	DeadBytes        uint64           `json:"dead_bytes"`
-	Resumed          int              `json:"resumed"`
-	ErasedArchives   int              `json:"erased_archives"`
-	Condemned        int              `json:"condemned"`
-	SweepSkipped     string           `json:"sweep_skipped,omitempty"`
-	Published        int              `json:"published"`
-	Swept            int              `json:"swept"`
-	ReclaimedObjects uint64           `json:"reclaimed_objects"`
-	ReclaimedBytes   uint64           `json:"reclaimed_bytes"`
-	CopiedBytes      uint64           `json:"copied_bytes"`
-	Purged           int              `json:"purged"`
-	Seconds          float64          `json:"seconds"`
-	SetBytes         map[int64]uint64 `json:"set_bytes,omitempty"`
-	SetDeduplicated  map[int64]uint64 `json:"set_deduplicated,omitempty"`
-	SetAlone         map[int64]uint64 `json:"set_alone,omitempty"`
-	SetExclusive     map[int64]uint64 `json:"set_exclusive,omitempty"`
+	Generation           uint64           `json:"generation"`
+	Waiting              uint64           `json:"waiting,omitempty"`
+	Archives             int              `json:"archives"`
+	Objects              uint64           `json:"objects"`
+	Roots                int              `json:"roots"`
+	Marked               uint64           `json:"marked"`
+	DeadObjects          uint64           `json:"dead_objects"`
+	DeadBytes            uint64           `json:"dead_bytes"`
+	Resumed              int              `json:"resumed"`
+	ErasedArchives       int              `json:"erased_archives"`
+	Condemned            int              `json:"condemned"`
+	SweepSkipped         string           `json:"sweep_skipped,omitempty"`
+	Published            int              `json:"published"`
+	Swept                int              `json:"swept"`
+	ReclaimedObjects     uint64           `json:"reclaimed_objects"`
+	ReclaimedBytes       uint64           `json:"reclaimed_bytes"`
+	CopiedBytes          uint64           `json:"copied_bytes"`
+	Purged               int              `json:"purged"`
+	Seconds              float64          `json:"seconds"`
+	SetBytes             map[int64]uint64 `json:"set_bytes,omitempty"`
+	SetDeduplicated      map[int64]uint64 `json:"set_deduplicated,omitempty"`
+	SetAlone             map[int64]uint64 `json:"set_alone,omitempty"`
+	SetExclusive         map[int64]uint64 `json:"set_exclusive,omitempty"`
+	SetDeduplicatedAlone map[int64]uint64 `json:"set_deduplicated_alone,omitempty"`
 }
 
 // MaintenanceView is what goback maintain did; collected is absent when

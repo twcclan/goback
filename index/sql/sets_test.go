@@ -506,6 +506,7 @@ func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	require.NoError(t, f.x.RecordSetSizes(f.ctx, &pack.CollectReport{
 		SetBytes: map[int64]uint64{id: 4096}, SetDeduplicated: map[int64]uint64{id: 10000},
 		SetAlone: map[int64]uint64{id: 5000}, SetExclusive: map[int64]uint64{id: 3000},
+		SetDeduplicatedAlone: map[int64]uint64{id: 12000},
 	}))
 
 	sets, err = f.x.ListSets(f.ctx)
@@ -514,6 +515,7 @@ func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	require.EqualValues(t, 10000, sets[0].DeduplicatedSize)
 	require.EqualValues(t, 5000, sets[0].AloneSize)
 	require.EqualValues(t, 3000, sets[0].ExclusiveSize)
+	require.EqualValues(t, 12000, sets[0].DeduplicatedAloneSize)
 
 	// a run that reaches nothing of the set's own leaves it holding nothing
 	require.NoError(t, f.x.RecordSetSizes(f.ctx, &pack.CollectReport{}))
@@ -523,4 +525,5 @@ func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	require.Zero(t, sets[0].PhysicalSize)
 	require.Zero(t, sets[0].DeduplicatedSize)
 	require.Zero(t, sets[0].AloneSize)
+	require.Zero(t, sets[0].DeduplicatedAloneSize)
 }

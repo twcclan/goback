@@ -139,6 +139,9 @@ type CollectReport struct {
 	// only set of its group, and SetExclusive what of that no other set of
 	// the group reaches: what deleting the set would free.
 	SetAlone, SetExclusive map[int64]uint64
+	// SetDeduplicatedAlone is the uncompressed size of the distinct file
+	// content each set's live objects carry were it the only set of its group.
+	SetDeduplicatedAlone map[int64]uint64
 	// Condemned counts the unreachable objects the run stored tombstones for.
 	Condemned int
 	// Waiting is the generation whose published plan has not been
@@ -310,6 +313,7 @@ type gcRun struct {
 	// setAlone and setExclusive are what each set reaches, and what only
 	// it reaches within its group.
 	setAlone, setExclusive map[int64]uint64
+	setDeduplicatedAlone   map[int64]uint64
 	// classes are the output classes of the sweep
 	classes *classes
 }
@@ -360,7 +364,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
 		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
 		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
-		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64)}
+		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
+		setDeduplicatedAlone: make(map[int64]uint64)}
 	if prev != nil {
 		run.gen = prev.Generation + 1
 
@@ -422,6 +427,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	report.SetBytes = run.setBytes
 	report.SetDeduplicated = run.setDeduplicated
 	report.SetAlone, report.SetExclusive = run.setAlone, run.setExclusive
+	report.SetDeduplicatedAlone = run.setDeduplicatedAlone
 	report.Marked, err = run.merge(live)
 	if err != nil {
 		return nil, err
@@ -1319,7 +1325,12 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 			}
 		}
 
-		r.share(owners, uint64(rec.Length))
+		content := uint64(0)
+		if first {
+			content = size
+		}
+
+		r.share(owners, uint64(rec.Length), content)
 	}, func(sum refKey) {
 		if _, isTarget := r.targets[sum]; isTarget {
 			r.targets[sum] = true
@@ -1340,13 +1351,15 @@ func (r *gcRun) merge(live *liveRuns) (uint64, error) {
 }
 
 // share counts a record for every set that reached it, and for the one
-// set of a group that alone reached it.
-func (r *gcRun) share(owners []Attribution, length uint64) {
+// set of a group that alone reached it; content is the file content it
+// carries, zero for a second copy.
+func (r *gcRun) share(owners []Attribution, length, content uint64) {
 	for start := 0; start < len(owners); {
 		end, reached := start, 0
 		for ; end < len(owners) && owners[end].Group == owners[start].Group; end++ {
 			if owners[end].Set != 0 {
 				r.setAlone[owners[end].Set] += length
+				r.setDeduplicatedAlone[owners[end].Set] += content
 				reached++
 			}
 		}

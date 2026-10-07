@@ -36,6 +36,8 @@ type Set struct {
 	AloneSize *int64 `json:"alone_size,omitempty"`
 	// ExclusiveSize holds the value of the "exclusive_size" field.
 	ExclusiveSize *int64 `json:"exclusive_size,omitempty"`
+	// DeduplicatedAloneSize holds the value of the "deduplicated_alone_size" field.
+	DeduplicatedAloneSize *int64 `json:"deduplicated_alone_size,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SetQuery when eager-loading is set.
 	Edges        SetEdges `json:"edges"`
@@ -100,7 +102,7 @@ func (*Set) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case set.FieldRetentionPaused, set.FieldErase, set.FieldRescan:
 			values[i] = new(sql.NullBool)
-		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize, set.FieldAloneSize, set.FieldExclusiveSize:
+		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize, set.FieldAloneSize, set.FieldExclusiveSize, set.FieldDeduplicatedAloneSize:
 			values[i] = new(sql.NullInt64)
 		case set.FieldName, set.FieldState, set.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -189,6 +191,13 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ExclusiveSize = new(int64)
 				*_m.ExclusiveSize = value.Int64
+			}
+		case set.FieldDeduplicatedAloneSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field deduplicated_alone_size", values[i])
+			} else if value.Valid {
+				_m.DeduplicatedAloneSize = new(int64)
+				*_m.DeduplicatedAloneSize = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -283,6 +292,11 @@ func (_m *Set) String() string {
 	builder.WriteString(", ")
 	if v := _m.ExclusiveSize; v != nil {
 		builder.WriteString("exclusive_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.DeduplicatedAloneSize; v != nil {
+		builder.WriteString("deduplicated_alone_size=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteByte(')')

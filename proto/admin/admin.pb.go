@@ -41,9 +41,12 @@ type BackupSet struct {
 	ExclusiveSize int64 `protobuf:"varint,9,opt,name=exclusive_size,json=exclusiveSize,proto3" json:"exclusive_size,omitempty"`
 	// the size of every distinct file version the set's untombstoned
 	// commits hold, each counted once
-	UniqueSize    int64 `protobuf:"varint,10,opt,name=unique_size,json=uniqueSize,proto3" json:"unique_size,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	UniqueSize int64 `protobuf:"varint,10,opt,name=unique_size,json=uniqueSize,proto3" json:"unique_size,omitempty"`
+	// the size of the distinct content the set's objects carry before
+	// compression were it the only set, as of the last garbage collection
+	DeduplicatedAloneSize int64 `protobuf:"varint,11,opt,name=deduplicated_alone_size,json=deduplicatedAloneSize,proto3" json:"deduplicated_alone_size,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *BackupSet) Reset() {
@@ -128,6 +131,13 @@ func (x *BackupSet) GetExclusiveSize() int64 {
 func (x *BackupSet) GetUniqueSize() int64 {
 	if x != nil {
 		return x.UniqueSize
+	}
+	return 0
+}
+
+func (x *BackupSet) GetDeduplicatedAloneSize() int64 {
+	if x != nil {
+		return x.DeduplicatedAloneSize
 	}
 	return 0
 }
@@ -1115,7 +1125,7 @@ var File_admin_admin_proto protoreflect.FileDescriptor
 
 const file_admin_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa7\x02\n" +
+	"\x11admin/admin.proto\x12\x05admin\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdf\x02\n" +
 	"\tBackupSet\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
@@ -1127,7 +1137,8 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\x0eexclusive_size\x18\t \x01(\x03R\rexclusiveSize\x12\x1f\n" +
 	"\vunique_size\x18\n" +
 	" \x01(\x03R\n" +
-	"uniqueSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
+	"uniqueSize\x126\n" +
+	"\x17deduplicated_alone_size\x18\v \x01(\x03R\x15deduplicatedAloneSizeJ\x04\b\x01\x10\x02J\x04\b\x03\x10\x04R\bagent_id\"\x11\n" +
 	"\x0fListSetsRequest\"8\n" +
 	"\x10ListSetsResponse\x12$\n" +
 	"\x04sets\x18\x01 \x03(\v2\x10.admin.BackupSetR\x04sets\"<\n" +

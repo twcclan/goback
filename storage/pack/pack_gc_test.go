@@ -763,6 +763,8 @@ func TestCollectAttributesObjectsToTheSetThatReachesThemFirst(t *testing.T) {
 		"the shared blob belongs to the set that reached it first")
 	require.EqualValues(t, 1024+512, report.SetDeduplicated[7])
 	require.EqualValues(t, 2048, report.SetDeduplicated[9])
+	require.EqualValues(t, 1024+512, report.SetDeduplicatedAlone[7])
+	require.EqualValues(t, 512+2048, report.SetDeduplicatedAlone[9], "alone, each set counts the content both hold")
 
 	var attributed uint64
 	for _, bytes := range report.SetBytes {
@@ -892,6 +894,10 @@ func TestCollectCountsWhatEachSetHoldsAloneAndWhatOnlyItHolds(t *testing.T) {
 	require.EqualValues(t, storedBytes(t, store, yourCommit), report.SetExclusive[9])
 	require.EqualValues(t, report.SetAlone[7], report.SetBytes[7], "the first set still carries what both hold")
 	require.EqualValues(t, storedBytes(t, store, yourCommit), report.SetBytes[9])
+	require.EqualValues(t, 1024+512, report.SetDeduplicatedAlone[7])
+	require.EqualValues(t, 512, report.SetDeduplicatedAlone[9])
+	require.EqualValues(t, 1024+512, report.SetDeduplicated[7])
+	require.Zero(t, report.SetDeduplicated[9], "attributed, the shared content counts once")
 
 	require.NoError(t, store.Close())
 }
