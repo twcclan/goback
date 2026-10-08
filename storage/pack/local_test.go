@@ -131,7 +131,18 @@ func (las *localArchiveStorage) pruneDirs(name string) {
 }
 
 func (las *localArchiveStorage) List(extension string) ([]string, error) {
-	var names []string
+	files, err := las.ListInfo(extension)
+
+	names := make([]string, len(files))
+	for i, file := range files {
+		names[i] = file.Name
+	}
+
+	return names, err
+}
+
+func (las *localArchiveStorage) ListInfo(extension string) ([]ListedFile, error) {
+	var files []ListedFile
 
 	err := filepath.WalkDir(las.base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -147,12 +158,17 @@ func (las *localArchiveStorage) List(extension string) ([]string, error) {
 			return err
 		}
 
-		names = append(names, filepath.ToSlash(rel))
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		files = append(files, ListedFile{Name: filepath.ToSlash(rel), Size: info.Size(), Modified: info.ModTime()})
 
 		return nil
 	})
 
-	return names, err
+	return files, err
 }
 
 func TestLocalStorageNestedNames(t *testing.T) {

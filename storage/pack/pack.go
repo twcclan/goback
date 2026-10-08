@@ -1385,6 +1385,19 @@ type ArchiveStorage interface {
 	DeleteAll() error
 }
 
+// ListedFile is a file a listing found, with its size and when it was stored.
+type ListedFile struct {
+	Name     string
+	Size     int64
+	Modified time.Time
+}
+
+// InfoLister is implemented by an ArchiveStorage that lists its files with
+// their sizes and modification times, as List names them, in one listing.
+type InfoLister interface {
+	ListInfo(extension string) ([]ListedFile, error)
+}
+
 // IndexLocation is where an ArchiveIndex found an object.
 type IndexLocation struct {
 	Archive string

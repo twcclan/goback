@@ -31,6 +31,7 @@ func TestArchiveStorage(t *testing.T, store pack.ArchiveStorage) {
 		{"missing file", testMissingFiles},
 		{"list files", testListAllFiles},
 		{"list files filtered", testListSomeFiles},
+		{"list files with sizes and times", testListInfo},
 		{"nested names", testNestedNames},
 		{"create new", testCreateNew},
 		{"test delete all", testDeleteAll},
@@ -138,6 +139,37 @@ func testListAllFiles(t *testing.T, store pack.ArchiveStorage, files []file) {
 	if diff := cmp.Diff(expected, names); diff != "" {
 		t.Error("unexpected list of files")
 		t.Fatal(diff)
+	}
+}
+
+func testListInfo(t *testing.T, store pack.ArchiveStorage, files []file) {
+	lister, ok := store.(pack.InfoLister)
+	if !ok {
+		t.Skip("the store lists names only")
+	}
+
+	listed, err := lister.ListInfo(".goback")
+	require.NoError(t, err)
+
+	names, err := store.List(".goback")
+	require.NoError(t, err)
+	require.Len(t, listed, len(names))
+
+	sizes := make(map[string]int64)
+	for _, f := range files {
+		sizes[path.Base(f.key)] = int64(len(f.data))
+	}
+
+	for _, l := range listed {
+		require.Contains(t, names, l.Name)
+		require.Equal(t, sizes[l.Name], l.Size, l.Name)
+
+		file, err := store.Open(l.Name)
+		require.NoError(t, err)
+		info, err := file.Stat()
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+		require.True(t, info.ModTime().Equal(l.Modified), "%s: listed %s, stored %s", l.Name, l.Modified, info.ModTime())
 	}
 }
 

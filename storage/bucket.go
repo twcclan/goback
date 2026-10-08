@@ -29,6 +29,7 @@ var _ io.WriterTo = (*bucketFile)(nil)
 var _ io.ReaderAt = (*bucketFile)(nil)
 var _ os.FileInfo = (*bucketFileInfo)(nil)
 var _ pack.ArchiveStorage = (*BucketStore)(nil)
+var _ pack.InfoLister = (*BucketStore)(nil)
 
 func (s *bucketFile) Read(buf []byte) (int, error) {
 	s.mtx.Lock()
@@ -359,18 +360,37 @@ func (c *BucketStore) DeleteAll() error {
 
 // List implements pack.ArchiveStorage.
 func (c *BucketStore) List(extension string) ([]string, error) {
+	var names []string
+
+	err := c.list(extension, func(name string, _ *blob.ListObject) {
+		names = append(names, name)
+	})
+
+	return names, err
+}
+
+// ListInfo implements pack.InfoLister.
+func (c *BucketStore) ListInfo(extension string) ([]pack.ListedFile, error) {
+	var files []pack.ListedFile
+
+	err := c.list(extension, func(name string, object *blob.ListObject) {
+		files = append(files, pack.ListedFile{Name: name, Size: object.Size, Modified: object.ModTime})
+	})
+
+	return files, err
+}
+
+func (c *BucketStore) list(extension string, each func(name string, object *blob.ListObject)) error {
 	prefix := blobObjectPrefix
 	if extension != "" {
 		if len(extension) < 2 || extension[0] != '.' {
-			return nil, pack.ErrInvalidExtension
+			return pack.ErrInvalidExtension
 		}
 
 		prefix = fmt.Sprintf(blobObjectKey, extension, "")
 	}
 
-	var names []string
-
-	err := c.pages(prefix, func(object *blob.ListObject) error {
+	return c.pages(prefix, func(object *blob.ListObject) error {
 		// keys are pack/<extension>/<name>; the name may hold slashes
 		name := strings.TrimPrefix(object.Key, blobObjectPrefix)
 		if _, rest, ok := strings.Cut(name, "/"); ok && extension == "" {
@@ -379,12 +399,10 @@ func (c *BucketStore) List(extension string) ([]string, error) {
 			name = strings.TrimPrefix(object.Key, prefix)
 		}
 
-		names = append(names, name)
+		each(name, object)
 
 		return nil
 	})
-
-	return names, err
 }
 
 type bucketFileInfo struct {

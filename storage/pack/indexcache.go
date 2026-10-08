@@ -31,6 +31,7 @@ type indexCache struct {
 var (
 	_ RangeSigner = (*indexCache)(nil)
 	_ Checksummer = (*indexCache)(nil)
+	_ InfoLister  = (*indexCache)(nil)
 )
 
 func (c *indexCache) path(name string) string {
@@ -133,4 +134,9 @@ func (c *indexCache) Checksum(name string) ([]byte, error) {
 	}
 
 	return sums.Checksum(name)
+}
+
+// ListInfo implements InfoLister over the storage underneath.
+func (c *indexCache) ListInfo(extension string) ([]ListedFile, error) {
+	return listInfo(c.ArchiveStorage, extension)
 }

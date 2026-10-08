@@ -77,7 +77,6 @@ const (
 	defaultGCErasureBound = 14 * 24 * time.Hour
 	defaultGCMinAge       = 24 * time.Hour
 	liveRunLimit          = 1 << 20
-	markChunk             = 64
 )
 
 // rootBatch is the number of roots marked between two checkpoints.
@@ -298,6 +297,9 @@ type gcRun struct {
 	untombed   map[refKey]bool
 	oldestCopy map[refKey]Version
 	spent      map[recordAt]bool
+	// blobs are the tombstone targets and pending objects that are blobs,
+	// which the mark adds from a root without reading them
+	blobs map[refKey]bool
 	// horizonEnded is whether every session of the previous horizon has
 	// ended.
 	horizonEnded bool
@@ -321,6 +323,7 @@ func newGCRun(ps *PackStorage, opts CollectOptions, prev *gcState, reads *gcRead
 		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
 		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
 		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
+		blobs:    make(map[refKey]bool),
 		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
 		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
 		setDeduplicatedAlone: make(map[int64]uint64)}
@@ -408,6 +411,9 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 	report.Roots = len(run.roots)
 
+	ps.logger.Info("gc took a snapshot", "generation", run.gen, "archives", report.Archives, "objects", report.Objects,
+		"roots", report.Roots, "untombed", len(run.untombed), "took", time.Since(started).Round(time.Millisecond))
+
 	markStart := time.Now()
 	live, err := run.mark(ctx)
 	if err != nil {
@@ -491,9 +497,12 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 
 	report.SweepSkipped = run.sweepBlocker()
 	if report.SweepSkipped == "" && run.anySelected() {
+		checkStart := time.Now()
 		if err := run.confirmDrops(ctx); err != nil {
 			return nil, err
 		}
+
+		ps.logger.Info("gc confirmed the drops", "generation", run.gen, "took", time.Since(checkStart).Round(time.Millisecond))
 	}
 
 	if report.SweepSkipped == "" && opts.Handoff {
@@ -528,6 +537,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		ps.logger.Info("gc did not sweep", "generation", run.gen, "reason", report.SweepSkipped)
 	}
 
+	purgeStart := time.Now()
 	report.Purged, err = ps.PurgeQuarantine(opts.Quarantine, opts.Now)
 	if err != nil {
 		return nil, errors.Wrap(err, "purging the quarantine")
@@ -537,6 +547,9 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	if err != nil {
 		return nil, errors.Wrap(err, "measuring the quarantine")
 	}
+
+	ps.logger.Info("gc purged the quarantine", "generation", run.gen, "purged", report.Purged,
+		"retired", humanize.Bytes(report.RetiredBytes), "took", time.Since(purgeStart).Round(time.Millisecond))
 
 	report.Duration = time.Since(started)
 
@@ -763,6 +776,7 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 				pendingTombs = append(pendingTombs, placed{a: a, rec: &held})
 			} else {
 				r.pendingAt[keyOf(rec.Sum[:])] = placed{key: keyOf(rec.Sum[:]), a: a, rec: &held}
+				r.noteBlob(rec)
 			}
 
 			return nil
@@ -816,6 +830,7 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 			t := proto.ObjectType(rec.Type)
 			if _, isTarget := r.targets[keyOf(rec.Sum[:])]; isTarget && t != proto.ObjectType_TOMBSTONE {
 				oldestAt(r.oldestCopy, keyOf(rec.Sum[:]), ga.a.version(*rec))
+				r.noteBlob(rec)
 			}
 
 			if t != proto.ObjectType_COMMIT && t != proto.ObjectType_PIN && t != proto.ObjectType_POLICY {
@@ -858,6 +873,12 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	r.spendTombstones(tombOf)
 
 	return ctx.Err()
+}
+
+func (r *gcRun) noteBlob(rec *IndexRecord) {
+	if proto.ObjectType(rec.Type) == proto.ObjectType_BLOB {
+		r.blobs[keyOf(rec.Sum[:])] = true
+	}
 }
 
 // readTombstones reads the headers of the snapshot's tombstones that no
@@ -907,14 +928,7 @@ func (r *gcRun) readHeaders(ctx context.Context, records []placed, missingOK boo
 		at[i] = i
 	}
 
-	sort.Slice(at, func(i, j int) bool {
-		a, b := records[at[i]], records[at[j]]
-		if a.a != b.a {
-			return a.a.name < b.a.name
-		}
-
-		return a.rec.Offset < b.rec.Offset
-	})
+	sort.Slice(at, func(i, j int) bool { return placedBefore(records[at[i]], records[at[j]]) })
 
 	sorted := make([]placed, len(records))
 	for i, from := range at {
@@ -926,50 +940,40 @@ func (r *gcRun) readHeaders(ctx context.Context, records []placed, missingOK boo
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(r.opts.Readers)
 
-	for start := 0; start < len(sorted); {
-		archiveEnd := start + 1
-		for archiveEnd < len(sorted) && sorted[archiveEnd].a == sorted[start].a {
-			archiveEnd++
-		}
+	eachSpan(sorted, func(start, end int, span int64) {
+		run, into := sorted[start:end], at[start:end]
 
-		for start < archiveEnd {
-			end, span := spanOf(sorted[:archiveEnd], start)
-			run, into := sorted[start:end], at[start:end]
+		grp.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
 
-			grp.Go(func() error {
-				if err := gctx.Err(); err != nil {
-					return err
-				}
+			a, from := run[0].a, int64(run[0].rec.Offset)
 
-				a, from := run[0].a, int64(run[0].rec.Offset)
-
-				buf, _, err := a.readSpan(from, span)
-				if missingOK && notExist(err) {
-					return nil
-				}
-
-				if err != nil {
-					return errors.Wrapf(err, "reading %d bytes at %d of %s", span, from, a.name)
-				}
-
-				for i, p := range run {
-					record := buf[int64(p.rec.Offset)-from:][:p.rec.Length]
-					hdrSize, consumed := proto.DecodeVarint(record)
-
-					hdr, err := proto.NewObjectHeaderFromBytes(record[consumed : consumed+int(hdrSize)])
-					if err != nil {
-						return errors.Wrapf(err, "reading the header of %x in %s", p.rec.Sum, a.name)
-					}
-
-					headers[into[i]] = hdr
-				}
-
+			buf, _, err := a.readSpan(from, span)
+			if missingOK && notExist(err) {
 				return nil
-			})
+			}
 
-			start = end
-		}
-	}
+			if err != nil {
+				return errors.Wrapf(err, "reading %d bytes at %d of %s", span, from, a.name)
+			}
+
+			for i, p := range run {
+				record := buf[int64(p.rec.Offset)-from:][:p.rec.Length]
+				hdrSize, consumed := proto.DecodeVarint(record)
+
+				hdr, err := proto.NewObjectHeaderFromBytes(record[consumed : consumed+int(hdrSize)])
+				if err != nil {
+					return errors.Wrapf(err, "reading the header of %x in %s", p.rec.Sum, a.name)
+				}
+
+				headers[into[i]] = hdr
+			}
+
+			return nil
+		})
+	})
 
 	return headers, grp.Wait()
 }
@@ -1145,8 +1149,8 @@ func (r *gcRun) openRunDir(batches [][]gcRoot) (*liveRuns, map[int]bool, error) 
 }
 
 // mark walks breadth-first from the roots, in checkpointed batches, and
-// returns the live refs. Blobs are marked from the File that names them
-// and never read.
+// returns the live refs. Blobs are never read: the File that names one,
+// or a root that is one, marks it.
 func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	sortRoots(r.roots)
 	batches := r.batches()
@@ -1162,7 +1166,15 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	var group int64
 	visited := newVisitedSet()
 
+	started, logged := time.Now(), time.Now()
+
 	for batch, roots := range batches {
+		if time.Since(logged) >= time.Minute {
+			logged = time.Now()
+			r.ps.logger.Info("gc marking", "generation", r.gen, "batch", batch, "of", len(batches),
+				"elapsed", time.Since(started).Round(time.Second))
+		}
+
 		if owner := roots[0].owner; owner.Group != group {
 			group, visited = owner.Group, newVisitedSet()
 		}
@@ -1177,8 +1189,23 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 		bit := visited.bit(roots[0].owner.Set)
 		claim := func(keys []refKey) []refKey { return visited.claim(keys, bit) }
 
-		err := r.markBatch(ctx, claim(keysOf(roots)), claim, live)
-		if err != nil {
+		var blobs []liveRef
+		frontier := claim(keysOf(roots))
+		walked := frontier[:0]
+
+		for _, key := range frontier {
+			if r.blobs[key] {
+				blobs = append(blobs, liveRef{key: key})
+			} else {
+				walked = append(walked, key)
+			}
+		}
+
+		if err := live.add(blobs); err != nil {
+			return nil, err
+		}
+
+		if err := r.markBatch(ctx, walked, claim, live); err != nil {
 			return nil, err
 		}
 
@@ -1196,9 +1223,15 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	return live, nil
 }
 
+// markBatch walks breadth-first from the frontier, reading each run of
+// records that sit close together in an archive at once, up to Readers runs
+// at a time.
 func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]refKey) []refKey, live *liveRuns) error {
 	for len(frontier) > 0 {
-		r.byPlace(frontier)
+		records, err := r.placeAll(ctx, frontier)
+		if err != nil {
+			return err
+		}
 
 		var next []refKey
 		var nextMtx sync.Mutex
@@ -1206,14 +1239,14 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]r
 		grp, gctx := errgroup.WithContext(ctx)
 		grp.SetLimit(r.opts.Readers)
 
-		for start := 0; start < len(frontier); start += markChunk {
-			chunk := frontier[start:min(start+markChunk, len(frontier))]
+		eachSpan(records, func(start, end int, span int64) {
+			run := records[start:end]
 
 			grp.Go(func() error {
 				var children []refKey
 				var found []liveRef
 
-				reads, err := r.readChunk(gctx, chunk)
+				reads, err := r.readSpan(gctx, run, span)
 				if err != nil {
 					return err
 				}
@@ -1236,7 +1269,7 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]r
 
 				return nil
 			})
-		}
+		})
 
 		if err := grp.Wait(); err != nil {
 			return err
@@ -1248,33 +1281,70 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]r
 	return nil
 }
 
-// byPlace orders keys by where the snapshot holds them, so each chunk of
-// the mark reads records that sit together.
-func (r *gcRun) byPlace(keys []refKey) {
-	type at struct {
-		key    refKey
-		name   string
-		offset uint32
-	}
+// placeAll places the keys in archive and offset order, leaving out those
+// with no copy to read. An object that is gone is skipped: a mark cannot
+// mend it, and the sweep will not drop what it never saw.
+func (r *gcRun) placeAll(ctx context.Context, keys []refKey) ([]placed, error) {
+	records := make([]placed, len(keys))
 
-	places := make([]at, len(keys))
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(r.opts.Readers)
+
 	for i, key := range keys {
-		places[i].key = key
 		if p, ok := r.located[key]; ok {
-			places[i].name, places[i].offset = p.a.name, p.rec.Offset
+			records[i] = p
+			continue
 		}
+
+		grp.Go(func() error {
+			p, err := r.place(gctx, key)
+			records[i] = p
+
+			return err
+		})
 	}
 
-	sort.Slice(places, func(i, j int) bool {
-		if places[i].name != places[j].name {
-			return places[i].name < places[j].name
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	found := records[:0]
+	for i, p := range records {
+		if p.rec == nil {
+			r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", keys[i]))
+			continue
 		}
 
-		return places[i].offset < places[j].offset
-	})
+		found = append(found, p)
+	}
 
-	for i := range places {
-		keys[i] = places[i].key
+	sort.Slice(found, func(i, j int) bool { return placedBefore(found[i], found[j]) })
+
+	return found, nil
+}
+
+func placedBefore(a, b placed) bool {
+	if a.a != b.a {
+		return a.a.name < b.a.name
+	}
+
+	return a.rec.Offset < b.rec.Offset
+}
+
+// eachSpan calls fn with each run of the sorted records, from start to
+// end, that sits close together in one archive, and the bytes it covers.
+func eachSpan(sorted []placed, fn func(start, end int, span int64)) {
+	for start := 0; start < len(sorted); {
+		archiveEnd := start + 1
+		for archiveEnd < len(sorted) && sorted[archiveEnd].a == sorted[start].a {
+			archiveEnd++
+		}
+
+		for start < archiveEnd {
+			end, span := spanOf(sorted[:archiveEnd], start)
+			fn(start, end, span)
+			start = end
+		}
 	}
 }
 
@@ -1296,48 +1366,6 @@ type placed struct {
 	key refKey
 	a   *archive
 	rec *IndexRecord
-}
-
-// readChunk reads the objects of the chunk, one ranged read per run of
-// records that sit close together in the same archive. An object that is
-// gone is skipped: a mark cannot mend it, and the sweep will not drop what
-// it never saw.
-func (r *gcRun) readChunk(ctx context.Context, keys []refKey) ([]markRead, error) {
-	byArchive := make(map[string][]placed)
-
-	for _, key := range keys {
-		p, err := r.place(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-
-		if p.rec == nil {
-			r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
-			continue
-		}
-
-		byArchive[p.a.name] = append(byArchive[p.a.name], p)
-	}
-
-	reads := make([]markRead, 0, len(keys))
-
-	for _, records := range byArchive {
-		sort.Slice(records, func(i, j int) bool { return records[i].rec.Offset < records[j].rec.Offset })
-
-		for start := 0; start < len(records); {
-			end, span := spanOf(records, start)
-
-			read, err := r.readSpan(ctx, records[start:end], span)
-			if err != nil {
-				return nil, err
-			}
-
-			reads = append(reads, read...)
-			start = end
-		}
-	}
-
-	return reads, nil
 }
 
 // place finds a copy of the object to read: in the snapshot, or, for one
@@ -1704,7 +1732,12 @@ func (r *gcRun) flagErased(ctx context.Context) error {
 	}, nil)
 }
 
+// writeResults records each archive's mark result beside it, all of them
+// stored when it returns without error.
 func (r *gcRun) writeResults() error {
+	grp := new(errgroup.Group)
+	grp.SetLimit(r.opts.Readers)
+
 	for _, ga := range r.order {
 		next := &gcFile{Generation: r.gen, Snapshot: r.snapshot, Current: ga.cur, Erase: ga.erase}
 
@@ -1741,15 +1774,20 @@ func (r *gcRun) writeResults() error {
 			}
 		}
 
-		if err := writeGCFile(r.ps.storage, ga.a.name, next); err != nil {
-			return errors.Wrapf(err, "writing gc result of %s", ga.a.name)
-		}
-
 		ga.next = next
-		ga.a.setGCResult(next)
+
+		grp.Go(func() error {
+			if err := writeGCFile(r.ps.storage, ga.a.name, next); err != nil {
+				return errors.Wrapf(err, "writing gc result of %s", ga.a.name)
+			}
+
+			ga.a.setGCResult(next)
+
+			return nil
+		})
 	}
 
-	return nil
+	return grp.Wait()
 }
 
 // sweepBlocker returns why this generation must not sweep, or "".

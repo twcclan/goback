@@ -112,6 +112,20 @@ func (b *memBucket) List(extension string) ([]string, error) {
 	return names, nil
 }
 
+func (b *memBucket) ListInfo(extension string) ([]ListedFile, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
+	var files []ListedFile
+	for name, obj := range b.files {
+		if strings.HasSuffix(name, extension) {
+			files = append(files, ListedFile{Name: name, Size: int64(len(obj.data)), Modified: obj.created})
+		}
+	}
+
+	return files, nil
+}
+
 func (b *memBucket) Delete(name string) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()

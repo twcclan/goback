@@ -256,3 +256,108 @@ func TestTheCheckBeforeASweepHaltsOnAPinStoredAfterTheSnapshot(t *testing.T) {
 	require.ErrorIs(t, err, ErrHalted)
 	requireStored(t, store, chain[:len(chain)-1], true)
 }
+
+func owned(r *gcRun) {
+	r.opts.Owner = func(root []byte) Attribution {
+		return Attribution{Group: 1 + int64(root[0]%2), Set: 1 + int64(root[0]%3)}
+	}
+}
+
+// requireSameMark marks both runs and requires them to mark, condemn and
+// attribute the same.
+func requireSameMark(t *testing.T, want, got *gcRun) {
+	t.Helper()
+
+	gotMarked, gotCondemned := markOf(t, got)
+	wantMarked, wantCondemned := markOf(t, want)
+	require.Equal(t, wantMarked, gotMarked)
+	require.Equal(t, wantCondemned, gotCondemned)
+	require.Equal(t, want.setBytes, got.setBytes)
+	require.Equal(t, want.setDeduplicated, got.setDeduplicated)
+	require.Equal(t, want.setAlone, got.setAlone)
+	require.Equal(t, want.setExclusive, got.setExclusive)
+	require.Equal(t, want.setDeduplicatedAlone, got.setDeduplicatedAlone)
+	require.Equal(t, want.unattributed, got.unattributed)
+}
+
+// markBlobRootsBothWays marks the store's snapshot adding the blobs among
+// the roots unread, and again reading them, and requires the same outcome;
+// it returns how many roots were blobs.
+func markBlobRootsBothWays(t *testing.T, store *PackStorage) int {
+	t.Helper()
+
+	unread := snapshotRun(t, store, owned)
+	read := snapshotRun(t, store, owned)
+	read.blobs = make(map[refKey]bool)
+
+	blobRoots := 0
+	for _, root := range unread.roots {
+		if unread.blobs[root.key] {
+			blobRoots++
+		}
+	}
+
+	requireSameMark(t, read, unread)
+
+	return blobRoots
+}
+
+func TestUnreadBlobRootsMarkWhatReadingThemDoes(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	putAll(t, store, makeChain(makeTestData(t, 20)))
+
+	// condemned, so the session that commits over them takes them back
+	blobs := makeTestData(t, 10)
+	putAll(t, store, blobs)
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	chain := makeChain(blobs)
+	own := chain[len(blobs):]
+	sctx, _ := beginSession(t, store, "agent-a")
+	for _, obj := range own[:len(own)-1] {
+		require.NoError(t, store.Put(sctx, obj))
+	}
+
+	pending := 0
+	commitAfterResurrect = func() {
+		commitAfterResurrect = nil
+		pending = markBlobRootsBothWays(t, store)
+	}
+	t.Cleanup(func() { commitAfterResurrect = nil })
+
+	require.NoError(t, store.Put(sctx, own[len(own)-1]))
+	require.Equal(t, len(blobs), pending, "a live session's un-tombstones root the blobs")
+
+	require.Equal(t, len(blobs), markBlobRootsBothWays(t, store), "a committed session's un-tombstones root the blobs")
+}
+
+func TestReadingSpansInParallelMarksWhatReadingThemInTurnDoes(t *testing.T) {
+	store := newGCStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	for range 4 {
+		putAll(t, store, makeChain(makeTestData(t, 30)))
+	}
+	retiredChain(t, store)
+
+	_, err := store.Collect(ctx, gcOptions(t, 0))
+	require.NoError(t, err)
+
+	inTurn := snapshotRun(t, store, func(r *gcRun) {
+		owned(r)
+		r.opts.Readers = 1
+	})
+	parallel := snapshotRun(t, store, func(r *gcRun) {
+		owned(r)
+		r.opts.Readers = 32
+	})
+	require.Greater(t, len(parallel.order), 4)
+
+	requireSameMark(t, inTurn, parallel)
+}

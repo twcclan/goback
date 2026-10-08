@@ -2,6 +2,7 @@ package pack
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -91,4 +92,69 @@ func TestRestoringAQuarantinedArchiveBringsItsObjectsBack(t *testing.T) {
 
 	requireStored(t, store, gone, true)
 	require.ErrorIs(t, store.RestoreQuarantined("no-such-archive"), ErrNotQuarantined)
+}
+
+func TestThePurgeGoesByTheDayAMarkerNamesAndNeverBeforeItWasStored(t *testing.T) {
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	due := day.Add(DefaultQuarantine + 24*time.Hour)
+
+	type marker struct {
+		names, stored time.Time
+	}
+
+	markers := map[string]marker{
+		"same-day":     {names: day, stored: day.Add(23*time.Hour + 59*time.Minute)},
+		"stored-later": {names: day, stored: day.Add(24*time.Hour + time.Minute)},
+		"named-ahead":  {names: day.Add(24 * time.Hour), stored: day.Add(24*time.Hour - time.Second)},
+	}
+
+	open := func() (*PackStorage, *memBucket) {
+		bucket := newMemBucket()
+		store, err := NewPackStorage(WithArchiveStorage(bucket.view()), WithArchiveIndex(NewInMemoryIndex()))
+		require.NoError(t, err)
+		require.NoError(t, store.Open())
+		t.Cleanup(func() { _ = store.Close() })
+
+		for name, m := range markers {
+			bucket.files[name+RetiredExt] = memObject{data: []byte(m.names.Format(quarantineDay)), created: m.stored}
+			bucket.files[name+ArchiveSuffix] = memObject{data: make([]byte, len(name)), created: m.stored}
+		}
+		bucket.files["live"+ArchiveSuffix] = memObject{data: make([]byte, 1000), created: day}
+
+		return store, bucket
+	}
+
+	store, bucket := open()
+	retired, err := store.retiredBytes()
+	require.NoError(t, err)
+	require.Equal(t, uint64(len("same-day")+len("stored-later")+len("named-ahead")), retired)
+
+	listed, err := bucket.ListInfo(RetiredExt)
+	require.NoError(t, err)
+	opened, err := listInfo(&indexCounting{ArchiveStorage: bucket.view()}, RetiredExt)
+	require.NoError(t, err)
+	require.ElementsMatch(t, listed, opened, "a storage that cannot list sizes and times has each file opened")
+
+	for _, tc := range []struct {
+		now    time.Time
+		purged []string
+	}{
+		{now: due.Add(-time.Nanosecond)},
+		{now: due, purged: []string{"same-day"}},
+		{now: due.Add(24*time.Hour - time.Nanosecond), purged: []string{"same-day"}},
+		{now: due.Add(24 * time.Hour), purged: []string{"same-day", "stored-later", "named-ahead"}},
+	} {
+		store, bucket := open()
+
+		purged, err := store.PurgeQuarantine(DefaultQuarantine, tc.now)
+		require.NoError(t, err)
+		require.Equal(t, len(tc.purged), purged, "at %s", tc.now)
+
+		for name := range markers {
+			_, kept := bucket.files[name+RetiredExt]
+			_, archiveKept := bucket.files[name+ArchiveSuffix]
+			require.Equal(t, !slices.Contains(tc.purged, name), kept, "%s at %s", name, tc.now)
+			require.Equal(t, kept, archiveKept, "%s at %s", name, tc.now)
+		}
+	}
 }
