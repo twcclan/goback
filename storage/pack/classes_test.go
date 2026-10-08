@@ -119,6 +119,15 @@ func testSetsApart(t *testing.T, handoff bool) {
 	_, err = store.Collect(ctx, opts)
 	require.NoError(t, err)
 
+	// an archive the shuffle filled with live objects alone holds nothing
+	// to sweep, so it keeps whatever sets it was written with
+	unswept := make(map[string]bool)
+	store.mtx.RLock()
+	for _, a := range store.archives {
+		unswept[a.name] = true
+	}
+	store.mtx.RUnlock()
+
 	opts.Now = opts.Now.Add(48 * time.Hour)
 	opts.TempDir = t.TempDir()
 	opts.Handoff = handoff
@@ -145,6 +154,10 @@ func testSetsApart(t *testing.T, handoff bool) {
 	defer store.mtx.RUnlock()
 
 	for _, a := range store.archives {
+		if unswept[a.name] {
+			continue
+		}
+
 		idx, err := a.getIndex()
 		require.NoError(t, err)
 
