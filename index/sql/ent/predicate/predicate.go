@@ -44,3 +44,6 @@ type Settings func(*sql.Selector)
 
 // Tree is the predicate function for tree builders.
 type Tree func(*sql.Selector)
+
+// WalkedArchive is the predicate function for walkedarchive builders.
+type WalkedArchive func(*sql.Selector)

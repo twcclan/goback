@@ -40,6 +40,8 @@ type Tx struct {
 	Settings *SettingsClient
 	// Tree is the client for interacting with the Tree builders.
 	Tree *TreeClient
+	// WalkedArchive is the client for interacting with the WalkedArchive builders.
+	WalkedArchive *WalkedArchiveClient
 
 	// lazily loaded.
 	client     *Client
@@ -184,6 +186,7 @@ func (tx *Tx) init() {
 	tx.SetRef = NewSetRefClient(tx.config)
 	tx.Settings = NewSettingsClient(tx.config)
 	tx.Tree = NewTreeClient(tx.config)
+	tx.WalkedArchive = NewWalkedArchiveClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

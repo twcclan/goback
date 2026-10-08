@@ -165,6 +165,18 @@ func (f TreeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TreeMutation", m)
 }
 
+// The WalkedArchiveFunc type is an adapter to allow the use of ordinary
+// function as WalkedArchive mutator.
+type WalkedArchiveFunc func(context.Context, *ent.WalkedArchiveMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f WalkedArchiveFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.WalkedArchiveMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.WalkedArchiveMutation", m)
+}
+
 // Condition is a hook condition function.
 type Condition func(context.Context, ent.Mutation) bool
 

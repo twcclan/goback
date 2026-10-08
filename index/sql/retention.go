@@ -19,6 +19,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/tree"
+	"github.com/twcclan/goback/index/sql/ent/walkedarchive"
 	"github.com/twcclan/goback/proto"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -812,10 +813,13 @@ func retiredOf(row *ent.CommitRow, setName string) (index.Retired, error) {
 	return r, nil
 }
 
-// storedPins indexes every pin in the store that holds a commit of an
-// active set due for its tombstone, and returns those commits. The index
-// may have missed a pin, restored from a copy older than it, and what the
-// store holds is what counts, unpins included.
+// storedPins indexes the pins in the store the index lacks, unpinned ones
+// left out, and returns the commits of active sets due for their tombstone
+// that a stored pin holds. The index may have missed a pin, restored from
+// a copy older than the store, and what the store holds is what counts.
+// Archives walked_archives names are not read again: their pins were
+// indexed before the row was written, so a copy of the index that has the
+// row has the pins too.
 func (x *Index) storedPins(ctx context.Context, due []*ent.CommitRow) (map[string]bool, error) {
 	targets := make(map[string]bool, len(due))
 	for _, c := range due {
@@ -828,47 +832,190 @@ func (x *Index) storedPins(ctx context.Context, due []*ent.CommitRow) (map[strin
 		return nil, nil
 	}
 
-	unpinned := map[string]bool{}
+	var found []*proto.Object
 
-	if hw, ok := storeAs[backup.HeaderWalker](x.ObjectStore); ok {
-		err := hw.WalkHeaders(ctx, proto.ObjectType_TOMBSTONE, func(hdr *proto.ObjectHeader) error {
-			unpinned[string(hdr.GetTombstoneFor().GetHash())] = true
-			return nil
-		})
-		if err != nil && !errors.Is(err, backup.ErrNotImplemented) {
+	collect := func(obj *proto.Object) error {
+		found = append(found, obj)
+		return nil
+	}
+
+	walker, incremental := storeAs[backup.ArchiveWalker](x.ObjectStore)
+
+	var (
+		known  map[string]bool
+		walked []string
+		err    error
+	)
+
+	if incremental {
+		known, err = x.walkedArchives(ctx)
+		if err != nil {
 			return nil, err
 		}
+
+		walked, err = walker.WalkArchives(ctx, proto.ObjectType_PIN, func(name string) bool { return known[name] }, collect)
+	} else {
+		err = x.ObjectStore.Walk(ctx, true, proto.ObjectType_PIN, collect)
 	}
 
+	if errors.Is(err, backup.ErrNotImplemented) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	pinned, err := x.indexStoredPins(ctx, found, targets)
+	if err != nil || !incremental {
+		return pinned, err
+	}
+
+	return pinned, x.recordWalked(ctx, known, walked)
+}
+
+// indexStoredPins indexes those of pins the index lacks or that hold one
+// of targets, unless the index or the store has them unpinned, and returns
+// the targets they hold.
+func (x *Index) indexStoredPins(ctx context.Context, pins []*proto.Object, targets map[string]bool) (map[string]bool, error) {
 	pinned := map[string]bool{}
 
-	err := x.ObjectStore.Walk(ctx, true, proto.ObjectType_PIN, func(obj *proto.Object) error {
-		target := obj.GetPin().GetTarget().GetHash()
-		ref := obj.Ref()
+	for start := 0; start < len(pins); start += retireBatch {
+		chunk := pins[start:min(start+retireBatch, len(pins))]
 
-		if !targets[string(target)] || unpinned[string(ref.Hash)] {
-			return nil
+		hashes := make([][]byte, len(chunk))
+		for i, obj := range chunk {
+			hashes[i] = obj.Ref().Hash
 		}
 
-		gone, err := isDeleted(ctx, x.client, ref.Hash)
-		if err != nil || gone {
-			return err
+		rows, err := x.client.Pin.Query().Where(pin.RefIn(hashes...)).Select(pin.FieldRef, pin.FieldDeletedAt).All(ctx)
+		if err != nil {
+			return nil, err
 		}
 
-		gone, err = x.client.Pin.Query().Where(pin.Ref(ref.Hash), pin.DeletedAtNotNil()).Exist(ctx)
-		if err != nil || gone {
-			return err
+		indexed := make(map[string]bool, len(rows))
+		unpinned := make(map[string]bool)
+
+		for _, row := range rows {
+			indexed[string(row.Ref)] = true
+			unpinned[string(row.Ref)] = row.DeletedAt != nil
 		}
 
-		pinned[string(target)] = true
+		deleted, err := x.client.DeletedRef.Query().Where(deletedref.RefIn(hashes...)).Select(deletedref.FieldRef).All(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-		return x.indexPin(ctx, obj.GetPin(), ref, false)
-	})
-	if errors.Is(err, backup.ErrNotImplemented) {
-		return pinned, nil
+		for _, row := range deleted {
+			unpinned[string(row.Ref)] = true
+		}
+
+		var (
+			candidates []*proto.Object
+			refs       []*proto.Ref
+		)
+
+		for _, obj := range chunk {
+			ref := obj.Ref()
+			target := obj.GetPin().GetTarget().GetHash()
+
+			if unpinned[string(ref.Hash)] || (indexed[string(ref.Hash)] && !targets[string(target)]) {
+				continue
+			}
+
+			candidates = append(candidates, obj)
+			refs = append(refs, ref)
+		}
+
+		if len(candidates) == 0 {
+			continue
+		}
+
+		// an unpin's tombstone outranks the pin wherever it is stored
+		present, err := backup.HasAll(ctx, x.ObjectStore, refs)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, obj := range candidates {
+			if !present[i] {
+				continue
+			}
+
+			target := obj.GetPin().GetTarget().GetHash()
+			if targets[string(target)] {
+				pinned[string(target)] = true
+			}
+
+			if err := x.indexPin(ctx, obj.GetPin(), refs[i], false); err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	return pinned, err
+	return pinned, nil
+}
+
+// walkedArchives returns the names walked_archives holds.
+func (x *Index) walkedArchives(ctx context.Context) (map[string]bool, error) {
+	names, err := x.client.WalkedArchive.Query().IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	known := make(map[string]bool, len(names))
+	for _, name := range names {
+		known[name] = true
+	}
+
+	return known, nil
+}
+
+// recordWalked makes walked_archives name the archives of walked, given
+// known, what it named before.
+func (x *Index) recordWalked(ctx context.Context, known map[string]bool, walked []string) error {
+	current := make(map[string]bool, len(walked))
+
+	var added []string
+
+	for _, name := range walked {
+		current[name] = true
+
+		if !known[name] {
+			added = append(added, name)
+		}
+	}
+
+	var gone []string
+
+	for name := range known {
+		if !current[name] {
+			gone = append(gone, name)
+		}
+	}
+
+	for start := 0; start < len(added); start += retireBatch {
+		chunk := added[start:min(start+retireBatch, len(added))]
+
+		creates := make([]*ent.WalkedArchiveCreate, len(chunk))
+		for i, name := range chunk {
+			creates[i] = x.client.WalkedArchive.Create().SetID(name)
+		}
+
+		err := ignoreNoRows(x.client.WalkedArchive.CreateBulk(creates...).OnConflict().DoNothing().Exec(ctx))
+		if err != nil {
+			return err
+		}
+	}
+
+	for start := 0; start < len(gone); start += retireBatch {
+		_, err := x.client.WalkedArchive.Delete().Where(walkedarchive.IDIn(gone[start:min(start+retireBatch, len(gone))]...)).Exec(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // restoreLeases returns the refs live restore sessions hold.

@@ -841,17 +841,6 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 	ps.mtx.RLock()
 	defer ps.mtx.RUnlock()
 
-	var pred loadPredicate
-
-	switch {
-	case !load:
-		pred = loadNone
-	case load && t == proto.ObjectType_INVALID:
-		pred = loadAll
-	case load && t != proto.ObjectType_INVALID:
-		pred = loadType(t)
-	}
-
 	for _, archive := range ps.archives {
 		archive.mtx.RLock()
 		pending := archive.state == ArchivePending
@@ -861,44 +850,98 @@ func (ps *PackStorage) Walk(ctx context.Context, load bool, t proto.ObjectType, 
 			continue
 		}
 
-		visit := func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
-			if t == proto.ObjectType_INVALID || hdr.Type == t {
-				var obj *proto.Object
-				var err error
-
-				if load {
-					obj, err = proto.ObjectFromStored(hdr, bytes)
-					if err != nil {
-						return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, archive.name)
-					}
-				}
-
-				return fn(obj)
-			}
-
-			return nil
-		}
-
-		if t != proto.ObjectType_INVALID {
-			typed, err := archive.foreachOfType(t, load, visit)
-			if err != nil {
-				return err
-			}
-
-			if typed {
-				continue
-			}
-		}
-
-		ps.logger.Debug("reading archive", "archive", archive.name)
-
-		err := archive.foreach(pred, visit)
-		if err != nil {
+		if err := ps.walkArchive(archive, load, t, fn); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+var _ backup.ArchiveWalker = (*PackStorage)(nil)
+
+// WalkArchives implements backup.ArchiveWalker. An archive still open to
+// writes is walked but not named.
+func (ps *PackStorage) WalkArchives(ctx context.Context, t proto.ObjectType, skip func(string) bool, fn backup.ObjectReceiver) ([]string, error) {
+	ps.mtx.RLock()
+	defer ps.mtx.RUnlock()
+
+	var names []string
+
+	for _, archive := range ps.archives {
+		archive.mtx.RLock()
+		state, final := archive.state, archive.readOnly
+		archive.mtx.RUnlock()
+
+		if state == ArchivePending {
+			continue
+		}
+
+		final = final && state == ArchiveCommitted
+
+		if final && skip(archive.name) {
+			names = append(names, archive.name)
+			continue
+		}
+
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		if err := ps.walkArchive(archive, true, t, fn); err != nil {
+			return nil, err
+		}
+
+		if final {
+			names = append(names, archive.name)
+		}
+	}
+
+	return names, nil
+}
+
+// walkArchive is Walk over one archive.
+func (ps *PackStorage) walkArchive(archive *archive, load bool, t proto.ObjectType, fn backup.ObjectReceiver) error {
+	var pred loadPredicate
+
+	switch {
+	case !load:
+		pred = loadNone
+	case t == proto.ObjectType_INVALID:
+		pred = loadAll
+	default:
+		pred = loadType(t)
+	}
+
+	visit := func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+		if t != proto.ObjectType_INVALID && hdr.Type != t {
+			return nil
+		}
+
+		var obj *proto.Object
+
+		if load {
+			var err error
+
+			obj, err = proto.ObjectFromStored(hdr, bytes)
+			if err != nil {
+				return errors.Wrapf(err, "object %x in archive %s", hdr.Ref.Hash, archive.name)
+			}
+		}
+
+		return fn(obj)
+	}
+
+	if t != proto.ObjectType_INVALID {
+		typed, err := archive.foreachOfType(t, load, visit)
+		if err != nil || typed {
+			return err
+		}
+	}
+
+	ps.logger.Debug("reading archive", "archive", archive.name)
+
+	return archive.foreach(pred, visit)
 }
 
 func (ps *PackStorage) unloadArchive(a *archive) {

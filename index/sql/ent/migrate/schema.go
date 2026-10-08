@@ -452,6 +452,16 @@ var (
 			},
 		},
 	}
+	// WalkedArchivesColumns holds the columns for the "walked_archives" table.
+	WalkedArchivesColumns = []*schema.Column{
+		{Name: "name", Type: field.TypeString},
+	}
+	// WalkedArchivesTable holds the schema information for the "walked_archives" table.
+	WalkedArchivesTable = &schema.Table{
+		Name:       "walked_archives",
+		Columns:    WalkedArchivesColumns,
+		PrimaryKey: []*schema.Column{WalkedArchivesColumns[0]},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		ArchivesTable,
@@ -467,6 +477,7 @@ var (
 		SetRefsTable,
 		SettingsTable,
 		TreesTable,
+		WalkedArchivesTable,
 	}
 )
 

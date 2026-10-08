@@ -111,6 +111,24 @@ func (m *memStore) Has(_ context.Context, ref *proto.Ref) (bool, error) {
 	return ok, nil
 }
 
+// HasAll answers as a pack store does, unlike Has: an object tombstoned
+// and not revived is absent.
+func (m *memStore) HasAll(_ context.Context, refs []*proto.Ref) ([]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	has := make([]bool, len(refs))
+	for i, ref := range refs {
+		m.asked[string(ref.Hash)]++
+		_, ok := m.objects[string(ref.Hash)]
+		_, tombstoned := m.tombstones[string(ref.Hash)]
+		_, revived := m.revived[string(ref.Hash)]
+		has[i] = ok && (!tombstoned || revived)
+	}
+
+	return has, nil
+}
+
 func (m *memStore) Delete(_ context.Context, ref *proto.Ref) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

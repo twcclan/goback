@@ -113,3 +113,15 @@ func (Reindex) Fields() []ent.Field {
 func (Reindex) Annotations() []schema.Annotation {
 	return []schema.Annotation{entsql.Table("reindexes")}
 }
+
+// WalkedArchive names a finished archive whose pins the index holds.
+type WalkedArchive struct {
+	ent.Schema
+}
+
+// Fields of WalkedArchive.
+func (WalkedArchive) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("id").StorageKey("name"),
+	}
+}

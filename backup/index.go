@@ -69,6 +69,15 @@ type HeaderWalker interface {
 	WalkHeaders(ctx context.Context, t proto.ObjectType, fn func(*proto.ObjectHeader) error) error
 }
 
+// ArchiveWalker is implemented by stores that keep objects in archives
+// which, once finished, never change and whose names are never reused.
+type ArchiveWalker interface {
+	// WalkArchives calls fn with every object of type t, loaded, in the
+	// archives but the finished ones skip reports true for, and returns
+	// the names of all the finished archives it walked or skipped.
+	WalkArchives(ctx context.Context, t proto.ObjectType, skip func(archive string) bool, fn ObjectReceiver) ([]string, error)
+}
+
 // RefScope is implemented by indexes that know which commit, tree and
 // file refs the store's sets reach.
 type RefScope interface {

@@ -1062,6 +1062,10 @@ func (x *Index) ReIndex(ctx context.Context) (backup.ReIndexReport, error) {
 }
 
 func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error {
+	if _, err := x.client.WalkedArchive.Delete().Exec(ctx); err != nil {
+		return err
+	}
+
 	// sets that lose a commit to a tombstone this database had not seen
 	touched := map[int64][][]byte{}
 

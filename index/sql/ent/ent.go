@@ -25,6 +25,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/settings"
 	"github.com/twcclan/goback/index/sql/ent/tree"
+	"github.com/twcclan/goback/index/sql/ent/walkedarchive"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -85,19 +86,20 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			archive.Table:     archive.ValidColumn,
-			commitrow.Table:   commitrow.ValidColumn,
-			damagedpath.Table: damagedpath.ValidColumn,
-			deletedref.Table:  deletedref.ValidColumn,
-			file.Table:        file.ValidColumn,
-			object.Table:      object.ValidColumn,
-			pin.Table:         pin.ValidColumn,
-			reindex.Table:     reindex.ValidColumn,
-			session.Table:     session.ValidColumn,
-			set.Table:         set.ValidColumn,
-			setref.Table:      setref.ValidColumn,
-			settings.Table:    settings.ValidColumn,
-			tree.Table:        tree.ValidColumn,
+			archive.Table:       archive.ValidColumn,
+			commitrow.Table:     commitrow.ValidColumn,
+			damagedpath.Table:   damagedpath.ValidColumn,
+			deletedref.Table:    deletedref.ValidColumn,
+			file.Table:          file.ValidColumn,
+			object.Table:        object.ValidColumn,
+			pin.Table:           pin.ValidColumn,
+			reindex.Table:       reindex.ValidColumn,
+			session.Table:       session.ValidColumn,
+			set.Table:           set.ValidColumn,
+			setref.Table:        setref.ValidColumn,
+			settings.Table:      settings.ValidColumn,
+			tree.Table:          tree.ValidColumn,
+			walkedarchive.Table: walkedarchive.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

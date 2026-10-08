@@ -28,6 +28,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/index/sql/ent/settings"
 	"github.com/twcclan/goback/index/sql/ent/tree"
+	"github.com/twcclan/goback/index/sql/ent/walkedarchive"
 
 	stdsql "database/sql"
 )
@@ -63,6 +64,8 @@ type Client struct {
 	Settings *SettingsClient
 	// Tree is the client for interacting with the Tree builders.
 	Tree *TreeClient
+	// WalkedArchive is the client for interacting with the WalkedArchive builders.
+	WalkedArchive *WalkedArchiveClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -87,6 +90,7 @@ func (c *Client) init() {
 	c.SetRef = NewSetRefClient(c.config)
 	c.Settings = NewSettingsClient(c.config)
 	c.Tree = NewTreeClient(c.config)
+	c.WalkedArchive = NewWalkedArchiveClient(c.config)
 }
 
 type (
@@ -177,21 +181,22 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		Archive:     NewArchiveClient(cfg),
-		CommitRow:   NewCommitRowClient(cfg),
-		DamagedPath: NewDamagedPathClient(cfg),
-		DeletedRef:  NewDeletedRefClient(cfg),
-		File:        NewFileClient(cfg),
-		Object:      NewObjectClient(cfg),
-		Pin:         NewPinClient(cfg),
-		Reindex:     NewReindexClient(cfg),
-		Session:     NewSessionClient(cfg),
-		Set:         NewSetClient(cfg),
-		SetRef:      NewSetRefClient(cfg),
-		Settings:    NewSettingsClient(cfg),
-		Tree:        NewTreeClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		Archive:       NewArchiveClient(cfg),
+		CommitRow:     NewCommitRowClient(cfg),
+		DamagedPath:   NewDamagedPathClient(cfg),
+		DeletedRef:    NewDeletedRefClient(cfg),
+		File:          NewFileClient(cfg),
+		Object:        NewObjectClient(cfg),
+		Pin:           NewPinClient(cfg),
+		Reindex:       NewReindexClient(cfg),
+		Session:       NewSessionClient(cfg),
+		Set:           NewSetClient(cfg),
+		SetRef:        NewSetRefClient(cfg),
+		Settings:      NewSettingsClient(cfg),
+		Tree:          NewTreeClient(cfg),
+		WalkedArchive: NewWalkedArchiveClient(cfg),
 	}, nil
 }
 
@@ -209,21 +214,22 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		Archive:     NewArchiveClient(cfg),
-		CommitRow:   NewCommitRowClient(cfg),
-		DamagedPath: NewDamagedPathClient(cfg),
-		DeletedRef:  NewDeletedRefClient(cfg),
-		File:        NewFileClient(cfg),
-		Object:      NewObjectClient(cfg),
-		Pin:         NewPinClient(cfg),
-		Reindex:     NewReindexClient(cfg),
-		Session:     NewSessionClient(cfg),
-		Set:         NewSetClient(cfg),
-		SetRef:      NewSetRefClient(cfg),
-		Settings:    NewSettingsClient(cfg),
-		Tree:        NewTreeClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		Archive:       NewArchiveClient(cfg),
+		CommitRow:     NewCommitRowClient(cfg),
+		DamagedPath:   NewDamagedPathClient(cfg),
+		DeletedRef:    NewDeletedRefClient(cfg),
+		File:          NewFileClient(cfg),
+		Object:        NewObjectClient(cfg),
+		Pin:           NewPinClient(cfg),
+		Reindex:       NewReindexClient(cfg),
+		Session:       NewSessionClient(cfg),
+		Set:           NewSetClient(cfg),
+		SetRef:        NewSetRefClient(cfg),
+		Settings:      NewSettingsClient(cfg),
+		Tree:          NewTreeClient(cfg),
+		WalkedArchive: NewWalkedArchiveClient(cfg),
 	}, nil
 }
 
@@ -254,7 +260,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.Archive, c.CommitRow, c.DamagedPath, c.DeletedRef, c.File, c.Object, c.Pin,
-		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
+		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree, c.WalkedArchive,
 	} {
 		n.Use(hooks...)
 	}
@@ -265,7 +271,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.Archive, c.CommitRow, c.DamagedPath, c.DeletedRef, c.File, c.Object, c.Pin,
-		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree,
+		c.Reindex, c.Session, c.Set, c.SetRef, c.Settings, c.Tree, c.WalkedArchive,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -300,6 +306,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Settings.mutate(ctx, m)
 	case *TreeMutation:
 		return c.Tree.mutate(ctx, m)
+	case *WalkedArchiveMutation:
+		return c.WalkedArchive.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -2242,15 +2250,148 @@ func (c *TreeClient) mutate(ctx context.Context, m *TreeMutation) (Value, error)
 	}
 }
 
+// WalkedArchiveClient is a client for the WalkedArchive schema.
+type WalkedArchiveClient struct {
+	config
+}
+
+// NewWalkedArchiveClient returns a client for the WalkedArchive from the given config.
+func NewWalkedArchiveClient(c config) *WalkedArchiveClient {
+	return &WalkedArchiveClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `walkedarchive.Hooks(f(g(h())))`.
+func (c *WalkedArchiveClient) Use(hooks ...Hook) {
+	c.hooks.WalkedArchive = append(c.hooks.WalkedArchive, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `walkedarchive.Intercept(f(g(h())))`.
+func (c *WalkedArchiveClient) Intercept(interceptors ...Interceptor) {
+	c.inters.WalkedArchive = append(c.inters.WalkedArchive, interceptors...)
+}
+
+// Create returns a builder for creating a WalkedArchive entity.
+func (c *WalkedArchiveClient) Create() *WalkedArchiveCreate {
+	mutation := newWalkedArchiveMutation(c.config, OpCreate)
+	return &WalkedArchiveCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of WalkedArchive entities.
+func (c *WalkedArchiveClient) CreateBulk(builders ...*WalkedArchiveCreate) *WalkedArchiveCreateBulk {
+	return &WalkedArchiveCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *WalkedArchiveClient) MapCreateBulk(slice any, setFunc func(*WalkedArchiveCreate, int)) *WalkedArchiveCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &WalkedArchiveCreateBulk{err: fmt.Errorf("calling to WalkedArchiveClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*WalkedArchiveCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &WalkedArchiveCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for WalkedArchive.
+func (c *WalkedArchiveClient) Update() *WalkedArchiveUpdate {
+	mutation := newWalkedArchiveMutation(c.config, OpUpdate)
+	return &WalkedArchiveUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *WalkedArchiveClient) UpdateOne(_m *WalkedArchive) *WalkedArchiveUpdateOne {
+	mutation := newWalkedArchiveMutation(c.config, OpUpdateOne, withWalkedArchive(_m))
+	return &WalkedArchiveUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *WalkedArchiveClient) UpdateOneID(id string) *WalkedArchiveUpdateOne {
+	mutation := newWalkedArchiveMutation(c.config, OpUpdateOne, withWalkedArchiveID(id))
+	return &WalkedArchiveUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for WalkedArchive.
+func (c *WalkedArchiveClient) Delete() *WalkedArchiveDelete {
+	mutation := newWalkedArchiveMutation(c.config, OpDelete)
+	return &WalkedArchiveDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *WalkedArchiveClient) DeleteOne(_m *WalkedArchive) *WalkedArchiveDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *WalkedArchiveClient) DeleteOneID(id string) *WalkedArchiveDeleteOne {
+	builder := c.Delete().Where(walkedarchive.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &WalkedArchiveDeleteOne{builder}
+}
+
+// Query returns a query builder for WalkedArchive.
+func (c *WalkedArchiveClient) Query() *WalkedArchiveQuery {
+	return &WalkedArchiveQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeWalkedArchive},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a WalkedArchive entity by its id.
+func (c *WalkedArchiveClient) Get(ctx context.Context, id string) (*WalkedArchive, error) {
+	return c.Query().Where(walkedarchive.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *WalkedArchiveClient) GetX(ctx context.Context, id string) *WalkedArchive {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *WalkedArchiveClient) Hooks() []Hook {
+	return c.hooks.WalkedArchive
+}
+
+// Interceptors returns the client interceptors.
+func (c *WalkedArchiveClient) Interceptors() []Interceptor {
+	return c.inters.WalkedArchive
+}
+
+func (c *WalkedArchiveClient) mutate(ctx context.Context, m *WalkedArchiveMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&WalkedArchiveCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&WalkedArchiveUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&WalkedArchiveUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&WalkedArchiveDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown WalkedArchive mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
 		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Reindex,
-		Session, Set, SetRef, Settings, Tree []ent.Hook
+		Session, Set, SetRef, Settings, Tree, WalkedArchive []ent.Hook
 	}
 	inters struct {
 		Archive, CommitRow, DamagedPath, DeletedRef, File, Object, Pin, Reindex,
-		Session, Set, SetRef, Settings, Tree []ent.Interceptor
+		Session, Set, SetRef, Settings, Tree, WalkedArchive []ent.Interceptor
 	}
 )
 
