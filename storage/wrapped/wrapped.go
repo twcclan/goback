@@ -1,7 +1,7 @@
 package wrapped
 
 import (
-	"github.com/twcclan/goback/backup"
+	"github.com/gobackio/goback/backup"
 )
 
 // Wrapper is a store layered over another store.

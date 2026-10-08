@@ -12,7 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/reindex"
+	"github.com/gobackio/goback/index/sql/ent/reindex"
 )
 
 // ReindexCreate is the builder for creating a Reindex entity.

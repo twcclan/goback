@@ -9,12 +9,12 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/hooks"
-	"github.com/twcclan/goback/backup/statcache"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/storage/badger"
-	"github.com/twcclan/goback/storage/cache"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/hooks"
+	"github.com/gobackio/goback/backup/statcache"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/storage/badger"
+	"github.com/gobackio/goback/storage/cache"
 
 	"github.com/bmatcuk/doublestar"
 	"github.com/dustin/go-humanize"

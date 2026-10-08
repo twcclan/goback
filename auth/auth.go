@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"sync"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // DefaultWindowBytes bounds the chunk bytes an agent keeps for files whose

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // Session is one backup or restore run of an agent against a set. Objects

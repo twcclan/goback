@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"

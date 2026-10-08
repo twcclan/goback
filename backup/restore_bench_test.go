@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 )

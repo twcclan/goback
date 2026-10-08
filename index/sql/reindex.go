@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/ent/reindex"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent/reindex"
 
 	"entgo.io/ent/dialect"
 )

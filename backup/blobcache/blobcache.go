@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // Cache is one store's blob directory. It is safe for concurrent use by

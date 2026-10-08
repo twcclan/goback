@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/twcclan/goback/backup/chunker"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup/chunker"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
 )
 
 // SeedMap locates chunks of user-named files by the ref they would have

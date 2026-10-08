@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/admin"
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
-	"github.com/twcclan/goback/index"
+	"github.com/gobackio/goback/admin"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/index"
 
 	"github.com/urfave/cli"
 )

@@ -142,7 +142,7 @@ const file_tree_proto_rawDesc = "" +
 	"\bTreeNode\x12#\n" +
 	"\x04stat\x18\x01 \x01(\v2\x0f.proto.FileInfoR\x04stat\x12\x1c\n" +
 	"\x03ref\x18\x02 \x01(\v2\n" +
-	".proto.RefR\x03refB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	".proto.RefR\x03refB\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_tree_proto_rawDescOnce sync.Once

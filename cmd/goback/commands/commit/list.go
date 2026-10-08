@@ -4,8 +4,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"

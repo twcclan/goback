@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/twcclan/goback/health"
+	"github.com/gobackio/goback/health"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

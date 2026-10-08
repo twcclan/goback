@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/testing/tests3"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/testing/tests3"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"

@@ -71,7 +71,7 @@ const file_ref_proto_rawDesc = "" +
 	"\n" +
 	"\tref.proto\x12\x05proto\"\x19\n" +
 	"\x03Ref\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\fR\x04hashB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\x04hash\x18\x01 \x01(\fR\x04hashB\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_ref_proto_rawDescOnce sync.Once

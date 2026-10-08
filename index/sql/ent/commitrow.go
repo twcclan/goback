@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/commitrow"
-	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/commitrow"
+	"github.com/gobackio/goback/index/sql/ent/set"
 )
 
 // CommitRow is the model entity for the CommitRow schema.

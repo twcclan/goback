@@ -9,8 +9,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/twcclan/goback/index/sql/migrations"
-	"github.com/twcclan/goback/index/sql/migrations/generate"
+	"github.com/gobackio/goback/index/sql/migrations"
+	"github.com/gobackio/goback/index/sql/migrations/generate"
 )
 
 func main() {

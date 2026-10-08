@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // FilePath is where a file object is stored in a set.

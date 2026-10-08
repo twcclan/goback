@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/storage/pack"
 )
 
 // Store is what the runner sweeps and compacts.
@@ -51,10 +51,10 @@ type Collected interface {
 
 // Schedule is how often each job runs; zero never runs it.
 type Schedule struct {
-	Sweep    time.Duration
-	Compact  time.Duration
-	Collect  time.Duration
-	Retire   time.Duration
+	Sweep   time.Duration
+	Compact time.Duration
+	Collect time.Duration
+	Retire  time.Duration
 	// Presence also measures the sets whose commits changed.
 	Presence time.Duration
 }

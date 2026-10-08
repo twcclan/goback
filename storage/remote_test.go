@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/auth"
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/presence"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
-	adminpb "github.com/twcclan/goback/proto/admin"
+	"github.com/gobackio/goback/auth"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/presence"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
+	adminpb "github.com/gobackio/goback/proto/admin"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

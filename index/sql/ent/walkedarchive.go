@@ -8,7 +8,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/walkedarchive"
+	"github.com/gobackio/goback/index/sql/ent/walkedarchive"
 )
 
 // WalkedArchive is the model entity for the WalkedArchive schema.

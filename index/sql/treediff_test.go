@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/ent/file"
-	"github.com/twcclan/goback/index/sql/ent/tree"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent/file"
+	"github.com/gobackio/goback/index/sql/ent/tree"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 )

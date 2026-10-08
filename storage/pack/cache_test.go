@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/badger"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/badger"
 
 	"github.com/stretchr/testify/require"
 )

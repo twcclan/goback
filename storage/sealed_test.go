@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob/fileblob"

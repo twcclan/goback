@@ -10,9 +10,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/archive"
-	"github.com/twcclan/goback/index/sql/ent/object"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/archive"
+	"github.com/gobackio/goback/index/sql/ent/object"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
 )
 
 // ObjectUpdate is the builder for updating Object entities.

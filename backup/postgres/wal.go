@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // The commit metadata the Postgres sets carry.

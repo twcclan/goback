@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // IndexFile is an archive's index; a stored one is sorted by Sum.
@@ -97,9 +97,11 @@ func decodeUnversioned(buf []byte, record *IndexRecord) {
 }
 
 // Len implements sort.Interface.
-func (idx IndexFile) Len() int           { return len(idx) }
+func (idx IndexFile) Len() int { return len(idx) }
+
 // Swap implements sort.Interface.
-func (idx IndexFile) Swap(i, j int)      { idx[i], idx[j] = idx[j], idx[i] }
+func (idx IndexFile) Swap(i, j int) { idx[i], idx[j] = idx[j], idx[i] }
+
 // Less implements sort.Interface.
 func (idx IndexFile) Less(i, j int) bool { return bytes.Compare(idx[i].Sum[:], idx[j].Sum[:]) < 0 }
 

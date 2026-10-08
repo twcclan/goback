@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 )

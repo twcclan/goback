@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/twcclan/goback/backup"
+	"github.com/gobackio/goback/backup"
 )
 
 // WALBackup commits the spool to the WAL set. Every commit holds each WAL

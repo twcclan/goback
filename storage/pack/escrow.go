@@ -10,7 +10,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/twcclan/goback/backup"
+	"github.com/gobackio/goback/backup"
 )
 
 const (

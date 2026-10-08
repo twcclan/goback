@@ -3,9 +3,9 @@ package cache
 import (
 	"context"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/wrapped"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/wrapped"
 )
 
 var _ backup.ObjectStore = (*Store)(nil)

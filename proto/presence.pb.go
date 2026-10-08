@@ -134,7 +134,7 @@ const file_presence_proto_rawDesc = "" +
 	"\x06commit\x18\x06 \x01(\v2\n" +
 	".proto.RefR\x06commit\x12\x1d\n" +
 	"\n" +
-	"backup_set\x18\a \x01(\tR\tbackupSetB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"backup_set\x18\a \x01(\tR\tbackupSetB\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_presence_proto_rawDescOnce sync.Once

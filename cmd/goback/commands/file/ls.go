@@ -4,10 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"

@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/twcclan/goback/backup"
+	"github.com/gobackio/goback/backup"
 
 	"github.com/stretchr/testify/require"
 )

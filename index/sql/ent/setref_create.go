@@ -10,8 +10,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/set"
-	"github.com/twcclan/goback/index/sql/ent/setref"
+	"github.com/gobackio/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/setref"
 )
 
 // SetRefCreate is the builder for creating a SetRef entity.

@@ -9,8 +9,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/damagedpath"
-	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/damagedpath"
+	"github.com/gobackio/goback/index/sql/ent/set"
 )
 
 // DamagedPath is the model entity for the DamagedPath schema.

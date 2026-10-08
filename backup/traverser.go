@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"

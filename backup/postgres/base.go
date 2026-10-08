@@ -10,7 +10,7 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/twcclan/goback/backup"
+	"github.com/gobackio/goback/backup"
 )
 
 // ErrForeignCluster is returned for a base backup of another cluster than

@@ -8,7 +8,7 @@ import (
 	"errors"
 	"math"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // FalsePositiveRate is what filters are sized for.

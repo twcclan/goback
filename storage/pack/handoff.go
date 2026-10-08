@@ -13,7 +13,7 @@ import (
 	"github.com/bits-and-blooms/bitset"
 	"github.com/pkg/errors"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // PlanExt names the sweeps collections published instead of running:

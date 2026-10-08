@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/twcclan/goback/auth"
+	"github.com/gobackio/goback/auth"
 
 	"github.com/urfave/cli"
 )

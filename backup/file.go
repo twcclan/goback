@@ -9,11 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/twcclan/goback/backup/blobcache"
-	"github.com/twcclan/goback/backup/chunker"
-	"github.com/twcclan/goback/backup/presence"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup/blobcache"
+	"github.com/gobackio/goback/backup/chunker"
+	"github.com/gobackio/goback/backup/presence"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
 	"go4.org/syncutil"

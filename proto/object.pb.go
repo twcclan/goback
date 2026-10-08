@@ -594,7 +594,7 @@ const file_object_proto_rawDesc = "" +
 	"\x06POLICY\x10\a*'\n" +
 	"\vCompression\x12\b\n" +
 	"\x04NONE\x10\x00\x12\b\n" +
-	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\x04ZSTD\x10\x02\"\x04\b\x01\x10\x01B\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_object_proto_rawDescOnce sync.Once

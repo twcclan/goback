@@ -72,7 +72,7 @@ const file_blob_proto_rawDesc = "" +
 	"\n" +
 	"blob.proto\x12\x05proto\"\x1a\n" +
 	"\x04Blob\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04dataB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\x04data\x18\x01 \x01(\fR\x04dataB\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_blob_proto_rawDescOnce sync.Once

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/storage/badger"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/storage/badger"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"

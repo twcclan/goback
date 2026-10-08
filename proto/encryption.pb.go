@@ -80,7 +80,7 @@ const file_encryption_proto_rawDesc = "" +
 	"\tPLAINTEXT\x10\x00\x12\n" +
 	"\n" +
 	"\x06SEALED\x10\x03\"\x04\b\x01\x10\x01\"\x04\b\x02\x10\x02*\vSTORE_KEYED*\n" +
-	"CONVERGENTB!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"CONVERGENTB\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_encryption_proto_rawDescOnce sync.Once

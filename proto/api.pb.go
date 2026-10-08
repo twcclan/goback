@@ -3227,7 +3227,7 @@ const file_api_proto_rawDesc = "" +
 	"\vUndeleteSet\x12\x19.proto.UndeleteSetRequest\x1a\x1a.proto.UndeleteSetResponse\"\x00\x124\n" +
 	"\x05Unpin\x12\x13.proto.UnpinRequest\x1a\x14.proto.UnpinResponse\"\x00\x12=\n" +
 	"\bListPins\x12\x16.proto.ListPinsRequest\x1a\x17.proto.ListPinsResponse\"\x00\x12I\n" +
-	"\fEscrowedKeys\x12\x1a.proto.EscrowedKeysRequest\x1a\x1b.proto.EscrowedKeysResponse\"\x00B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\fEscrowedKeys\x12\x1a.proto.EscrowedKeysRequest\x1a\x1b.proto.EscrowedKeysResponse\"\x00B\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_api_proto_rawDescOnce sync.Once

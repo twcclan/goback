@@ -3,12 +3,12 @@
 package ent
 
 import (
-	"github.com/twcclan/goback/index/sql/ent/archive"
-	"github.com/twcclan/goback/index/sql/ent/commitrow"
-	"github.com/twcclan/goback/index/sql/ent/file"
-	"github.com/twcclan/goback/index/sql/ent/schema"
-	"github.com/twcclan/goback/index/sql/ent/set"
-	"github.com/twcclan/goback/index/sql/ent/settings"
+	"github.com/gobackio/goback/index/sql/ent/archive"
+	"github.com/gobackio/goback/index/sql/ent/commitrow"
+	"github.com/gobackio/goback/index/sql/ent/file"
+	"github.com/gobackio/goback/index/sql/ent/schema"
+	"github.com/gobackio/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/settings"
 )
 
 // The init function reads all schema descriptors with runtime code

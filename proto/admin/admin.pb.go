@@ -1203,7 +1203,7 @@ const file_admin_admin_proto_rawDesc = "" +
 	"\fSetRetention\x12\x1a.admin.SetRetentionRequest\x1a\x10.admin.Retention\"\x00\x127\n" +
 	"\x06Retire\x12\x14.admin.RetireRequest\x1a\x15.admin.RetireResponse\"\x00\x12O\n" +
 	"\x0eCollectGarbage\x12\x1c.admin.CollectGarbageRequest\x1a\x1d.admin.CollectGarbageResponse\"\x00\x12O\n" +
-	"\x0ePutEscrowedKey\x12\x1c.admin.PutEscrowedKeyRequest\x1a\x1d.admin.PutEscrowedKeyResponse\"\x00B'Z%github.com/twcclan/goback/proto/adminb\x06proto3"
+	"\x0ePutEscrowedKey\x12\x1c.admin.PutEscrowedKeyRequest\x1a\x1d.admin.PutEscrowedKeyResponse\"\x00B(Z&github.com/gobackio/goback/proto/adminb\x06proto3"
 
 var (
 	file_admin_admin_proto_rawDescOnce sync.Once

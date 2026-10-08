@@ -8,8 +8,8 @@ import (
 	"encoding/binary"
 	"os"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/stretchr/testify/require"

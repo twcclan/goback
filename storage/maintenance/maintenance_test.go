@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 )

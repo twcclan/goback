@@ -8,8 +8,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/set"
-	"github.com/twcclan/goback/index/sql/ent/setref"
+	"github.com/gobackio/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/setref"
 )
 
 // SetRef is the model entity for the SetRef schema.

@@ -3,8 +3,8 @@ package pack_test
 import (
 	"testing"
 
-	"github.com/twcclan/goback/storage/pack"
-	"github.com/twcclan/goback/storage/pack/packtest"
+	"github.com/gobackio/goback/storage/pack"
+	"github.com/gobackio/goback/storage/pack/packtest"
 )
 
 func TestInMemoryIndexSessions(t *testing.T) {

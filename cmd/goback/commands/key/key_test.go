@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/twcclan/goback/backup/storekey"
+	"github.com/gobackio/goback/backup/storekey"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"

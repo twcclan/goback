@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // WithIndexCache keeps a copy of every archive index the store reads under

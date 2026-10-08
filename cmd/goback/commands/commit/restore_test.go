@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/index/sql"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/index/sql"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob/memblob"

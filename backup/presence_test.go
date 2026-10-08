@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/twcclan/goback/backup/presence"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup/presence"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 )

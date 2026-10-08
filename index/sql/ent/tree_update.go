@@ -11,9 +11,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
-	"github.com/twcclan/goback/index/sql/ent/set"
-	"github.com/twcclan/goback/index/sql/ent/tree"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/tree"
 )
 
 // TreeUpdate is the builder for updating Tree entities.

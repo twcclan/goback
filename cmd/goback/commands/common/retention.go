@@ -3,8 +3,8 @@ package common
 import (
 	"encoding/hex"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 )
 
 // ParseRef decodes a ref printed as hex.

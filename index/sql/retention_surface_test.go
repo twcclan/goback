@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/index"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/index"
 
 	"github.com/stretchr/testify/require"
 )

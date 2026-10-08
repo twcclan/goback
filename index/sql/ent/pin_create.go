@@ -11,7 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/pin"
+	"github.com/gobackio/goback/index/sql/ent/pin"
 )
 
 // PinCreate is the builder for creating a Pin entity.

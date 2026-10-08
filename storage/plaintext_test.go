@@ -5,9 +5,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/twcclan/goback/auth"
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/auth"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

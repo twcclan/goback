@@ -4,8 +4,8 @@ import (
 	"log"
 	"path/filepath"
 
-	"github.com/twcclan/goback/backup/blobcache"
-	"github.com/twcclan/goback/backup/storekey"
+	"github.com/gobackio/goback/backup/blobcache"
+	"github.com/gobackio/goback/backup/storekey"
 
 	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"

@@ -9,7 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/session"
+	"github.com/gobackio/goback/index/sql/ent/session"
 )
 
 // Session is the model entity for the Session schema.

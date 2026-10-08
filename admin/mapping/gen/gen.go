@@ -3,11 +3,11 @@
 package gen
 
 import (
-	mapping "github.com/twcclan/goback/admin/mapping"
-	retention "github.com/twcclan/goback/backup/retention"
-	storekey "github.com/twcclan/goback/backup/storekey"
-	index "github.com/twcclan/goback/index"
-	admin "github.com/twcclan/goback/proto/admin"
+	mapping "github.com/gobackio/goback/admin/mapping"
+	retention "github.com/gobackio/goback/backup/retention"
+	storekey "github.com/gobackio/goback/backup/storekey"
+	index "github.com/gobackio/goback/index"
+	admin "github.com/gobackio/goback/proto/admin"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 

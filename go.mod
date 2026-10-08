@@ -1,4 +1,4 @@
-module github.com/twcclan/goback
+module github.com/gobackio/goback
 
 require (
 	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1

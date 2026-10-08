@@ -5,12 +5,12 @@ package enttest
 import (
 	"context"
 
-	"github.com/twcclan/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent"
 	// required by schema hooks.
-	_ "github.com/twcclan/goback/index/sql/ent/runtime"
+	_ "github.com/gobackio/goback/index/sql/ent/runtime"
 
 	"entgo.io/ent/dialect/sql/schema"
-	"github.com/twcclan/goback/index/sql/ent/migrate"
+	"github.com/gobackio/goback/index/sql/ent/migrate"
 )
 
 type (

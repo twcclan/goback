@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 	pb "google.golang.org/protobuf/proto"

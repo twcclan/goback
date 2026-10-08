@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // ObjectReceiver is called for every object a Walk visits; a non-nil error

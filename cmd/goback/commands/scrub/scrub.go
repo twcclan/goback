@@ -6,9 +6,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"

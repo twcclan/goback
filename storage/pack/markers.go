@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 )
 
 // SessionBeginExt and SessionEndExt name a session's markers in the

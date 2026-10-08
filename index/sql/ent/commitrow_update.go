@@ -11,9 +11,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/commitrow"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
-	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/commitrow"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/set"
 )
 
 // CommitRowUpdate is the builder for updating CommitRow entities.

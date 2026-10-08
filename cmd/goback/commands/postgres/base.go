@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/postgres"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/postgres"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
 
 	"github.com/urfave/cli"
 )

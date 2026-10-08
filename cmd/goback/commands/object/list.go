@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/urfave/cli"
 )

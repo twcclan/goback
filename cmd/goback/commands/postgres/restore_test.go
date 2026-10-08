@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	coresql "github.com/twcclan/goback/index/sql"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage"
-	"github.com/twcclan/goback/storage/pack"
+	coresql "github.com/gobackio/goback/index/sql"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob/memblob"

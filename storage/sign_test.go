@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/testing/tests3"
-	"github.com/twcclan/goback/storage"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/storage"
+	"github.com/gobackio/goback/storage/pack"
+	"github.com/gobackio/goback/testing/tests3"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob"

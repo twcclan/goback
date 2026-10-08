@@ -10,7 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/pin"
+	"github.com/gobackio/goback/index/sql/ent/pin"
 )
 
 // Pin is the model entity for the Pin schema.

@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/migrations"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/migrations"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/pack"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"

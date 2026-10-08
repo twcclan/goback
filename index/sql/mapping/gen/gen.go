@@ -3,12 +3,12 @@
 package gen
 
 import (
-	backup "github.com/twcclan/goback/backup"
-	index "github.com/twcclan/goback/index"
-	ent "github.com/twcclan/goback/index/sql/ent"
-	mapping "github.com/twcclan/goback/index/sql/mapping"
-	proto "github.com/twcclan/goback/proto"
-	pack "github.com/twcclan/goback/storage/pack"
+	backup "github.com/gobackio/goback/backup"
+	index "github.com/gobackio/goback/index"
+	ent "github.com/gobackio/goback/index/sql/ent"
+	mapping "github.com/gobackio/goback/index/sql/mapping"
+	proto "github.com/gobackio/goback/proto"
+	pack "github.com/gobackio/goback/storage/pack"
 	"time"
 )
 

@@ -9,8 +9,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/archive"
-	"github.com/twcclan/goback/index/sql/ent/session"
+	"github.com/gobackio/goback/index/sql/ent/archive"
+	"github.com/gobackio/goback/index/sql/ent/session"
 )
 
 // Archive is the model entity for the Archive schema.

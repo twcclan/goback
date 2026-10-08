@@ -465,7 +465,7 @@ const file_policy_proto_rawDesc = "" +
 	"\n" +
 	"SET_ACTIVE\x10\x00\x12\x0f\n" +
 	"\vSET_CLOSING\x10\x01\x12\x0f\n" +
-	"\vSET_DELETED\x10\x02B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\vSET_DELETED\x10\x02B\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_policy_proto_rawDescOnce sync.Once

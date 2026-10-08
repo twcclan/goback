@@ -9,7 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/settings"
+	"github.com/gobackio/goback/index/sql/ent/settings"
 )
 
 // Settings is the model entity for the Settings schema.

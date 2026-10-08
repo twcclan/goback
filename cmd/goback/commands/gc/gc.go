@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/storage/maintenance"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/storage/maintenance"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/urfave/cli"
 )

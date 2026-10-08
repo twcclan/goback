@@ -8,8 +8,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/archive"
-	"github.com/twcclan/goback/index/sql/ent/object"
+	"github.com/gobackio/goback/index/sql/ent/archive"
+	"github.com/gobackio/goback/index/sql/ent/object"
 )
 
 // Object is the model entity for the Object schema.

@@ -11,8 +11,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
 )
 
 const (

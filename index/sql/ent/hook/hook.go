@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/twcclan/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent"
 )
 
 // The ArchiveFunc type is an adapter to allow the use of ordinary

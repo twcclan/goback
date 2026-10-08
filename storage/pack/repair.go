@@ -3,7 +3,7 @@ package pack
 import (
 	"context"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
 )

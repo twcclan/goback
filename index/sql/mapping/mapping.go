@@ -8,12 +8,12 @@ import (
 	"path"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/ent/set"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/pack"
 )
 
 //go:generate mapper .

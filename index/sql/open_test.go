@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/index/sql/migrations"
-	"github.com/twcclan/goback/testing/testpg"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/index/sql/migrations"
+	"github.com/gobackio/goback/testing/testpg"
 
 	"ariga.io/atlas/sql/migrate"
 	"github.com/stretchr/testify/require"

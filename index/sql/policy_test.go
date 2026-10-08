@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/index/sql/ent/set"
 
 	"github.com/stretchr/testify/require"
 )

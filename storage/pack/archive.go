@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"

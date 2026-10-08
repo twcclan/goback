@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/pack"
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"

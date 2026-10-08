@@ -9,7 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/reindex"
+	"github.com/gobackio/goback/index/sql/ent/reindex"
 )
 
 // Reindex is the model entity for the Reindex schema.

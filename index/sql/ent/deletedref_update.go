@@ -11,8 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/deletedref"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/deletedref"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
 )
 
 // DeletedRefUpdate is the builder for updating DeletedRef entities.

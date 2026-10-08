@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/cmd/goback/commands/common/views"
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common/views"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/urfave/cli"
 )

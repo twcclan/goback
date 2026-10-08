@@ -4,10 +4,10 @@ package mapping
 import (
 	"time"
 
-	"github.com/twcclan/goback/backup/retention"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/index"
-	pb "github.com/twcclan/goback/proto/admin"
+	"github.com/gobackio/goback/backup/retention"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/index"
+	pb "github.com/gobackio/goback/proto/admin"
 )
 
 //go:generate mapper .

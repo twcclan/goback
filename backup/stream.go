@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 )
 
 // Stream is a backup read from a tar stream, such as a command's output,

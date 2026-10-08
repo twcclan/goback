@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
-	"github.com/twcclan/goback/storage/pack"
-	"github.com/twcclan/goback/storage/pack/packtest"
-	"github.com/twcclan/goback/testing/testpg"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/pack"
+	"github.com/gobackio/goback/storage/pack/packtest"
+	"github.com/gobackio/goback/testing/testpg"
 
 	"github.com/stretchr/testify/require"
 )

@@ -3,7 +3,7 @@ package commit
 import (
 	"log"
 
-	"github.com/twcclan/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
 
 	"github.com/urfave/cli"
 )

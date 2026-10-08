@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"

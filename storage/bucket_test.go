@@ -3,7 +3,7 @@ package storage
 import (
 	"testing"
 
-	"github.com/twcclan/goback/storage/pack/packtest"
+	"github.com/gobackio/goback/storage/pack/packtest"
 
 	"gocloud.dev/blob/fileblob"
 )

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/testing/testpg"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/testing/testpg"
 
 	"github.com/stretchr/testify/require"
 )

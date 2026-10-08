@@ -9,10 +9,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/twcclan/goback/index"
-	"github.com/twcclan/goback/index/sql/ent"
-	"github.com/twcclan/goback/index/sql/ent/commitrow"
-	"github.com/twcclan/goback/index/sql/ent/file"
+	"github.com/gobackio/goback/index"
+	"github.com/gobackio/goback/index/sql/ent"
+	"github.com/gobackio/goback/index/sql/ent/commitrow"
+	"github.com/gobackio/goback/index/sql/ent/file"
 
 	entsql "entgo.io/ent/dialect/sql"
 )

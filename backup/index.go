@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
 )
 
 // An Index stamps a commit or pin it receives with the receipt time, and a

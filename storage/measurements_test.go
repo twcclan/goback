@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/twcclan/goback/storage"
+	"github.com/gobackio/goback/storage"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"

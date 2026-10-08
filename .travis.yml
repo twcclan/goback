@@ -10,5 +10,5 @@ matrix:
     - go: tip
 
 install:
-  - go get -v github.com/twcclan/goback/cmd/goback
+  - go get -v github.com/gobackio/goback/cmd/goback
   - go get -t ./...

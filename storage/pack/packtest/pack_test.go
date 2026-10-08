@@ -3,7 +3,7 @@ package packtest
 import (
 	"testing"
 
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/storage/pack"
 )
 
 func TestInMemoryIndex(t *testing.T) {

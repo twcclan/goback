@@ -423,7 +423,7 @@ const file_file_proto_rawDesc = "" +
 	"\x0eNODE_DIRECTORY\x10\x01\x12\x10\n" +
 	"\fNODE_SYMLINK\x10\x02*\x1a\n" +
 	"\aChunker\x12\x0f\n" +
-	"\vFASTCDC_64K\x10\x00B!Z\x1fgithub.com/twcclan/goback/protob\x06proto3"
+	"\vFASTCDC_64K\x10\x00B\"Z github.com/gobackio/goback/protob\x06proto3"
 
 var (
 	file_file_proto_rawDescOnce sync.Once

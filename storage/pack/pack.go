@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"

@@ -4,7 +4,7 @@
 package schema
 
 import (
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"

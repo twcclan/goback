@@ -12,9 +12,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/archive"
-	"github.com/twcclan/goback/index/sql/ent/object"
-	"github.com/twcclan/goback/index/sql/ent/session"
+	"github.com/gobackio/goback/index/sql/ent/archive"
+	"github.com/gobackio/goback/index/sql/ent/object"
+	"github.com/gobackio/goback/index/sql/ent/session"
 )
 
 // ArchiveCreate is the builder for creating a Archive entity.

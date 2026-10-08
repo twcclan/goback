@@ -8,8 +8,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/file"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/file"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
 )
 
 // FileDelete is the builder for deleting a File entity.

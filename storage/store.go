@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/twcclan/goback/auth"
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/auth"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
 
 	"golang.org/x/sync/errgroup"
 )

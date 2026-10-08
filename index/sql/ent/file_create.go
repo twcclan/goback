@@ -11,8 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/twcclan/goback/index/sql/ent/file"
-	"github.com/twcclan/goback/index/sql/ent/set"
+	"github.com/gobackio/goback/index/sql/ent/file"
+	"github.com/gobackio/goback/index/sql/ent/set"
 )
 
 // FileCreate is the builder for creating a File entity.

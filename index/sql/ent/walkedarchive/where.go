@@ -4,7 +4,7 @@ package walkedarchive
 
 import (
 	"entgo.io/ent/dialect/sql"
-	"github.com/twcclan/goback/index/sql/ent/predicate"
+	"github.com/gobackio/goback/index/sql/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.

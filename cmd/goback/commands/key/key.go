@@ -7,10 +7,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/cmd/goback/commands/common"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/urfave/cli"
 )

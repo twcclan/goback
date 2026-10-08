@@ -3,13 +3,13 @@
 package gen
 
 import (
-	backup "github.com/twcclan/goback/backup"
-	retention "github.com/twcclan/goback/backup/retention"
-	views "github.com/twcclan/goback/cmd/goback/commands/common/views"
-	index "github.com/twcclan/goback/index"
-	proto "github.com/twcclan/goback/proto"
-	maintenance "github.com/twcclan/goback/storage/maintenance"
-	pack "github.com/twcclan/goback/storage/pack"
+	backup "github.com/gobackio/goback/backup"
+	retention "github.com/gobackio/goback/backup/retention"
+	views "github.com/gobackio/goback/cmd/goback/commands/common/views"
+	index "github.com/gobackio/goback/index"
+	proto "github.com/gobackio/goback/proto"
+	maintenance "github.com/gobackio/goback/storage/maintenance"
+	pack "github.com/gobackio/goback/storage/pack"
 )
 
 func (m MapperImpl) Bracket(in retention.Bracket) views.BracketView {

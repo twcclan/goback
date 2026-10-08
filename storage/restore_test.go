@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/auth"
-	"github.com/twcclan/goback/backup"
-	"github.com/twcclan/goback/backup/storekey"
-	"github.com/twcclan/goback/proto"
-	adminpb "github.com/twcclan/goback/proto/admin"
-	"github.com/twcclan/goback/storage/pack"
+	"github.com/gobackio/goback/auth"
+	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/storekey"
+	"github.com/gobackio/goback/proto"
+	adminpb "github.com/gobackio/goback/proto/admin"
+	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob/fileblob"

@@ -3,9 +3,9 @@
 package gen
 
 import (
-	storekey "github.com/twcclan/goback/backup/storekey"
-	proto "github.com/twcclan/goback/proto"
-	mapping "github.com/twcclan/goback/storage/mapping"
+	storekey "github.com/gobackio/goback/backup/storekey"
+	proto "github.com/gobackio/goback/proto"
+	mapping "github.com/gobackio/goback/storage/mapping"
 )
 
 func (m MapperImpl) FromStorePolicy(in *proto.StorePolicy) *storekey.Policy {

@@ -15,7 +15,7 @@ import (
 	"path"
 	"time"
 
-	entmigrate "github.com/twcclan/goback/index/sql/ent/migrate"
+	entmigrate "github.com/gobackio/goback/index/sql/ent/migrate"
 
 	"ariga.io/atlas/sql/migrate"
 	"ariga.io/atlas/sql/postgres"

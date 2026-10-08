@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twcclan/goback/proto"
+	"github.com/gobackio/goback/proto"
 
 	"github.com/bits-and-blooms/bitset"
 
