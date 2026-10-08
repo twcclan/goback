@@ -50,13 +50,15 @@ const (
 	FieldTarget Field = "link_target"
 )
 
-// Mode is the store policy's encryption mode for new writes.
+// Mode is the store policy's encryption requirement for new writes. An
+// agent holding a store key seals whatever the mode.
 type Mode string
 
 const (
-	// ModeSealed seals names and contents under the store key.
+	// ModeSealed refuses agents without a store key.
 	ModeSealed Mode = "sealed"
-	// ModeNone writes in the clear.
+	// ModeNone also admits agents without a store key, which write in the
+	// clear.
 	ModeNone Mode = "none"
 )
 

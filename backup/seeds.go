@@ -102,7 +102,7 @@ func (s *SeedMap) addFile(path string) error {
 
 func (s *SeedMap) record(path string, offset int64, chunk []byte) {
 	var ref *proto.Ref
-	if s.key != nil && s.key.Policy.Mode != storekey.ModeNone {
+	if s.key != nil {
 		ref = BlobRef(s.key, chunk)
 	} else {
 		ref = proto.NewObject(&proto.Blob{Data: chunk}).Ref()

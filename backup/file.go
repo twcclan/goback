@@ -36,10 +36,6 @@ const (
 // newFileWriter cuts a file of the given size into blobs. With a key the
 // blobs and any inline content are sealed under it.
 func newFileWriter(ctx context.Context, store ObjectStore, key *storekey.Key, size int64) *fileWriter {
-	if key != nil && key.Policy.Mode == storekey.ModeNone {
-		key = nil
-	}
-
 	return &fileWriter{
 		store:            store,
 		key:              key,

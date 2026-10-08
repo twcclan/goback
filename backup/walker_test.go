@@ -370,6 +370,33 @@ func TestWalkerAdoptsTheStorePolicyFromTheGrant(t *testing.T) {
 	require.Same(t, key, f.walker.Key, "the run leaves the caller's key in place")
 }
 
+func TestWalkerWithAKeySealsUnderAPolicyThatDoesNotEncrypt(t *testing.T) {
+	f := newWalkerFixture(t)
+	f.write("small.txt", []byte("secret"))
+	f.write("big.bin", f.random(200<<10))
+
+	key, err := storekey.Generate("s1")
+	require.NoError(t, err)
+	f.walker.Key = key
+	f.index.policy = &storekey.Policy{Version: 2, Mode: storekey.ModeNone, PresenceScope: "store"}
+
+	result := f.run()
+	require.EqualValues(t, 2, result.Commit.PolicyVersion)
+
+	nodes := f.tree(result.Commit.Tree)
+	require.Len(t, nodes, 2)
+	require.NotContains(t, nodes, "small.txt")
+	require.NotContains(t, nodes, "big.bin")
+
+	for _, obj := range f.store.objects {
+		require.Nil(t, obj.GetBlob(), "chunks are sealed")
+
+		if file := obj.GetFile(); len(file.GetInline()) > 0 {
+			require.Equal(t, proto.Encryption_SEALED, file.InlineEncryption)
+		}
+	}
+}
+
 // remember makes the index answer FileInfo for the root-level files of a
 // commit, newest first.
 func (f *walkerFixture) remember(commit *proto.Commit) {

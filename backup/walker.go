@@ -291,12 +291,6 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	w.policyVersion = 0
 	if w.Key != nil {
 		w.policyVersion = w.Key.Policy.Version
-
-		if w.Key.Policy.Mode == storekey.ModeNone {
-			key := w.Key
-			w.Key = nil
-			defer func() { w.Key = key }()
-		}
 	}
 
 	if w.Sessions != nil {
@@ -403,7 +397,8 @@ func (w *Walker) walk(ctx context.Context) (*WalkResult, error) {
 
 // adoptPolicy writes this run under the store's policy instead of the key
 // file's; a policy the operator never set (version 0) leaves the key file
-// in charge.
+// in charge. The policy can refuse a keyless run but never unseal a keyed
+// one.
 func (w *Walker) adoptPolicy(policy *storekey.Policy) error {
 	if policy == nil || policy.Version == 0 {
 		return nil
