@@ -59,19 +59,41 @@ func readIndexHeader(r io.Reader) (func(io.Reader, *IndexRecord) error, uint32, 
 	return read, count, nil
 }
 
-func readRecord(r io.Reader, record *IndexRecord) error {
-	return binary.Read(r, indexEndianness, record)
-}
+const (
+	unversionedRecordSize = proto.HashSize + 12
+	recordSize            = unversionedRecordSize + 12
+)
 
-func readUnversionedRecord(r io.Reader, record *IndexRecord) error {
-	var old unversionedRecord
-	if err := binary.Read(r, indexEndianness, &old); err != nil {
+func readRecord(r io.Reader, record *IndexRecord) error {
+	var buf [recordSize]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
 		return err
 	}
 
-	*record = IndexRecord{Sum: old.Sum, Offset: old.Offset, Length: old.Length, Type: old.Type}
+	decodeUnversioned(buf[:], record)
+	record.CarriedTime = int64(indexEndianness.Uint64(buf[unversionedRecordSize:]))
+	record.CarriedOffset = indexEndianness.Uint32(buf[unversionedRecordSize+8:])
 
 	return nil
+}
+
+func readUnversionedRecord(r io.Reader, record *IndexRecord) error {
+	var buf [unversionedRecordSize]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return err
+	}
+
+	*record = IndexRecord{}
+	decodeUnversioned(buf[:], record)
+
+	return nil
+}
+
+func decodeUnversioned(buf []byte, record *IndexRecord) {
+	copy(record.Sum[:], buf[:proto.HashSize])
+	record.Offset = indexEndianness.Uint32(buf[proto.HashSize:])
+	record.Length = indexEndianness.Uint32(buf[proto.HashSize+4:])
+	record.Type = indexEndianness.Uint32(buf[proto.HashSize+8:])
 }
 
 // Len implements sort.Interface.

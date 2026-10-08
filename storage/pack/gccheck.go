@@ -55,31 +55,20 @@ func (ps *PackStorage) halted() (string, error) {
 	return fmt.Sprintf("halted by generation %d: %d reachable copies", h.Generation, len(h.Reachable)), nil
 }
 
-// confirmDrops marks again from the roots there are now and halts the
-// store's collections if anything the sweep would drop is reachable.
+// confirmDrops marks again from the archives and roots there are now and
+// halts the store's collections if anything the sweep would drop is
+// reachable. Of the archives the run read, it reads nothing again: they
+// never change.
 func (r *gcRun) confirmDrops(ctx context.Context) error {
 	opts := r.opts
 	opts.Owner = nil
 	opts.TempDir = filepath.Join(r.opts.TempDir, "goback-gc-check")
 
-	check := &gcRun{ps: r.ps, opts: opts, gen: r.gen, prev: r.prev, snapshot: r.snapshot,
-		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool),
-		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
-		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
-		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
-		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
-		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
-		setDeduplicatedAlone: make(map[int64]uint64)}
+	check := newGCRun(r.ps, opts, r.prev, r.reads)
 
-	if err := check.takeSnapshot(); err != nil {
+	if err := check.takeSnapshot(ctx); err != nil {
 		return err
 	}
-
-	defer func() {
-		for _, ga := range check.order {
-			ga.lookup.release()
-		}
-	}()
 
 	if err := check.collectRoots(ctx); err != nil {
 		return err

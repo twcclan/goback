@@ -228,19 +228,14 @@ func (r *gcRun) classify(live *liveRuns) error {
 	for _, ga := range selected {
 		ga.classed = &classed{Class: make([]int32, ga.count), Bytes: make(map[int32]uint64)}
 
-		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+		ga.each(func(pos int, rec *IndexRecord) {
 			id := r.classes.id(outputClass{ga.owners[pos], classOf(ga.a.version(*rec).Time, r.opts.Now)})
 			ga.classed.Class[pos] = id
 
 			if !r.droppable(ga, ga.next, pos, rec) {
 				ga.classed.Bytes[id] += uint64(rec.Length)
 			}
-
-			return nil
-		}, nil, nil)
-		if err != nil {
-			return err
-		}
+		})
 
 		ga.owners = nil
 	}

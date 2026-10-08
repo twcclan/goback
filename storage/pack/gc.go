@@ -198,11 +198,11 @@ var _ Collector = (*PackStorage)(nil)
 type gcArchive struct {
 	erase bool
 	a     *archive
-	// count is how many records the archive's index holds, and droppable
-	// how many bytes of it this generation may drop.
+	// idx is the archive's index, count how many records it holds, and
+	// droppable how many bytes of it this generation may drop.
+	idx       IndexFile
 	count     int
 	droppable uint64
-	lookup    *indexLookup
 	bytes     uint64
 	prev      *gcFile
 	cur       *bitset.BitSet
@@ -220,51 +220,39 @@ type gcTombstone struct {
 	version Version
 }
 
-// indexLookup answers the random lookups of a sweep. It loads the
-// archive's index the first time it is asked and drops it when the run
-// ends, so only the archives a sweep touches are ever held.
-type indexLookup struct {
-	a *archive
-
-	mu     sync.Mutex
-	idx    IndexFile
-	loaded bool
+// each calls fn with every record of the archive's index in stored order.
+func (ga *gcArchive) each(fn func(pos int, rec *IndexRecord)) {
+	for pos := range ga.idx {
+		fn(pos, &ga.idx[pos])
+	}
 }
 
-// position returns the index position of hash, or -1.
-func (l *indexLookup) position(hash []byte) (int, error) {
-	pos, _, err := l.record(hash)
-
-	return pos, err
+// gcReads keeps what a run read of committed archives, which never change,
+// so the check before a sweep reads only the archives that appeared since.
+type gcReads struct {
+	indexes map[string]IndexFile
+	// tombs is what each archive's tombstones name, by index position
+	tombs map[string]map[int]tombHeader
 }
 
-// record returns the index position and record of hash, or -1.
-func (l *indexLookup) record(hash []byte) (int, *IndexRecord, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func newGCReads() *gcReads {
+	return &gcReads{indexes: make(map[string]IndexFile), tombs: make(map[string]map[int]tombHeader)}
+}
 
-	if !l.loaded {
-		idx, err := l.a.getIndex()
-		if err != nil {
-			return -1, nil, err
-		}
+// tombHeader is what one tombstone's header says; named is false for a
+// tombstone that names no target.
+type tombHeader struct {
+	target refKey
+	named  bool
+	erase  bool
+}
 
-		l.idx, l.loaded = idx, true
+func tombHeaderOf(hdr *proto.ObjectHeader) tombHeader {
+	if hdr.TombstoneFor == nil {
+		return tombHeader{}
 	}
 
-	pos := l.idx.position(hash)
-	if pos < 0 {
-		return -1, nil, nil
-	}
-
-	return pos, &l.idx[pos], nil
-}
-
-func (l *indexLookup) release() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	l.idx, l.loaded = nil, false
+	return tombHeader{target: keyOf(hdr.TombstoneFor.Hash), named: true, erase: hdr.Erase}
 }
 
 type gcRun struct {
@@ -273,9 +261,13 @@ type gcRun struct {
 	gen      uint64
 	prev     *gcState
 	snapshot time.Time
+	reads    *gcReads
 
 	archives map[string]*gcArchive
 	order    []*gcArchive
+	// located places every record of the snapshot the mark may read, one
+	// copy each
+	located map[refKey]placed
 	// pending are the finalized archives of live sessions that have not
 	// committed, read for the un-tombstones a committing session wrote;
 	// pendingAt places their objects, so the mark walks from a commit a
@@ -321,6 +313,28 @@ type gcRun struct {
 	classes *classes
 }
 
+// newGCRun prepares the run of the generation after prev, keeping what it
+// reads of committed archives in reads.
+func newGCRun(ps *PackStorage, opts CollectOptions, prev *gcState, reads *gcReads) *gcRun {
+	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(), reads: reads,
+		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool),
+		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
+		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
+		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
+		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
+		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
+		setDeduplicatedAlone: make(map[int64]uint64)}
+	if prev != nil {
+		run.gen = prev.Generation + 1
+
+		for _, t := range prev.Condemned {
+			run.condemnedAt[t.UnixNano()] = true
+		}
+	}
+
+	return run
+}
+
 // gcRoot is a root with what it belongs to, zero when nothing names it.
 type gcRoot struct {
 	key   refKey
@@ -361,22 +375,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		return nil, errors.Wrap(err, "loading gc state")
 	}
 
-	run := &gcRun{ps: ps, opts: opts, prev: prev, gen: 1, snapshot: opts.Now.UTC(),
-		archives: make(map[string]*gcArchive), targets: make(map[refKey]bool),
-		newestTomb: make(map[refKey]Version), condemning: make(map[refKey]Version),
-		condemned: make(map[refKey]Version), condemnedAt: make(map[int64]bool), tombTimes: make(map[int64]bool),
-		untombed: make(map[refKey]bool), oldestCopy: make(map[refKey]Version), spent: make(map[recordAt]bool),
-		setBytes: make(map[int64]uint64), setDeduplicated: make(map[int64]uint64),
-		setAlone: make(map[int64]uint64), setExclusive: make(map[int64]uint64),
-		setDeduplicatedAlone: make(map[int64]uint64)}
-	if prev != nil {
-		run.gen = prev.Generation + 1
-
-		for _, t := range prev.Condemned {
-			run.condemnedAt[t.UnixNano()] = true
-		}
-	}
-
+	run := newGCRun(ps, opts, prev, newGCReads())
 	report := &CollectReport{Generation: run.gen}
 
 	sessions, err := run.liveSessions()
@@ -395,15 +394,9 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		}
 	}
 
-	if err := run.takeSnapshot(); err != nil {
+	if err := run.takeSnapshot(ctx); err != nil {
 		return nil, err
 	}
-
-	defer func() {
-		for _, ga := range run.order {
-			ga.lookup.release()
-		}
-	}()
 
 	report.Archives = len(run.order)
 	for _, ga := range run.order {
@@ -585,7 +578,7 @@ func scanArchive(a *archive, fn func(pos int, rec *IndexRecord) error, count *in
 
 // takeSnapshot fixes the set of committed archives this generation covers
 // and loads their indexes and previous mark results.
-func (r *gcRun) takeSnapshot() error {
+func (r *gcRun) takeSnapshot(ctx context.Context) error {
 	// listed first: a session that commits after this is either live here
 	// or has its archives committed in the snapshot
 	live, err := r.liveSessions()
@@ -617,16 +610,57 @@ func (r *gcRun) takeSnapshot() error {
 
 	sort.Slice(archives, func(i, j int) bool { return archives[i].name < archives[j].name })
 
-	for _, a := range archives {
-		ga := &gcArchive{a: a, prev: a.gcResult()}
+	indexes := make([]IndexFile, len(archives))
 
-		err := scanArchive(a, func(int, *IndexRecord) error { return nil }, &ga.count, &ga.bytes)
-		if err != nil {
-			return errors.Wrapf(err, "reading index of %s", a.name)
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(r.opts.Readers)
+
+	for i, a := range archives {
+		if idx, ok := r.reads.indexes[a.name]; ok {
+			indexes[i] = idx
+			continue
+		}
+
+		grp.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+
+			idx, err := a.getIndex()
+			if err != nil {
+				return errors.Wrapf(err, "reading index of %s", a.name)
+			}
+
+			indexes[i] = idx
+
+			return nil
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return err
+	}
+
+	r.located = make(map[refKey]placed)
+
+	for i, a := range archives {
+		ga := &gcArchive{a: a, prev: a.gcResult(), idx: indexes[i], count: len(indexes[i])}
+		r.reads.indexes[a.name] = ga.idx
+
+		for pos := range ga.idx {
+			rec := &ga.idx[pos]
+			ga.bytes += uint64(rec.Length)
+
+			if t := proto.ObjectType(rec.Type); t == proto.ObjectType_BLOB || t == proto.ObjectType_TOMBSTONE {
+				continue
+			}
+
+			if key := keyOf(rec.Sum[:]); r.located[key].rec == nil {
+				r.located[key] = placed{key: key, a: a, rec: rec}
+			}
 		}
 
 		ga.cur = bitset.New(uint(ga.count))
-		ga.lookup = &indexLookup{a: a}
 
 		r.archives[a.name] = ga
 		r.order = append(r.order, ga)
@@ -667,31 +701,29 @@ func (r *gcRun) batches() [][]gcRoot {
 }
 
 func (r *gcRun) collectRoots(ctx context.Context) error {
+	if err := r.readTombstones(ctx); err != nil {
+		return err
+	}
+
 	tombstoned := make(map[refKey]bool)
 	// tombOf maps a tombstone's own ref to its target
 	tombOf := make(map[refKey]refKey)
 	commits := make(map[refKey]bool)
 
 	for _, ga := range r.order {
-		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+		tombs := r.reads.tombs[ga.a.name]
+
+		ga.each(func(pos int, rec *IndexRecord) {
 			if proto.ObjectType(rec.Type) == proto.ObjectType_COMMIT {
 				commits[keyOf(rec.Sum[:])] = true
 			}
 
-			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
-				return nil
+			hdr := tombs[pos]
+			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE || !hdr.named {
+				return
 			}
 
-			hdr, err := ga.a.readHeader(rec)
-			if err != nil {
-				return errors.Wrapf(err, "reading tombstone %x in %s", rec.Sum, ga.a.name)
-			}
-
-			if hdr.TombstoneFor == nil {
-				return nil
-			}
-
-			target := keyOf(hdr.TombstoneFor.Hash)
+			target := hdr.target
 			tombstoned[target] = true
 			tombOf[keyOf(rec.Sum[:])] = target
 			r.targets[target] = false
@@ -705,15 +737,10 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 				newestAt(r.condemning, target, v)
 			}
 
-			if hdr.Erase {
+			if hdr.erase {
 				r.erased = append(r.erased, target)
 			}
-
-			return nil
-		}, nil, nil)
-		if err != nil {
-			return errors.Wrapf(err, "reading index of %s", ga.a.name)
-		}
+		})
 	}
 
 	keep := func(untombed refKey) {
@@ -727,30 +754,35 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	// un-tombstones stay its own until then; they keep what they take
 	// back from the moment they are written
 	r.pendingAt = make(map[refKey]placed)
-	var pendingUntombs []refKey
+	var pendingTombs []placed
 
 	for _, a := range r.pending {
 		err := scanArchive(a, func(_ int, rec *IndexRecord) error {
-			if proto.ObjectType(rec.Type) != proto.ObjectType_TOMBSTONE {
-				held := *rec
+			held := *rec
+			if proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
+				pendingTombs = append(pendingTombs, placed{a: a, rec: &held})
+			} else {
 				r.pendingAt[keyOf(rec.Sum[:])] = placed{key: keyOf(rec.Sum[:]), a: a, rec: &held}
-
-				return nil
-			}
-
-			hdr, err := a.readHeader(rec)
-			if err != nil {
-				return errors.Wrapf(err, "reading tombstone %x in %s", rec.Sum, a.name)
-			}
-
-			if hdr.TombstoneFor != nil {
-				pendingUntombs = append(pendingUntombs, keyOf(hdr.TombstoneFor.Hash))
 			}
 
 			return nil
 		}, nil, nil)
 		if err != nil && !notExist(err) {
 			return errors.Wrapf(err, "reading index of %s", a.name)
+		}
+	}
+
+	// a pending archive whose session ended without committing is gone,
+	// and with it what its un-tombstones took back
+	headers, err := r.readHeaders(ctx, pendingTombs, true)
+	if err != nil {
+		return err
+	}
+
+	var pendingUntombs []refKey
+	for _, hdr := range headers {
+		if hdr != nil && hdr.TombstoneFor != nil {
+			pendingUntombs = append(pendingUntombs, keyOf(hdr.TombstoneFor.Hash))
 		}
 	}
 
@@ -780,25 +812,20 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	}
 
 	for _, ga := range r.order {
-		err := scanArchive(ga.a, func(_ int, rec *IndexRecord) error {
+		ga.each(func(_ int, rec *IndexRecord) {
 			t := proto.ObjectType(rec.Type)
 			if _, isTarget := r.targets[keyOf(rec.Sum[:])]; isTarget && t != proto.ObjectType_TOMBSTONE {
 				oldestAt(r.oldestCopy, keyOf(rec.Sum[:]), ga.a.version(*rec))
 			}
 
 			if t != proto.ObjectType_COMMIT && t != proto.ObjectType_PIN && t != proto.ObjectType_POLICY {
-				return nil
+				return
 			}
 
 			if key := keyOf(rec.Sum[:]); !tombstoned[key] {
 				r.roots = append(r.roots, r.root(rec.Sum[:]))
 			}
-
-			return nil
-		}, nil, nil)
-		if err != nil {
-			return errors.Wrapf(err, "reading index of %s", ga.a.name)
-		}
+		})
 	}
 
 	// a committed session's un-tombstone of its own commit is older than
@@ -824,6 +851,120 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	r.spendTombstones(tombOf)
 
 	return ctx.Err()
+}
+
+// readTombstones reads the headers of the snapshot's tombstones that no
+// earlier read of this run kept.
+func (r *gcRun) readTombstones(ctx context.Context) error {
+	var tombs []placed
+	var positions []int
+
+	for _, ga := range r.order {
+		if _, ok := r.reads.tombs[ga.a.name]; ok {
+			continue
+		}
+
+		ga.each(func(pos int, rec *IndexRecord) {
+			if proto.ObjectType(rec.Type) == proto.ObjectType_TOMBSTONE {
+				tombs = append(tombs, placed{a: ga.a, rec: rec})
+				positions = append(positions, pos)
+			}
+		})
+	}
+
+	headers, err := r.readHeaders(ctx, tombs, false)
+	if err != nil {
+		return err
+	}
+
+	for _, ga := range r.order {
+		if _, ok := r.reads.tombs[ga.a.name]; !ok {
+			r.reads.tombs[ga.a.name] = make(map[int]tombHeader)
+		}
+	}
+
+	for i, tomb := range tombs {
+		r.reads.tombs[tomb.a.name][positions[i]] = tombHeaderOf(headers[i])
+	}
+
+	return nil
+}
+
+// readHeaders decodes the object headers of the records, reading each run
+// of them that sits close together in an archive at once, up to Readers
+// runs at a time. With missingOK, the headers of a run whose archive is gone
+// are left nil.
+func (r *gcRun) readHeaders(ctx context.Context, records []placed, missingOK bool) ([]*proto.ObjectHeader, error) {
+	at := make([]int, len(records))
+	for i := range at {
+		at[i] = i
+	}
+
+	sort.Slice(at, func(i, j int) bool {
+		a, b := records[at[i]], records[at[j]]
+		if a.a != b.a {
+			return a.a.name < b.a.name
+		}
+
+		return a.rec.Offset < b.rec.Offset
+	})
+
+	sorted := make([]placed, len(records))
+	for i, from := range at {
+		sorted[i] = records[from]
+	}
+
+	headers := make([]*proto.ObjectHeader, len(records))
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(r.opts.Readers)
+
+	for start := 0; start < len(sorted); {
+		archiveEnd := start + 1
+		for archiveEnd < len(sorted) && sorted[archiveEnd].a == sorted[start].a {
+			archiveEnd++
+		}
+
+		for start < archiveEnd {
+			end, span := spanOf(sorted[:archiveEnd], start)
+			run, into := sorted[start:end], at[start:end]
+
+			grp.Go(func() error {
+				if err := gctx.Err(); err != nil {
+					return err
+				}
+
+				a, from := run[0].a, int64(run[0].rec.Offset)
+
+				buf, _, err := a.readSpan(from, span)
+				if missingOK && notExist(err) {
+					return nil
+				}
+
+				if err != nil {
+					return errors.Wrapf(err, "reading %d bytes at %d of %s", span, from, a.name)
+				}
+
+				for i, p := range run {
+					record := buf[int64(p.rec.Offset)-from:][:p.rec.Length]
+					hdrSize, consumed := proto.DecodeVarint(record)
+
+					hdr, err := proto.NewObjectHeaderFromBytes(record[consumed : consumed+int(hdrSize)])
+					if err != nil {
+						return errors.Wrapf(err, "reading the header of %x in %s", p.rec.Sum, a.name)
+					}
+
+					headers[into[i]] = hdr
+				}
+
+				return nil
+			})
+
+			start = end
+		}
+	}
+
+	return headers, grp.Wait()
 }
 
 // recordAt names a record of the snapshot.
@@ -1050,6 +1191,8 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 
 func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]refKey) []refKey, live *liveRuns) error {
 	for len(frontier) > 0 {
+		r.byPlace(frontier)
+
 		var next []refKey
 		var nextMtx sync.Mutex
 
@@ -1098,6 +1241,36 @@ func (r *gcRun) markBatch(ctx context.Context, frontier []refKey, claim func([]r
 	return nil
 }
 
+// byPlace orders keys by where the snapshot holds them, so each chunk of
+// the mark reads records that sit together.
+func (r *gcRun) byPlace(keys []refKey) {
+	type at struct {
+		key    refKey
+		name   string
+		offset uint32
+	}
+
+	places := make([]at, len(keys))
+	for i, key := range keys {
+		places[i].key = key
+		if p, ok := r.located[key]; ok {
+			places[i].name, places[i].offset = p.a.name, p.rec.Offset
+		}
+	}
+
+	sort.Slice(places, func(i, j int) bool {
+		if places[i].name != places[j].name {
+			return places[i].name < places[j].name
+		}
+
+		return places[i].offset < places[j].offset
+	})
+
+	for i := range places {
+		keys[i] = places[i].key
+	}
+}
+
 const (
 	// markGap is how far apart two records may sit and still be worth
 	// fetching together; markSpan bounds what one such read covers.
@@ -1126,23 +1299,17 @@ func (r *gcRun) readChunk(ctx context.Context, keys []refKey) ([]markRead, error
 	byArchive := make(map[string][]placed)
 
 	for _, key := range keys {
-		ref := &proto.Ref{Hash: key[:]}
-
-		a, rec, err := r.ps.indexLocation(ctx, ref)
+		p, err := r.place(ctx, key)
 		if err != nil {
-			return nil, errors.Wrapf(err, "locating %x", key)
+			return nil, err
 		}
 
-		if p, ok := r.pendingAt[key]; ok && rec == nil {
-			a, rec = p.a, p.rec
-		}
-
-		if rec == nil {
+		if p.rec == nil {
 			r.ps.logger.Warn("reachable object is missing", "ref", fmt.Sprintf("%x", key))
 			continue
 		}
 
-		byArchive[a.name] = append(byArchive[a.name], placed{key: key, a: a, rec: rec})
+		byArchive[p.a.name] = append(byArchive[p.a.name], p)
 	}
 
 	reads := make([]markRead, 0, len(keys))
@@ -1164,6 +1331,26 @@ func (r *gcRun) readChunk(ctx context.Context, keys []refKey) ([]markRead, error
 	}
 
 	return reads, nil
+}
+
+// place finds a copy of the object to read: in the snapshot, or, for one
+// written since, through the index, or in a live session's archive. It
+// returns a zero placed when there is none.
+func (r *gcRun) place(ctx context.Context, key refKey) (placed, error) {
+	if p, ok := r.located[key]; ok {
+		return p, nil
+	}
+
+	a, rec, err := r.ps.indexLocation(ctx, &proto.Ref{Hash: key[:]})
+	if err != nil {
+		return placed{}, errors.Wrapf(err, "locating %x", key)
+	}
+
+	if rec != nil {
+		return placed{key: key, a: a, rec: rec}, nil
+	}
+
+	return r.pendingAt[key], nil
 }
 
 // spanOf extends the run starting at start for as long as the records stay
@@ -1206,7 +1393,12 @@ func (r *gcRun) readSpan(ctx context.Context, records []placed, span int64) ([]m
 
 			// a session's own object is in no index until it commits; one
 			// that ended without committing took the archive with it
-			if p, ok := r.pendingAt[record.key]; ok && p.a == a {
+			if p, ok := r.located[record.key]; ok && p.a == a {
+				obj, err = a.getRaw(ctx, ref, record.rec)
+				if err != nil {
+					obj, err = r.ps.Get(ctx, ref)
+				}
+			} else if p, ok := r.pendingAt[record.key]; ok && p.a == a {
 				obj, err = a.getRaw(ctx, ref, record.rec)
 				if notExist(err) {
 					err = backup.ErrNotFound
@@ -1422,10 +1614,7 @@ func (r *gcRun) scanOf(archives []*gcArchive, runs *liveRuns, hit func(ga *gcArc
 	}()
 
 	for _, ga := range archives {
-		scanner, err := ga.a.scanIndex()
-		if err != nil {
-			return errors.Wrapf(err, "reading index of %s", ga.a.name)
-		}
+		scanner := &sliceScanner{idx: ga.idx}
 
 		record, err := scanner.next()
 		if err != nil {
@@ -1518,13 +1707,13 @@ func (r *gcRun) writeResults() error {
 
 		ga.droppable = 0
 
-		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+		ga.each(func(pos int, rec *IndexRecord) {
 			if r.droppable(ga, next, pos, rec) {
 				ga.droppable += uint64(rec.Length)
 			}
 
 			if ga.cur.Test(uint(pos)) {
-				return nil
+				return
 			}
 
 			if r.uncondemned(ga, rec) {
@@ -1534,12 +1723,7 @@ func (r *gcRun) writeResults() error {
 			next.DeadObjects++
 			next.DeadBytes += uint64(rec.Length)
 			next.Dead = append(next.Dead, prefixOf(rec.Sum[:]))
-
-			return nil
-		}, nil, nil)
-		if err != nil {
-			return errors.Wrapf(err, "reading index of %s", ga.a.name)
-		}
+		})
 
 		sort.Slice(next.Dead, func(i, j int) bool { return next.Dead[i] < next.Dead[j] })
 
@@ -1646,14 +1830,8 @@ func (r *gcRun) keep(candidate *archive, hdr *proto.ObjectHeader) bool {
 		return true
 	}
 
-	pos, rec, err := ga.lookup.record(hdr.Ref.Hash)
-	if err != nil {
-		r.ps.logger.Warn("looking an object up in its index failed, keeping it", "archive", candidate.name, "ref", fmt.Sprintf("%x", hdr.Ref.Hash), "err", err)
-
-		return true
-	}
-
-	if pos < 0 || !r.droppable(ga, ga.next, pos, rec) {
+	pos := ga.idx.position(hdr.Ref.Hash)
+	if pos < 0 || !r.droppable(ga, ga.next, pos, &ga.idx[pos]) {
 		return true
 	}
 
@@ -1672,12 +1850,7 @@ func (r *gcRun) marked(loc *IndexLocation) bool {
 		return true
 	}
 
-	pos, err := ga.lookup.position(loc.Record.Sum[:])
-	if err != nil {
-		r.ps.logger.Warn("looking an object up in its index failed, treating it as reachable", "archive", loc.Archive, "err", err)
-
-		return true
-	}
+	pos := ga.idx.position(loc.Record.Sum[:])
 
 	return pos < 0 || ga.cur.Test(uint(pos))
 }

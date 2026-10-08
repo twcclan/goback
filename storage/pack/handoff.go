@@ -74,16 +74,11 @@ func (r *gcRun) publish() (int, error) {
 		}
 
 		drop := bitset.New(uint(ga.count))
-		err := scanArchive(ga.a, func(pos int, rec *IndexRecord) error {
+		ga.each(func(pos int, rec *IndexRecord) {
 			if r.droppable(ga, ga.next, pos, rec) {
 				drop.Set(uint(pos))
 			}
-
-			return nil
-		}, nil, nil)
-		if err != nil {
-			return 0, errors.Wrapf(err, "reading index of %s", ga.a.name)
-		}
+		})
 
 		plan.Drop[ga.a.name] = drop
 		plan.Classed[ga.a.name] = ga.classed
