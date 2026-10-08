@@ -1112,14 +1112,7 @@ func (ps *PackStorage) dropArchive(a *archive) {
 // hasIndexFile reports whether the archive's writer got as far as storing
 // its index, which only a finalized archive has.
 func (ps *PackStorage) hasIndexFile(name string) bool {
-	file, err := ps.storage.Open(name + IndexExt)
-	if err != nil {
-		return false
-	}
-
-	_ = file.Close()
-
-	return true
+	return ps.stored(name + IndexExt)
 }
 
 // archiveStored tells the observer an archive is in the storage.
@@ -1174,7 +1167,12 @@ func (ps *PackStorage) markCommitted(session string) error {
 
 // markedCommitted reports whether a commit marked the archive committed.
 func (ps *PackStorage) markedCommitted(name string) bool {
-	file, err := ps.storage.Open(name + CommittedExt)
+	return ps.stored(name + CommittedExt)
+}
+
+// stored reports whether the storage holds the file.
+func (ps *PackStorage) stored(name string) bool {
+	file, err := ps.storage.Open(name)
 	if err != nil {
 		return false
 	}
@@ -1211,19 +1209,22 @@ func (ps *PackStorage) deleteArchiveFiles(name string) {
 }
 
 // openArchive loads a finalized archive. One the index does not know is
-// indexed as committed, unless a session wrote it and never finalized it
-// (no index file beside it): that one is deleted.
+// indexed as its session's markers have it: committed, pending while the
+// session lives, or deleted once the session ended without committing.
+// One it cannot place yet is left alone and not loaded.
 func (ps *PackStorage) openArchive(name string, listed *ListedFile) (*archive, error) {
 	info, known, err := ps.index.LookupArchive(name)
 	if err != nil {
 		return nil, err
 	}
 
-	if !known && ParsePlacement(name).Session != "" && !ps.hasIndexFile(name) && !ps.markedCommitted(name) {
-		ps.logger.Info("deleting archive of an unfinished session", "archive", name)
-		ps.deleteArchiveFiles(name)
+	if !known {
+		var place bool
 
-		return nil, nil
+		info, place, err = ps.placeUnknown(name)
+		if err != nil || !place {
+			return nil, err
+		}
 	}
 
 	ps.mtx.RLock()
@@ -1256,8 +1257,7 @@ func (ps *PackStorage) openArchive(name string, listed *ListedFile) (*archive, e
 		}
 
 		if !known {
-			ps.logger.Info("indexing archive", "archive", name)
-			info = ArchiveInfo{Name: name}
+			ps.logger.Info("indexing archive", "archive", name, "state", info.State)
 		}
 
 		info.Created = created
@@ -1391,6 +1391,11 @@ func (ps *PackStorage) Open() error {
 		return errors.Wrap(err, "failed listing archive names")
 	}
 
+	// sessions first: an archive of a live session is indexed pending under it
+	if err := ps.reconcileSessions(listed); err != nil {
+		return err
+	}
+
 	sem := semaphore.NewWeighted(indexOpenerThreads)
 	group, ctx := errgroup.WithContext(context.Background())
 
@@ -1408,12 +1413,7 @@ func (ps *PackStorage) Open() error {
 		})
 	}
 
-	err = group.Wait()
-	if err != nil {
-		return err
-	}
-
-	return ps.reconcileSessions()
+	return group.Wait()
 }
 
 // refreshArchives catches the loaded archives up with the storage and the

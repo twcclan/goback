@@ -145,6 +145,21 @@ func TestEndSessionDropsPendingArchives(t *testing.T) {
 	require.NoError(t, store.Close())
 }
 
+// leftBehind stores an archive a crashed writer never finalized, of a
+// session that ended without committing, and returns its path.
+func leftBehind(t *testing.T, base string) string {
+	t.Helper()
+
+	id := uuid.New().String()
+	require.NoError(t, os.WriteFile(filepath.Join(base, id+SessionEndExt), []byte(sessionAborted), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(base, id), 0o755))
+
+	orphan := filepath.Join(base, id, uuid.New().String()+ArchiveSuffix)
+	require.NoError(t, os.WriteFile(orphan, archiveHeader(), 0o644))
+
+	return orphan
+}
+
 func TestOpenHandlesLeftoversOfSessions(t *testing.T) {
 	base := t.TempDir()
 	index := NewInMemoryIndex()
@@ -159,16 +174,12 @@ func TestOpenHandlesLeftoversOfSessions(t *testing.T) {
 	// closing finalizes the open archive as pending; the session stays live
 	require.NoError(t, store.Close())
 
-	// an archive a crashed writer never finalized
-	orphanDir := filepath.Join(base, uuid.New().String())
-	require.NoError(t, os.MkdirAll(orphanDir, 0o755))
-	orphan := filepath.Join(orphanDir, uuid.New().String()+ArchiveSuffix)
-	require.NoError(t, os.WriteFile(orphan, archiveHeader(), 0o644))
+	orphan := leftBehind(t, base)
 
 	reopened := newTestStore(t, base, WithArchiveIndex(index))
 
 	_, err := os.Stat(orphan)
-	require.True(t, os.IsNotExist(err), "an unindexed session archive is deleted on open")
+	require.True(t, os.IsNotExist(err), "an unindexed archive of an ended session is deleted on open")
 
 	requireVisible(t, reopened, backup.WithSession(context.Background(), session), objects[0], true)
 	requireVisible(t, reopened, context.Background(), objects[0], false)
@@ -395,21 +406,89 @@ func TestOpenKeepsCommittedSessionArchivesWithoutTheIndex(t *testing.T) {
 	require.NoError(t, store.Put(ctx, commitObject()))
 	require.NoError(t, store.Close())
 
-	orphanDir := filepath.Join(base, uuid.New().String())
-	require.NoError(t, os.MkdirAll(orphanDir, 0o755))
-	orphan := filepath.Join(orphanDir, uuid.New().String()+ArchiveSuffix)
-	require.NoError(t, os.WriteFile(orphan, archiveHeader(), 0o644))
+	orphan := leftBehind(t, base)
 
 	reopened := newTestStore(t, base, WithArchiveIndex(NewInMemoryIndex()))
 
 	_, err := os.Stat(orphan)
-	require.True(t, os.IsNotExist(err), "an archive without an index file is deleted")
+	require.True(t, os.IsNotExist(err), "an archive of an ended session without an index file is deleted")
 
 	for _, obj := range objects {
 		requireVisible(t, reopened, context.Background(), obj, true)
 	}
 
 	require.NoError(t, reopened.Close())
+}
+
+// TestOpenOverAFreshIndexKeepsALiveSessionPending opens stores over fresh
+// indexes while a session is still writing, before and after its archive
+// got its index file, and expects the archive kept, pending and out of
+// compaction's reach.
+func TestOpenOverAFreshIndexKeepsALiveSessionPending(t *testing.T) {
+	base := t.TempDir()
+	writer := newTestStore(t, base)
+
+	ctx, session := beginSession(t, writer, "agent-a")
+	objects := makeTestData(t, 3)
+	for _, obj := range objects {
+		require.NoError(t, writer.Put(ctx, obj))
+	}
+
+	names, _, err := writer.archiveNames()
+	require.NoError(t, err)
+	require.Len(t, names, 1)
+	name := names[0]
+
+	// closing finalizes the archive and leaves the session live
+	require.NoError(t, writer.Close())
+
+	idx := filepath.Join(base, filepath.FromSlash(name+IndexExt))
+	aside := idx + ".aside"
+	require.NoError(t, os.Rename(idx, aside))
+
+	early := newTestStore(t, base)
+	require.NoError(t, early.Close())
+
+	_, err = os.Stat(filepath.Join(base, filepath.FromSlash(name+ArchiveSuffix)))
+	require.NoError(t, err, "an archive whose index file is still on its way is kept")
+
+	require.NoError(t, os.Rename(aside, idx))
+
+	rebuilt := newTestStore(t, base, WithCompaction(CompactionConfig{MinimumCandidates: 0}))
+	t.Cleanup(func() { _ = rebuilt.Close() })
+
+	info, known, err := rebuilt.index.LookupArchive(name)
+	require.NoError(t, err)
+	require.True(t, known)
+	require.Equal(t, ArchivePending, info.State)
+	require.Equal(t, session.ID, info.Session)
+
+	requireVisible(t, rebuilt, backup.WithSession(context.Background(), session), objects[0], true)
+	requireVisible(t, rebuilt, context.Background(), objects[0], false)
+
+	require.NoError(t, rebuilt.doCompaction())
+
+	after, _, err := rebuilt.archiveNames()
+	require.NoError(t, err)
+	require.Equal(t, []string{name}, after, "a pending archive is never rewritten")
+}
+
+func TestOpenOverAFreshIndexTakesACommittedEndForTheArchives(t *testing.T) {
+	base := t.TempDir()
+	writer := newTestStore(t, base)
+
+	ctx, session := beginSession(t, writer, "agent-a")
+	obj := makeTestData(t, 1)[0]
+	require.NoError(t, writer.Put(ctx, obj))
+	require.NoError(t, writer.Close())
+
+	// the commit won the end and stopped before it marked its archives
+	require.NoError(t, os.WriteFile(filepath.Join(base, session.ID+SessionEndExt), []byte(sessionCommitted), 0o644))
+
+	rebuilt := newTestStore(t, base)
+	t.Cleanup(func() { _ = rebuilt.Close() })
+
+	requireVisible(t, rebuilt, context.Background(), obj, true)
 }
 
 // failingIndex fails the next IndexArchive or FinalizeArchive.
@@ -458,11 +537,14 @@ func TestCommitRefusesASessionThatLostAnArchive(t *testing.T) {
 	require.ErrorContains(t, err, "lost an archive")
 
 	// the refused record is written already; its tombstone keeps a rebuild
-	// without the index from taking it for a commit
+	// without the index, where the session commits after all, from taking
+	// it for a commit
 	require.NoError(t, store.Close())
 
 	rebuilt := newTestStore(t, base, WithArchiveIndex(NewInMemoryIndex()))
 	t.Cleanup(func() { _ = rebuilt.Close() })
+
+	require.NoError(t, rebuilt.Put(backup.WithSession(context.Background(), session), commitObject()))
 
 	var dead bool
 	require.NoError(t, rebuilt.WalkHeaders(context.Background(), proto.ObjectType_TOMBSTONE, func(hdr *proto.ObjectHeader) error {
