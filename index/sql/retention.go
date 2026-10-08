@@ -690,14 +690,21 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 
 	phases.done("mark")
 
-	for setID, refs := range sets {
-		if err := x.pruneRefs(ctx, setID, refs); err != nil {
-			return retired, err
-		}
+	prunes, pctx := errgroup.WithContext(ctx)
+	prunes.SetLimit(pruneWorkers)
 
-		if err := x.dropDeadRows(ctx, setID); err != nil {
-			return retired, err
-		}
+	for setID, refs := range sets {
+		prunes.Go(func() error {
+			if err := x.pruneRefs(pctx, setID, refs); err != nil {
+				return err
+			}
+
+			return x.dropDeadRows(pctx, setID)
+		})
+	}
+
+	if err := prunes.Wait(); err != nil {
+		return retired, err
 	}
 
 	phases.done("prune")
@@ -1125,3 +1132,6 @@ func (x *Index) closeEmptySets(ctx context.Context) error {
 
 	return nil
 }
+
+// pruneWorkers is how many sets RetireCommits prunes at once.
+const pruneWorkers = 4

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/index/sql/ent/setref"
 	"github.com/twcclan/goback/proto"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // pruneRefs drops the set's set_refs rows that only the tombstoned
@@ -19,29 +22,34 @@ import (
 // under it, so a concurrent commit cannot lose a ref.
 func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte) error {
 	dead := map[string]bool{}
-	reached := map[string]bool{}
+	refs := make([]*proto.Ref, len(tombstoned))
 
-	for _, ref := range tombstoned {
+	for i, ref := range tombstoned {
 		dead[string(ref)] = true
+		refs[i] = &proto.Ref{Hash: ref}
+	}
 
-		obj, err := x.ObjectStore.Get(ctx, &proto.Ref{Hash: ref})
-		if errors.Is(err, backup.ErrNotFound) {
+	objects, errs := x.getAll(ctx, refs)
+
+	var trees []*proto.Ref
+
+	for i, obj := range objects {
+		if errors.Is(errs[i], backup.ErrNotFound) {
 			continue
 		}
 
-		if err != nil {
-			return err
+		if errs[i] != nil {
+			return errs[i]
 		}
 
-		commit := obj.GetCommit()
-		if commit == nil {
-			continue
+		if commit := obj.GetCommit(); commit != nil {
+			trees = append(trees, commit.GetTree())
 		}
+	}
 
-		err = x.walkRefs(ctx, commit.GetTree(), reached, func(hash []byte) { dead[string(hash)] = true })
-		if err != nil && !errors.Is(err, backup.ErrNotFound) {
-			return err
-		}
+	err := x.walkRefs(ctx, trees, map[string]bool{}, true, func(hash []byte) { dead[string(hash)] = true })
+	if err != nil {
+		return err
 	}
 
 	visited := map[string]bool{}
@@ -53,6 +61,8 @@ func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte)
 			return err
 		}
 
+		var trees []*proto.Ref
+
 		for _, commit := range commits {
 			if walked[string(commit.Ref)] {
 				continue
@@ -60,11 +70,12 @@ func (x *Index) pruneRefs(ctx context.Context, setID int64, tombstoned [][]byte)
 
 			walked[string(commit.Ref)] = true
 			delete(dead, string(commit.Ref))
+			trees = append(trees, &proto.Ref{Hash: commit.Tree})
+		}
 
-			err := x.walkRefs(ctx, &proto.Ref{Hash: commit.Tree}, visited, func(hash []byte) { delete(dead, string(hash)) })
-			if err != nil {
-				return fmt.Errorf("walking live commit %x: %w", commit.Ref, err)
-			}
+		err = x.walkRefs(ctx, trees, visited, false, func(hash []byte) { delete(dead, string(hash)) })
+		if err != nil {
+			return fmt.Errorf("walking live commits: %w", err)
 		}
 
 		return nil
@@ -122,63 +133,152 @@ func (x *Index) dropRefs(ctx context.Context, setID int64, dead, walked map[stri
 	})
 }
 
-// walkRefs visits the refs a tree reaches that set_refs records: the
-// tree and its splits, every file, and the splits of a large file.
-func (x *Index) walkRefs(ctx context.Context, tree *proto.Ref, visited map[string]bool, visit func([]byte)) error {
-	if visited[string(tree.GetHash())] {
-		return nil
+// walkRefs visits the refs the trees reach that set_refs records: each
+// tree and its splits, every file, and the splits of a large file. It reads
+// a level of the trees at a time. Unless lenient, an object it cannot find
+// fails the walk; lenient, the walk goes on without it.
+func (x *Index) walkRefs(ctx context.Context, trees []*proto.Ref, visited map[string]bool, lenient bool, visit func([]byte)) error {
+	var level []*proto.Ref
+
+	enter := func(tree *proto.Ref) {
+		if !visited[string(tree.GetHash())] {
+			visited[string(tree.GetHash())] = true
+			visit(tree.GetHash())
+			level = append(level, tree)
+		}
 	}
 
-	visited[string(tree.GetHash())] = true
-	visit(tree.GetHash())
-
-	obj, err := x.ObjectStore.Get(ctx, tree)
-	if err != nil {
-		return err
+	failed := func(err error) bool {
+		return err != nil && !(lenient && errors.Is(err, backup.ErrNotFound))
 	}
 
-	t := obj.GetTree()
-	if t == nil {
-		return fmt.Errorf("object %x is not a tree", tree.GetHash())
+	for _, tree := range trees {
+		enter(tree)
 	}
 
-	for _, split := range t.GetSplits() {
-		if err := x.walkRefs(ctx, split, visited, visit); err != nil {
+	for len(level) > 0 {
+		refs := level
+		level = nil
+
+		objects, errs := x.getAll(ctx, refs)
+
+		var large []*proto.Ref
+
+		for i, obj := range objects {
+			if failed(errs[i]) {
+				return errs[i]
+			}
+
+			if errs[i] != nil {
+				continue
+			}
+
+			t := obj.GetTree()
+			if t == nil {
+				return fmt.Errorf("object %x is not a tree", refs[i].GetHash())
+			}
+
+			for _, split := range t.GetSplits() {
+				enter(split)
+			}
+
+			for _, node := range t.GetNodes() {
+				if node.GetRef() == nil {
+					continue
+				}
+
+				switch node.GetStat().GetType() {
+				case proto.NodeType_NODE_DIRECTORY:
+					enter(node.GetRef())
+				case proto.NodeType_NODE_FILE:
+					visit(node.GetRef().GetHash())
+
+					if node.GetStat().GetSize() >= backup.SplitFileSize {
+						large = append(large, node.GetRef())
+					}
+				}
+			}
+		}
+
+		if err := x.walkLarge(ctx, large, failed, visit); err != nil {
 			return err
 		}
 	}
 
-	for _, node := range t.GetNodes() {
-		if node.GetRef() == nil {
+	return nil
+}
+
+// walkLarge visits the splits of the large files.
+func (x *Index) walkLarge(ctx context.Context, files []*proto.Ref, failed func(error) bool, visit func([]byte)) error {
+	objects, errs := x.getAll(ctx, files)
+
+	var mtx sync.Mutex
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(diffWorkers)
+
+	for i, obj := range objects {
+		if failed(errs[i]) {
+			return errs[i]
+		}
+
+		if errs[i] != nil {
 			continue
 		}
 
-		switch node.GetStat().GetType() {
-		case proto.NodeType_NODE_DIRECTORY:
-			if err := x.walkRefs(ctx, node.GetRef(), visited, visit); err != nil {
-				return err
-			}
-		case proto.NodeType_NODE_FILE:
-			visit(node.GetRef().GetHash())
-
-			if node.GetStat().GetSize() < backup.SplitFileSize {
-				continue
-			}
-
-			obj, err := x.ObjectStore.Get(ctx, node.GetRef())
-			if err != nil {
-				return err
-			}
-
-			err = backup.SubFiles(ctx, x.ObjectStore, obj.GetFile(), func(split *proto.Ref) error {
+		grp.Go(func() error {
+			err := backup.SubFiles(gctx, x.ObjectStore, obj.GetFile(), func(split *proto.Ref) error {
+				mtx.Lock()
 				visit(split.GetHash())
+				mtx.Unlock()
+
 				return nil
 			})
-			if err != nil {
+			if failed(err) {
 				return err
+			}
+
+			return nil
+		})
+	}
+
+	return grp.Wait()
+}
+
+// getAll reads the objects of refs, together where the store reads many
+// records at once and diffWorkers at a time otherwise, with the error of
+// each that could not be read.
+func (x *Index) getAll(ctx context.Context, refs []*proto.Ref) ([]*proto.Object, []error) {
+	objects := make([]*proto.Object, len(refs))
+	errs := make([]error, len(refs))
+
+	if reader, ok := storeAs[backup.RecordReader](x.ObjectStore); ok {
+		for start := 0; start < len(refs); start += objectBatch {
+			end := min(start+objectBatch, len(refs))
+
+			read, err := reader.ReadRecords(ctx, refs[start:end])
+			if err == nil {
+				copy(objects[start:end], read)
 			}
 		}
 	}
 
-	return nil
+	var gets sync.WaitGroup
+	slots := make(chan struct{}, diffWorkers)
+
+	for i, ref := range refs {
+		if objects[i] != nil {
+			continue
+		}
+
+		slots <- struct{}{}
+		gets.Go(func() {
+			defer func() { <-slots }()
+
+			objects[i], errs[i] = x.ObjectStore.Get(ctx, ref)
+		})
+	}
+
+	gets.Wait()
+
+	return objects, errs
 }

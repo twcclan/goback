@@ -184,6 +184,7 @@ func TestPostgres(t *testing.T) {
 		"RebuiltSetKeepsEverything":        TestRebuiltSetKeepsEverythingWhilePaused,
 		"DeletedSetProceedsWhilePaused":    TestDeletedSetProceedsWhilePaused,
 		"TombstonePrunesRefs":              TestTombstonePrunesTheRefsOnlyItReaches,
+		"RetirementPrunesEachSet":          TestOneRetirementPrunesEachSetsDeepTreesOnItsOwn,
 		"ReIndexReconcilesTombstones":      TestReIndexReconcilesTombstonesOnAnExistingDatabase,
 		"UnretireBringsCommitsBack":        TestUnretireBringsTombstonedCommitsBackWithTheirRows,
 		"UnretireLeavesBrokenCommits":      TestUnretireLeavesACommitMissingAnObjectTombstoned,

@@ -1230,3 +1230,47 @@ func TestEvaluationRetiresEachCommitOnceAndKeepsWhatAWiderPolicyCovers(t *testin
 	}
 	require.Equal(t, "latest,last", f.commitRow(refs[4]).RetainedBy)
 }
+
+func TestOneRetirementPrunesEachSetsDeepTreesOnItsOwn(t *testing.T) {
+	f := newFixture(t)
+
+	type set struct {
+		gone, kept []*proto.Ref
+	}
+
+	sets := map[string]*set{}
+
+	for _, name := range []string{"world", "other"} {
+		shared := f.dir("shared", f.dir("deeper", f.file("s.txt", name)))
+		one := f.file("a.txt", name+" one")
+		inner := f.dir("inner", f.dir("deeper", one))
+		old := f.tree(shared, inner)
+		a := f.commit(name, old, false)
+
+		f.advance(time.Hour)
+		two := f.file("b.txt", name+" two")
+		next := f.tree(shared, two)
+		b := f.commit(name, next, false)
+
+		sets[name] = &set{gone: []*proto.Ref{a, old.Ref(), inner.Ref, one.Ref}, kept: []*proto.Ref{shared.Ref, b, next.Ref(), two.Ref}}
+		require.NoError(t, f.x.SetPolicy(f.ctx, name, &retention.Policy{KeepLast: 1}))
+	}
+
+	n, err := f.x.Retire(f.ctx, f.clock.Add(15*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	for name, s := range sets {
+		for _, ref := range s.gone {
+			ok, err := f.x.References(f.ctx, ref)
+			require.NoError(t, err)
+			require.False(t, ok, "%s: %x only the tombstoned commit reaches", name, ref.Hash)
+		}
+
+		for _, ref := range s.kept {
+			ok, err := f.x.References(f.ctx, ref)
+			require.NoError(t, err)
+			require.True(t, ok, "%s: %x the live commit reaches", name, ref.Hash)
+		}
+	}
+}
