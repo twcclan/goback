@@ -54,7 +54,7 @@ func TestAnIndexFromBeforeACommitLosesNoneOfItsArchives(t *testing.T) {
 	stale := NewInMemoryIndex()
 	require.NoError(t, stale.BeginSession(session))
 	for _, name := range names {
-		a, err := openArchive(newLocal(base), name, nil, slog.Default())
+		a, err := openArchive(newLocal(base), name, nil, nil, slog.Default())
 		require.NoError(t, err)
 		idx, err := a.getIndex()
 		require.NoError(t, err)

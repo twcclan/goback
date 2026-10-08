@@ -81,6 +81,9 @@ type archive struct {
 	name       string
 	atRest     *archiveKey
 	logger     *slog.Logger
+	// listed is what a listing said of the archive file, nil when no
+	// listing did
+	listed *ListedFile
 
 	// owner is the session writing this archive, nil once finalized or
 	// when opened from storage
@@ -122,12 +125,13 @@ func newArchive(storage ArchiveStorage, dir string, atRest *AtRestKey, logger *s
 	return a, a.openWith(atRest)
 }
 
-func openArchive(storage ArchiveStorage, name string, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
+func openArchive(storage ArchiveStorage, name string, listed *ListedFile, atRest *AtRestKey, logger *slog.Logger) (*archive, error) {
 	a := &archive{
 		storage:  storage,
 		name:     name,
 		readOnly: true,
 		logger:   logger,
+		listed:   listed,
 	}
 
 	return a, a.openWith(atRest)
@@ -226,7 +230,13 @@ func (a *archive) open() (err error) {
 		a.writeIndex = make(map[string]*IndexRecord)
 	}
 
-	readFile, err := a.storage.Open(a.archiveName())
+	var readFile File
+	if a.readOnly && a.listed != nil {
+		readFile, err = openListed(a.storage, *a.listed)
+	} else {
+		readFile, err = a.storage.Open(a.archiveName())
+	}
+
 	if err != nil {
 		return errors.Wrap(err, "Failed opening archive for reading")
 	}
@@ -241,7 +251,12 @@ func (a *archive) open() (err error) {
 		a.size = uint64(info.Size())
 
 		hdr := make([]byte, archiveHeaderSize)
-		_, err = io.ReadFull(readFile, hdr)
+		if at, ok := readFile.(io.ReaderAt); ok {
+			_, err = at.ReadAt(hdr, 0)
+		} else {
+			_, err = io.ReadFull(readFile, hdr)
+		}
+
 		if err == nil {
 			err = checkArchiveHeader(hdr)
 		}

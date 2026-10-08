@@ -303,27 +303,53 @@ func (ps *PackStorage) putReadCache(ctx context.Context) func(*proto.Object, err
 	}
 }
 
-// forgetCached drops from the cache the objects of a deleted archive that
+// forgetCached drops from the cache the objects of deleted archives that
 // no other archive still holds.
-func (ps *PackStorage) forgetCached(ctx context.Context, idx IndexFile) {
+func (ps *PackStorage) forgetCached(ctx context.Context, indexes []IndexFile) {
 	if ps.cache == nil {
 		return
 	}
 
-	for _, rec := range idx {
-		if !proto.ObjectType(rec.Type).Metadata() {
-			continue
-		}
+	seen := make(map[string]bool)
+	var refs []*proto.Ref
 
-		ref := &proto.Ref{Hash: rec.Sum[:]}
-		if _, err := ps.index.LocateObject(ref, Scope{}); !errors.Is(err, ErrRecordNotFound) {
-			continue
-		}
-
-		if err := ps.cache.Delete(ctx, ref); err != nil {
-			ps.logger.Warn("dropping a deleted object from the metadata cache failed", "ref", fmt.Sprintf("%x", rec.Sum), "err", err)
+	for _, idx := range indexes {
+		for i := range idx {
+			if key := string(idx[i].Sum[:]); proto.ObjectType(idx[i].Type).Metadata() && !seen[key] {
+				seen[key] = true
+				refs = append(refs, &proto.Ref{Hash: idx[i].Sum[:]})
+			}
 		}
 	}
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(fileWorkers)
+
+	for start := 0; start < len(refs); start += lookupBatch {
+		batch := refs[start:min(start+lookupBatch, len(refs))]
+
+		grp.Go(func() error {
+			copies, err := ps.index.LocateCopies(batch, Scope{})
+			if err != nil {
+				ps.logger.Warn("locating the objects of deleted archives failed", "err", err)
+				return nil
+			}
+
+			for _, ref := range batch {
+				if len(copies[string(ref.Hash)]) > 0 {
+					continue
+				}
+
+				if err := ps.cache.Delete(gctx, ref); err != nil {
+					ps.logger.Warn("dropping a deleted object from the metadata cache failed", "ref", fmt.Sprintf("%x", ref.Hash), "err", err)
+				}
+			}
+
+			return nil
+		})
+	}
+
+	_ = grp.Wait()
 }
 
 func (ps *PackStorage) getCache(ctx context.Context, ref *proto.Ref) *proto.Object {
@@ -555,7 +581,7 @@ func (ps *PackStorage) archiveByName(name string) (*archive, error) {
 	}
 	ps.mtx.RUnlock()
 
-	return ps.openArchive(name)
+	return ps.openArchive(name, nil)
 }
 
 // retireArchive unloads an archive a rewrite replaced and keeps it from
@@ -993,6 +1019,20 @@ func (ps *PackStorage) archiveStored(a *archive, bytes int64) {
 	}
 }
 
+// archivesDeleted tells the observer the archives are gone, in one call
+// when it takes them together.
+func (ps *PackStorage) archivesDeleted(names []string) {
+	switch observer := ps.observer.(type) {
+	case nil:
+	case ArchiveBatchObserver:
+		observer.ArchivesDeleted(names)
+	default:
+		for _, name := range names {
+			observer.ArchiveDeleted(name)
+		}
+	}
+}
+
 // markCommitted writes the committed marker of every archive the session
 // is about to commit.
 func (ps *PackStorage) markCommitted(session string) error {
@@ -1045,8 +1085,8 @@ func (ps *PackStorage) deleteArchiveFiles(name string) {
 		ps.logger.Warn("deleting archive failed", "archive", name, "err", err)
 	}
 
-	if err == nil && ps.observer != nil {
-		ps.observer.ArchiveDeleted(name)
+	if err == nil {
+		ps.archivesDeleted([]string{name})
 	}
 
 	err = ps.storage.Delete(name + GCExt)
@@ -1063,7 +1103,7 @@ func (ps *PackStorage) deleteArchiveFiles(name string) {
 // openArchive loads a finalized archive. One the index does not know is
 // indexed as committed, unless a session wrote it and never finalized it
 // (no index file beside it): that one is deleted.
-func (ps *PackStorage) openArchive(name string) (*archive, error) {
+func (ps *PackStorage) openArchive(name string, listed *ListedFile) (*archive, error) {
 	info, known, err := ps.index.LookupArchive(name)
 	if err != nil {
 		return nil, err
@@ -1084,7 +1124,7 @@ func (ps *PackStorage) openArchive(name string) (*archive, error) {
 		return nil, errArchiveRetired
 	}
 
-	a, err := openArchive(ps.storage, name, ps.atRest, ps.logger)
+	a, err := openArchive(ps.storage, name, listed, ps.atRest, ps.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -1236,7 +1276,7 @@ func (ps *PackStorage) Close() error {
 
 // Open implements backup.ObjectStore.
 func (ps *PackStorage) Open() error {
-	names, err := ps.archiveNames()
+	names, listed, err := ps.archiveNames()
 	if err != nil {
 		return errors.Wrap(err, "failed listing archive names")
 	}
@@ -1252,7 +1292,7 @@ func (ps *PackStorage) Open() error {
 		group.Go(func() error {
 			defer sem.Release(1)
 
-			_, err := ps.openArchive(name)
+			_, err := ps.openArchive(name, listed[name])
 
 			return err
 		})
@@ -1271,7 +1311,7 @@ func (ps *PackStorage) Open() error {
 // commits of archives it loaded while they were pending, and unloads the
 // committed archives whose files are gone.
 func (ps *PackStorage) refreshArchives() error {
-	names, err := ps.archiveNames()
+	names, files, err := ps.archiveNames()
 	if err != nil {
 		return errors.Wrap(err, "failed listing archive names")
 	}
@@ -1314,7 +1354,7 @@ func (ps *PackStorage) refreshArchives() error {
 				return nil
 			}
 
-			_, err = ps.openArchive(name)
+			_, err = ps.openArchive(name, files[name])
 			if errors.Is(err, errArchiveRetired) {
 				return nil
 			}
@@ -1396,6 +1436,23 @@ type ListedFile struct {
 // their sizes and modification times, as List names them, in one listing.
 type InfoLister interface {
 	ListInfo(extension string) ([]ListedFile, error)
+}
+
+// ListedOpener is implemented by an ArchiveStorage that opens a file a
+// listing found from what the listing said of it, without asking the
+// storage again.
+type ListedOpener interface {
+	OpenListed(file ListedFile) (File, error)
+}
+
+// openListed opens a listed file through the storage's ListedOpener when
+// it is one.
+func openListed(storage ArchiveStorage, file ListedFile) (File, error) {
+	if opener, ok := storage.(ListedOpener); ok {
+		return opener.OpenListed(file)
+	}
+
+	return storage.Open(file.Name)
 }
 
 // ListInfo lists the storage's files with their sizes and modification
@@ -1482,7 +1539,8 @@ type ArchiveIndex interface {
 	// Of an archive it already knows, it only records a creation time the
 	// index lacks.
 	IndexArchive(archive ArchiveInfo, index IndexFile) error
-	DeleteArchive(archive string, index IndexFile) error
+	// DeleteArchives forgets the archives and their objects, all or none.
+	DeleteArchives(names []string) error
 	Close() error
 	CountObjects() (uint64, uint64, error)
 }

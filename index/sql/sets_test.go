@@ -2,6 +2,7 @@ package sql
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/twcclan/goback/backup/presence"
 	"github.com/twcclan/goback/backup/retention"
 	"github.com/twcclan/goback/backup/storekey"
+	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
 	"github.com/twcclan/goback/proto"
 	"github.com/twcclan/goback/storage/pack"
@@ -587,4 +589,65 @@ func TestRecordedSetSizesReplaceTheLastRuns(t *testing.T) {
 	require.Zero(t, sets[0].DeduplicatedSize)
 	require.Zero(t, sets[0].AloneSize)
 	require.Zero(t, sets[0].DeduplicatedAloneSize)
+}
+
+func TestRecordedSetSizesReachEverySetAcrossBatchesAndCountUnknownOnes(t *testing.T) {
+	f := newFixture(t)
+
+	const sets = objectBatch + 5
+
+	builders := make([]*ent.SetCreate, sets)
+	for i := range builders {
+		builders[i] = f.x.client.Set.Create().SetID(int64(i + 1)).SetName(fmt.Sprintf("set-%d", i))
+	}
+	require.NoError(t, f.x.client.Set.CreateBulk(builders...).Exec(f.ctx))
+
+	report := &pack.CollectReport{SetBytes: map[int64]uint64{}, SetDeduplicated: map[int64]uint64{}, SetAlone: map[int64]uint64{},
+		SetExclusive: map[int64]uint64{}, SetDeduplicatedAlone: map[int64]uint64{}, Unattributed: 7}
+	for id := int64(2); id <= sets+1; id++ {
+		report.SetBytes[id] = uint64(id)
+		report.SetDeduplicated[id] = uint64(2 * id)
+		report.SetAlone[id] = uint64(3 * id)
+		report.SetExclusive[id] = uint64(4 * id)
+		report.SetDeduplicatedAlone[id] = uint64(5 * id)
+	}
+
+	require.NoError(t, f.x.client.Set.UpdateOneID(1).SetPhysicalSize(99).Exec(f.ctx))
+	require.NoError(t, f.x.RecordSetSizes(f.ctx, report))
+	require.EqualValues(t, 7+sets+1, report.Unattributed, "the one set the index lacks")
+
+	rows, err := f.x.client.Set.Query().All(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, sets)
+
+	for _, row := range rows {
+		if row.ID == 1 {
+			require.Nil(t, row.PhysicalSize, "a set the run did not name holds nothing")
+			continue
+		}
+
+		require.Equal(t, []int64{row.ID, 2 * row.ID, 3 * row.ID, 4 * row.ID, 5 * row.ID},
+			[]int64{*row.PhysicalSize, *row.DeduplicatedSize, *row.AloneSize, *row.ExclusiveSize, *row.DeduplicatedAloneSize}, "set %d", row.ID)
+	}
+}
+
+func TestPendingPresenceIsBuiltForEachSetWhoseNewestLiveCommitLacksIt(t *testing.T) {
+	f := newFixture(t)
+
+	f.commit("a", f.tree(f.file("a.txt", "one")), false)
+	f.commit("b", f.tree(f.file("b.txt", "one")), false)
+	f.advance(time.Hour)
+
+	obj := proto.NewObject(&proto.Commit{Timestamp: f.clock.Unix(), Tree: f.tree(f.file("a.txt", "two")).Ref(), BackupSet: "a", AgentId: "node-1"})
+	require.NoError(t, f.x.Put(f.ctx, obj))
+	require.Empty(t, f.commitRow(obj.Ref()).Presence)
+
+	built, err := f.x.BuildPendingPresence(f.ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, built, "only a's newest lacks a filter")
+	require.NotEmpty(t, f.commitRow(obj.Ref()).Presence)
+
+	built, err = f.x.BuildPendingPresence(f.ctx)
+	require.NoError(t, err)
+	require.Zero(t, built)
 }

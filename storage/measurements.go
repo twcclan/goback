@@ -64,3 +64,10 @@ func (c *BucketStore) count(op Operation, bytes int64) {
 		bucketBytes.Add(context.Background(), bytes, attrs)
 	}
 }
+
+// carried records bytes a request already counted carried since.
+func (c *BucketStore) carried(op Operation, bytes int64) {
+	if bytes > 0 {
+		bucketBytes.Add(context.Background(), bytes, metric.WithAttributes(append(c.attrs, keyOperation.String(string(op)))...))
+	}
+}

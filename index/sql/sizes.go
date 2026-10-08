@@ -27,14 +27,21 @@ func (x *Index) MeasureSets(ctx context.Context) ([]index.SetInfo, error) {
 		return nil, err
 	}
 
+	commits, err := x.client.CommitRow.Query().Where(liveCommit()).
+		Order(ent.Asc(commitrow.FieldReceivedAt), ent.Asc(commitrow.FieldID)).
+		Select(commitrow.FieldSetID, commitrow.FieldReceivedAt, commitrow.FieldLogicalSize).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bySet := make(map[int64][]*ent.CommitRow, len(rows))
+	for _, c := range commits {
+		bySet[c.SetID] = append(bySet[c.SetID], c)
+	}
+
 	var measured []index.SetInfo
 	for _, row := range rows {
-		live, err := x.client.CommitRow.Query().Where(commitrow.SetID(row.ID), liveCommit()).
-			Order(ent.Asc(commitrow.FieldReceivedAt), ent.Asc(commitrow.FieldID)).
-			Select(commitrow.FieldReceivedAt, commitrow.FieldLogicalSize).All(ctx)
-		if err != nil {
-			return measured, err
-		}
+		live := bySet[row.ID]
 
 		digest := sizesDigest(live)
 		if bytes.Equal(row.SizesDigest, digest) {

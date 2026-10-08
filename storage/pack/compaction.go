@@ -266,7 +266,12 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 		return err
 	}
 
-	rw.ps.retireRewritten(obsolete)
+	byName := make(map[string]IndexFile, len(chunk))
+	for i, a := range chunk {
+		byName[a.name] = indexes[i]
+	}
+
+	rw.ps.retireRewritten(obsolete, byName)
 
 	return nil
 }
@@ -348,18 +353,36 @@ func (rw *rewrite) lookUp(ctx context.Context, chunk []*archive, workers int) ([
 }
 
 // retireRewritten retires the inputs of a rewrite whose outputs are
-// indexed, so readers that still land on one find their copy elsewhere.
-func (ps *PackStorage) retireRewritten(obsolete []*archive) {
-	for _, archive := range obsolete {
-		idx, err := archive.getIndex()
-		if err != nil {
-			ps.logger.Warn("reading the index of an obsolete archive failed", "archive", archive.name, "err", err)
-			continue
-		}
+// indexed, so readers that still land on one find their copy elsewhere;
+// indexes holds the index of each input by name.
+func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]IndexFile) {
+	marked := make([]bool, len(obsolete))
+	now := time.Now()
 
-		// marked before the index forgets it, so no process loads it again
-		if err := ps.quarantineArchive(archive.name, time.Now()); err != nil {
-			ps.logger.Warn("retiring an obsolete archive failed", "archive", archive.name, "err", err)
+	grp := new(errgroup.Group)
+	grp.SetLimit(fileWorkers)
+
+	// marked before the index forgets it, so no process loads it again
+	for i, archive := range obsolete {
+		grp.Go(func() error {
+			if err := ps.quarantineArchive(archive.name, now); err != nil {
+				ps.logger.Warn("retiring an obsolete archive failed", "archive", archive.name, "err", err)
+				return nil
+			}
+
+			marked[i] = true
+
+			return nil
+		})
+	}
+
+	_ = grp.Wait()
+
+	var names []string
+	var retired []IndexFile
+
+	for i, archive := range obsolete {
+		if !marked[i] {
 			continue
 		}
 
@@ -369,25 +392,37 @@ func (ps *PackStorage) retireRewritten(obsolete []*archive) {
 			ps.logger.Warn("closing obsolete archive failed", "archive", archive.name, "err", e)
 		}
 
-		err = ps.index.DeleteArchive(archive.name, idx)
-		if err != nil {
-			ps.logger.Warn("removing local index failed", "archive", archive.name, "err", err)
-		}
+		names = append(names, archive.name)
+		retired = append(retired, indexes[archive.name])
+	}
 
-		ps.forgetCached(context.Background(), idx)
+	if len(names) == 0 {
+		return
+	}
 
-		// a restore needs neither: the index file says the archive was
-		// committed
+	if err := ps.index.DeleteArchives(names); err != nil {
+		ps.logger.Warn("removing the index rows of retired archives failed", "archives", len(names), "err", err)
+	}
+
+	ps.forgetCached(context.Background(), retired)
+
+	// a restore needs neither: the index file says the archive was
+	// committed
+	for _, name := range names {
 		for _, ext := range []string{GCExt, CommittedExt} {
-			if err := ps.storage.Delete(archive.name + ext); err != nil && !notExist(err) {
-				ps.logger.Warn("deleting a file of a retired archive failed", "file", archive.name+ext, "err", err)
-			}
-		}
+			grp.Go(func() error {
+				if err := ps.storage.Delete(name + ext); err != nil && !notExist(err) {
+					ps.logger.Warn("deleting a file of a retired archive failed", "file", name+ext, "err", err)
+				}
 
-		if ps.observer != nil {
-			ps.observer.ArchiveDeleted(archive.name)
+				return nil
+			})
 		}
 	}
+
+	_ = grp.Wait()
+
+	ps.archivesDeleted(names)
 }
 
 // progressEvery is how many rewritten archives pass between progress logs.

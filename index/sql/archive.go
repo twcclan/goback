@@ -181,19 +181,25 @@ func insertObjects(ctx context.Context, tx *ent.Tx, name string, records []pack.
 	return nil
 }
 
-// DeleteArchive implements pack.ArchiveIndex; the objects go with the
-// archive.
-func (x *Index) DeleteArchive(name string, _ pack.IndexFile) error {
+// DeleteArchives implements pack.ArchiveIndex; the objects go with the
+// archives.
+func (x *Index) DeleteArchives(names []string) error {
 	ctx := context.Background()
 
 	return x.tx(ctx, func(tx *ent.Tx) error {
-		if _, err := tx.Object.Delete().Where(object.ArchiveID(name)).Exec(ctx); err != nil {
-			return err
+		for start := 0; start < len(names); start += objectBatch {
+			batch := names[start:min(start+objectBatch, len(names))]
+
+			if _, err := tx.Object.Delete().Where(object.ArchiveIDIn(batch...)).Exec(ctx); err != nil {
+				return err
+			}
+
+			if _, err := tx.Archive.Delete().Where(archive.IDIn(batch...)).Exec(ctx); err != nil {
+				return err
+			}
 		}
 
-		_, err := tx.Archive.Delete().Where(archive.ID(name)).Exec(ctx)
-
-		return err
+		return nil
 	})
 }
 

@@ -82,20 +82,31 @@ func TestArchiveIndex(t *testing.T, idx pack.ArchiveIndex) {
 		}
 	}
 
-	for _, archive := range archives {
-		err := idx.DeleteArchive(archive.name, archive.index)
-		if err != nil {
-			t.Errorf("Couldn't delete archive from index: %s", err)
-			continue
-		}
-
-		for _, record := range archive.index {
-			_, err := idx.LocateObject(&proto.Ref{Hash: record.Sum[:]}, pack.Scope{})
-			if err != pack.ErrRecordNotFound {
-				t.Errorf("Expected to not find index record for key %x: %s", record.Sum, err)
+	gone := func(archives []TestArchive, want bool) {
+		for _, archive := range archives {
+			for _, record := range archive.index {
+				_, err := idx.LocateObject(&proto.Ref{Hash: record.Sum[:]}, pack.Scope{})
+				if found := err != pack.ErrRecordNotFound; found == want {
+					t.Errorf("record %x of %s found: %v, %s", record.Sum, archive.name, found, err)
+				}
 			}
 		}
 	}
+
+	if err := idx.DeleteArchives([]string{archives[0].name, archives[1].name, archives[2].name}); err != nil {
+		t.Fatalf("Couldn't delete archives from index: %s", err)
+	}
+
+	gone(archives[:3], true)
+	gone(archives[3:], false)
+
+	for _, archive := range archives[3:] {
+		if err := idx.DeleteArchives([]string{archive.name}); err != nil {
+			t.Fatalf("Couldn't delete archive from index: %s", err)
+		}
+	}
+
+	gone(archives, true)
 }
 
 // TestArchiveIndexExclusion checks that LocateObject skips excluded archives.

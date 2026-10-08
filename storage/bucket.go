@@ -30,7 +30,10 @@ var _ io.ReaderAt = (*bucketFile)(nil)
 var _ os.FileInfo = (*bucketFileInfo)(nil)
 var _ pack.ArchiveStorage = (*BucketStore)(nil)
 var _ pack.InfoLister = (*BucketStore)(nil)
+var _ pack.ListedOpener = (*BucketStore)(nil)
 
+// Read reads on from the file position through one request that stays
+// open while the reads follow each other; a Seek elsewhere starts another.
 func (s *bucketFile) Read(buf []byte) (int, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -39,10 +42,41 @@ func (s *bucketFile) Read(buf []byte) (int, error) {
 		return 0, errors.New("Read only supported for readonly files")
 	}
 
-	n, err := s.ReadAt(buf, s.offset)
+	if s.offset >= s.attrs.Size {
+		return 0, io.EOF
+	}
+
+	if s.stream == nil {
+		stream, err := s.store.bucket.NewRangeReader(context.Background(), s.key, s.offset, s.attrs.Size-s.offset, nil)
+		s.store.count(OpGet, 0)
+
+		if err != nil {
+			return 0, err
+		}
+
+		s.stream = stream
+	}
+
+	n, err := s.stream.Read(buf)
 	s.offset += int64(n)
+	s.store.carried(OpGet, int64(n))
+
+	if err != nil || s.offset >= s.attrs.Size {
+		s.closeStream()
+
+		if errors.Is(err, io.EOF) && s.offset < s.attrs.Size {
+			err = io.ErrUnexpectedEOF
+		}
+	}
 
 	return n, err
+}
+
+func (s *bucketFile) closeStream() {
+	if s.stream != nil {
+		_ = s.stream.Close()
+		s.stream = nil
+	}
 }
 
 func (s *bucketFile) ReadAt(buf []byte, offset int64) (int, error) {
@@ -104,15 +138,22 @@ func (s *bucketFile) Seek(offset int64, whence int) (int64, error) {
 		return -1, errors.New("Seek only supported for readonly files")
 	}
 
+	position := s.offset
+
 	switch whence {
 	case io.SeekStart:
-		s.offset = offset
+		position = offset
 	case io.SeekCurrent:
-		s.offset += offset
+		position += offset
 	case io.SeekEnd:
-		s.offset = s.attrs.Size - offset
+		position = s.attrs.Size - offset
 	default:
 		return 0, errors.New("invalid whence value")
+	}
+
+	if position != s.offset {
+		s.closeStream()
+		s.offset = position
 	}
 
 	return s.offset, nil
@@ -128,6 +169,7 @@ type bucketFile struct {
 
 	readOnly bool
 	offset   int64
+	stream   *blob.Reader
 	attrs    *blob.Attributes
 	mtx      sync.Mutex
 }
@@ -135,6 +177,8 @@ type bucketFile struct {
 func (s *bucketFile) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+
+	s.closeStream()
 
 	if s.readOnly || s.writer == nil {
 		return nil
@@ -263,6 +307,26 @@ func ArchiveKey(name string) string {
 // Open implements pack.ArchiveStorage.
 func (c *BucketStore) Open(name string) (pack.File, error) {
 	return c.openFile(c.key(name))
+}
+
+// OpenListed implements pack.ListedOpener.
+func (c *BucketStore) OpenListed(file pack.ListedFile) (pack.File, error) {
+	key := c.key(file.Name)
+
+	c.openFilesMtx.Lock()
+	open, ok := c.openFiles[key]
+	c.openFilesMtx.Unlock()
+
+	if ok {
+		return open, nil
+	}
+
+	return &bucketFile{
+		key:      key,
+		attrs:    &blob.Attributes{Size: file.Size, ModTime: file.Modified},
+		store:    c,
+		readOnly: true,
+	}, nil
 }
 
 // Create implements pack.ArchiveStorage.

@@ -208,7 +208,7 @@ func (ps *PackStorage) adoptArchive(name string, loaded *archive) {
 		_ = loaded.Close()
 	}
 
-	_, err := ps.openArchive(name)
+	_, err := ps.openArchive(name, nil)
 	if err != nil {
 		ps.logger.Error("indexing an archive a commit marked committed failed; it stays in the storage", "archive", name, "err", err)
 	}

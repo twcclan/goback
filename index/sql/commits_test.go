@@ -1193,3 +1193,40 @@ func TestReIndexPlacesACommitReceivedWithTheSetsNewestJustAfterIt(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, versions, 2, "each commit keeps its own version")
 }
+
+func TestEvaluationRetiresEachCommitOnceAndKeepsWhatAWiderPolicyCovers(t *testing.T) {
+	f := newFixture(t)
+
+	var refs []*proto.Ref
+	for i := range 5 {
+		refs = append(refs, f.commit("world", f.tree(f.file("a.txt", fmt.Sprint(i))), false))
+		if i == 0 {
+			require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 2}))
+		}
+		f.advance(time.Hour)
+	}
+
+	// commit i is retired by the commit two after it
+	first := f.clock.Add(-3 * time.Hour)
+	for i, ref := range refs[:3] {
+		row := f.commitRow(ref)
+		require.Empty(t, row.RetainedBy)
+		sameInstant(t, row.RetireAt, first.Add(time.Duration(i)*time.Hour))
+		require.NotNil(t, row.RetirePolicy)
+	}
+
+	require.Equal(t, "last", f.commitRow(refs[3]).RetainedBy)
+	require.Equal(t, "latest,last", f.commitRow(refs[4]).RetainedBy)
+
+	require.NoError(t, f.x.SetPolicy(f.ctx, "world", &retention.Policy{KeepLast: 4}))
+
+	require.NotNil(t, f.commitRow(refs[0]).RetireAt, "beyond the wider policy still")
+	for _, ref := range refs[1:4] {
+		row := f.commitRow(ref)
+		require.Equal(t, "last", row.RetainedBy)
+		require.Nil(t, row.RetireAt)
+		require.Nil(t, row.RetirePolicy)
+		require.Nil(t, row.ExpiresAt)
+	}
+	require.Equal(t, "latest,last", f.commitRow(refs[4]).RetainedBy)
+}

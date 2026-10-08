@@ -29,9 +29,10 @@ type indexCache struct {
 }
 
 var (
-	_ RangeSigner = (*indexCache)(nil)
-	_ Checksummer = (*indexCache)(nil)
-	_ InfoLister  = (*indexCache)(nil)
+	_ RangeSigner  = (*indexCache)(nil)
+	_ Checksummer  = (*indexCache)(nil)
+	_ InfoLister   = (*indexCache)(nil)
+	_ ListedOpener = (*indexCache)(nil)
 )
 
 func (c *indexCache) path(name string) string {
@@ -134,6 +135,15 @@ func (c *indexCache) Checksum(name string) ([]byte, error) {
 	}
 
 	return sums.Checksum(name)
+}
+
+// OpenListed implements ListedOpener: an index comes from the cache.
+func (c *indexCache) OpenListed(file ListedFile) (File, error) {
+	if strings.HasSuffix(file.Name, IndexExt) {
+		return c.Open(file.Name)
+	}
+
+	return openListed(c.ArchiveStorage, file)
 }
 
 // ListInfo implements InfoLister over the storage underneath.

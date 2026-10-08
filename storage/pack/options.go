@@ -40,6 +40,14 @@ type ArchiveObserver interface {
 	ArchiveDeleted(name string)
 }
 
+// ArchiveBatchObserver is an ArchiveObserver told about archives deleted
+// together in one call, in place of a call to ArchiveDeleted for each.
+type ArchiveBatchObserver interface {
+	ArchiveObserver
+	// ArchivesDeleted is told the archives' files are gone from the storage.
+	ArchivesDeleted(names []string)
+}
+
 // WithArchiveObserver tells observer about every archive stored and
 // deleted.
 func WithArchiveObserver(observer ArchiveObserver) PackOption {

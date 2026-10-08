@@ -23,26 +23,52 @@ const quarantineDay = "2006-01-02"
 // reads already under way, in this process or another, finish against it.
 const DefaultQuarantine = 24 * time.Hour
 
-// archiveNames lists the archives in the storage that are not retired.
-func (ps *PackStorage) archiveNames() ([]string, error) {
-	matches, err := ps.storage.List(ArchiveSuffix)
-	if err != nil {
-		return nil, err
+// archiveNames lists the archives in the storage that are not retired,
+// and, when the storage is an InfoLister, what the listing said of each
+// archive file.
+func (ps *PackStorage) archiveNames() ([]string, map[string]*ListedFile, error) {
+	var files []ListedFile
+
+	if lister, ok := ps.storage.(InfoLister); ok {
+		listed, err := lister.ListInfo(ArchiveSuffix)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		files = listed
+	} else {
+		matches, err := ps.storage.List(ArchiveSuffix)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for _, match := range matches {
+			files = append(files, ListedFile{Name: match})
+		}
 	}
 
 	retired, err := ps.markerIDs(RetiredExt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	names := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if name := strings.TrimSuffix(match, ArchiveSuffix); !retired[name] {
-			names = append(names, name)
+	_, lister := ps.storage.(InfoLister)
+	names := make([]string, 0, len(files))
+	listed := make(map[string]*ListedFile)
+
+	for i, file := range files {
+		name := strings.TrimSuffix(file.Name, ArchiveSuffix)
+		if retired[name] {
+			continue
+		}
+
+		names = append(names, name)
+		if lister {
+			listed[name] = &files[i]
 		}
 	}
 
-	return names, nil
+	return names, listed, nil
 }
 
 // quarantineArchive marks an archive retired, keeping its files for the

@@ -134,7 +134,7 @@ func TestEndSessionDropsPendingArchives(t *testing.T) {
 	_, err := os.Stat(prefix)
 	require.True(t, os.IsNotExist(err), "the session prefix is gone")
 
-	names, err := store.archiveNames()
+	names, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Empty(t, names)
 
@@ -361,7 +361,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 		requireVisible(t, store, context.Background(), obj, true)
 	}
 
-	names, err := store.archiveNames()
+	names, _, err := store.archiveNames()
 	require.NoError(t, err)
 	for _, name := range names {
 		require.Empty(t, ParsePlacement(name).Session, "session archives are merged away: %s", name)

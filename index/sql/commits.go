@@ -392,7 +392,8 @@ func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *prot
 			return err
 		}
 
-		size, files, err := logicalSize(ctx, c, setID, at)
+		// the commit is the set's newest, received after every other
+		size, files, err := openSize(ctx, c, setID)
 		if err != nil {
 			return err
 		}
@@ -1337,17 +1338,23 @@ func mapAll[S, T any](in []S, f func(S) T) []T {
 // there are: the recorded size of every file version open then.
 // Directories and symlinks carry no content and are left out.
 func logicalSize(ctx context.Context, c *ent.Client, setID int64, at time.Time) (int64, int64, error) {
+	return fileSizes(ctx, c, file.SetID(setID), file.ValidFromLTE(at), file.Or(file.ValidUntilIsNil(), file.ValidUntilGT(at)))
+}
+
+// openSize is logicalSize at a moment after every commit of the set,
+// when the versions open then are the ones no commit has closed yet.
+func openSize(ctx context.Context, c *ent.Client, setID int64) (int64, int64, error) {
+	return fileSizes(ctx, c, file.SetID(setID), file.ValidUntilIsNil())
+}
+
+func fileSizes(ctx context.Context, c *ent.Client, where ...predicate.File) (int64, int64, error) {
 	var sums []struct {
 		Sum   *int64 `sql:"sum"`
 		Count int64  `sql:"count"`
 	}
 
-	err := c.File.Query().Where(
-		file.SetID(setID),
-		file.TypeEQ(uint32(proto.NodeType_NODE_FILE)),
-		file.ValidFromLTE(at),
-		file.Or(file.ValidUntilIsNil(), file.ValidUntilGT(at)),
-	).Aggregate(ent.Sum(file.FieldSize), ent.Count()).Scan(ctx, &sums)
+	err := c.File.Query().Where(append(where, file.TypeEQ(uint32(proto.NodeType_NODE_FILE)))...).
+		Aggregate(ent.Sum(file.FieldSize), ent.Count()).Scan(ctx, &sums)
 	if err != nil {
 		return 0, 0, err
 	}

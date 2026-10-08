@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
@@ -12,7 +13,34 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/storage/pack"
+
+	entsql "entgo.io/ent/dialect/sql"
 )
+
+// sizeOf is the size each of ids has in sizes, NULL for any other set.
+func sizeOf(ids []int64, sizes map[int64]uint64) entsql.Querier {
+	return entsql.ExprFunc(func(b *entsql.Builder) {
+		if len(ids) == 0 {
+			b.WriteString("NULL")
+			return
+		}
+
+		b.WriteString("CASE ").Ident(set.FieldID)
+		for _, id := range ids {
+			b.WriteString(" WHEN ").Arg(id).WriteString(" THEN CAST(").Arg(int64(sizes[id])).WriteString(" AS BIGINT)")
+		}
+		b.WriteString(" END")
+	})
+}
+
+func anys[T any](values []T) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+
+	return out
+}
 
 // findSet returns the id of the named set, or backup.ErrNotFound.
 func findSet(ctx context.Context, c *ent.Client, name string) (int64, error) {
@@ -242,27 +270,66 @@ func (x *Index) RootOwner(ctx context.Context) (func(root []byte) pack.Attributi
 func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) error {
 	var unknown uint64
 
+	ids := make([]int64, 0, len(report.SetBytes))
+	for id := range report.SetBytes {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
 	err := x.tx(ctx, func(tx *ent.Tx) error {
 		unknown = 0
 
-		err := tx.Set.Update().ClearPhysicalSize().ClearDeduplicatedSize().ClearAloneSize().ClearExclusiveSize().
-			ClearDeduplicatedAloneSize().Exec(ctx)
+		var known []int64
+		err := inBatches(ids, func(batch []int64) error {
+			found, err := tx.Set.Query().Where(set.IDIn(batch...)).IDs(ctx)
+			known = append(known, found...)
+
+			return err
+		})
 		if err != nil {
 			return err
 		}
 
-		for id, size := range report.SetBytes {
-			err = tx.Set.UpdateOneID(id).SetPhysicalSize(int64(size)).SetDeduplicatedSize(int64(report.SetDeduplicated[id])).
-				SetAloneSize(int64(report.SetAlone[id])).SetExclusiveSize(int64(report.SetExclusive[id])).
-				SetDeduplicatedAloneSize(int64(report.SetDeduplicatedAlone[id])).Exec(ctx)
-			if ent.IsNotFound(err) {
-				x.logger().Warn("gc attributed objects to a set the index does not hold", "set", id, "bytes", size)
-				unknown += size
+		held := make(map[int64]bool, len(known))
+		for _, id := range known {
+			held[id] = true
+		}
 
-				continue
+		for _, id := range ids {
+			if !held[id] {
+				x.logger().Warn("gc attributed objects to a set the index does not hold", "set", id, "bytes", report.SetBytes[id])
+				unknown += report.SetBytes[id]
+			}
+		}
+
+		slices.Sort(known)
+
+		columns := map[string]map[int64]uint64{
+			set.FieldPhysicalSize:          report.SetBytes,
+			set.FieldDeduplicatedSize:      report.SetDeduplicated,
+			set.FieldAloneSize:             report.SetAlone,
+			set.FieldExclusiveSize:         report.SetExclusive,
+			set.FieldDeduplicatedAloneSize: report.SetDeduplicatedAlone,
+		}
+
+		d := entsql.Dialect(x.dialect)
+
+		// the first statement has no condition, so it also clears the
+		// sizes of every set the collection did not name
+		for start := 0; start == 0 || start < len(known); start += objectBatch {
+			batch := known[start:min(start+objectBatch, len(known))]
+
+			update := d.Update(set.Table)
+			for column, sizes := range columns {
+				update.Set(column, sizeOf(batch, sizes))
 			}
 
-			if err != nil {
+			if start > 0 {
+				update.Where(entsql.In(set.FieldID, anys(batch)...))
+			}
+
+			query, args := update.Query()
+			if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 				return err
 			}
 		}

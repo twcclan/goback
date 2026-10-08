@@ -154,11 +154,13 @@ func (i *InMemoryIndex) IndexArchive(archive ArchiveInfo, index IndexFile) error
 	return nil
 }
 
-// DeleteArchive implements pack.ArchiveIndex.
-func (i *InMemoryIndex) DeleteArchive(archive string, index IndexFile) error {
+// DeleteArchives implements pack.ArchiveIndex.
+func (i *InMemoryIndex) DeleteArchives(names []string) error {
 	i.mtx.Lock()
-	delete(i.index, archive)
-	delete(i.archives, archive)
+	for _, name := range names {
+		delete(i.index, name)
+		delete(i.archives, name)
+	}
 	i.mtx.Unlock()
 
 	return nil

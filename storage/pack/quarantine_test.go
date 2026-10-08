@@ -43,7 +43,7 @@ func TestARewriteKeepsWhatItRetiredUntilTheQuarantineEnds(t *testing.T) {
 	// another process loads none of them
 	other := newGCStore(t, base)
 	t.Cleanup(func() { _ = other.Close() })
-	names, err := other.archiveNames()
+	names, _, err := other.archiveNames()
 	require.NoError(t, err)
 	for _, name := range names {
 		require.NotContains(t, retired, name)

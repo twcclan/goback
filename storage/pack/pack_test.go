@@ -167,7 +167,7 @@ func TestCompactionKeepsAnsweringReaders(t *testing.T) {
 	}
 	require.NoError(t, store.Flush())
 
-	before, err := store.archiveNames()
+	before, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Greater(t, len(before), 10)
 
@@ -193,7 +193,7 @@ func TestCompactionKeepsAnsweringReaders(t *testing.T) {
 		}
 	}
 
-	after, err := store.archiveNames()
+	after, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Less(t, len(after), len(before))
 
@@ -233,13 +233,13 @@ func TestPackCompaction(t *testing.T) {
 	require.NoError(t, store.Put(context.Background(), objects[0]))
 	require.NoError(t, store.Flush())
 
-	archivesBefore, err := store.archiveNames()
+	archivesBefore, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Greater(t, len(archivesBefore), 1)
 
 	require.NoError(t, store.doCompaction())
 
-	archivesAfter, err := store.archiveNames()
+	archivesAfter, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.Less(t, len(archivesAfter), len(archivesBefore))
 

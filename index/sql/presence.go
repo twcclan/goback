@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/proto"
 
+	entsql "entgo.io/ent/dialect/sql"
 	pb "google.golang.org/protobuf/proto"
 )
 
@@ -95,27 +96,62 @@ func (x *Index) BuildPresence(ctx context.Context, commit *proto.Ref) error {
 // BuildPendingPresence builds the filter of every set whose newest live
 // commit has none and reports how many it built.
 func (x *Index) BuildPendingPresence(ctx context.Context) (int, error) {
-	sets, err := x.client.Set.Query().All(ctx)
+	d := entsql.Dialect(x.dialect)
+	c, s := d.Table(commitrow.Table).As("c"), d.Table(set.Table).As("s")
+	query, args := d.Select(c.C(commitrow.FieldSetID), s.C(set.FieldName), c.C(commitrow.FieldRef), c.C(commitrow.FieldTree)).
+		AppendSelectExpr(entsql.ExprFunc(func(b *entsql.Builder) {
+			b.WriteString("CASE WHEN ").Ident(c.C(commitrow.FieldPresence)).WriteString(" IS NULL OR LENGTH(").
+				Ident(c.C(commitrow.FieldPresence)).WriteString(") = 0 THEN 1 ELSE 0 END")
+		})).
+		From(c).Join(s).On(c.C(commitrow.FieldSetID), s.C(set.FieldID)).
+		Where(liveCommitColumns(c)).
+		OrderBy(c.C(commitrow.FieldSetID), entsql.Desc(c.C(commitrow.FieldReceivedAt)), entsql.Desc(c.C(commitrow.FieldID))).Query()
+
+	type newest struct {
+		set       int64
+		name      string
+		ref, tree []byte
+	}
+
+	var pending []newest
+
+	err := func() error {
+		rows, err := x.client.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		seen := false
+		var last int64
+
+		for rows.Next() {
+			var n newest
+			var empty int
+			if err := rows.Scan(&n.set, &n.name, &n.ref, &n.tree, &empty); err != nil {
+				return err
+			}
+
+			if seen && n.set == last {
+				continue
+			}
+
+			seen, last = true, n.set
+
+			if empty == 1 {
+				pending = append(pending, n)
+			}
+		}
+
+		return rows.Err()
+	}()
 	if err != nil {
 		return 0, err
 	}
 
 	built := 0
-	for _, s := range sets {
-		newest, err := x.client.CommitRow.Query().Where(commitrow.SetID(s.ID), liveCommit()).Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
-		if ent.IsNotFound(err) {
-			continue
-		}
-
-		if err != nil {
-			return built, err
-		}
-
-		if len(newest.Presence) > 0 {
-			continue
-		}
-
-		err = x.buildPresence(ctx, s.ID, s.Name, &proto.Ref{Hash: newest.Ref}, &proto.Ref{Hash: newest.Tree})
+	for _, n := range pending {
+		err := x.buildPresence(ctx, n.set, n.name, &proto.Ref{Hash: n.ref}, &proto.Ref{Hash: n.tree})
 		if err != nil {
 			return built, err
 		}

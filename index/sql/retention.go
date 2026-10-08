@@ -127,19 +127,45 @@ func (x *Index) evaluateSet(ctx context.Context, tx *ent.Tx, setID int64, now ti
 		return err
 	}
 
+	keep := make(map[string][][]byte)
+	var retire [][]byte
+
 	for i, d := range retention.Evaluate(commits, cfg.policy, now) {
+		row := rows[i]
+
 		switch {
 		case d.Keep:
-			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy(d.RetainedBy()).ClearRetireAt().ClearRetirePolicy().
-				ClearExpiresAt().Exec(ctx)
-		case rows[i].RetireAt != nil:
-			continue
-		default:
-			err = c.CommitRow.Update().Where(commitrow.Ref(refs[i])).SetRetainedBy("").SetRetireAt(now).SetRetirePolicy(string(policy)).
-				SetExpiresAt(now).Exec(ctx)
-		}
+			by := d.RetainedBy()
+			if row.RetainedBy == by && row.RetireAt == nil && row.RetirePolicy == nil && row.ExpiresAt == nil {
+				continue
+			}
 
+			keep[by] = append(keep[by], row.Ref)
+		case row.RetireAt == nil:
+			retire = append(retire, row.Ref)
+		}
+	}
+
+	for by, refs := range keep {
+		err := inBatches(refs, func(batch [][]byte) error {
+			return c.CommitRow.Update().Where(commitrow.RefIn(batch...)).SetRetainedBy(by).ClearRetireAt().ClearRetirePolicy().
+				ClearExpiresAt().Exec(ctx)
+		})
 		if err != nil {
+			return err
+		}
+	}
+
+	return inBatches(retire, func(batch [][]byte) error {
+		return c.CommitRow.Update().Where(commitrow.RefIn(batch...)).SetRetainedBy("").SetRetireAt(now).SetRetirePolicy(string(policy)).
+			SetExpiresAt(now).Exec(ctx)
+	})
+}
+
+// inBatches calls fn with consecutive runs of at most objectBatch items.
+func inBatches[T any](items []T, fn func([]T) error) error {
+	for start := 0; start < len(items); start += objectBatch {
+		if err := fn(items[start:min(start+objectBatch, len(items))]); err != nil {
 			return err
 		}
 	}

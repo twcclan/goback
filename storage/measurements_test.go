@@ -149,3 +149,65 @@ func TestReadingAWholeFileCountsTheBytesItCarried(t *testing.T) {
 
 	require.Equal(t, int64(10), bytes["get"])
 }
+
+func TestSequentialReadsShareOneRequestUntilASeek(t *testing.T) {
+	content := make([]byte, 10000)
+	for i := range content {
+		content[i] = byte(i)
+	}
+
+	requests, bytes := counted(t, "five", func(store *storage.BucketStore) {
+		write(t, store, "c.archive", content)
+
+		file, err := store.Open("c.archive")
+		require.NoError(t, err)
+		defer file.Close()
+
+		got := make([]byte, 0, len(content))
+		buf := make([]byte, 333)
+		for {
+			n, err := file.Read(buf)
+			got = append(got, buf[:n]...)
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+		}
+		require.Equal(t, content, got)
+
+		_, err = file.Seek(5000, io.SeekStart)
+		require.NoError(t, err)
+
+		tail, err := io.ReadAll(file)
+		require.NoError(t, err)
+		require.Equal(t, content[5000:], tail)
+	})
+
+	require.Equal(t, int64(2), requests["get"], "one request for the whole file, one after the seek")
+	require.Equal(t, int64(15000), bytes["get"])
+}
+
+func TestOpeningAListedFileAsksTheObjectStoreNothing(t *testing.T) {
+	requests, _ := counted(t, "six", func(store *storage.BucketStore) {
+		write(t, store, "d.archive", []byte("0123456789"))
+
+		listed, err := store.ListInfo(".archive")
+		require.NoError(t, err)
+		require.Len(t, listed, 1)
+
+		file, err := store.OpenListed(listed[0])
+		require.NoError(t, err)
+
+		info, err := file.Stat()
+		require.NoError(t, err)
+		require.EqualValues(t, 10, info.Size())
+
+		buf := make([]byte, 4)
+		_, err = file.(io.ReaderAt).ReadAt(buf, 6)
+		require.NoError(t, err)
+		require.Equal(t, "6789", string(buf))
+	})
+
+	require.Zero(t, requests["head"])
+	require.Equal(t, int64(1), requests["get"])
+}

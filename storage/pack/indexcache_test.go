@@ -63,7 +63,7 @@ func TestTheIndexCacheServesIndexesWithTheirCreationTime(t *testing.T) {
 	require.NotZero(t, read, "the archives the first collection wrote are read once")
 
 	third, again := open(true)
-	names, err := third.archiveNames()
+	names, _, err := third.archiveNames()
 	require.NoError(t, err)
 
 	for _, name := range names {
