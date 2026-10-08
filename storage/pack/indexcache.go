@@ -138,5 +138,5 @@ func (c *indexCache) Checksum(name string) ([]byte, error) {
 
 // ListInfo implements InfoLister over the storage underneath.
 func (c *indexCache) ListInfo(extension string) ([]ListedFile, error) {
-	return listInfo(c.ArchiveStorage, extension)
+	return ListInfo(c.ArchiveStorage, extension)
 }

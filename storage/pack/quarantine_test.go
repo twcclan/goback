@@ -131,7 +131,7 @@ func TestThePurgeGoesByTheDayAMarkerNamesAndNeverBeforeItWasStored(t *testing.T)
 
 	listed, err := bucket.ListInfo(RetiredExt)
 	require.NoError(t, err)
-	opened, err := listInfo(&indexCounting{ArchiveStorage: bucket.view()}, RetiredExt)
+	opened, err := ListInfo(&indexCounting{ArchiveStorage: bucket.view()}, RetiredExt)
 	require.NoError(t, err)
 	require.ElementsMatch(t, listed, opened, "a storage that cannot list sizes and times has each file opened")
 

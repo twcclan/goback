@@ -1398,6 +1398,62 @@ type InfoLister interface {
 	ListInfo(extension string) ([]ListedFile, error)
 }
 
+// ListInfo lists the storage's files with their sizes and modification
+// times, through its InfoLister when it is one and by opening each file
+// otherwise; a wrapping ArchiveStorage implements InfoLister with it.
+func ListInfo(storage ArchiveStorage, extension string) ([]ListedFile, error) {
+	if lister, ok := storage.(InfoLister); ok {
+		return lister.ListInfo(extension)
+	}
+
+	names, err := storage.List(extension)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]ListedFile, len(names))
+	found := make([]bool, len(names))
+
+	grp := new(errgroup.Group)
+	grp.SetLimit(fileWorkers)
+
+	for i, name := range names {
+		grp.Go(func() error {
+			file, err := storage.Open(name)
+			if notExist(err) {
+				return nil
+			}
+
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			info, err := file.Stat()
+			if err != nil {
+				return err
+			}
+
+			files[i], found[i] = ListedFile{Name: name, Size: info.Size(), Modified: info.ModTime()}, true
+
+			return nil
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	listed := files[:0]
+	for i, file := range files {
+		if found[i] {
+			listed = append(listed, file)
+		}
+	}
+
+	return listed, nil
+}
+
 // IndexLocation is where an ArchiveIndex found an object.
 type IndexLocation struct {
 	Archive string

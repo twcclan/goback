@@ -56,14 +56,14 @@ func (ps *PackStorage) quarantineArchive(name string, now time.Time) error {
 	return nil
 }
 
-// quarantineWorkers bounds the storage requests the quarantine has under
-// way at once.
-const quarantineWorkers = 16
+// fileWorkers bounds the requests for single files a purge or listing has
+// under way at once.
+const fileWorkers = 16
 
 // PurgeQuarantine deletes the archives retired longer than period ago and
 // returns how many it deleted.
 func (ps *PackStorage) PurgeQuarantine(period time.Duration, now time.Time) (int, error) {
-	markers, err := listInfo(ps.storage, RetiredExt)
+	markers, err := ListInfo(ps.storage, RetiredExt)
 	if err != nil {
 		return 0, err
 	}
@@ -73,7 +73,7 @@ func (ps *PackStorage) PurgeQuarantine(period time.Duration, now time.Time) (int
 	var purged atomic.Int64
 
 	grp := new(errgroup.Group)
-	grp.SetLimit(quarantineWorkers)
+	grp.SetLimit(fileWorkers)
 
 	for _, marker := range markers {
 		// a marker is stored no earlier than the day it names, so only one
@@ -126,7 +126,7 @@ func (ps *PackStorage) retiredBytes() (uint64, error) {
 		return 0, err
 	}
 
-	archives, err := listInfo(ps.storage, ArchiveSuffix)
+	archives, err := ListInfo(ps.storage, ArchiveSuffix)
 	if err != nil {
 		return 0, err
 	}
@@ -140,61 +140,6 @@ func (ps *PackStorage) retiredBytes() (uint64, error) {
 	}
 
 	return total, nil
-}
-
-// listInfo lists the storage's files with their sizes and modification
-// times, opening each one when the storage cannot list them so.
-func listInfo(storage ArchiveStorage, extension string) ([]ListedFile, error) {
-	if lister, ok := storage.(InfoLister); ok {
-		return lister.ListInfo(extension)
-	}
-
-	names, err := storage.List(extension)
-	if err != nil {
-		return nil, err
-	}
-
-	files := make([]ListedFile, len(names))
-	found := make([]bool, len(names))
-
-	grp := new(errgroup.Group)
-	grp.SetLimit(quarantineWorkers)
-
-	for i, name := range names {
-		grp.Go(func() error {
-			file, err := storage.Open(name)
-			if notExist(err) {
-				return nil
-			}
-
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			info, err := file.Stat()
-			if err != nil {
-				return err
-			}
-
-			files[i], found[i] = ListedFile{Name: name, Size: info.Size(), Modified: info.ModTime()}, true
-
-			return nil
-		})
-	}
-
-	if err := grp.Wait(); err != nil {
-		return nil, err
-	}
-
-	listed := files[:0]
-	for i, file := range files {
-		if found[i] {
-			listed = append(listed, file)
-		}
-	}
-
-	return listed, nil
 }
 
 func (ps *PackStorage) retiredOn(name string) (time.Time, error) {
