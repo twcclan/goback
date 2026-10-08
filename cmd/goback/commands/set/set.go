@@ -21,7 +21,7 @@ import (
 // Command is the set command.
 var Command = cli.Command{
 	Name:        "set",
-	Description: "Manage backup sets",
+	Description: "Delete and undelete sets, and show or change their retention",
 	Subcommands: []cli.Command{
 		{
 			Name:      "delete",

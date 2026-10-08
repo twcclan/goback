@@ -32,7 +32,7 @@ import (
 var Command = cli.Command{
 	Action: serverAction,
 	Name:   "server",
-	Usage:  "Run an object store server.",
+	Usage:  "Serve one store to many agents over gRPC",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "address",

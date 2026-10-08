@@ -10,7 +10,7 @@ import (
 // Command is the object command.
 var Command = cli.Command{
 	Name:        "object",
-	Description: "Do stuff with objects",
+	Description: "Read stored objects by ref",
 	Subcommands: []cli.Command{
 		listCmd,
 		getCmd,

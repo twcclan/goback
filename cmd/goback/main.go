@@ -47,6 +47,7 @@ func main() {
 		scrub.Command,
 		server.Command,
 		set.Command,
+		docsCommand,
 	}
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
@@ -65,7 +66,8 @@ func main() {
 			EnvVar: "GOBACK_INDEX",
 		},
 		cli.StringFlag{
-			Name: "set, s",
+			Name:  "set, s",
+			Usage: "name of the backup set a command works on",
 		},
 		cli.StringFlag{
 			Name:  "agent-id",
