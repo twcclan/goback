@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -1186,6 +1187,43 @@ func TestACollectionTakesNoRootFromTheUntombstoneOfACommitThatIsGone(t *testing.
 	report, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
 	require.NoError(t, err)
 	require.Zero(t, report.Roots)
+}
+
+func TestACollectionReportsARevivedCommitThatIsGone(t *testing.T) {
+	var logged bytes.Buffer
+	store, err := NewPackStorage(
+		WithArchiveStorage(newLocal(t.TempDir())),
+		WithArchiveIndex(NewInMemoryIndex()),
+		WithMaxSize(256*1024),
+		WithLogger(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelError}))),
+	)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+
+	chain := makeChain(makeTestData(t, 10))
+	commit := chain[len(chain)-1]
+	putAll(t, store, chain)
+
+	require.NoError(t, store.Delete(ctx, commit.Ref()))
+	require.NoError(t, store.Flush())
+
+	for _, ahead := range []time.Duration{0, 48 * time.Hour} {
+		_, err := store.Collect(ctx, gcOptions(t, ahead))
+		require.NoError(t, err)
+	}
+
+	requireStored(t, store, []*proto.Object{commit}, false)
+	require.Empty(t, logged.String())
+
+	require.NoError(t, store.Delete(ctx, proto.TombstoneRef(commit.Ref())))
+	require.NoError(t, store.Flush())
+
+	report, err := store.Collect(ctx, gcOptions(t, 96*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, report.Roots)
+	require.Contains(t, logged.String(), fmt.Sprintf("ref=%x", commit.Ref().Hash))
 }
 
 func TestAnErasureFlagsOnlyWhatNoGroupReaches(t *testing.T) {

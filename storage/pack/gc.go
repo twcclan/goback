@@ -831,6 +831,8 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 	// a committed session's un-tombstone of its own commit is older than
 	// the tombstone that retires the commit, so only a revival, newer than
 	// it, takes a commit back; an object without a copy left is no root
+	lost := make(map[refKey]bool)
+
 	for _, t := range r.tombstones {
 		untombed, ok := tombOf[t.target]
 		if !ok {
@@ -838,6 +840,11 @@ func (r *gcRun) collectRoots(ctx context.Context) error {
 		}
 
 		if _, held := r.oldestCopy[untombed]; !held {
+			if !lost[untombed] && r.newestTomb[untombed].Before(r.newestTomb[t.target]) {
+				lost[untombed] = true
+				r.ps.logger.Error("revived object has no copy left", "ref", fmt.Sprintf("%x", untombed))
+			}
+
 			continue
 		}
 
