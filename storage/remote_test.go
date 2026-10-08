@@ -832,6 +832,56 @@ func TestRemoteGetFollowsALocation(t *testing.T) {
 	require.ErrorIs(t, err, proto.ErrRefMismatch, "a location pointing at other bytes is refused")
 }
 
+// substitute makes the index answer ref with obj.
+func (m *memIndex) substitute(ref *proto.Ref, obj *proto.Object) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	m.objects[string(ref.Hash)] = obj
+}
+
+func TestRemoteRefusesObjectsThatAreNotTheRefAskedFor(t *testing.T) {
+	index, dial := startServer(t)
+	ctx := context.Background()
+	client := dial("node-1")
+
+	put := func(obj *proto.Object) *proto.Object {
+		require.NoError(t, client.Put(ctx, obj))
+		return obj
+	}
+
+	file := put(proto.NewObject(&proto.File{Inline: []byte("mine")}))
+	other := put(proto.NewObject(&proto.File{Inline: []byte("theirs")}))
+	sub := put(proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte("a")}, Ref: file.Ref()}}}))
+	otherSub := put(proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: &proto.FileInfo{Name: []byte("b")}, Ref: other.Ref()}}}))
+	dir := &proto.FileInfo{Name: []byte("d"), Type: proto.NodeType_NODE_DIRECTORY}
+	root := put(proto.NewObject(&proto.Tree{Nodes: []*proto.TreeNode{{Stat: dir, Ref: sub.Ref()}}}))
+	commit := put(proto.NewObject(&proto.Commit{Timestamp: 1, Tree: root.Ref(), AgentId: "node-1", BackupSet: "world"}))
+	otherCommit := put(proto.NewObject(&proto.Commit{Timestamp: 2, Tree: otherSub.Ref(), AgentId: "node-1", BackupSet: "world"}))
+
+	objects, err := client.GetTree(ctx, root.Ref(), 1)
+	require.NoError(t, err)
+	require.Len(t, objects, 2)
+
+	for _, swap := range []struct{ asked, served *proto.Object }{{commit, otherCommit}, {root, otherSub}, {file, other}} {
+		index.substitute(swap.asked.Ref(), swap.served)
+
+		_, err := client.Get(ctx, swap.asked.Ref())
+		require.ErrorIs(t, err, proto.ErrRefMismatch)
+		require.ErrorContains(t, err, hex.EncodeToString(swap.asked.Ref().Hash))
+	}
+
+	err = client.ReadFiles(ctx, []backup.FileRead{{Ref: file.Ref()}}, true, func(int, *proto.Object) error { return nil }, nil)
+	require.ErrorIs(t, err, proto.ErrRefMismatch)
+	require.ErrorContains(t, err, hex.EncodeToString(file.Ref().Hash))
+
+	index.substitute(root.Ref(), root)
+	index.substitute(sub.Ref(), otherSub)
+	_, err = client.GetTree(ctx, root.Ref(), 1)
+	require.ErrorIs(t, err, proto.ErrRefMismatch)
+	require.ErrorContains(t, err, hex.EncodeToString(root.Ref().Hash))
+}
+
 // sized is an index that measured its one commit.
 type sized struct{ *memIndex }
 

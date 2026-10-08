@@ -103,6 +103,27 @@ func (o *Object) Ref() *Ref {
 	return HashPayload(o.Type(), payload)
 }
 
+// Verify fails with ErrRefMismatch, naming ref, unless the object is the one
+// ref names. A sealed object is checked only against the ref it carries;
+// opening it under the store key checks its contents.
+func (o *Object) Verify(ref *Ref) error {
+	payload, err := o.Canonical()
+	if err != nil {
+		return fmt.Errorf("object %x: %w", ref.GetHash(), err)
+	}
+
+	got := o.GetSealed().GetRef()
+	if got == nil {
+		got = HashPayload(o.Type(), payload)
+	}
+
+	if !got.Equal(ref) {
+		return fmt.Errorf("%w: object %x hashes to %x", ErrRefMismatch, ref.GetHash(), got.GetHash())
+	}
+
+	return nil
+}
+
 // StoredHash is the hash every object header carries over its stored bytes.
 func StoredHash(stored []byte) []byte {
 	sum := sha256.Sum256(stored)

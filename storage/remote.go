@@ -250,7 +250,9 @@ func (r *Client) LatestCommit(ctx context.Context, set string) (*proto.Ref, erro
 }
 
 // GetTree implements backup.TreeFetcher over the streaming RPC, fetching
-// the runs it is pointed at runFetchers at a time.
+// the runs it is pointed at runFetchers at a time. It returns only trees
+// reached from ref through the refs of trees it returns, and fails with
+// proto.ErrRefMismatch on any other object the server sends.
 func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
 	ctx, cancel := context.WithCancel(r.outgoing(ctx))
 	defer cancel()
@@ -261,15 +263,21 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 	}
 
 	var (
-		mtx     sync.Mutex
-		objects []*proto.Object
+		mtx      sync.Mutex
+		received = map[string]*proto.Object{}
 	)
 
 	keep := func(_ *proto.LocatedRecord, obj *proto.Object) error {
+		if err := obj.Validate(); err != nil {
+			return fmt.Errorf("tree below %x: %w", ref.GetHash(), err)
+		}
+
+		hash := string(obj.Ref().GetHash())
+
 		mtx.Lock()
 		defer mtx.Unlock()
 
-		objects = append(objects, obj)
+		received[hash] = obj
 
 		return nil
 	}
@@ -298,6 +306,45 @@ func (r *Client) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) (
 
 	if err != nil {
 		return nil, err
+	}
+
+	return reachedTrees(ref, received)
+}
+
+// reachedTrees returns the trees of received that ref reaches, root first,
+// failing on any received object it does not reach.
+func reachedTrees(ref *proto.Ref, received map[string]*proto.Object) ([]*proto.Object, error) {
+	objects := make([]*proto.Object, 0, len(received))
+	queue := []*proto.Ref{ref}
+
+	for len(queue) > 0 {
+		next := queue[0]
+		queue = queue[1:]
+
+		obj, ok := received[string(next.GetHash())]
+		if !ok {
+			continue
+		}
+
+		delete(received, string(next.GetHash()))
+
+		tree := obj.GetTree()
+		if tree == nil {
+			return nil, fmt.Errorf("%w: object %x below tree %x is a %s", proto.ErrRefMismatch, next.GetHash(), ref.GetHash(), obj.Type())
+		}
+
+		objects = append(objects, obj)
+		queue = append(queue, tree.Splits...)
+
+		for _, node := range tree.Nodes {
+			if node.GetStat().IsDir() {
+				queue = append(queue, node.Ref)
+			}
+		}
+	}
+
+	for hash := range received {
+		return nil, fmt.Errorf("%w: tree %x does not reach object %x the server sent with it", proto.ErrRefMismatch, ref.GetHash(), []byte(hash))
 	}
 
 	return objects, nil
@@ -422,6 +469,10 @@ func (r *Client) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error)
 		return nil, backup.ErrNotFound
 	}
 
+	if err := resp.GetObject().Verify(ref); err != nil {
+		return nil, err
+	}
+
 	return resp.GetObject(), nil
 }
 
@@ -438,8 +489,8 @@ func (r *Client) fetch(ctx context.Context, ref *proto.Ref, location *proto.Loca
 		return nil, fmt.Errorf("decoding object %x from its location: %w", ref.GetHash(), err)
 	}
 
-	if !object.Ref().Equal(ref) {
-		return nil, fmt.Errorf("%w: location for %x yielded %x", proto.ErrRefMismatch, ref.GetHash(), object.Ref().GetHash())
+	if err := object.Verify(ref); err != nil {
+		return nil, fmt.Errorf("location for %x: %w", ref.GetHash(), err)
 	}
 
 	return object, nil
@@ -723,6 +774,14 @@ func (r *Client) ReadFiles(ctx context.Context, files []backup.FileRead, objects
 			return rctx.Err()
 		case resp.GetPart():
 			return part(int(resp.File), int(resp.Index), resp.Object)
+		}
+
+		if int(resp.File) >= len(files) {
+			return fmt.Errorf("%w: ReadFiles answered file %d of %d", proto.ErrInvalidObject, resp.File, len(files))
+		}
+
+		if err := resp.GetObject().Verify(files[resp.File].Ref); err != nil {
+			return err
 		}
 
 		return object(int(resp.File), resp.Object)
