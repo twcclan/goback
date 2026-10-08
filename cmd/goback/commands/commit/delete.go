@@ -47,15 +47,15 @@ func undeleteAction(c *cli.Context) {
 }
 
 var deleteCmd = cli.Command{
-	Name:        "delete",
-	Description: "Retire a commit into the trash window",
-	ArgsUsage:   "<ref>",
-	Action:      deleteAction,
+	Name:      "delete",
+	Usage:     "Retire a commit into the trash window",
+	ArgsUsage: "<ref>",
+	Action:    deleteAction,
 }
 
 var undeleteCmd = cli.Command{
-	Name:        "undelete",
-	Description: "Bring a retired commit back before its window ends",
-	ArgsUsage:   "<ref>",
-	Action:      undeleteAction,
+	Name:      "undelete",
+	Usage:     "Bring a retired commit back before its window ends",
+	ArgsUsage: "<ref>",
+	Action:    undeleteAction,
 }

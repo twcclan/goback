@@ -72,7 +72,7 @@ func listAction(c *cli.Context) {
 }
 
 var listCmd = cli.Command{
-	Name:        "list",
-	Description: "List all objects",
-	Action:      listAction,
+	Name:   "list",
+	Usage:  "List all objects",
+	Action: listAction,
 }

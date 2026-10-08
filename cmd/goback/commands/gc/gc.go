@@ -14,9 +14,9 @@ import (
 
 // Command is the gc command.
 var Command = cli.Command{
-	Name:        "gc",
-	Description: "Mark every object reachable from a live commit or pin and rewrite archives whose dead share justifies it",
-	Action:      gcAction,
+	Name:   "gc",
+	Usage:  "Mark every object reachable from a live commit or pin and rewrite archives whose dead share justifies it",
+	Action: gcAction,
 	Flags: []cli.Flag{
 		cli.IntFlag{
 			Name:  "readers",

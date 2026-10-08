@@ -117,10 +117,10 @@ func parseSince(s string) (time.Time, error) {
 }
 
 var unretireCmd = cli.Command{
-	Name:        "unretire",
-	Description: "Bring tombstoned commits back while the store still holds everything they reach",
-	ArgsUsage:   "[<ref>...]",
-	Action:      unretireAction,
+	Name:      "unretire",
+	Usage:     "Bring tombstoned commits back while the store still holds everything they reach",
+	ArgsUsage: "[<ref>...]",
+	Action:    unretireAction,
 	Flags: []cli.Flag{
 		cli.StringFlag{Name: "set", Usage: "unretire the set's tombstoned commits instead of the refs given"},
 		cli.StringFlag{Name: "since", Usage: "with --set, only the commits tombstoned at or after this RFC 3339 time or date"},

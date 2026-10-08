@@ -30,12 +30,13 @@ import (
 
 // Command is the server command.
 var Command = cli.Command{
-	Action:      serverAction,
-	Name:        "server",
-	Description: "Run an object store server.",
+	Action: serverAction,
+	Name:   "server",
+	Usage:  "Run an object store server.",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "address",
+			Usage: "address the server listens on",
 			Value: ":6060",
 		},
 		cli.StringFlag{

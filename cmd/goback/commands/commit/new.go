@@ -212,20 +212,24 @@ func runNew(c *cli.Context) error {
 }
 
 var newCmd = cli.Command{
-	Name:        "new",
-	Description: "Create a new commit by diffing the directory against the set's latest commit",
-	Action:      newAction,
+	Name:      "new",
+	Usage:     "Create a new commit by diffing the directory against the set's latest commit",
+	ArgsUsage: "[directory]",
+	Action:    newAction,
 	Flags: []cli.Flag{
 		cli.StringSliceFlag{
 			Name:  "include, i",
+			Usage: "back up paths matching this glob even when an --exclude matches them; paths start with / at the directory; repeatable",
 			Value: new(cli.StringSlice),
 		},
 		cli.StringSliceFlag{
 			Name:  "exclude, e",
+			Usage: "skip paths matching this glob; paths start with / at the directory; repeatable",
 			Value: new(cli.StringSlice),
 		},
 		cli.IntFlag{
 			Name:  "workers, w",
+			Usage: "how many files to read and upload at once",
 			Value: runtime.NumCPU(),
 		},
 		cli.IntFlag{

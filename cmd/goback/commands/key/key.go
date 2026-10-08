@@ -21,16 +21,16 @@ var Command = cli.Command{
 	Description: "Manage the store key that encrypts names and contents before upload",
 	Subcommands: []cli.Command{
 		{
-			Name:        "new",
-			Description: "Generate a store key file",
-			ArgsUsage:   "<name>",
-			Action:      newAction,
-			Flags:       []cli.Flag{outFlag("store.key")},
+			Name:      "new",
+			Usage:     "Generate a store key file",
+			ArgsUsage: "<name>",
+			Action:    newAction,
+			Flags:     []cli.Flag{outFlag("store.key")},
 		},
 		{
-			Name:        "escrow",
-			Description: "Wrap a store key under a passphrase as an armored age file, which `age -d` also opens, and print it or keep it with the store",
-			Action:      escrowAction,
+			Name:   "escrow",
+			Usage:  "Wrap a store key under a passphrase as an armored age file, which `age -d` also opens, and print it or keep it with the store",
+			Action: escrowAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "key", Usage: "key file to escrow", Value: "store.key"},
 				passphraseFlag,
@@ -38,15 +38,15 @@ var Command = cli.Command{
 			},
 		},
 		{
-			Name:        "id",
-			Description: "Print the id of a store key, which names it in the store and in its escrowed copies",
-			Action:      idAction,
-			Flags:       []cli.Flag{cli.StringFlag{Name: "key", Usage: "key file", Value: "store.key"}},
+			Name:   "id",
+			Usage:  "Print the id of a store key, which names it in the store and in its escrowed copies",
+			Action: idAction,
+			Flags:  []cli.Flag{cli.StringFlag{Name: "key", Usage: "key file", Value: "store.key"}},
 		},
 		{
-			Name:        "recover",
-			Description: "Rebuild a key file from an escrowed key and its passphrase",
-			Action:      recoverAction,
+			Name:   "recover",
+			Usage:  "Rebuild a key file from an escrowed key and its passphrase",
+			Action: recoverAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "escrow", Usage: "escrowed key file, as printed by escrow; - reads standard input", Value: "-"},
 				outFlag("store.key"),
@@ -54,9 +54,9 @@ var Command = cli.Command{
 			},
 		},
 		{
-			Name:        "at-rest",
-			Description: "Generate the key a local, gcs:// or s3:// store seals its archives with, or rotate it",
-			Action:      atRestAction,
+			Name:   "at-rest",
+			Usage:  "Generate the key a local, gcs:// or s3:// store seals its archives with, or rotate it",
+			Action: atRestAction,
 			Flags: []cli.Flag{
 				outFlag("at-rest.key"),
 				cli.BoolFlag{Name: "rotate", Usage: "add a fresh primary key to the file; the keys it held still open what they sealed"},

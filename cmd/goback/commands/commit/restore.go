@@ -627,12 +627,14 @@ var restoreFlags = []cli.Flag{
 }
 
 var restoreCmd = cli.Command{
-	Name:        "restore",
-	Description: "Restore a commit into a directory in place, downloading only the parts the directory does not already hold",
-	Action:      restoreAction,
+	Name:      "restore",
+	Usage:     "Restore a commit into a directory in place, downloading only the parts the directory does not already hold",
+	ArgsUsage: "<directory> [age]",
+	Action:    restoreAction,
 	Flags: append([]cli.Flag{
 		cli.StringFlag{
 			Name:  "from",
+			Usage: "restore only the subtree at this slash-separated path in the commit",
 			Value: "",
 		},
 		cli.StringFlag{

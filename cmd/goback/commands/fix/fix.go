@@ -11,9 +11,9 @@ import (
 
 // Command is the fix command.
 var Command = cli.Command{
-	Name:        "fix",
-	Description: "Detect and fix problems",
-	Action:      fixAction,
+	Name:   "fix",
+	Usage:  "Detect and fix problems",
+	Action: fixAction,
 }
 
 func fixAction(c *cli.Context) {

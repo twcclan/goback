@@ -138,9 +138,10 @@ func restoreAction(c *cli.Context) {
 }
 
 var restoreCmd = cli.Command{
-	Name:        "restore",
-	Description: "Restore a file in place, downloading only the parts the destination does not already hold",
-	Action:      restoreAction,
+	Name:      "restore",
+	Usage:     "Restore a file in place, downloading only the parts the destination does not already hold",
+	ArgsUsage: "<path> <destination> [age]",
+	Action:    restoreAction,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "overwrite",

@@ -72,9 +72,9 @@ func listAction(c *cli.Context) {
 }
 
 var listCmd = cli.Command{
-	Name:        "list",
-	Description: "List commits",
-	Action:      listAction,
+	Name:   "list",
+	Usage:  "List commits",
+	Action: listAction,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "deleted",

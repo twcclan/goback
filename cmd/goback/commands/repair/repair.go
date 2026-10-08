@@ -26,9 +26,9 @@ type Lister interface {
 
 // Command is the repair command.
 var Command = cli.Command{
-	Name:        "repair",
-	Description: "Rewrite every archive holding corrupt objects, leaving the corruption behind",
-	Action:      repairAction,
+	Name:   "repair",
+	Usage:  "Rewrite every archive holding corrupt objects, leaving the corruption behind",
+	Action: repairAction,
 }
 
 func repairAction(c *cli.Context) {

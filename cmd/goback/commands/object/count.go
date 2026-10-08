@@ -56,7 +56,7 @@ func countAction(c *cli.Context) {
 }
 
 var countCmd = cli.Command{
-	Name:        "count",
-	Description: "Count all objects",
-	Action:      countAction,
+	Name:   "count",
+	Usage:  "Count all objects",
+	Action: countAction,
 }

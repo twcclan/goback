@@ -59,7 +59,8 @@ func getAction(c *cli.Context) {
 }
 
 var getCmd = cli.Command{
-	Name:        "get",
-	Description: "Get a single object",
-	Action:      getAction,
+	Name:      "get",
+	Usage:     "Get a single object",
+	ArgsUsage: "<ref> <file>",
+	Action:    getAction,
 }

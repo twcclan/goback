@@ -81,7 +81,8 @@ func showAction(c *cli.Context) error {
 }
 
 var showCmd = cli.Command{
-	Name:        "show",
-	Description: "Show information about a file",
-	Action:      showAction,
+	Name:      "show",
+	Usage:     "Show information about a file",
+	ArgsUsage: "<path> [age]",
+	Action:    showAction,
 }
