@@ -256,6 +256,99 @@ func (_u *SetUpdate) ClearDeduplicatedAloneSize() *SetUpdate {
 	return _u
 }
 
+// SetLogicalSize sets the "logical_size" field.
+func (_u *SetUpdate) SetLogicalSize(v int64) *SetUpdate {
+	_u.mutation.ResetLogicalSize()
+	_u.mutation.SetLogicalSize(v)
+	return _u
+}
+
+// SetNillableLogicalSize sets the "logical_size" field if the given value is not nil.
+func (_u *SetUpdate) SetNillableLogicalSize(v *int64) *SetUpdate {
+	if v != nil {
+		_u.SetLogicalSize(*v)
+	}
+	return _u
+}
+
+// AddLogicalSize adds value to the "logical_size" field.
+func (_u *SetUpdate) AddLogicalSize(v int64) *SetUpdate {
+	_u.mutation.AddLogicalSize(v)
+	return _u
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (_u *SetUpdate) ClearLogicalSize() *SetUpdate {
+	_u.mutation.ClearLogicalSize()
+	return _u
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (_u *SetUpdate) SetKeptLogicalSize(v int64) *SetUpdate {
+	_u.mutation.ResetKeptLogicalSize()
+	_u.mutation.SetKeptLogicalSize(v)
+	return _u
+}
+
+// SetNillableKeptLogicalSize sets the "kept_logical_size" field if the given value is not nil.
+func (_u *SetUpdate) SetNillableKeptLogicalSize(v *int64) *SetUpdate {
+	if v != nil {
+		_u.SetKeptLogicalSize(*v)
+	}
+	return _u
+}
+
+// AddKeptLogicalSize adds value to the "kept_logical_size" field.
+func (_u *SetUpdate) AddKeptLogicalSize(v int64) *SetUpdate {
+	_u.mutation.AddKeptLogicalSize(v)
+	return _u
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (_u *SetUpdate) ClearKeptLogicalSize() *SetUpdate {
+	_u.mutation.ClearKeptLogicalSize()
+	return _u
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (_u *SetUpdate) SetUniqueSize(v int64) *SetUpdate {
+	_u.mutation.ResetUniqueSize()
+	_u.mutation.SetUniqueSize(v)
+	return _u
+}
+
+// SetNillableUniqueSize sets the "unique_size" field if the given value is not nil.
+func (_u *SetUpdate) SetNillableUniqueSize(v *int64) *SetUpdate {
+	if v != nil {
+		_u.SetUniqueSize(*v)
+	}
+	return _u
+}
+
+// AddUniqueSize adds value to the "unique_size" field.
+func (_u *SetUpdate) AddUniqueSize(v int64) *SetUpdate {
+	_u.mutation.AddUniqueSize(v)
+	return _u
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (_u *SetUpdate) ClearUniqueSize() *SetUpdate {
+	_u.mutation.ClearUniqueSize()
+	return _u
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (_u *SetUpdate) SetSizesDigest(v []byte) *SetUpdate {
+	_u.mutation.SetSizesDigest(v)
+	return _u
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (_u *SetUpdate) ClearSizesDigest() *SetUpdate {
+	_u.mutation.ClearSizesDigest()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdate) AddFileIDs(ids ...int) *SetUpdate {
 	_u.mutation.AddFileIDs(ids...)
@@ -519,6 +612,39 @@ func (_u *SetUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.DeduplicatedAloneSizeCleared() {
 		_spec.ClearField(set.FieldDeduplicatedAloneSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.LogicalSize(); ok {
+		_spec.SetField(set.FieldLogicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLogicalSize(); ok {
+		_spec.AddField(set.FieldLogicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.LogicalSizeCleared() {
+		_spec.ClearField(set.FieldLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.KeptLogicalSize(); ok {
+		_spec.SetField(set.FieldKeptLogicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedKeptLogicalSize(); ok {
+		_spec.AddField(set.FieldKeptLogicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.KeptLogicalSizeCleared() {
+		_spec.ClearField(set.FieldKeptLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UniqueSize(); ok {
+		_spec.SetField(set.FieldUniqueSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUniqueSize(); ok {
+		_spec.AddField(set.FieldUniqueSize, field.TypeInt64, value)
+	}
+	if _u.mutation.UniqueSizeCleared() {
+		_spec.ClearField(set.FieldUniqueSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SizesDigest(); ok {
+		_spec.SetField(set.FieldSizesDigest, field.TypeBytes, value)
+	}
+	if _u.mutation.SizesDigestCleared() {
+		_spec.ClearField(set.FieldSizesDigest, field.TypeBytes)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -945,6 +1071,99 @@ func (_u *SetUpdateOne) ClearDeduplicatedAloneSize() *SetUpdateOne {
 	return _u
 }
 
+// SetLogicalSize sets the "logical_size" field.
+func (_u *SetUpdateOne) SetLogicalSize(v int64) *SetUpdateOne {
+	_u.mutation.ResetLogicalSize()
+	_u.mutation.SetLogicalSize(v)
+	return _u
+}
+
+// SetNillableLogicalSize sets the "logical_size" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillableLogicalSize(v *int64) *SetUpdateOne {
+	if v != nil {
+		_u.SetLogicalSize(*v)
+	}
+	return _u
+}
+
+// AddLogicalSize adds value to the "logical_size" field.
+func (_u *SetUpdateOne) AddLogicalSize(v int64) *SetUpdateOne {
+	_u.mutation.AddLogicalSize(v)
+	return _u
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (_u *SetUpdateOne) ClearLogicalSize() *SetUpdateOne {
+	_u.mutation.ClearLogicalSize()
+	return _u
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (_u *SetUpdateOne) SetKeptLogicalSize(v int64) *SetUpdateOne {
+	_u.mutation.ResetKeptLogicalSize()
+	_u.mutation.SetKeptLogicalSize(v)
+	return _u
+}
+
+// SetNillableKeptLogicalSize sets the "kept_logical_size" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillableKeptLogicalSize(v *int64) *SetUpdateOne {
+	if v != nil {
+		_u.SetKeptLogicalSize(*v)
+	}
+	return _u
+}
+
+// AddKeptLogicalSize adds value to the "kept_logical_size" field.
+func (_u *SetUpdateOne) AddKeptLogicalSize(v int64) *SetUpdateOne {
+	_u.mutation.AddKeptLogicalSize(v)
+	return _u
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (_u *SetUpdateOne) ClearKeptLogicalSize() *SetUpdateOne {
+	_u.mutation.ClearKeptLogicalSize()
+	return _u
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (_u *SetUpdateOne) SetUniqueSize(v int64) *SetUpdateOne {
+	_u.mutation.ResetUniqueSize()
+	_u.mutation.SetUniqueSize(v)
+	return _u
+}
+
+// SetNillableUniqueSize sets the "unique_size" field if the given value is not nil.
+func (_u *SetUpdateOne) SetNillableUniqueSize(v *int64) *SetUpdateOne {
+	if v != nil {
+		_u.SetUniqueSize(*v)
+	}
+	return _u
+}
+
+// AddUniqueSize adds value to the "unique_size" field.
+func (_u *SetUpdateOne) AddUniqueSize(v int64) *SetUpdateOne {
+	_u.mutation.AddUniqueSize(v)
+	return _u
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (_u *SetUpdateOne) ClearUniqueSize() *SetUpdateOne {
+	_u.mutation.ClearUniqueSize()
+	return _u
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (_u *SetUpdateOne) SetSizesDigest(v []byte) *SetUpdateOne {
+	_u.mutation.SetSizesDigest(v)
+	return _u
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (_u *SetUpdateOne) ClearSizesDigest() *SetUpdateOne {
+	_u.mutation.ClearSizesDigest()
+	return _u
+}
+
 // AddFileIDs adds the "files" edge to the File entity by IDs.
 func (_u *SetUpdateOne) AddFileIDs(ids ...int) *SetUpdateOne {
 	_u.mutation.AddFileIDs(ids...)
@@ -1238,6 +1457,39 @@ func (_u *SetUpdateOne) sqlSave(ctx context.Context) (_node *Set, err error) {
 	}
 	if _u.mutation.DeduplicatedAloneSizeCleared() {
 		_spec.ClearField(set.FieldDeduplicatedAloneSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.LogicalSize(); ok {
+		_spec.SetField(set.FieldLogicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLogicalSize(); ok {
+		_spec.AddField(set.FieldLogicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.LogicalSizeCleared() {
+		_spec.ClearField(set.FieldLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.KeptLogicalSize(); ok {
+		_spec.SetField(set.FieldKeptLogicalSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedKeptLogicalSize(); ok {
+		_spec.AddField(set.FieldKeptLogicalSize, field.TypeInt64, value)
+	}
+	if _u.mutation.KeptLogicalSizeCleared() {
+		_spec.ClearField(set.FieldKeptLogicalSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UniqueSize(); ok {
+		_spec.SetField(set.FieldUniqueSize, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUniqueSize(); ok {
+		_spec.AddField(set.FieldUniqueSize, field.TypeInt64, value)
+	}
+	if _u.mutation.UniqueSizeCleared() {
+		_spec.ClearField(set.FieldUniqueSize, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SizesDigest(); ok {
+		_spec.SetField(set.FieldSizesDigest, field.TypeBytes, value)
+	}
+	if _u.mutation.SizesDigestCleared() {
+		_spec.ClearField(set.FieldSizesDigest, field.TypeBytes)
 	}
 	if _u.mutation.FilesCleared() {
 		edge := &sqlgraph.EdgeSpec{

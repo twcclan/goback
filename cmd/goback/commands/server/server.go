@@ -80,7 +80,7 @@ var Command = cli.Command{
 		},
 		cli.DurationFlag{
 			Name:  "presence-interval",
-			Usage: "how often presence filters are built for new commits; 0 disables the job",
+			Usage: "how often presence filters are built and set sizes measured for new commits; 0 disables the job",
 			Value: maintenance.DefaultSchedule.Presence,
 		},
 	},
@@ -161,6 +161,7 @@ func serverAction(ctx *cli.Context) {
 	}
 	runner.Store, _ = base.(maintenance.Store)
 	runner.Presence, _ = idx.(maintenance.Presence)
+	runner.Measurer, _ = idx.(maintenance.Measurer)
 	runner.Reindexer, _ = idx.(maintenance.Reindexer)
 	go runner.Run(context.Background())
 

@@ -66,6 +66,7 @@ func (m MapperImpl) Maintenance(in maintenance.Ran) views.MaintenanceView {
 		Compacted: in.Compacted,
 		Retired:   in.Retired,
 		Presence:  in.Presence,
+		Measured:  in.Measured,
 		Reindexed: tmp0,
 	}
 }

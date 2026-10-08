@@ -120,7 +120,7 @@ var Command = cli.Command{
 		},
 		{
 			Name:  "sizes",
-			Usage: "Record the logical size of every commit that carries none",
+			Usage: "Record the logical size of every commit that carries none, and the sizes of every set whose commits changed",
 			Action: action(func(m *members) {
 				sizer, ok := m.index.(sizeFiller)
 				if !ok {
@@ -132,7 +132,14 @@ var Command = cli.Command{
 					common.Fatal(err)
 				}
 
-				common.Result(counted{"filled_sizes", n}, func() { log.Printf("Filled %d commit sizes", n) })
+				measured, err := sizer.MeasureSets(common.Context(m.c))
+				if err != nil {
+					common.Fatal(err)
+				}
+
+				common.Result([]counted{{"filled_sizes", n}, {"measured_sets", len(measured)}}, func() {
+					log.Printf("Filled %d commit sizes, measured %d sets", n, len(measured))
+				})
 			}),
 		},
 	},
@@ -148,6 +155,7 @@ func due(m *members) {
 	runner.Collector, _ = base.(pack.Collector)
 	runner.Retirer, _ = m.index.(backup.Retirer)
 	runner.Presence, _ = m.index.(maintenance.Presence)
+	runner.Measurer, _ = m.index.(maintenance.Measurer)
 	runner.Attributor, _ = m.index.(maintenance.Attributor)
 	runner.Reindexer, _ = m.index.(maintenance.Reindexer)
 
@@ -160,7 +168,7 @@ func due(m *members) {
 	}
 
 	common.Result(view, func() {
-		log.Printf("Swept: %t, compacted: %t, retired %d commits, built %d presence filters", ran.Swept, ran.Compacted, ran.Retired, ran.Presence)
+		log.Printf("Swept: %t, compacted: %t, retired %d commits, built %d presence filters, measured %d sets", ran.Swept, ran.Compacted, ran.Retired, ran.Presence, ran.Measured)
 
 		if ran.Collected != nil {
 			gc.Log(ran.Collected)
@@ -187,9 +195,10 @@ type orphanFinder interface {
 }
 
 // sizeFiller is an index that can work out the size of a commit it
-// recorded without one.
+// recorded without one, and measure its sets.
 type sizeFiller interface {
 	FillMissingSizes(ctx context.Context) (int, error)
+	maintenance.Measurer
 }
 
 type members struct {

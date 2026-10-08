@@ -27,9 +27,11 @@ const (
 	SetDeleted = "deleted"
 )
 
-// SetInfo is a set with the size of its newest live commit, the sizes of
-// all its live commits added up, and, as of the last garbage collection, what its objects take up in the store and the
-// size of the distinct content they carry before compression.
+// SetInfo is a set with, as the last measurement of its sets found them,
+// the size of its newest live commit and the sizes of all its live
+// commits added up, and, as of the last garbage collection, what its
+// objects take up in the store and the size of the distinct content they
+// carry before compression. A set never measured reports zero sizes.
 type SetInfo struct {
 	ID               int64
 	Name             string
@@ -38,9 +40,9 @@ type SetInfo struct {
 	KeptLogicalSize  int64
 	PhysicalSize     int64
 	DeduplicatedSize int64
-	// UniqueSize is the size of every distinct file version an untombstoned
-	// commit of the set holds, each counted once: what storing each version
-	// of each file once would take. Deleted commits still restorable count.
+	// UniqueSize is the size of every distinct file version a live commit
+	// of the set holds, each counted once: what storing each version of
+	// each file once would take.
 	UniqueSize int64
 	// AloneSize is what the set would take up were it the only set, and
 	// ExclusiveSize what of that no other set holds, as of the last

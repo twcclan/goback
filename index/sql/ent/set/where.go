@@ -103,6 +103,26 @@ func DeduplicatedAloneSize(v int64) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldDeduplicatedAloneSize, v))
 }
 
+// LogicalSize applies equality check predicate on the "logical_size" field. It's identical to LogicalSizeEQ.
+func LogicalSize(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldLogicalSize, v))
+}
+
+// KeptLogicalSize applies equality check predicate on the "kept_logical_size" field. It's identical to KeptLogicalSizeEQ.
+func KeptLogicalSize(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldKeptLogicalSize, v))
+}
+
+// UniqueSize applies equality check predicate on the "unique_size" field. It's identical to UniqueSizeEQ.
+func UniqueSize(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldUniqueSize, v))
+}
+
+// SizesDigest applies equality check predicate on the "sizes_digest" field. It's identical to SizesDigestEQ.
+func SizesDigest(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldSizesDigest, v))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.Set {
 	return predicate.Set(sql.FieldEQ(FieldName, v))
@@ -541,6 +561,206 @@ func DeduplicatedAloneSizeIsNil() predicate.Set {
 // DeduplicatedAloneSizeNotNil applies the NotNil predicate on the "deduplicated_alone_size" field.
 func DeduplicatedAloneSizeNotNil() predicate.Set {
 	return predicate.Set(sql.FieldNotNull(FieldDeduplicatedAloneSize))
+}
+
+// LogicalSizeEQ applies the EQ predicate on the "logical_size" field.
+func LogicalSizeEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldLogicalSize, v))
+}
+
+// LogicalSizeNEQ applies the NEQ predicate on the "logical_size" field.
+func LogicalSizeNEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldLogicalSize, v))
+}
+
+// LogicalSizeIn applies the In predicate on the "logical_size" field.
+func LogicalSizeIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldLogicalSize, vs...))
+}
+
+// LogicalSizeNotIn applies the NotIn predicate on the "logical_size" field.
+func LogicalSizeNotIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldLogicalSize, vs...))
+}
+
+// LogicalSizeGT applies the GT predicate on the "logical_size" field.
+func LogicalSizeGT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldLogicalSize, v))
+}
+
+// LogicalSizeGTE applies the GTE predicate on the "logical_size" field.
+func LogicalSizeGTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldLogicalSize, v))
+}
+
+// LogicalSizeLT applies the LT predicate on the "logical_size" field.
+func LogicalSizeLT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldLogicalSize, v))
+}
+
+// LogicalSizeLTE applies the LTE predicate on the "logical_size" field.
+func LogicalSizeLTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldLogicalSize, v))
+}
+
+// LogicalSizeIsNil applies the IsNil predicate on the "logical_size" field.
+func LogicalSizeIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldLogicalSize))
+}
+
+// LogicalSizeNotNil applies the NotNil predicate on the "logical_size" field.
+func LogicalSizeNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldLogicalSize))
+}
+
+// KeptLogicalSizeEQ applies the EQ predicate on the "kept_logical_size" field.
+func KeptLogicalSizeEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeNEQ applies the NEQ predicate on the "kept_logical_size" field.
+func KeptLogicalSizeNEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeIn applies the In predicate on the "kept_logical_size" field.
+func KeptLogicalSizeIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldKeptLogicalSize, vs...))
+}
+
+// KeptLogicalSizeNotIn applies the NotIn predicate on the "kept_logical_size" field.
+func KeptLogicalSizeNotIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldKeptLogicalSize, vs...))
+}
+
+// KeptLogicalSizeGT applies the GT predicate on the "kept_logical_size" field.
+func KeptLogicalSizeGT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeGTE applies the GTE predicate on the "kept_logical_size" field.
+func KeptLogicalSizeGTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeLT applies the LT predicate on the "kept_logical_size" field.
+func KeptLogicalSizeLT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeLTE applies the LTE predicate on the "kept_logical_size" field.
+func KeptLogicalSizeLTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldKeptLogicalSize, v))
+}
+
+// KeptLogicalSizeIsNil applies the IsNil predicate on the "kept_logical_size" field.
+func KeptLogicalSizeIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldKeptLogicalSize))
+}
+
+// KeptLogicalSizeNotNil applies the NotNil predicate on the "kept_logical_size" field.
+func KeptLogicalSizeNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldKeptLogicalSize))
+}
+
+// UniqueSizeEQ applies the EQ predicate on the "unique_size" field.
+func UniqueSizeEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldUniqueSize, v))
+}
+
+// UniqueSizeNEQ applies the NEQ predicate on the "unique_size" field.
+func UniqueSizeNEQ(v int64) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldUniqueSize, v))
+}
+
+// UniqueSizeIn applies the In predicate on the "unique_size" field.
+func UniqueSizeIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldUniqueSize, vs...))
+}
+
+// UniqueSizeNotIn applies the NotIn predicate on the "unique_size" field.
+func UniqueSizeNotIn(vs ...int64) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldUniqueSize, vs...))
+}
+
+// UniqueSizeGT applies the GT predicate on the "unique_size" field.
+func UniqueSizeGT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldUniqueSize, v))
+}
+
+// UniqueSizeGTE applies the GTE predicate on the "unique_size" field.
+func UniqueSizeGTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldUniqueSize, v))
+}
+
+// UniqueSizeLT applies the LT predicate on the "unique_size" field.
+func UniqueSizeLT(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldUniqueSize, v))
+}
+
+// UniqueSizeLTE applies the LTE predicate on the "unique_size" field.
+func UniqueSizeLTE(v int64) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldUniqueSize, v))
+}
+
+// UniqueSizeIsNil applies the IsNil predicate on the "unique_size" field.
+func UniqueSizeIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldUniqueSize))
+}
+
+// UniqueSizeNotNil applies the NotNil predicate on the "unique_size" field.
+func UniqueSizeNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldUniqueSize))
+}
+
+// SizesDigestEQ applies the EQ predicate on the "sizes_digest" field.
+func SizesDigestEQ(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldEQ(FieldSizesDigest, v))
+}
+
+// SizesDigestNEQ applies the NEQ predicate on the "sizes_digest" field.
+func SizesDigestNEQ(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldNEQ(FieldSizesDigest, v))
+}
+
+// SizesDigestIn applies the In predicate on the "sizes_digest" field.
+func SizesDigestIn(vs ...[]byte) predicate.Set {
+	return predicate.Set(sql.FieldIn(FieldSizesDigest, vs...))
+}
+
+// SizesDigestNotIn applies the NotIn predicate on the "sizes_digest" field.
+func SizesDigestNotIn(vs ...[]byte) predicate.Set {
+	return predicate.Set(sql.FieldNotIn(FieldSizesDigest, vs...))
+}
+
+// SizesDigestGT applies the GT predicate on the "sizes_digest" field.
+func SizesDigestGT(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldGT(FieldSizesDigest, v))
+}
+
+// SizesDigestGTE applies the GTE predicate on the "sizes_digest" field.
+func SizesDigestGTE(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldGTE(FieldSizesDigest, v))
+}
+
+// SizesDigestLT applies the LT predicate on the "sizes_digest" field.
+func SizesDigestLT(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldLT(FieldSizesDigest, v))
+}
+
+// SizesDigestLTE applies the LTE predicate on the "sizes_digest" field.
+func SizesDigestLTE(v []byte) predicate.Set {
+	return predicate.Set(sql.FieldLTE(FieldSizesDigest, v))
+}
+
+// SizesDigestIsNil applies the IsNil predicate on the "sizes_digest" field.
+func SizesDigestIsNil() predicate.Set {
+	return predicate.Set(sql.FieldIsNull(FieldSizesDigest))
+}
+
+// SizesDigestNotNil applies the NotNil predicate on the "sizes_digest" field.
+func SizesDigestNotNil() predicate.Set {
+	return predicate.Set(sql.FieldNotNull(FieldSizesDigest))
 }
 
 // HasFiles applies the HasEdge predicate on the "files" edge.

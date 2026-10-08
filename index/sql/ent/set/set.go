@@ -36,6 +36,14 @@ const (
 	FieldExclusiveSize = "exclusive_size"
 	// FieldDeduplicatedAloneSize holds the string denoting the deduplicated_alone_size field in the database.
 	FieldDeduplicatedAloneSize = "deduplicated_alone_size"
+	// FieldLogicalSize holds the string denoting the logical_size field in the database.
+	FieldLogicalSize = "logical_size"
+	// FieldKeptLogicalSize holds the string denoting the kept_logical_size field in the database.
+	FieldKeptLogicalSize = "kept_logical_size"
+	// FieldUniqueSize holds the string denoting the unique_size field in the database.
+	FieldUniqueSize = "unique_size"
+	// FieldSizesDigest holds the string denoting the sizes_digest field in the database.
+	FieldSizesDigest = "sizes_digest"
 	// EdgeFiles holds the string denoting the files edge name in mutations.
 	EdgeFiles = "files"
 	// EdgeTrees holds the string denoting the trees edge name in mutations.
@@ -90,6 +98,10 @@ var Columns = []string{
 	FieldAloneSize,
 	FieldExclusiveSize,
 	FieldDeduplicatedAloneSize,
+	FieldLogicalSize,
+	FieldKeptLogicalSize,
+	FieldUniqueSize,
+	FieldSizesDigest,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -199,6 +211,21 @@ func ByExclusiveSize(opts ...sql.OrderTermOption) OrderOption {
 // ByDeduplicatedAloneSize orders the results by the deduplicated_alone_size field.
 func ByDeduplicatedAloneSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDeduplicatedAloneSize, opts...).ToFunc()
+}
+
+// ByLogicalSize orders the results by the logical_size field.
+func ByLogicalSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLogicalSize, opts...).ToFunc()
+}
+
+// ByKeptLogicalSize orders the results by the kept_logical_size field.
+func ByKeptLogicalSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeptLogicalSize, opts...).ToFunc()
+}
+
+// ByUniqueSize orders the results by the unique_size field.
+func ByUniqueSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUniqueSize, opts...).ToFunc()
 }
 
 // ByFilesCount orders the results by files count.

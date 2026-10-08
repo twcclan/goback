@@ -38,6 +38,14 @@ type Set struct {
 	ExclusiveSize *int64 `json:"exclusive_size,omitempty"`
 	// DeduplicatedAloneSize holds the value of the "deduplicated_alone_size" field.
 	DeduplicatedAloneSize *int64 `json:"deduplicated_alone_size,omitempty"`
+	// LogicalSize holds the value of the "logical_size" field.
+	LogicalSize *int64 `json:"logical_size,omitempty"`
+	// KeptLogicalSize holds the value of the "kept_logical_size" field.
+	KeptLogicalSize *int64 `json:"kept_logical_size,omitempty"`
+	// UniqueSize holds the value of the "unique_size" field.
+	UniqueSize *int64 `json:"unique_size,omitempty"`
+	// SizesDigest holds the value of the "sizes_digest" field.
+	SizesDigest []byte `json:"sizes_digest,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SetQuery when eager-loading is set.
 	Edges        SetEdges `json:"edges"`
@@ -100,9 +108,11 @@ func (*Set) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case set.FieldSizesDigest:
+			values[i] = new([]byte)
 		case set.FieldRetentionPaused, set.FieldErase, set.FieldRescan:
 			values[i] = new(sql.NullBool)
-		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize, set.FieldAloneSize, set.FieldExclusiveSize, set.FieldDeduplicatedAloneSize:
+		case set.FieldID, set.FieldPhysicalSize, set.FieldDeduplicatedSize, set.FieldAloneSize, set.FieldExclusiveSize, set.FieldDeduplicatedAloneSize, set.FieldLogicalSize, set.FieldKeptLogicalSize, set.FieldUniqueSize:
 			values[i] = new(sql.NullInt64)
 		case set.FieldName, set.FieldState, set.FieldRetentionPolicy:
 			values[i] = new(sql.NullString)
@@ -198,6 +208,33 @@ func (_m *Set) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DeduplicatedAloneSize = new(int64)
 				*_m.DeduplicatedAloneSize = value.Int64
+			}
+		case set.FieldLogicalSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field logical_size", values[i])
+			} else if value.Valid {
+				_m.LogicalSize = new(int64)
+				*_m.LogicalSize = value.Int64
+			}
+		case set.FieldKeptLogicalSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field kept_logical_size", values[i])
+			} else if value.Valid {
+				_m.KeptLogicalSize = new(int64)
+				*_m.KeptLogicalSize = value.Int64
+			}
+		case set.FieldUniqueSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field unique_size", values[i])
+			} else if value.Valid {
+				_m.UniqueSize = new(int64)
+				*_m.UniqueSize = value.Int64
+			}
+		case set.FieldSizesDigest:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field sizes_digest", values[i])
+			} else if value != nil {
+				_m.SizesDigest = *value
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -299,6 +336,24 @@ func (_m *Set) String() string {
 		builder.WriteString("deduplicated_alone_size=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	if v := _m.LogicalSize; v != nil {
+		builder.WriteString("logical_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.KeptLogicalSize; v != nil {
+		builder.WriteString("kept_logical_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UniqueSize; v != nil {
+		builder.WriteString("unique_size=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("sizes_digest=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SizesDigest))
 	builder.WriteByte(')')
 	return builder.String()
 }

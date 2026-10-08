@@ -7526,6 +7526,13 @@ type SetMutation struct {
 	addexclusive_size          *int64
 	deduplicated_alone_size    *int64
 	adddeduplicated_alone_size *int64
+	logical_size               *int64
+	addlogical_size            *int64
+	kept_logical_size          *int64
+	addkept_logical_size       *int64
+	unique_size                *int64
+	addunique_size             *int64
+	sizes_digest               *[]byte
 	clearedFields              map[string]struct{}
 	files                      map[int]struct{}
 	removedfiles               map[int]struct{}
@@ -8227,6 +8234,265 @@ func (m *SetMutation) ResetDeduplicatedAloneSize() {
 	delete(m.clearedFields, set.FieldDeduplicatedAloneSize)
 }
 
+// SetLogicalSize sets the "logical_size" field.
+func (m *SetMutation) SetLogicalSize(i int64) {
+	m.logical_size = &i
+	m.addlogical_size = nil
+}
+
+// LogicalSize returns the value of the "logical_size" field in the mutation.
+func (m *SetMutation) LogicalSize() (r int64, exists bool) {
+	v := m.logical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLogicalSize returns the old "logical_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldLogicalSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLogicalSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLogicalSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLogicalSize: %w", err)
+	}
+	return oldValue.LogicalSize, nil
+}
+
+// AddLogicalSize adds i to the "logical_size" field.
+func (m *SetMutation) AddLogicalSize(i int64) {
+	if m.addlogical_size != nil {
+		*m.addlogical_size += i
+	} else {
+		m.addlogical_size = &i
+	}
+}
+
+// AddedLogicalSize returns the value that was added to the "logical_size" field in this mutation.
+func (m *SetMutation) AddedLogicalSize() (r int64, exists bool) {
+	v := m.addlogical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (m *SetMutation) ClearLogicalSize() {
+	m.logical_size = nil
+	m.addlogical_size = nil
+	m.clearedFields[set.FieldLogicalSize] = struct{}{}
+}
+
+// LogicalSizeCleared returns if the "logical_size" field was cleared in this mutation.
+func (m *SetMutation) LogicalSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldLogicalSize]
+	return ok
+}
+
+// ResetLogicalSize resets all changes to the "logical_size" field.
+func (m *SetMutation) ResetLogicalSize() {
+	m.logical_size = nil
+	m.addlogical_size = nil
+	delete(m.clearedFields, set.FieldLogicalSize)
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (m *SetMutation) SetKeptLogicalSize(i int64) {
+	m.kept_logical_size = &i
+	m.addkept_logical_size = nil
+}
+
+// KeptLogicalSize returns the value of the "kept_logical_size" field in the mutation.
+func (m *SetMutation) KeptLogicalSize() (r int64, exists bool) {
+	v := m.kept_logical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeptLogicalSize returns the old "kept_logical_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldKeptLogicalSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeptLogicalSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeptLogicalSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeptLogicalSize: %w", err)
+	}
+	return oldValue.KeptLogicalSize, nil
+}
+
+// AddKeptLogicalSize adds i to the "kept_logical_size" field.
+func (m *SetMutation) AddKeptLogicalSize(i int64) {
+	if m.addkept_logical_size != nil {
+		*m.addkept_logical_size += i
+	} else {
+		m.addkept_logical_size = &i
+	}
+}
+
+// AddedKeptLogicalSize returns the value that was added to the "kept_logical_size" field in this mutation.
+func (m *SetMutation) AddedKeptLogicalSize() (r int64, exists bool) {
+	v := m.addkept_logical_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (m *SetMutation) ClearKeptLogicalSize() {
+	m.kept_logical_size = nil
+	m.addkept_logical_size = nil
+	m.clearedFields[set.FieldKeptLogicalSize] = struct{}{}
+}
+
+// KeptLogicalSizeCleared returns if the "kept_logical_size" field was cleared in this mutation.
+func (m *SetMutation) KeptLogicalSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldKeptLogicalSize]
+	return ok
+}
+
+// ResetKeptLogicalSize resets all changes to the "kept_logical_size" field.
+func (m *SetMutation) ResetKeptLogicalSize() {
+	m.kept_logical_size = nil
+	m.addkept_logical_size = nil
+	delete(m.clearedFields, set.FieldKeptLogicalSize)
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (m *SetMutation) SetUniqueSize(i int64) {
+	m.unique_size = &i
+	m.addunique_size = nil
+}
+
+// UniqueSize returns the value of the "unique_size" field in the mutation.
+func (m *SetMutation) UniqueSize() (r int64, exists bool) {
+	v := m.unique_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUniqueSize returns the old "unique_size" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldUniqueSize(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUniqueSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUniqueSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUniqueSize: %w", err)
+	}
+	return oldValue.UniqueSize, nil
+}
+
+// AddUniqueSize adds i to the "unique_size" field.
+func (m *SetMutation) AddUniqueSize(i int64) {
+	if m.addunique_size != nil {
+		*m.addunique_size += i
+	} else {
+		m.addunique_size = &i
+	}
+}
+
+// AddedUniqueSize returns the value that was added to the "unique_size" field in this mutation.
+func (m *SetMutation) AddedUniqueSize() (r int64, exists bool) {
+	v := m.addunique_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (m *SetMutation) ClearUniqueSize() {
+	m.unique_size = nil
+	m.addunique_size = nil
+	m.clearedFields[set.FieldUniqueSize] = struct{}{}
+}
+
+// UniqueSizeCleared returns if the "unique_size" field was cleared in this mutation.
+func (m *SetMutation) UniqueSizeCleared() bool {
+	_, ok := m.clearedFields[set.FieldUniqueSize]
+	return ok
+}
+
+// ResetUniqueSize resets all changes to the "unique_size" field.
+func (m *SetMutation) ResetUniqueSize() {
+	m.unique_size = nil
+	m.addunique_size = nil
+	delete(m.clearedFields, set.FieldUniqueSize)
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (m *SetMutation) SetSizesDigest(b []byte) {
+	m.sizes_digest = &b
+}
+
+// SizesDigest returns the value of the "sizes_digest" field in the mutation.
+func (m *SetMutation) SizesDigest() (r []byte, exists bool) {
+	v := m.sizes_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSizesDigest returns the old "sizes_digest" field's value of the Set entity.
+// If the Set object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SetMutation) OldSizesDigest(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSizesDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSizesDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSizesDigest: %w", err)
+	}
+	return oldValue.SizesDigest, nil
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (m *SetMutation) ClearSizesDigest() {
+	m.sizes_digest = nil
+	m.clearedFields[set.FieldSizesDigest] = struct{}{}
+}
+
+// SizesDigestCleared returns if the "sizes_digest" field was cleared in this mutation.
+func (m *SetMutation) SizesDigestCleared() bool {
+	_, ok := m.clearedFields[set.FieldSizesDigest]
+	return ok
+}
+
+// ResetSizesDigest resets all changes to the "sizes_digest" field.
+func (m *SetMutation) ResetSizesDigest() {
+	m.sizes_digest = nil
+	delete(m.clearedFields, set.FieldSizesDigest)
+}
+
 // AddFileIDs adds the "files" edge to the File entity by ids.
 func (m *SetMutation) AddFileIDs(ids ...int) {
 	if m.files == nil {
@@ -8477,7 +8743,7 @@ func (m *SetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SetMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 15)
 	if m.name != nil {
 		fields = append(fields, set.FieldName)
 	}
@@ -8511,6 +8777,18 @@ func (m *SetMutation) Fields() []string {
 	if m.deduplicated_alone_size != nil {
 		fields = append(fields, set.FieldDeduplicatedAloneSize)
 	}
+	if m.logical_size != nil {
+		fields = append(fields, set.FieldLogicalSize)
+	}
+	if m.kept_logical_size != nil {
+		fields = append(fields, set.FieldKeptLogicalSize)
+	}
+	if m.unique_size != nil {
+		fields = append(fields, set.FieldUniqueSize)
+	}
+	if m.sizes_digest != nil {
+		fields = append(fields, set.FieldSizesDigest)
+	}
 	return fields
 }
 
@@ -8541,6 +8819,14 @@ func (m *SetMutation) Field(name string) (ent.Value, bool) {
 		return m.ExclusiveSize()
 	case set.FieldDeduplicatedAloneSize:
 		return m.DeduplicatedAloneSize()
+	case set.FieldLogicalSize:
+		return m.LogicalSize()
+	case set.FieldKeptLogicalSize:
+		return m.KeptLogicalSize()
+	case set.FieldUniqueSize:
+		return m.UniqueSize()
+	case set.FieldSizesDigest:
+		return m.SizesDigest()
 	}
 	return nil, false
 }
@@ -8572,6 +8858,14 @@ func (m *SetMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldExclusiveSize(ctx)
 	case set.FieldDeduplicatedAloneSize:
 		return m.OldDeduplicatedAloneSize(ctx)
+	case set.FieldLogicalSize:
+		return m.OldLogicalSize(ctx)
+	case set.FieldKeptLogicalSize:
+		return m.OldKeptLogicalSize(ctx)
+	case set.FieldUniqueSize:
+		return m.OldUniqueSize(ctx)
+	case set.FieldSizesDigest:
+		return m.OldSizesDigest(ctx)
 	}
 	return nil, fmt.Errorf("unknown Set field %s", name)
 }
@@ -8658,6 +8952,34 @@ func (m *SetMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDeduplicatedAloneSize(v)
 		return nil
+	case set.FieldLogicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLogicalSize(v)
+		return nil
+	case set.FieldKeptLogicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeptLogicalSize(v)
+		return nil
+	case set.FieldUniqueSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUniqueSize(v)
+		return nil
+	case set.FieldSizesDigest:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSizesDigest(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)
 }
@@ -8681,6 +9003,15 @@ func (m *SetMutation) AddedFields() []string {
 	if m.adddeduplicated_alone_size != nil {
 		fields = append(fields, set.FieldDeduplicatedAloneSize)
 	}
+	if m.addlogical_size != nil {
+		fields = append(fields, set.FieldLogicalSize)
+	}
+	if m.addkept_logical_size != nil {
+		fields = append(fields, set.FieldKeptLogicalSize)
+	}
+	if m.addunique_size != nil {
+		fields = append(fields, set.FieldUniqueSize)
+	}
 	return fields
 }
 
@@ -8699,6 +9030,12 @@ func (m *SetMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedExclusiveSize()
 	case set.FieldDeduplicatedAloneSize:
 		return m.AddedDeduplicatedAloneSize()
+	case set.FieldLogicalSize:
+		return m.AddedLogicalSize()
+	case set.FieldKeptLogicalSize:
+		return m.AddedKeptLogicalSize()
+	case set.FieldUniqueSize:
+		return m.AddedUniqueSize()
 	}
 	return nil, false
 }
@@ -8743,6 +9080,27 @@ func (m *SetMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddDeduplicatedAloneSize(v)
 		return nil
+	case set.FieldLogicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLogicalSize(v)
+		return nil
+	case set.FieldKeptLogicalSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddKeptLogicalSize(v)
+		return nil
+	case set.FieldUniqueSize:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUniqueSize(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Set numeric field %s", name)
 }
@@ -8768,6 +9126,18 @@ func (m *SetMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(set.FieldDeduplicatedAloneSize) {
 		fields = append(fields, set.FieldDeduplicatedAloneSize)
+	}
+	if m.FieldCleared(set.FieldLogicalSize) {
+		fields = append(fields, set.FieldLogicalSize)
+	}
+	if m.FieldCleared(set.FieldKeptLogicalSize) {
+		fields = append(fields, set.FieldKeptLogicalSize)
+	}
+	if m.FieldCleared(set.FieldUniqueSize) {
+		fields = append(fields, set.FieldUniqueSize)
+	}
+	if m.FieldCleared(set.FieldSizesDigest) {
+		fields = append(fields, set.FieldSizesDigest)
 	}
 	return fields
 }
@@ -8800,6 +9170,18 @@ func (m *SetMutation) ClearField(name string) error {
 		return nil
 	case set.FieldDeduplicatedAloneSize:
 		m.ClearDeduplicatedAloneSize()
+		return nil
+	case set.FieldLogicalSize:
+		m.ClearLogicalSize()
+		return nil
+	case set.FieldKeptLogicalSize:
+		m.ClearKeptLogicalSize()
+		return nil
+	case set.FieldUniqueSize:
+		m.ClearUniqueSize()
+		return nil
+	case set.FieldSizesDigest:
+		m.ClearSizesDigest()
 		return nil
 	}
 	return fmt.Errorf("unknown Set nullable field %s", name)
@@ -8841,6 +9223,18 @@ func (m *SetMutation) ResetField(name string) error {
 		return nil
 	case set.FieldDeduplicatedAloneSize:
 		m.ResetDeduplicatedAloneSize()
+		return nil
+	case set.FieldLogicalSize:
+		m.ResetLogicalSize()
+		return nil
+	case set.FieldKeptLogicalSize:
+		m.ResetKeptLogicalSize()
+		return nil
+	case set.FieldUniqueSize:
+		m.ResetUniqueSize()
+		return nil
+	case set.FieldSizesDigest:
+		m.ResetSizesDigest()
 		return nil
 	}
 	return fmt.Errorf("unknown Set field %s", name)

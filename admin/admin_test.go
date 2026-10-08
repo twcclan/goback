@@ -91,6 +91,8 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, x.Put(actx, proto.NewObject(&proto.Commit{Timestamp: now.Unix(), Tree: tree.Ref(), BackupSet: "world", AgentId: "node-1"})))
 	_, err := x.BuildPendingPresence(ctx)
 	require.NoError(t, err)
+	_, err = x.MeasureSets(ctx)
+	require.NoError(t, err)
 
 	h := &harness{t: t, now: now}
 	h.server = &admin.Server{

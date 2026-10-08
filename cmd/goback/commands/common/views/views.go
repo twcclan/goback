@@ -275,6 +275,7 @@ type MaintenanceView struct {
 	Compacted bool            `json:"compacted"`
 	Retired   int             `json:"retired"`
 	Presence  int             `json:"presence"`
+	Measured  int             `json:"measured"`
 	Collected *ReportView     `json:"collected,omitempty"`
 	Reindexed []ReindexedView `json:"reindexed,omitempty"`
 }

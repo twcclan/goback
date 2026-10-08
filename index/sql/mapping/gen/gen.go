@@ -175,27 +175,57 @@ func (m MapperImpl) Set(in *ent.Set) index.SetInfo {
 		return index.SetInfo{}
 	}
 	var tmp0 int64
-	if in.AloneSize != nil {
-		tmp0 = *(in.AloneSize)
+	if in.LogicalSize != nil {
+		tmp0 = *(in.LogicalSize)
 	}
 
 	var tmp1 int64
-	if in.ExclusiveSize != nil {
-		tmp1 = *(in.ExclusiveSize)
+	if in.KeptLogicalSize != nil {
+		tmp1 = *(in.KeptLogicalSize)
 	}
 
 	var tmp2 int64
+	if in.PhysicalSize != nil {
+		tmp2 = *(in.PhysicalSize)
+	}
+
+	var tmp3 int64
+	if in.DeduplicatedSize != nil {
+		tmp3 = *(in.DeduplicatedSize)
+	}
+
+	var tmp4 int64
+	if in.UniqueSize != nil {
+		tmp4 = *(in.UniqueSize)
+	}
+
+	var tmp5 int64
+	if in.AloneSize != nil {
+		tmp5 = *(in.AloneSize)
+	}
+
+	var tmp6 int64
+	if in.ExclusiveSize != nil {
+		tmp6 = *(in.ExclusiveSize)
+	}
+
+	var tmp7 int64
 	if in.DeduplicatedAloneSize != nil {
-		tmp2 = *(in.DeduplicatedAloneSize)
+		tmp7 = *(in.DeduplicatedAloneSize)
 	}
 
 	return index.SetInfo{
 		ID:                    in.ID,
 		Name:                  in.Name,
 		State:                 string(in.State),
-		AloneSize:             tmp0,
-		ExclusiveSize:         tmp1,
-		DeduplicatedAloneSize: tmp2,
+		LogicalSize:           tmp0,
+		KeptLogicalSize:       tmp1,
+		PhysicalSize:          tmp2,
+		DeduplicatedSize:      tmp3,
+		UniqueSize:            tmp4,
+		AloneSize:             tmp5,
+		ExclusiveSize:         tmp6,
+		DeduplicatedAloneSize: tmp7,
 	}
 }
 

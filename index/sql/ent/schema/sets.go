@@ -34,6 +34,13 @@ func (Set) Fields() []ent.Field {
 		field.Int64("alone_size").Optional().Nillable(),
 		field.Int64("exclusive_size").Optional().Nillable(),
 		field.Int64("deduplicated_alone_size").Optional().Nillable(),
+		// what the set's live commits held when last measured: the newest
+		// of them, all of them added up, and every distinct file version
+		// they hold; sizes_digest is the digest of those commits
+		field.Int64("logical_size").Optional().Nillable(),
+		field.Int64("kept_logical_size").Optional().Nillable(),
+		field.Int64("unique_size").Optional().Nillable(),
+		field.Bytes("sizes_digest").Optional(),
 	}
 }
 
@@ -167,7 +174,8 @@ func (File) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("set_id", "path", "valid_from").Unique(),
 		index.Fields("set_id", "dir").Annotations(entsql.IndexWhere("valid_until IS NULL")).StorageKey("files_open"),
-		index.Fields("set_id", "ref", "size").Annotations(entsql.IndexWhere("ref IS NOT NULL")).StorageKey("files_versions"),
+		index.Fields("set_id", "ref", "size", "valid_from", "valid_until").Annotations(entsql.IndexWhere("ref IS NOT NULL")).
+			StorageKey("files_versions"),
 	}
 }
 

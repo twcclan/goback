@@ -205,6 +205,7 @@ func TestPostgres(t *testing.T) {
 		"LogicalSizeSkipsEmptyNodes":       TestLogicalSizeLeavesOutWhatHoldsNoContent,
 		"UniqueSizeCountsVersionsOnce":     TestUniqueSizeCountsEachFileVersionOnce,
 		"UniqueSizeSkipsRetiring":          TestUniqueSizeLeavesOutVersionsOnlyARetiringCommitHolds,
+		"ListingReadsMeasuredSizes":        TestListingReadsTheSizesMeasureSetsStored,
 		"FillingSizesRepairsOldRows":       TestFillingSizesRepairsCommitsIndexedWithoutOne,
 		"FillingSizesSkipsTombstoned":      TestFillingSizesLeavesATombstonedCommitAlone,
 		"RootOwnerNamesTheSet":             TestRootOwnerNamesTheSetBehindACommitOrPin,

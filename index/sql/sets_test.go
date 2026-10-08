@@ -181,6 +181,7 @@ func TestLogicalSizeFollowsCommits(t *testing.T) {
 	require.EqualValues(t, 23, *row.LogicalSize, "three inline bytes and two ten-byte parts")
 	require.NotEmpty(t, row.Presence, "the same walk builds the filter")
 
+	f.measure()
 	sets, err := f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
@@ -374,6 +375,7 @@ func TestLogicalSizeIsKnownBeforeMaintenanceRuns(t *testing.T) {
 	require.EqualValues(t, 10, *f.commitRow(second.Ref()).LogicalSize)
 	require.EqualValues(t, 8, *f.commitRow(first.Ref()).LogicalSize, "the older commit keeps its own size")
 
+	f.measure()
 	sets, err := f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 10, sets[0].LogicalSize)
@@ -406,6 +408,7 @@ func TestUniqueSizeCountsEachFileVersionOnce(t *testing.T) {
 	f.advance(time.Hour)
 	f.commit("world", f.tree(f.file("a.txt", "second!"), f.file("b.txt", "same"), f.file("copy.txt", "same"), f.symlink("link", "a.txt")), false)
 
+	f.measure()
 	sets, err := f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 5+7+4, sets[0].UniqueSize, "both versions of a.txt, and the content b.txt and copy.txt share once")
@@ -416,9 +419,11 @@ func TestUniqueSizeCountsEachFileVersionOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, f.commitRow(a).TombstonedAt)
 
+	require.Equal(t, []string{"world"}, f.measure(), "retiring a commit changes what the set's sizes count")
 	sets, err = f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 7+4, sets[0].UniqueSize, "a version only a tombstoned commit held is gone")
+	require.EqualValues(t, 7+4+4, sets[0].KeptLogicalSize)
 }
 
 func TestUniqueSizeLeavesOutVersionsOnlyARetiringCommitHolds(t *testing.T) {
@@ -433,10 +438,43 @@ func TestUniqueSizeLeavesOutVersionsOnlyARetiringCommitHolds(t *testing.T) {
 	require.NotNil(t, row.RetireAt)
 	require.Nil(t, row.TombstonedAt)
 
+	f.measure()
 	sets, err := f.x.ListSets(f.ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 7, sets[0].UniqueSize, "the version only the retiring commit holds is left out")
 	require.LessOrEqual(t, sets[0].UniqueSize, sets[0].KeptLogicalSize)
+}
+
+func TestListingReadsTheSizesMeasureSetsStored(t *testing.T) {
+	f := newFixture(t)
+
+	sets, err := f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.Empty(t, sets)
+
+	f.commit("world", f.tree(f.file("a.txt", "first")), false)
+
+	sets, err = f.x.ListSets(f.ctx)
+	require.NoError(t, err)
+	require.Zero(t, sets[0].LogicalSize, "a set never measured reports nothing")
+
+	require.Equal(t, []string{"world"}, f.measure())
+	require.Empty(t, f.measure(), "a set whose commits did not change is not measured again")
+
+	f.advance(time.Hour)
+	f.commit("world", f.tree(f.file("a.txt", "second!")), false)
+
+	set, err := f.x.GetSet(f.ctx, "world")
+	require.NoError(t, err)
+	require.EqualValues(t, 5, set.LogicalSize, "until the next measurement the set reports the last one")
+	require.EqualValues(t, 5, set.UniqueSize)
+
+	require.Equal(t, []string{"world"}, f.measure())
+	set, err = f.x.GetSet(f.ctx, "world")
+	require.NoError(t, err)
+	require.EqualValues(t, 7, set.LogicalSize)
+	require.EqualValues(t, 5+7, set.KeptLogicalSize)
+	require.EqualValues(t, 5+7, set.UniqueSize)
 }
 
 func TestFillingSizesRepairsCommitsIndexedWithoutOne(t *testing.T) {

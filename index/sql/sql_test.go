@@ -277,6 +277,15 @@ func (f *fixture) presence() {
 	require.NoError(f.t, err)
 }
 
+// measure runs MeasureSets and returns the names of the sets it measured.
+func (f *fixture) measure() []string {
+	f.t.Helper()
+	measured, err := f.x.MeasureSets(f.ctx)
+	require.NoError(f.t, err)
+
+	return setNames(measured)
+}
+
 func (f *fixture) advance(d time.Duration) {
 	f.clock = f.clock.Add(d)
 }

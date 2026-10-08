@@ -8,13 +8,10 @@ import (
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
-	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/storage/pack"
-
-	entsql "entgo.io/ent/dialect/sql"
 )
 
 // findSet returns the id of the named set, or backup.ErrNotFound.
@@ -112,8 +109,8 @@ func (x *Index) BeginCommit(ctx context.Context, name string) (*backup.CommitGra
 	return grant, nil
 }
 
-// ListSets returns every set by name, each with the size of its newest
-// live commit and the sizes of all of them added up.
+// ListSets returns every set by name, with the sizes MeasureSets and the
+// last garbage collection stored for it.
 func (x *Index) ListSets(ctx context.Context) ([]index.SetInfo, error) {
 	return x.QuerySets(ctx, index.SetQuery{})
 }
@@ -130,12 +127,7 @@ func (x *Index) GetSet(ctx context.Context, name string) (index.SetInfo, error) 
 		return index.SetInfo{}, err
 	}
 
-	sets, err := x.describeSets(ctx, []*ent.Set{row})
-	if err != nil {
-		return index.SetInfo{}, err
-	}
-
-	return sets[0], nil
+	return m.Set(row), nil
 }
 
 // QuerySets returns a page of the sets q picks, described as ListSets
@@ -166,7 +158,7 @@ func (x *Index) QuerySets(ctx context.Context, q index.SetQuery) ([]index.SetInf
 		return nil, err
 	}
 
-	return x.describeSets(ctx, rows)
+	return mapAll(rows, m.Set), nil
 }
 
 // CountSets counts the sets in one of the states, every set when none is
@@ -197,36 +189,6 @@ func setsPicked(q index.SetQuery) []predicate.Set {
 	}
 
 	return where
-}
-
-// describeSets is the rows as SetInfo, with the sizes of their commits.
-func (x *Index) describeSets(ctx context.Context, rows []*ent.Set) ([]index.SetInfo, error) {
-	var err error
-
-	out := mapAll(rows, m.Set)
-	for i := range out {
-		out[i].LogicalSize, err = x.latestSize(ctx, out[i].ID)
-		if err != nil {
-			return nil, err
-		}
-
-		out[i].KeptLogicalSize, err = x.keptSize(ctx, out[i].ID)
-		if err != nil {
-			return nil, err
-		}
-
-		out[i].UniqueSize, err = x.uniqueSize(ctx, out[i].ID)
-		if err != nil {
-			return nil, err
-		}
-
-		out[i].PhysicalSize = deref(rows[i].PhysicalSize)
-		out[i].DeduplicatedSize = deref(rows[i].DeduplicatedSize)
-		out[i].AloneSize = deref(rows[i].AloneSize)
-		out[i].ExclusiveSize = deref(rows[i].ExclusiveSize)
-	}
-
-	return out, nil
 }
 
 // RootOwner returns the lookup a garbage collection attributes with: it
@@ -314,59 +276,4 @@ func (x *Index) RecordSetSizes(ctx context.Context, report *pack.CollectReport) 
 	report.Unattributed += unknown
 
 	return nil
-}
-
-func (x *Index) keptSize(ctx context.Context, setID int64) (int64, error) {
-	var sums []struct {
-		Sum *int64 `sql:"sum"`
-	}
-
-	err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), liveCommit()).
-		Aggregate(ent.Sum(commitrow.FieldLogicalSize)).Scan(ctx, &sums)
-	if err != nil || len(sums) == 0 {
-		return 0, err
-	}
-
-	return deref(sums[0].Sum), nil
-}
-
-// uniqueSize sums, once per file object, the set's file versions a live
-// commit holds.
-func (x *Index) uniqueSize(ctx context.Context, setID int64) (int64, error) {
-	d := entsql.Dialect(x.dialect)
-	t := d.Table(file.Table)
-	held := d.Select().AppendSelectExprAs(entsql.Raw(entsql.Max(t.C(file.FieldSize))), "size").From(t).
-		Where(entsql.And(entsql.EQ(t.C(file.FieldSetID), setID), entsql.NotNull(t.C(file.FieldRef))))
-	heldByCommit(liveCommitColumns)(held)
-	versions := held.GroupBy(t.C(file.FieldRef)).As("versions")
-
-	query, args := d.Select().AppendSelectExpr(entsql.Raw("COALESCE(SUM(size), 0)")).From(versions).Query()
-
-	rows, err := x.client.QueryContext(ctx, query, args...)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-
-	var sum int64
-	if rows.Next() {
-		if err := rows.Scan(&sum); err != nil {
-			return 0, err
-		}
-	}
-
-	return sum, rows.Err()
-}
-
-func (x *Index) latestSize(ctx context.Context, setID int64) (int64, error) {
-	newest, err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), liveCommit()).Order(ent.Desc(commitrow.FieldReceivedAt)).First(ctx)
-	if ent.IsNotFound(err) {
-		return 0, nil
-	}
-
-	if err != nil {
-		return 0, err
-	}
-
-	return deref(newest.LogicalSize), nil
 }

@@ -205,7 +205,7 @@ var (
 			{
 				Name:    "files_versions",
 				Unique:  false,
-				Columns: []*schema.Column{FilesColumns[14], FilesColumns[5], FilesColumns[10]},
+				Columns: []*schema.Column{FilesColumns[14], FilesColumns[5], FilesColumns[10], FilesColumns[3], FilesColumns[4]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "ref IS NOT NULL",
 				},
@@ -337,6 +337,10 @@ var (
 		{Name: "alone_size", Type: field.TypeInt64, Nullable: true},
 		{Name: "exclusive_size", Type: field.TypeInt64, Nullable: true},
 		{Name: "deduplicated_alone_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "logical_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "kept_logical_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "unique_size", Type: field.TypeInt64, Nullable: true},
+		{Name: "sizes_digest", Type: field.TypeBytes, Nullable: true},
 	}
 	// SetsTable holds the schema information for the "sets" table.
 	SetsTable = &schema.Table{

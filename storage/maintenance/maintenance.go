@@ -25,6 +25,12 @@ type Presence interface {
 	BuildPendingPresence(ctx context.Context) (int, error)
 }
 
+// Measurer is an index that stores the sizes of the sets whose commits
+// changed, and reports the sets it measured.
+type Measurer interface {
+	MeasureSets(ctx context.Context) ([]index.SetInfo, error)
+}
+
 // Attributor is an index that names the set behind each root and keeps
 // what a collection attributed to every set.
 type Attributor interface {
@@ -49,6 +55,7 @@ type Schedule struct {
 	Compact  time.Duration
 	Collect  time.Duration
 	Retire   time.Duration
+	// Presence also measures the sets whose commits changed.
 	Presence time.Duration
 }
 
@@ -96,6 +103,7 @@ type Runner struct {
 	Attributor Attributor
 	Retirer    backup.Retirer
 	Presence   Presence
+	Measurer   Measurer
 	Reindexer  Reindexer
 	Schedule   Schedule
 	// OnCollect sees every garbage collection report; nil ignores them.
@@ -135,7 +143,7 @@ func (r *Runner) Run(ctx context.Context) {
 		{r.Schedule.Compact, func(ctx context.Context) { r.Compact(); r.Reindex(ctx) }},
 		{r.Schedule.Collect, func(ctx context.Context) { r.Collect(ctx); r.Reindex(ctx) }},
 		{r.Schedule.Retire, func(ctx context.Context) { r.Retire(ctx); r.Reindex(ctx) }},
-		{r.Schedule.Presence, r.BuildPresence},
+		{r.Schedule.Presence, func(ctx context.Context) { r.BuildPresence(ctx); r.MeasureSets(ctx) }},
 	}
 
 	var tickers []*time.Ticker
@@ -178,6 +186,8 @@ func (r *Runner) Run(ctx context.Context) {
 type Ran struct {
 	Swept, Compacted  bool
 	Retired, Presence int
+	// Measured is how many sets had their sizes measured.
+	Measured int
 	// Collected is nil when no collection was due.
 	Collected *pack.CollectReport
 	// Reindexed are the tables whose indexes the run's churn rebuilt.
@@ -212,6 +222,12 @@ func (r *Runner) Due(ctx context.Context) (Ran, error) {
 	if r.Presence != nil && r.Schedule.Presence > 0 {
 		n, err := r.Presence.BuildPendingPresence(ctx)
 		ran.Presence = n
+		errs = append(errs, err)
+	}
+
+	if r.Measurer != nil && r.Schedule.Presence > 0 {
+		measured, err := r.Measurer.MeasureSets(ctx)
+		ran.Measured = len(measured)
 		errs = append(errs, err)
 	}
 
@@ -292,6 +308,17 @@ func (r *Runner) BuildPresence(ctx context.Context) {
 
 	if _, err := r.Presence.BuildPendingPresence(ctx); err != nil {
 		r.logger().Error("building presence filters failed", "err", err)
+	}
+}
+
+// MeasureSets measures the sets whose commits changed.
+func (r *Runner) MeasureSets(ctx context.Context) {
+	if r.Measurer == nil {
+		return
+	}
+
+	if _, err := r.Measurer.MeasureSets(ctx); err != nil {
+		r.logger().Error("measuring set sizes failed", "err", err)
 	}
 }
 

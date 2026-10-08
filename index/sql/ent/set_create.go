@@ -171,6 +171,54 @@ func (_c *SetCreate) SetNillableDeduplicatedAloneSize(v *int64) *SetCreate {
 	return _c
 }
 
+// SetLogicalSize sets the "logical_size" field.
+func (_c *SetCreate) SetLogicalSize(v int64) *SetCreate {
+	_c.mutation.SetLogicalSize(v)
+	return _c
+}
+
+// SetNillableLogicalSize sets the "logical_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableLogicalSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetLogicalSize(*v)
+	}
+	return _c
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (_c *SetCreate) SetKeptLogicalSize(v int64) *SetCreate {
+	_c.mutation.SetKeptLogicalSize(v)
+	return _c
+}
+
+// SetNillableKeptLogicalSize sets the "kept_logical_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableKeptLogicalSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetKeptLogicalSize(*v)
+	}
+	return _c
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (_c *SetCreate) SetUniqueSize(v int64) *SetCreate {
+	_c.mutation.SetUniqueSize(v)
+	return _c
+}
+
+// SetNillableUniqueSize sets the "unique_size" field if the given value is not nil.
+func (_c *SetCreate) SetNillableUniqueSize(v *int64) *SetCreate {
+	if v != nil {
+		_c.SetUniqueSize(*v)
+	}
+	return _c
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (_c *SetCreate) SetSizesDigest(v []byte) *SetCreate {
+	_c.mutation.SetSizesDigest(v)
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *SetCreate) SetID(v int64) *SetCreate {
 	_c.mutation.SetID(v)
@@ -388,6 +436,22 @@ func (_c *SetCreate) createSpec() (*Set, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DeduplicatedAloneSize(); ok {
 		_spec.SetField(set.FieldDeduplicatedAloneSize, field.TypeInt64, value)
 		_node.DeduplicatedAloneSize = &value
+	}
+	if value, ok := _c.mutation.LogicalSize(); ok {
+		_spec.SetField(set.FieldLogicalSize, field.TypeInt64, value)
+		_node.LogicalSize = &value
+	}
+	if value, ok := _c.mutation.KeptLogicalSize(); ok {
+		_spec.SetField(set.FieldKeptLogicalSize, field.TypeInt64, value)
+		_node.KeptLogicalSize = &value
+	}
+	if value, ok := _c.mutation.UniqueSize(); ok {
+		_spec.SetField(set.FieldUniqueSize, field.TypeInt64, value)
+		_node.UniqueSize = &value
+	}
+	if value, ok := _c.mutation.SizesDigest(); ok {
+		_spec.SetField(set.FieldSizesDigest, field.TypeBytes, value)
+		_node.SizesDigest = value
 	}
 	if nodes := _c.mutation.FilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -703,6 +767,96 @@ func (u *SetUpsert) ClearDeduplicatedAloneSize() *SetUpsert {
 	return u
 }
 
+// SetLogicalSize sets the "logical_size" field.
+func (u *SetUpsert) SetLogicalSize(v int64) *SetUpsert {
+	u.Set(set.FieldLogicalSize, v)
+	return u
+}
+
+// UpdateLogicalSize sets the "logical_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateLogicalSize() *SetUpsert {
+	u.SetExcluded(set.FieldLogicalSize)
+	return u
+}
+
+// AddLogicalSize adds v to the "logical_size" field.
+func (u *SetUpsert) AddLogicalSize(v int64) *SetUpsert {
+	u.Add(set.FieldLogicalSize, v)
+	return u
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (u *SetUpsert) ClearLogicalSize() *SetUpsert {
+	u.SetNull(set.FieldLogicalSize)
+	return u
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (u *SetUpsert) SetKeptLogicalSize(v int64) *SetUpsert {
+	u.Set(set.FieldKeptLogicalSize, v)
+	return u
+}
+
+// UpdateKeptLogicalSize sets the "kept_logical_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateKeptLogicalSize() *SetUpsert {
+	u.SetExcluded(set.FieldKeptLogicalSize)
+	return u
+}
+
+// AddKeptLogicalSize adds v to the "kept_logical_size" field.
+func (u *SetUpsert) AddKeptLogicalSize(v int64) *SetUpsert {
+	u.Add(set.FieldKeptLogicalSize, v)
+	return u
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (u *SetUpsert) ClearKeptLogicalSize() *SetUpsert {
+	u.SetNull(set.FieldKeptLogicalSize)
+	return u
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (u *SetUpsert) SetUniqueSize(v int64) *SetUpsert {
+	u.Set(set.FieldUniqueSize, v)
+	return u
+}
+
+// UpdateUniqueSize sets the "unique_size" field to the value that was provided on create.
+func (u *SetUpsert) UpdateUniqueSize() *SetUpsert {
+	u.SetExcluded(set.FieldUniqueSize)
+	return u
+}
+
+// AddUniqueSize adds v to the "unique_size" field.
+func (u *SetUpsert) AddUniqueSize(v int64) *SetUpsert {
+	u.Add(set.FieldUniqueSize, v)
+	return u
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (u *SetUpsert) ClearUniqueSize() *SetUpsert {
+	u.SetNull(set.FieldUniqueSize)
+	return u
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (u *SetUpsert) SetSizesDigest(v []byte) *SetUpsert {
+	u.Set(set.FieldSizesDigest, v)
+	return u
+}
+
+// UpdateSizesDigest sets the "sizes_digest" field to the value that was provided on create.
+func (u *SetUpsert) UpdateSizesDigest() *SetUpsert {
+	u.SetExcluded(set.FieldSizesDigest)
+	return u
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (u *SetUpsert) ClearSizesDigest() *SetUpsert {
+	u.SetNull(set.FieldSizesDigest)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -979,6 +1133,111 @@ func (u *SetUpsertOne) UpdateDeduplicatedAloneSize() *SetUpsertOne {
 func (u *SetUpsertOne) ClearDeduplicatedAloneSize() *SetUpsertOne {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearDeduplicatedAloneSize()
+	})
+}
+
+// SetLogicalSize sets the "logical_size" field.
+func (u *SetUpsertOne) SetLogicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetLogicalSize(v)
+	})
+}
+
+// AddLogicalSize adds v to the "logical_size" field.
+func (u *SetUpsertOne) AddLogicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddLogicalSize(v)
+	})
+}
+
+// UpdateLogicalSize sets the "logical_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateLogicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateLogicalSize()
+	})
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (u *SetUpsertOne) ClearLogicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearLogicalSize()
+	})
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (u *SetUpsertOne) SetKeptLogicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetKeptLogicalSize(v)
+	})
+}
+
+// AddKeptLogicalSize adds v to the "kept_logical_size" field.
+func (u *SetUpsertOne) AddKeptLogicalSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddKeptLogicalSize(v)
+	})
+}
+
+// UpdateKeptLogicalSize sets the "kept_logical_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateKeptLogicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateKeptLogicalSize()
+	})
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (u *SetUpsertOne) ClearKeptLogicalSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearKeptLogicalSize()
+	})
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (u *SetUpsertOne) SetUniqueSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetUniqueSize(v)
+	})
+}
+
+// AddUniqueSize adds v to the "unique_size" field.
+func (u *SetUpsertOne) AddUniqueSize(v int64) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.AddUniqueSize(v)
+	})
+}
+
+// UpdateUniqueSize sets the "unique_size" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateUniqueSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateUniqueSize()
+	})
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (u *SetUpsertOne) ClearUniqueSize() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearUniqueSize()
+	})
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (u *SetUpsertOne) SetSizesDigest(v []byte) *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.SetSizesDigest(v)
+	})
+}
+
+// UpdateSizesDigest sets the "sizes_digest" field to the value that was provided on create.
+func (u *SetUpsertOne) UpdateSizesDigest() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateSizesDigest()
+	})
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (u *SetUpsertOne) ClearSizesDigest() *SetUpsertOne {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearSizesDigest()
 	})
 }
 
@@ -1424,6 +1683,111 @@ func (u *SetUpsertBulk) UpdateDeduplicatedAloneSize() *SetUpsertBulk {
 func (u *SetUpsertBulk) ClearDeduplicatedAloneSize() *SetUpsertBulk {
 	return u.Update(func(s *SetUpsert) {
 		s.ClearDeduplicatedAloneSize()
+	})
+}
+
+// SetLogicalSize sets the "logical_size" field.
+func (u *SetUpsertBulk) SetLogicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetLogicalSize(v)
+	})
+}
+
+// AddLogicalSize adds v to the "logical_size" field.
+func (u *SetUpsertBulk) AddLogicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddLogicalSize(v)
+	})
+}
+
+// UpdateLogicalSize sets the "logical_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateLogicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateLogicalSize()
+	})
+}
+
+// ClearLogicalSize clears the value of the "logical_size" field.
+func (u *SetUpsertBulk) ClearLogicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearLogicalSize()
+	})
+}
+
+// SetKeptLogicalSize sets the "kept_logical_size" field.
+func (u *SetUpsertBulk) SetKeptLogicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetKeptLogicalSize(v)
+	})
+}
+
+// AddKeptLogicalSize adds v to the "kept_logical_size" field.
+func (u *SetUpsertBulk) AddKeptLogicalSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddKeptLogicalSize(v)
+	})
+}
+
+// UpdateKeptLogicalSize sets the "kept_logical_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateKeptLogicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateKeptLogicalSize()
+	})
+}
+
+// ClearKeptLogicalSize clears the value of the "kept_logical_size" field.
+func (u *SetUpsertBulk) ClearKeptLogicalSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearKeptLogicalSize()
+	})
+}
+
+// SetUniqueSize sets the "unique_size" field.
+func (u *SetUpsertBulk) SetUniqueSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetUniqueSize(v)
+	})
+}
+
+// AddUniqueSize adds v to the "unique_size" field.
+func (u *SetUpsertBulk) AddUniqueSize(v int64) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.AddUniqueSize(v)
+	})
+}
+
+// UpdateUniqueSize sets the "unique_size" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateUniqueSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateUniqueSize()
+	})
+}
+
+// ClearUniqueSize clears the value of the "unique_size" field.
+func (u *SetUpsertBulk) ClearUniqueSize() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearUniqueSize()
+	})
+}
+
+// SetSizesDigest sets the "sizes_digest" field.
+func (u *SetUpsertBulk) SetSizesDigest(v []byte) *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.SetSizesDigest(v)
+	})
+}
+
+// UpdateSizesDigest sets the "sizes_digest" field to the value that was provided on create.
+func (u *SetUpsertBulk) UpdateSizesDigest() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.UpdateSizesDigest()
+	})
+}
+
+// ClearSizesDigest clears the value of the "sizes_digest" field.
+func (u *SetUpsertBulk) ClearSizesDigest() *SetUpsertBulk {
+	return u.Update(func(s *SetUpsert) {
+		s.ClearSizesDigest()
 	})
 }
 

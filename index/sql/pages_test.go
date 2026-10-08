@@ -122,6 +122,9 @@ func TestQuerySetsPagesByName(t *testing.T) {
 		l.commit(set, "world.dat", 1, 0, set)
 	}
 
+	_, err := l.x.MeasureSets(l.ctx)
+	require.NoError(t, err)
+
 	page, err := l.x.QuerySets(l.ctx, index.SetQuery{Limit: 2})
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b"}, setNames(page))
@@ -198,6 +201,9 @@ func TestGetSetFindsOneSetByName(t *testing.T) {
 	l := newLocalIndex(t)
 	l.commit("world", "world.dat", 1, 0, "hello")
 	l.commit("logs", "logs.dat", 1, 0, "hi")
+
+	_, err := l.x.MeasureSets(l.ctx)
+	require.NoError(t, err)
 
 	s, err := l.x.GetSet(l.ctx, "world")
 	require.NoError(t, err)
