@@ -259,33 +259,27 @@ const (
 // directories below it down to maxDepth levels, handing fn runs of those
 // the index can locate and the rest as objects.
 func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn func(*proto.GetTreeResponse) error) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	if err := s.readable(ctx, ref); err != nil {
+		return err
+	}
 
 	type pending struct {
 		ref   *proto.Ref
 		depth uint32
-	}
-
-	root, err := s.Get(ctx, ref)
-	if err != nil {
-		return err
+		obj   *proto.Object
 	}
 
 	locator, _ := s.Index.(backup.RecordLocator)
+	queue := []*pending{{ref: ref}}
+	walked := 0
 
-	var (
-		batch  []*proto.GetTreeResponse
-		walked int
-	)
-
-	flush := func() error {
+	flush := func(batch []*pending) error {
 		located := make(map[int]bool)
 
 		if locator != nil {
 			refs := make([]*proto.Ref, len(batch))
-			for i, resp := range batch {
-				refs[i] = resp.Ref
+			for i, next := range batch {
+				refs[i] = next.ref
 			}
 
 			runs, err := locator.LocateRecords(ctx, refs)
@@ -307,93 +301,118 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 			}
 		}
 
-		for i, resp := range batch {
+		for i, next := range batch {
 			if located[i] {
 				continue
 			}
 
-			if err := fn(resp); err != nil {
+			if err := fn(&proto.GetTreeResponse{Ref: next.ref, Object: next.obj}); err != nil {
 				return err
 			}
 		}
 
 		walked += len(batch)
-		batch = batch[:0]
 
 		return nil
 	}
 
-	type fetched struct {
-		pending
-		obj *proto.Object
-		err error
-	}
+	for read := 0; read < len(queue); {
+		batch := queue[read:min(read+treeBatch, len(queue))]
 
-	fetch := func(next pending) chan fetched {
-		done := make(chan fetched, 1)
-
-		go func() {
-			obj, err := s.Index.Get(ctx, next.ref)
-			done <- fetched{pending: next, obj: obj, err: err}
-		}()
-
-		return done
-	}
-
-	// the reads run ahead of the walk, but their results are taken in queue
-	// order so the walk, and the record indexes, are those of a serial one
-	rootDone := make(chan fetched, 1)
-	rootDone <- fetched{pending: pending{ref: ref}, obj: root}
-
-	var queue []pending
-	inFlight := []chan fetched{rootDone}
-
-	for len(inFlight) > 0 || len(queue) > 0 {
-		for len(queue) > 0 && len(inFlight) < treeWorkers {
-			inFlight = append(inFlight, fetch(queue[0]))
-			queue = queue[1:]
+		refs := make([]*proto.Ref, len(batch))
+		for i, next := range batch {
+			refs[i] = next.ref
 		}
 
-		next := <-inFlight[0]
-		inFlight = inFlight[1:]
-
-		if errors.Is(next.err, backup.ErrNotFound) {
-			return fmt.Errorf("tree %x: %w", next.ref.GetHash(), backup.ErrNotFound)
+		objects, err := s.readTrees(ctx, refs, read == 0)
+		if err != nil {
+			return err
 		}
 
-		if next.err != nil {
-			return next.err
+		for i, next := range batch {
+			next.obj = objects[i]
+
+			tree := next.obj.GetTree()
+			if tree == nil {
+				return fmt.Errorf("%w: object %x is not a tree", ErrInvalidRequest, next.ref.GetHash())
+			}
+
+			for _, split := range tree.Splits {
+				queue = append(queue, &pending{ref: split, depth: next.depth})
+			}
+
+			if next.depth >= maxDepth {
+				continue
+			}
+
+			for _, node := range tree.Nodes {
+				if node.GetStat().IsDir() {
+					queue = append(queue, &pending{ref: node.Ref, depth: next.depth + 1})
+				}
+			}
 		}
 
-		obj := next.obj
-		tree := obj.GetTree()
-		if tree == nil {
-			return fmt.Errorf("%w: object %x is not a tree", ErrInvalidRequest, next.ref.GetHash())
-		}
+		read += len(batch)
 
-		batch = append(batch, &proto.GetTreeResponse{Ref: next.ref, Object: obj})
-		if len(batch) == treeBatch {
-			if err := flush(); err != nil {
+		for read-walked >= treeBatch {
+			if err := flush(queue[walked : walked+treeBatch]); err != nil {
 				return err
 			}
 		}
+	}
 
-		for _, split := range tree.Splits {
-			queue = append(queue, pending{ref: split, depth: next.depth})
+	return flush(queue[walked:])
+}
+
+// readTrees reads the objects of refs, in one lookup and a range read per
+// run of neighbours where the index can. With root set, refs[0] is the
+// walk's root, which is answered like Get.
+func (s *Store) readTrees(ctx context.Context, refs []*proto.Ref, root bool) ([]*proto.Object, error) {
+	objects := make([]*proto.Object, len(refs))
+
+	if reader, ok := s.Index.(backup.RecordReader); ok {
+		read, err := reader.ReadRecords(ctx, refs)
+		if err != nil {
+			return nil, fmt.Errorf("reading trees: %w", err)
 		}
 
-		if next.depth >= maxDepth {
+		copy(objects, read)
+	}
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(treeWorkers)
+
+	for i, ref := range refs {
+		if objects[i] != nil {
 			continue
 		}
 
-		for _, node := range tree.Nodes {
-			if node.GetStat().IsDir() {
-				queue = append(queue, pending{ref: node.Ref, depth: next.depth + 1})
+		grp.Go(func() error {
+			obj, err := s.Index.Get(gctx, ref)
+			objects[i] = obj
+
+			switch {
+			case root && i == 0:
+				_, err = offered(ref, obj, err)
+			case errors.Is(err, backup.ErrNotFound):
+				err = fmt.Errorf("tree %x: %w", ref.GetHash(), backup.ErrNotFound)
 			}
+
+			return err
+		})
+	}
+
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	if root {
+		if _, err := offered(refs[0], objects[0], nil); err != nil {
+			return nil, err
 		}
 	}
 
-	return flush()
+	return objects, nil
 }
 
 const (

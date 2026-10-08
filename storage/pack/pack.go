@@ -162,27 +162,59 @@ func (ps *PackStorage) SessionLease() time.Duration { return ps.sessionLease }
 // may rely on. The newest record of the object decides: a tombstone newer
 // than every copy makes it absent, unless an un-tombstone is newer still.
 func (ps *PackStorage) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
+	has, err := ps.HasAll(ctx, []*proto.Ref{ref})
+	if err != nil {
+		return false, err
+	}
+
+	return has[0], nil
+}
+
+var _ backup.HasAller = (*PackStorage)(nil)
+
+// HasAll implements backup.HasAller: Has for each of refs, from one lookup
+// of their tombstones and one of their copies.
+func (ps *PackStorage) HasAll(ctx context.Context, refs []*proto.Ref) ([]bool, error) {
 	scope := ScopeOf(ctx)
 
-	tomb := proto.TombstoneRef(ref)
-	untomb := proto.TombstoneRef(tomb)
+	tombs := make([]*proto.Ref, 0, 2*len(refs))
+	for _, ref := range refs {
+		tomb := proto.TombstoneRef(ref)
+		tombs = append(tombs, tomb, proto.TombstoneRef(tomb))
+	}
 
-	tombs, err := ps.index.LocateTombstones([]*proto.Ref{tomb, untomb}, scope)
+	located, err := ps.index.LocateTombstones(tombs, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	found, err := ps.index.LocateCopies(refs, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	has := make([]bool, len(refs))
+	for i, ref := range refs {
+		tomb, untomb := tombs[2*i], tombs[2*i+1]
+
+		has[i], err = ps.holds(scope, ref, located[string(tomb.Hash)], located[string(untomb.Hash)], found[string(ref.Hash)])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return has, nil
+}
+
+// holds is Has for ref given the locations of its tombstones, its
+// un-tombstones and its copies.
+func (ps *PackStorage) holds(scope Scope, ref *proto.Ref, tombs, untombs, copies []IndexLocation) (bool, error) {
+	bound, err := ps.tombstoneBound(tombs, untombs)
 	if err != nil {
 		return false, err
 	}
 
-	bound, err := ps.tombstoneBound(tombs[string(tomb.Hash)], tombs[string(untomb.Hash)])
-	if err != nil {
-		return false, err
-	}
-
-	found, err := ps.index.LocateCopies([]*proto.Ref{ref}, scope)
-	if err != nil {
-		return false, err
-	}
-
-	for _, loc := range found[string(ref.Hash)] {
+	for _, loc := range copies {
 		a, err := ps.archiveByName(loc.Archive)
 		if err != nil && !errors.Is(err, errArchiveRetired) {
 			return false, err
@@ -283,6 +315,41 @@ func (ps *PackStorage) committedCopy(scope Scope, ref *proto.Ref, liveOnly bool,
 
 		return a, &loc.Record, nil
 	}
+}
+
+// committedCopies is committedCopy for each of refs from one lookup; a ref
+// without such a copy has a nil archive.
+func (ps *PackStorage) committedCopies(scope Scope, refs []*proto.Ref, liveOnly bool) ([]*archive, []*IndexRecord, error) {
+	archives := make([]*archive, len(refs))
+	records := make([]*IndexRecord, len(refs))
+
+	if len(refs) == 0 {
+		return archives, records, nil
+	}
+
+	found, err := ps.index.LocateCopies(refs, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for i, ref := range refs {
+		for _, loc := range found[string(ref.Hash)] {
+			a, err := ps.archiveByName(loc.Archive)
+			if err != nil && !errors.Is(err, errArchiveRetired) {
+				return nil, nil, err
+			}
+
+			if a == nil || (liveOnly && a.candidate(ref.Hash)) {
+				continue
+			}
+
+			archives[i], records[i] = a, &loc.Record
+
+			break
+		}
+	}
+
+	return archives, records, nil
 }
 
 func (ps *PackStorage) putWriteCache(ctx context.Context, obj *proto.Object, err error) error {
@@ -1445,9 +1512,10 @@ type ListedOpener interface {
 	OpenListed(file ListedFile) (File, error)
 }
 
-// openListed opens a listed file through the storage's ListedOpener when
-// it is one.
-func openListed(storage ArchiveStorage, file ListedFile) (File, error) {
+// OpenListed opens a listed file through the storage's ListedOpener when
+// it is one and Open otherwise; a wrapping ArchiveStorage implements
+// ListedOpener with it.
+func OpenListed(storage ArchiveStorage, file ListedFile) (File, error) {
 	if opener, ok := storage.(ListedOpener); ok {
 		return opener.OpenListed(file)
 	}

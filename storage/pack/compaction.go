@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"bytes"
 	"context"
 	"runtime"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 type compactionGroup struct {
@@ -232,14 +234,29 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 
 	grp, gctx := errgroup.WithContext(ctx)
 
+	held := semaphore.NewWeighted(prefetchBytes)
+
 	for worker, share := range shares(chunk, workers) {
 		grp.Go(func() error {
-			for _, i := range share {
+			inputs := make([]*archive, len(share))
+			for n, i := range share {
+				inputs[n] = chunk[i]
+			}
+
+			for n, read := range prefetch(gctx, inputs, held) {
 				if err := gctx.Err(); err != nil {
 					return err
 				}
 
-				if err := rw.candidate(gctx, worker, chunk[i], indexes[i], standIn); err != nil {
+				input := <-read
+				err := input.err
+				if err == nil {
+					err = rw.candidate(gctx, worker, inputs[n], indexes[share[n]], standIn, input.data)
+				}
+
+				input.release()
+
+				if err != nil {
 					return err
 				}
 			}
@@ -520,16 +537,16 @@ func (rw *rewrite) abort() {
 	rw.open = make(map[int64]*rewriteOutput)
 }
 
-// candidate copies what survives of one candidate into the worker's
-// outputs; standIn names the objects a copy outside the group stands in
-// for.
-func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive, idx IndexFile, standIn map[string]bool) error {
+// candidate copies what survives of one candidate, whose bytes data
+// holds, into the worker's outputs; standIn names the objects a copy
+// outside the group stands in for.
+func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive, idx IndexFile, standIn map[string]bool, data []byte) error {
 	started := time.Now()
 	var copied uint64
 
 	mark := candidate.gcResult()
 
-	err := candidate.foreach(loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
+	err := candidate.foreachReader(bytes.NewReader(data), loadAll, func(hdr *proto.ObjectHeader, bytes []byte, offset, length uint32) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -593,6 +610,60 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 	}
 
 	return nil
+}
+
+const (
+	// prefetchReads bounds the inputs a worker reads ahead at once, and
+	// prefetchBytes what all the workers of a rewrite hold read ahead.
+	prefetchReads = 8
+	prefetchBytes = 128 << 20
+)
+
+// prefetched is an input read ahead of the worker that rewrites it.
+type prefetched struct {
+	data    []byte
+	err     error
+	release func()
+}
+
+// prefetch reads the inputs ahead of their worker, prefetchReads at a
+// time and in order, holding no more than held allows, and hands each
+// over on its channel. The worker releases what it took once done with
+// it.
+func prefetch(ctx context.Context, inputs []*archive, held *semaphore.Weighted) []chan prefetched {
+	reads := make([]chan prefetched, len(inputs))
+	for i := range reads {
+		reads[i] = make(chan prefetched, 1)
+	}
+
+	go func() {
+		running := semaphore.NewWeighted(prefetchReads)
+
+		for i, input := range inputs {
+			weight := min(int64(input.size), prefetchBytes)
+
+			if err := running.Acquire(ctx, 1); err != nil {
+				reads[i] <- prefetched{err: err, release: func() {}}
+				continue
+			}
+
+			if err := held.Acquire(ctx, weight); err != nil {
+				running.Release(1)
+				reads[i] <- prefetched{err: err, release: func() {}}
+
+				continue
+			}
+
+			go func() {
+				data, err := input.readAll()
+				running.Release(1)
+
+				reads[i] <- prefetched{data: data, err: err, release: func() { held.Release(weight) }}
+			}()
+		}
+	}()
+
+	return reads
 }
 
 // rewriteOutput is the root archive one class is written into.

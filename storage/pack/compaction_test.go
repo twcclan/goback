@@ -3,12 +3,14 @@ package pack
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 )
 
 // askingIndex counts the refs LocateCopies is asked for.
@@ -263,4 +265,74 @@ func TestForgettingDeletedArchivesKeepsWhatAnotherArchiveHolds(t *testing.T) {
 
 	requireCached(t, cache, []*proto.Object{gone}, false)
 	requireCached(t, cache, []*proto.Object{kept}, true)
+}
+
+// failingOpen fails to open the archive file of one archive.
+type failingOpen struct {
+	*localArchiveStorage
+	fail  string
+	opens atomic.Int64
+}
+
+func (f *failingOpen) Open(name string) (File, error) {
+	if name == f.fail+ArchiveSuffix {
+		return nil, errors.New("unreadable")
+	}
+
+	if strings.HasSuffix(name, ArchiveSuffix) {
+		f.opens.Add(1)
+	}
+
+	return f.localArchiveStorage.Open(name)
+}
+
+func TestPrefetchHandsTheInputsOverInOrderWithinItsBudget(t *testing.T) {
+	storage := &failingOpen{localArchiveStorage: newLocal(t.TempDir())}
+	store, err := NewPackStorage(WithArchiveStorage(storage), WithArchiveIndex(NewInMemoryIndex()), WithMaxSize(64<<20))
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	defer store.Close()
+
+	objects := makeTestData(t, 50)
+	for i := 0; i < len(objects); i += 10 {
+		for _, object := range objects[i : i+10] {
+			require.NoError(t, store.Put(context.Background(), object))
+		}
+
+		require.NoError(t, store.Flush())
+	}
+
+	inputs := append([]*archive(nil), store.archives...)
+	require.Len(t, inputs, 5)
+
+	var largest uint64
+	want := make([][]byte, len(inputs))
+	for i, a := range inputs {
+		largest = max(largest, a.size)
+		want[i], err = a.readAll()
+		require.NoError(t, err)
+	}
+
+	storage.fail = inputs[2].name
+	storage.opens.Store(0)
+
+	// room for one input at a time: the next is read only once the one
+	// before is released
+	reads := prefetch(context.Background(), inputs, semaphore.NewWeighted(int64(largest)))
+
+	for i, read := range reads {
+		input := <-read
+
+		if i == 2 {
+			require.Error(t, input.err, "the input that cannot be read")
+		} else {
+			require.NoError(t, input.err)
+			require.Equal(t, want[i], input.data, "input %d", i)
+		}
+
+		opened := storage.opens.Load()
+		require.LessOrEqual(t, opened, int64(i+1), "nothing is read beyond the budget")
+
+		input.release()
+	}
 }

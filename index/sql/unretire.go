@@ -339,19 +339,35 @@ type versions struct {
 }
 
 func (v *versions) dir(ctx context.Context, dir string, t *proto.Tree) error {
+	var dirs, files []string
+
+	for _, node := range t.GetNodes() {
+		child := proto.JoinPath(dir, node.GetStat().GetName())
+		if node.GetStat().IsDir() {
+			dirs = append(dirs, child)
+		} else {
+			files = append(files, child)
+		}
+	}
+
+	treeRows, fileRows, err := v.rows(ctx, dirs, files)
+	if err != nil {
+		return err
+	}
+
 	for _, node := range t.GetNodes() {
 		info := node.GetStat()
 		child := proto.JoinPath(dir, info.GetName())
 
 		if !info.IsDir() {
-			if err := v.file(ctx, child, dir, node); err != nil {
+			if err := v.file(ctx, child, dir, node, fileRows[child]); err != nil {
 				return err
 			}
 
 			continue
 		}
 
-		held, err := v.tree(ctx, child, dir, node.GetRef().GetHash())
+		held, err := v.tree(ctx, child, dir, node.GetRef().GetHash(), treeRows[child])
 		if err != nil {
 			return err
 		}
@@ -373,15 +389,40 @@ func (v *versions) dir(ctx context.Context, dir string, t *proto.Tree) error {
 	return nil
 }
 
-// tree restores the row of a directory and reports whether one held it
-// already.
-func (v *versions) tree(ctx context.Context, p, dir string, ref []byte) (bool, error) {
-	rows, err := v.c.Tree.Query().Where(tree.SetID(v.setID), tree.Path(p),
-		tree.Or(tree.ValidFromLTE(v.at), tree.ValidUntilEQ(v.at), tree.ValidFromEQ(v.end()))).All(ctx)
+// rows reads the rows of the directories and files that hold the revived
+// commit or border its range, by path.
+func (v *versions) rows(ctx context.Context, dirs, files []string) (map[string][]*ent.Tree, map[string][]*ent.File, error) {
+	trees := make(map[string][]*ent.Tree, len(dirs))
+	err := inBatches(dirs, func(paths []string) error {
+		rows, err := v.c.Tree.Query().Where(tree.SetID(v.setID), tree.PathIn(paths...),
+			tree.Or(tree.ValidFromLTE(v.at), tree.ValidUntilEQ(v.at), tree.ValidFromEQ(v.end()))).All(ctx)
+		for _, row := range rows {
+			trees[row.Path] = append(trees[row.Path], row)
+		}
+
+		return err
+	})
 	if err != nil {
-		return false, err
+		return nil, nil, err
 	}
 
+	byPath := make(map[string][]*ent.File, len(files))
+	err = inBatches(files, func(paths []string) error {
+		rows, err := v.c.File.Query().Where(file.SetID(v.setID), file.PathIn(paths...),
+			file.Or(file.ValidFromLTE(v.at), file.ValidUntilEQ(v.at), file.ValidFromEQ(v.end()))).All(ctx)
+		for _, row := range rows {
+			byPath[row.Path] = append(byPath[row.Path], row)
+		}
+
+		return err
+	})
+
+	return trees, byPath, err
+}
+
+// tree restores the row of a directory, given the rows rows read of its
+// path, and reports whether one held it already.
+func (v *versions) tree(ctx context.Context, p, dir string, ref []byte, rows []*ent.Tree) (bool, error) {
 	var prev, next *ent.Tree
 
 	for _, row := range rows {
@@ -424,14 +465,9 @@ func (v *versions) tree(ctx context.Context, p, dir string, ref []byte) (bool, e
 		SetNillableValidUntil(until).SetRef(ref).Exec(ctx)
 }
 
-// file restores the row of a file, symlink or other non-directory.
-func (v *versions) file(ctx context.Context, p, dir string, node *proto.TreeNode) error {
-	rows, err := v.c.File.Query().Where(file.SetID(v.setID), file.Path(p),
-		file.Or(file.ValidFromLTE(v.at), file.ValidUntilEQ(v.at), file.ValidFromEQ(v.end()))).All(ctx)
-	if err != nil {
-		return err
-	}
-
+// file restores the row of a file, symlink or other non-directory, given
+// the rows rows read of its path.
+func (v *versions) file(ctx context.Context, p, dir string, node *proto.TreeNode, rows []*ent.File) error {
 	var prev, next *ent.File
 
 	for _, row := range rows {

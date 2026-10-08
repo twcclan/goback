@@ -936,3 +936,45 @@ func (f *walkerFixture) content(tree *proto.Ref, name string) string {
 
 	return string(obj.GetFile().GetInline())
 }
+
+func TestKnownPartsReachThePartsOfSplitFilesAndEarlierVersions(t *testing.T) {
+	f := newWalkerFixture(t)
+	ctx := context.Background()
+
+	put := func(obj *proto.Object) *proto.Object {
+		require.NoError(t, f.store.Put(ctx, obj))
+		return obj
+	}
+
+	blob := func(data string) *proto.Ref {
+		return put(proto.NewObject(&proto.Blob{Data: []byte(data)})).Ref()
+	}
+
+	part := func(ref *proto.Ref, offset uint64) *proto.FilePart {
+		return &proto.FilePart{Ref: ref, Offset: offset, Length: 1}
+	}
+
+	a, b, c, d := blob("a"), blob("b"), blob("c"), blob("d")
+
+	first := put(proto.NewObject(&proto.File{Parts: []*proto.FilePart{part(a, 0)}}))
+	second := put(proto.NewObject(&proto.File{Parts: []*proto.FilePart{part(b, 0)}}))
+	split := put(proto.NewObject(&proto.File{
+		Splits:       []*proto.Ref{first.Ref(), second.Ref()},
+		SplitLengths: []uint64{1, 1},
+		SplitDepth:   1,
+	}))
+
+	older := put(proto.NewObject(&proto.File{Parts: []*proto.FilePart{part(c, 0), part(d, 1)}}))
+	f.index.versions["test/big.bin"] = []*proto.TreeNode{{Ref: split.Ref()}, {Ref: older.Ref()}, {Ref: blob("not a file")}}
+
+	node := &proto.TreeNode{Stat: &proto.FileInfo{Name: []byte("big.bin"), Type: proto.NodeType_NODE_FILE}, Ref: split.Ref()}
+
+	known := f.walker.knownParts(ctx, "big.bin", node)
+
+	want := map[string]struct{}{}
+	for _, ref := range []*proto.Ref{a, b, c, d} {
+		want[string(ref.Hash)] = struct{}{}
+	}
+
+	require.Equal(t, want, known)
+}

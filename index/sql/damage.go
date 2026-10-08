@@ -33,20 +33,29 @@ func (x *Index) PathsOfFiles(ctx context.Context, refs []*proto.Ref) ([]backup.F
 		return nil, err
 	}
 
+	ids := make([]int64, 0)
 	names := make(map[int64]string)
+	for _, row := range rows {
+		if _, ok := names[row.SetID]; !ok {
+			names[row.SetID] = ""
+			ids = append(ids, row.SetID)
+		}
+	}
+
+	sets, err := x.client.Set.Query().Where(set.IDIn(ids...)).Select(set.FieldName).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range sets {
+		names[s.ID] = s.Name
+	}
+
 	seen := make(map[string]bool)
 
 	var out []backup.FilePath
 	for _, row := range rows {
-		name, ok := names[row.SetID]
-		if !ok {
-			s, err := x.client.Set.Get(ctx, row.SetID)
-			if err != nil {
-				return nil, err
-			}
-
-			name, names[row.SetID] = s.Name, s.Name
-		}
+		name := names[row.SetID]
 
 		key := fmt.Sprint(row.SetID) + "\x00" + row.Path + "\x00" + string(row.Ref)
 		if seen[key] {
@@ -72,16 +81,31 @@ func (x *Index) MarkDamaged(ctx context.Context, setID int64, paths []string) er
 	}
 
 	now := x.now()
+
+	// one statement must not name a row twice
+	seen := make(map[string]bool, len(paths))
+	unique := make([]string, 0, len(paths))
 	for _, path := range paths {
-		err := x.client.DamagedPath.Create().SetSetID(setID).SetPath(path).SetFoundAt(now).
-			OnConflictColumns(damagedpath.FieldSetID, damagedpath.FieldPath).
-			UpdateFoundAt().Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("marking %q of set %d damaged: %w", path, setID, err)
+		if !seen[path] {
+			seen[path] = true
+			unique = append(unique, path)
 		}
 	}
 
-	return nil
+	return inBatches(unique, func(batch []string) error {
+		builders := make([]*ent.DamagedPathCreate, len(batch))
+		for i, path := range batch {
+			builders[i] = x.client.DamagedPath.Create().SetSetID(setID).SetPath(path).SetFoundAt(now)
+		}
+
+		err := x.client.DamagedPath.CreateBulk(builders...).OnConflictColumns(damagedpath.FieldSetID, damagedpath.FieldPath).
+			UpdateFoundAt().Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("marking %d paths of set %d damaged: %w", len(batch), setID, err)
+		}
+
+		return nil
+	})
 }
 
 // MarkRescan records that a whole set must be read again, for damage no
@@ -160,12 +184,23 @@ func (x *Index) clearDamage(ctx context.Context, tx *ent.Tx, setID int64, partia
 // MarkLost records that stored versions cannot be read any more. Every
 // commit whose range covers one holds a file it cannot restore.
 func (x *Index) MarkLost(ctx context.Context, versions []backup.FilePath) error {
+	bySet := make(map[int64][]predicate.File)
+	var sets []int64
+
 	for _, v := range versions {
-		err := x.client.File.Update().
-			Where(file.SetID(v.SetID), file.Path(v.Path), file.RefEQ(v.Ref.GetHash())).
-			SetLost(true).Exec(ctx)
+		if bySet[v.SetID] == nil {
+			sets = append(sets, v.SetID)
+		}
+
+		bySet[v.SetID] = append(bySet[v.SetID], file.And(file.Path(v.Path), file.RefEQ(v.Ref.GetHash())))
+	}
+
+	for _, setID := range sets {
+		err := inBatches(bySet[setID], func(batch []predicate.File) error {
+			return x.client.File.Update().Where(file.SetID(setID), file.Or(batch...)).SetLost(true).Exec(ctx)
+		})
 		if err != nil {
-			return fmt.Errorf("marking %q of set %d lost: %w", v.Path, v.SetID, err)
+			return fmt.Errorf("marking versions of set %d lost: %w", setID, err)
 		}
 	}
 
@@ -200,27 +235,23 @@ func (x *Index) LostVersions(ctx context.Context, name string) ([]LostVersion, e
 		return nil, err
 	}
 
+	if len(rows) == 0 {
+		return []LostVersion{}, nil
+	}
+
+	commits, err := x.client.CommitRow.Query().Where(commitrow.SetID(setID), liveCommit()).
+		Order(ent.Desc(commitrow.FieldReceivedAt)).Select(commitrow.FieldRef, commitrow.FieldReceivedAt).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]LostVersion, 0, len(rows))
 	for _, row := range rows {
-		held := []predicate.CommitRow{
-			commitrow.SetID(setID),
-			commitrow.ReceivedAtGTE(row.ValidFrom),
-			liveCommit(),
-		}
-
-		if row.ValidUntil != nil {
-			held = append(held, commitrow.ReceivedAtLT(*row.ValidUntil))
-		}
-
-		commits, err := x.client.CommitRow.Query().Where(held...).
-			Order(ent.Desc(commitrow.FieldReceivedAt)).All(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		lost := LostVersion{Path: row.Path, Ref: &proto.Ref{Hash: row.Ref}}
 		for _, c := range commits {
-			lost.Commits = append(lost.Commits, &proto.Ref{Hash: c.Ref})
+			if !c.ReceivedAt.Before(row.ValidFrom) && (row.ValidUntil == nil || c.ReceivedAt.Before(*row.ValidUntil)) {
+				lost.Commits = append(lost.Commits, &proto.Ref{Hash: c.Ref})
+			}
 		}
 
 		out = append(out, lost)

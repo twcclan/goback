@@ -111,6 +111,8 @@ func TestAWalkReadsAheadOfItself(t *testing.T) {
 
 	var ahead atomic.Bool
 
+	// directories walked one at a time leave the read-ahead room to show
+	f.walker.dirSlots = make(chan struct{})
 	f.walker.ProgressInterval = time.Millisecond
 	f.walker.Progress = func(WalkResult) {
 		f.walker.scan.mtx.Lock()
@@ -148,4 +150,27 @@ func TestAWalkCommitsTheSameTreeWithAndWithoutReadAhead(t *testing.T) {
 	behind.walker.ScanWorkers = -1
 
 	require.True(t, ahead.run().Commit.Tree.Equal(behind.run().Commit.Tree))
+}
+
+func TestWalkingDirectoriesAtOnceCommitsTheTreeOfASerialWalk(t *testing.T) {
+	parallel := newWalkerFixture(t)
+	for a := range 4 {
+		for b := range 4 {
+			for c := range 3 {
+				parallel.write(fmt.Sprintf("d%d/e%d/f%d/file.txt", a, b, c), []byte(fmt.Sprint(a, b, c)))
+			}
+
+			parallel.write(fmt.Sprintf("d%d/e%d/side.bin", a, b), parallel.random(8<<10))
+		}
+	}
+
+	// a window of one entry keeps several walks waiting on listings at once
+	parallel.walker.ScanWindow = 1
+
+	serial := newWalkerFixture(t)
+	serial.root = parallel.root
+	serial.walker.Root = parallel.root
+	serial.walker.dirSlots = make(chan struct{})
+
+	require.True(t, parallel.run().Commit.Tree.Equal(serial.run().Commit.Tree))
 }

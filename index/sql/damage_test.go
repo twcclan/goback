@@ -288,3 +288,46 @@ func TestAWholeRebuildIsComplete(t *testing.T) {
 	require.Len(t, held, 1)
 	require.False(t, held[0].Incomplete)
 }
+
+func TestMarkingManyVersionsLostReachesEachSetAndPath(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+
+	a1, b1 := f.file("a", "a one"), f.file("b", "b one")
+	first := f.commit("world", f.tree(a1, b1), false)
+	f.advance(time.Hour)
+	a2 := f.file("a", "a two")
+	second := f.commit("world", f.tree(a2, b1), false)
+	f.advance(time.Hour)
+	third := f.commit("world", f.tree(f.file("a", "a three"), b1), false)
+
+	other := f.file("o", "other")
+	f.commit("other", f.tree(other), false)
+
+	require.NoError(t, f.x.MarkDamaged(ctx, f.setID("world"), []string{"a", "b", "a"}), "a path named twice is one row")
+
+	require.NoError(t, f.x.MarkLost(ctx, []backup.FilePath{
+		{Ref: a1.Ref, SetID: f.setID("world"), Path: "a"},
+		{Ref: other.Ref, SetID: f.setID("other"), Path: "o"},
+		{Ref: b1.Ref, SetID: f.setID("world"), Path: "b"},
+		{Ref: a2.Ref, SetID: f.setID("world"), Path: "a"},
+	}))
+
+	lost, err := f.x.LostVersions(ctx, "world")
+	require.NoError(t, err)
+	require.Len(t, lost, 3)
+
+	require.Equal(t, "a", lost[0].Path)
+	require.True(t, lost[0].Ref.Equal(a1.Ref))
+	require.Equal(t, []*proto.Ref{first}, lost[0].Commits)
+
+	require.True(t, lost[1].Ref.Equal(a2.Ref))
+	require.Equal(t, []*proto.Ref{second}, lost[1].Commits)
+
+	require.Equal(t, "b", lost[2].Path)
+	require.Equal(t, []*proto.Ref{third, second, first}, lost[2].Commits, "newest first")
+
+	lost, err = f.x.LostVersions(ctx, "other")
+	require.NoError(t, err)
+	require.Len(t, lost, 1)
+}

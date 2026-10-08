@@ -360,6 +360,22 @@ func (x *Index) flush() error {
 	return nil
 }
 
+// HasAll implements backup.HasAller as the store's Has would answer.
+func (x *Index) HasAll(ctx context.Context, refs []*proto.Ref) ([]bool, error) {
+	return backup.HasAll(ctx, x.ObjectStore, refs)
+}
+
+// ReadRecords implements backup.RecordReader when the store does, and
+// reads nothing otherwise.
+func (x *Index) ReadRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.Object, error) {
+	reader, ok := storeAs[backup.RecordReader](x.ObjectStore)
+	if !ok {
+		return make([]*proto.Object, len(refs)), nil
+	}
+
+	return reader.ReadRecords(ctx, refs)
+}
+
 // storeAs finds the first store in the wrapper chain that implements T.
 func storeAs[T any](store backup.ObjectStore) (T, bool) {
 	for store != nil {

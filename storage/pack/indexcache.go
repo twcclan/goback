@@ -143,7 +143,7 @@ func (c *indexCache) OpenListed(file ListedFile) (File, error) {
 		return c.Open(file.Name)
 	}
 
-	return openListed(c.ArchiveStorage, file)
+	return OpenListed(c.ArchiveStorage, file)
 }
 
 // ListInfo implements InfoLister over the storage underneath.

@@ -232,7 +232,7 @@ func (a *archive) open() (err error) {
 
 	var readFile File
 	if a.readOnly && a.listed != nil {
-		readFile, err = openListed(a.storage, *a.listed)
+		readFile, err = OpenListed(a.storage, *a.listed)
 	} else {
 		readFile, err = a.storage.Open(a.archiveName())
 	}
@@ -791,6 +791,23 @@ func (a *archive) foreach(load loadPredicate, callback func(hdr *proto.ObjectHea
 	}
 
 	return a.foreachReader(file, load, callback)
+}
+
+// readAll returns the archive file's bytes, read in one request where the
+// storage streams files.
+func (a *archive) readAll() ([]byte, error) {
+	file, err := a.storage.Open(a.archiveName())
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening archive %s", a.name)
+	}
+	defer file.Close()
+
+	buf := bytes.NewBuffer(make([]byte, 0, a.size))
+	if _, err := io.Copy(buf, file); err != nil {
+		return nil, errors.Wrapf(err, "reading archive %s", a.name)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // storeReadIndex writes idx as the archive's index file and returns the

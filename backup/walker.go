@@ -137,8 +137,12 @@ type Walker struct {
 	started       time.Time
 	last          time.Time
 	rand          *rand.Rand
-	result        WalkResult
-	sent          *sentSet
+	randMtx       sync.Mutex
+	// dirSlots bounds the directories walked beside the ones the walk
+	// descends into itself
+	dirSlots chan struct{}
+	result   WalkResult
+	sent     *sentSet
 	// clock stands in for time.Now in tests; the Windows monotonic clock
 	// ticks too coarsely for a short run to see any time pass
 	clock func() time.Time
@@ -265,6 +269,9 @@ func (w *Walker) Run(ctx context.Context) (*WalkResult, error) {
 	}
 
 	w.gate = syncutil.NewGate(w.Workers)
+	if w.dirSlots == nil {
+		w.dirSlots = make(chan struct{}, dirWalkers)
+	}
 	w.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	if gate, ok := w.Index.(CommitGate); ok {
@@ -616,14 +623,37 @@ func (w *Walker) walkDir(ctx context.Context, dir, rel string, parent []byte, ba
 
 		switch {
 		case info.IsDir():
-			node, childChanged, err := w.walkChildDir(ctx, childPath, childRel, NameToken(w.Key, parent, []byte(name)), info, baseNode)
-			if err != nil {
-				return nil, false, err
+			index := i
+			token := NameToken(w.Key, parent, []byte(name))
+
+			walk := func(ctx context.Context) error {
+				node, childChanged, err := w.walkChildDir(ctx, childPath, childRel, token, info, baseNode)
+				if err != nil {
+					return err
+				}
+
+				results[index] = node
+				if childChanged {
+					markChanged()
+				}
+
+				return nil
 			}
 
-			results[i] = node
-			if childChanged {
-				markChanged()
+			// a directory without a free slot is walked here, so a walk
+			// never waits on a slot its own ancestors hold
+			select {
+			case w.dirSlots <- struct{}{}:
+				dirCtx := groupCtx
+				group.Go(func() error {
+					defer func() { <-w.dirSlots }()
+
+					return walk(dirCtx)
+				})
+			default:
+				if err := walk(ctx); err != nil {
+					return nil, false, err
+				}
 			}
 
 		case info.Mode()&os.ModeSymlink != 0:
@@ -766,6 +796,18 @@ func (w *Walker) walkChildDir(ctx context.Context, dir, rel string, token []byte
 	return &proto.TreeNode{Stat: stat, Ref: ref}, true, nil
 }
 
+// dirWalkers is how many directories a walk reads at once besides the
+// ones it descends into itself.
+const dirWalkers = 8
+
+// sample reports whether a file is picked for a re-hash.
+func (w *Walker) sample() bool {
+	w.randMtx.Lock()
+	defer w.randMtx.Unlock()
+
+	return w.rand.Intn(100) < w.ForceHashPercent
+}
+
 // reusable applies the change test: same metadata as the base node, older
 // than the base run, not contradicted by the stat cache, and not picked for
 // a sampled re-hash.
@@ -794,7 +836,7 @@ func (w *Walker) reusable(path, rel string, info os.FileInfo, stat *proto.FileIn
 		}
 	}
 
-	if w.ForceHashPercent > 0 && w.rand.Intn(100) < w.ForceHashPercent {
+	if w.ForceHashPercent > 0 && w.sample() {
 		ref, err := HashFile(path, w.Key)
 		if err != nil || !ref.Equal(baseNode.Ref) {
 			w.logger().Info("sampled re-hash differs from the recorded version, reading the file", "path", path)
@@ -942,43 +984,58 @@ func (w *Walker) readFile(ctx context.Context, path string, known map[string]str
 }
 
 // knownParts returns the blob refs of a changed file's base version and of
-// the last live versions the index holds at rel, so only new parts are
-// uploaded.
+// the last live versions the index holds at rel, split files included, so
+// only new parts are uploaded. A version that cannot be read adds nothing.
 func (w *Walker) knownParts(ctx context.Context, rel string, baseNode *proto.TreeNode) map[string]struct{} {
 	if baseNode == nil || baseNode.Stat.GetType() != proto.NodeType_NODE_FILE || baseNode.Ref == nil {
 		return nil
 	}
 
-	known := map[string]struct{}{}
-	seen := map[string]struct{}{}
+	var (
+		base     *proto.Object
+		versions []*proto.TreeNode
+		lookups  sync.WaitGroup
+	)
 
-	add := func(ref *proto.Ref) {
-		if ref == nil {
-			return
-		}
+	lookups.Go(func() {
+		base, _ = w.Objects.Get(ctx, baseNode.Ref)
+	})
 
-		if _, ok := seen[string(ref.Hash)]; ok {
-			return
-		}
+	lookups.Go(func() {
+		versions, _ = w.Index.FileInfo(ctx, w.Set, IndexPath(w.Key, rel), time.Now(), PreviousVersions)
+	})
 
-		seen[string(ref.Hash)] = struct{}{}
+	lookups.Wait()
 
-		obj, err := w.Objects.Get(ctx, ref)
-		if err != nil {
-			return
-		}
+	seen := map[string]bool{string(baseNode.Ref.Hash): true}
+	var refs []*proto.Ref
 
-		for _, part := range obj.GetFile().GetParts() {
-			known[string(part.Ref.GetHash())] = struct{}{}
+	for _, version := range versions {
+		if version.Ref != nil && !seen[string(version.Ref.Hash)] {
+			seen[string(version.Ref.Hash)] = true
+			refs = append(refs, version.Ref)
 		}
 	}
 
-	add(baseNode.Ref)
+	files := []*proto.Object{base}
+	files = append(files, w.readFiles(ctx, refs)...)
 
-	versions, err := w.Index.FileInfo(ctx, w.Set, IndexPath(w.Key, rel), time.Now(), PreviousVersions)
-	if err == nil {
-		for _, version := range versions {
-			add(version.Ref)
+	known := map[string]struct{}{}
+
+	for _, obj := range files {
+		if obj.GetFile() == nil {
+			continue
+		}
+
+		parts, err := FileParts(ctx, w.Objects, obj.GetFile())
+		if err != nil {
+			continue
+		}
+
+		for _, part := range parts {
+			if part.Ref != nil {
+				known[string(part.Ref.GetHash())] = struct{}{}
+			}
 		}
 	}
 
@@ -987,6 +1044,49 @@ func (w *Walker) knownParts(ctx context.Context, rel string, baseNode *proto.Tre
 	}
 
 	return known
+}
+
+// readFiles returns the file objects of refs, in one request when the
+// store reads many files at once; one that cannot be read is nil.
+func (w *Walker) readFiles(ctx context.Context, refs []*proto.Ref) []*proto.Object {
+	objects := make([]*proto.Object, len(refs))
+	if len(refs) == 0 {
+		return objects
+	}
+
+	if reader, ok := w.Objects.(FilesReader); ok {
+		reads := make([]FileRead, len(refs))
+		for i, ref := range refs {
+			reads[i] = FileRead{Ref: ref}
+		}
+
+		err := reader.ReadFiles(ctx, reads, true, func(i int, obj *proto.Object) error {
+			if i < len(objects) {
+				objects[i] = obj
+			}
+
+			return nil
+		}, func(int, int, *proto.Object) error { return nil })
+		if err == nil {
+			return objects
+		}
+	}
+
+	var gets sync.WaitGroup
+
+	for i, ref := range refs {
+		if objects[i] != nil {
+			continue
+		}
+
+		gets.Go(func() {
+			objects[i], _ = w.Objects.Get(ctx, ref)
+		})
+	}
+
+	gets.Wait()
+
+	return objects
 }
 
 func (w *Walker) checkpointDue() bool {

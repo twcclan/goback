@@ -213,6 +213,8 @@ func TestPostgres(t *testing.T) {
 		"RecordedSetSizesInBatches":        TestRecordedSetSizesReachEverySetAcrossBatchesAndCountUnknownOnes,
 		"PendingPresence":                  TestPendingPresenceIsBuiltForEachSetWhoseNewestLiveCommitLacksIt,
 		"EvaluationRetiresOnce":            TestEvaluationRetiresEachCommitOnceAndKeepsWhatAWiderPolicyCovers,
+		"IndexingRecordsEveryChange":       TestIndexingRecordsTheVersionsOfEveryKindOfChange,
+		"MarkingManyLost":                  TestMarkingManyVersionsLostReachesEachSetAndPath,
 		"BeginCommitGates":                 TestBeginCommitGates,
 		"SetRefsFollowCommits":             TestSetRefsFollowCommits,
 		"SameSecondCommitsAreKept":         TestSameSecondCommitsAreKept,

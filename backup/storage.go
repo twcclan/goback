@@ -163,6 +163,15 @@ type RecordLocator interface {
 	LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error)
 }
 
+// A RecordReader is a store that reads the records of many refs together,
+// a range read for each run of neighbours.
+type RecordReader interface {
+	// ReadRecords returns the object of each of refs it could read, nil
+	// for the rest, which are read the ordinary way. It authorizes
+	// nothing.
+	ReadRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.Object, error)
+}
+
 // Eraser deletes as an erasure: the tombstone asks garbage collection to
 // rewrite the archives holding the target's objects as soon as its rules
 // allow, instead of waiting for the dead ratio or the erasure bound.

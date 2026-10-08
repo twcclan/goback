@@ -15,6 +15,7 @@ import (
 	"github.com/twcclan/goback/index/sql/ent/set"
 	"github.com/twcclan/goback/proto"
 
+	"golang.org/x/sync/errgroup"
 	pb "google.golang.org/protobuf/proto"
 )
 
@@ -243,22 +244,37 @@ func (x *Index) indexGroup(ctx context.Context, target index.IndexedSet, group [
 // a commit, is tombstoned or already has a row (index.ErrIndexed). With
 // dryRun it writes nothing and reports what it would do.
 func (x *Index) IndexCommits(ctx context.Context, refs []*proto.Ref, dryRun bool) ([]index.IndexedSet, error) {
-	commits := make([]pending, 0, len(refs))
+	var unique []*proto.Ref
 	seen := map[string]bool{}
 
 	for _, ref := range refs {
-		if seen[string(ref.Hash)] {
-			continue
+		if !seen[string(ref.Hash)] {
+			seen[string(ref.Hash)] = true
+			unique = append(unique, ref)
 		}
+	}
 
-		seen[string(ref.Hash)] = true
+	commits := make([]pending, len(unique))
+	errs := make([]error, len(unique))
 
-		c, err := x.unindexedCommit(ctx, ref)
+	grp := new(errgroup.Group)
+	grp.SetLimit(diffWorkers)
+
+	for i, ref := range unique {
+		grp.Go(func() error {
+			c, err := x.unindexedCommit(ctx, ref)
+			commits[i], errs[i] = pending{commit: c, ref: ref}, err
+
+			return nil
+		})
+	}
+
+	_ = grp.Wait()
+
+	for _, err := range errs {
 		if err != nil {
 			return nil, err
 		}
-
-		commits = append(commits, pending{commit: c, ref: ref})
 	}
 
 	groups := groupBySet(commits)

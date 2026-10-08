@@ -77,8 +77,19 @@ type PolicySource interface {
 	StorePolicy(ctx context.Context) (*storekey.Policy, error)
 }
 
-// Missing returns the refs the store does not hold, in the order given.
-func Missing(ctx context.Context, store ObjectStore, refs []*proto.Ref) ([]*proto.Ref, error) {
+// HasAller is implemented by stores that answer Has for many refs at once.
+type HasAller interface {
+	// HasAll reports Has for each of refs, in their order.
+	HasAll(ctx context.Context, refs []*proto.Ref) ([]bool, error)
+}
+
+// HasAll reports Has for each of refs, in their order, through the store's
+// HasAller when it is one.
+func HasAll(ctx context.Context, store ObjectStore, refs []*proto.Ref) ([]bool, error) {
+	if haser, ok := store.(HasAller); ok {
+		return haser.HasAll(ctx, refs)
+	}
+
 	present := make([]bool, len(refs))
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.SetLimit(16)
@@ -93,6 +104,16 @@ func Missing(ctx context.Context, store ObjectStore, refs []*proto.Ref) ([]*prot
 	}
 
 	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+
+	return present, nil
+}
+
+// Missing returns the refs the store does not hold, in the order given.
+func Missing(ctx context.Context, store ObjectStore, refs []*proto.Ref) ([]*proto.Ref, error) {
+	present, err := HasAll(ctx, store, refs)
+	if err != nil {
 		return nil, err
 	}
 

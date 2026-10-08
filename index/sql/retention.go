@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	entsql "entgo.io/ent/dialect/sql"
+	"golang.org/x/sync/errgroup"
 )
 
 // setConfig is what retention needs to know about a set.
@@ -956,13 +957,20 @@ func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now t
 		}
 
 		// a tombstone goes out only for a commit the database has given up
-		for _, c := range done {
-			if err := x.tombstone(ctx, c.Ref, c.Edges.Set.Erase); err != nil {
-				return nil, err
-			}
+		grp, gctx := errgroup.WithContext(ctx)
+		grp.SetLimit(diffWorkers)
 
-			written = append(written, c)
+		for _, c := range done {
+			grp.Go(func() error {
+				return x.tombstone(gctx, c.Ref, c.Edges.Set.Erase)
+			})
 		}
+
+		if err := grp.Wait(); err != nil {
+			return nil, err
+		}
+
+		written = append(written, done...)
 	}
 
 	return written, nil

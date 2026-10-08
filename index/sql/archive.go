@@ -73,6 +73,7 @@ func (x *Index) locateCopies(ctx context.Context, refs []*proto.Ref, scope pack.
 
 		rows, err := x.client.Object.Query().
 			Where(append(where, object.RefIn(hashes...), object.HasArchiveWith(visibleTo(scope)))...).
+			Order(ent.Asc(object.FieldID)).
 			All(ctx)
 		if err != nil {
 			return nil, err
@@ -494,21 +495,32 @@ func (x *Index) Lost(id string) ([]*proto.Ref, error) {
 
 	seen := make(map[string]bool)
 
-	var lost []*proto.Ref
+	var refs [][]byte
 	for _, row := range lostRows {
-		if seen[string(row.Ref)] {
-			continue
+		if !seen[string(row.Ref)] {
+			seen[string(row.Ref)] = true
+			refs = append(refs, row.Ref)
+		}
+	}
+
+	held := make(map[string]bool)
+
+	err = inBatches(refs, func(batch [][]byte) error {
+		found, err := x.client.Object.Query().Where(object.RefIn(batch...), object.HasArchiveWith(kept)).Select(object.FieldRef).All(ctx)
+		for _, row := range found {
+			held[string(row.Ref)] = true
 		}
 
-		seen[string(row.Ref)] = true
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
 
-		held, err := x.client.Object.Query().Where(object.Ref(row.Ref), object.HasArchiveWith(kept)).Exist(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		if !held {
-			lost = append(lost, &proto.Ref{Hash: row.Ref})
+	var lost []*proto.Ref
+	for _, ref := range refs {
+		if !held[string(ref)] {
+			lost = append(lost, &proto.Ref{Hash: ref})
 		}
 	}
 

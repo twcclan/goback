@@ -53,10 +53,9 @@ type scanner struct {
 	ready   map[string]*scanned
 	flight  map[string]bool
 	held    int
-	// wanted is the directory the walk is waiting for, which a worker
-	// publishes even when the window is full; only the walk descends, so
-	// there is never more than one
-	wanted string
+	// wanted counts the walks waiting for each directory, which a worker
+	// publishes even when the window is full
+	wanted map[string]int
 	closed bool
 }
 
@@ -70,6 +69,7 @@ func newScanner(ctx context.Context, w *Walker, workers, window int) *scanner {
 		window: window,
 		ready:  map[string]*scanned{},
 		flight: map[string]bool{},
+		wanted: map[string]int{},
 	}
 	s.cond.L = &s.mtx
 
@@ -139,7 +139,7 @@ func (s *scanner) next(ctx context.Context) (scanJob, bool) {
 // publish hands a worker's listing to the walk once there is room for it.
 // The caller holds the lock.
 func (s *scanner) publish(job scanJob, found *scanned) {
-	for !s.closed && s.held > 0 && s.held+len(found.entries) > s.window && s.wanted != job.dir {
+	for !s.closed && s.held > 0 && s.held+len(found.entries) > s.window && s.wanted[job.dir] == 0 {
 		s.cond.Wait()
 	}
 
@@ -181,11 +181,20 @@ func (s *scanner) offer(job scanJob, found *scanned) {
 func (s *scanner) take(job scanJob) *scanned {
 	s.mtx.Lock()
 
+	waiting := false
+	stopWaiting := func() {
+		if waiting {
+			if s.wanted[job.dir]--; s.wanted[job.dir] <= 0 {
+				delete(s.wanted, job.dir)
+			}
+		}
+	}
+
 	for {
 		if found, ok := s.ready[job.dir]; ok {
 			delete(s.ready, job.dir)
 			s.held -= len(found.entries)
-			s.wanted = ""
+			stopWaiting()
 
 			s.cond.Broadcast()
 			s.mtx.Unlock()
@@ -197,13 +206,17 @@ func (s *scanner) take(job scanJob) *scanned {
 			break
 		}
 
-		s.wanted = job.dir
+		if !waiting {
+			waiting = true
+			s.wanted[job.dir]++
+		}
+
 		s.cond.Broadcast()
 		s.cond.Wait()
 	}
 
 	s.flight[job.dir] = true
-	s.wanted = ""
+	stopWaiting()
 	s.mtx.Unlock()
 
 	found := s.list(job)

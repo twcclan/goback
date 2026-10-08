@@ -3,16 +3,19 @@ package sql
 import (
 	"bytes"
 	"context"
+	stdsql "database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/twcclan/goback/backup"
 	"github.com/twcclan/goback/index"
 	"github.com/twcclan/goback/index/sql/ent"
 	"github.com/twcclan/goback/index/sql/ent/commitrow"
+	"github.com/twcclan/goback/index/sql/ent/deletedref"
 	"github.com/twcclan/goback/index/sql/ent/file"
 	"github.com/twcclan/goback/index/sql/ent/pin"
 	"github.com/twcclan/goback/index/sql/ent/predicate"
@@ -22,6 +25,7 @@ import (
 	"github.com/twcclan/goback/index/sql/mapping/gen"
 	"github.com/twcclan/goback/proto"
 
+	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"golang.org/x/sync/errgroup"
 )
@@ -293,7 +297,7 @@ func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto
 	}
 
 	if err == nil {
-		err = diff.dir(ctx, "", root)
+		err = diff.walk(ctx, root)
 	}
 
 	if err != nil {
@@ -315,16 +319,42 @@ func (x *Index) planCommit(ctx context.Context, commit *proto.Commit, ref *proto
 
 // skipCommit reports whether a commit is already indexed or tombstoned,
 // which strict mode refuses, and refuses a strict commit to a set that no
-// longer takes them.
+// longer takes them. It asks the database once.
 func (x *Index) skipCommit(ctx context.Context, c *ent.Client, commit *proto.Commit, ref *proto.Ref, setID int64, strict bool) (bool, error) {
-	exists, err := c.CommitRow.Query().Where(commitrow.Ref(ref.Hash)).Exist(ctx)
-	if err != nil || exists {
+	arg := func(n int) string {
+		if x.dialect == dialect.Postgres {
+			return fmt.Sprintf("$%d", n)
+		}
+
+		return "?"
+	}
+
+	query := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE %s = %s), EXISTS (SELECT 1 FROM %s WHERE %s = %s), (SELECT %s FROM %s WHERE %s = %s)`,
+		commitrow.Table, commitrow.FieldRef, arg(1), deletedref.Table, deletedref.FieldRef, arg(2), set.FieldState, set.Table, set.FieldID, arg(3))
+
+	rows, err := c.QueryContext(ctx, query, ref.Hash, ref.Hash, setID)
+	if err != nil {
+		return true, err
+	}
+	defer rows.Close()
+
+	var exists, deleted bool
+	var state stdsql.NullString
+
+	if !rows.Next() {
+		return true, errors.Join(errors.New("asking whether to skip a commit returned nothing"), rows.Err())
+	}
+
+	if err := rows.Scan(&exists, &deleted, &state); err != nil {
 		return true, err
 	}
 
-	deleted, err := isDeleted(ctx, c, ref.Hash)
-	if err != nil {
+	if err := rows.Close(); err != nil {
 		return true, err
+	}
+
+	if exists {
+		return true, nil
 	}
 
 	if deleted {
@@ -339,12 +369,11 @@ func (x *Index) skipCommit(ctx context.Context, c *ent.Client, commit *proto.Com
 		return false, nil
 	}
 
-	s, err := c.Set.Get(ctx, setID)
-	if err != nil {
-		return true, err
+	if !state.Valid {
+		return true, fmt.Errorf("%w: set %d", backup.ErrNotFound, setID)
 	}
 
-	if s.State != set.StateActive {
+	if set.State(state.String) != set.StateActive {
 		return true, fmt.Errorf("%w: set %q", backup.ErrSetClosed, commit.GetBackupSet())
 	}
 
@@ -450,15 +479,25 @@ func (x *Index) applyCommit(ctx context.Context, commit *proto.Commit, ref *prot
 }
 
 // treeDiff walks the changed directories of a commit against the open
-// rows of its set as read reads them, and plans closing the rows of
-// versions that changed or vanished at the commit's receipt time and
-// opening rows for new versions, for apply to write.
+// rows of its set as read reads them, a level of the tree at a time, and
+// plans closing the rows of versions that changed or vanished at the
+// commit's receipt time and opening rows for new versions, for apply to
+// write.
 type treeDiff struct {
 	read  *ent.Client
 	store backup.ObjectStore
 	setID int64
 	at    time.Time
-	ops   []func(context.Context, *ent.Client) error
+
+	// closeTrees and closeFiles are the paths whose open row closes,
+	// closeDirs the directories whose open rows all close
+	closeTrees []string
+	closeFiles []string
+	closeDirs  []string
+	trees      []treeRow
+	files      []fileRow
+	refs       [][]byte
+	referenced map[string]bool
 
 	// tolerant walks around objects the store no longer holds, recording
 	// where in holes (directories whose content is unknown) and gaps
@@ -468,31 +507,108 @@ type treeDiff struct {
 	gaps     []string
 }
 
+// treeRow and fileRow are versions a commit opens.
+type treeRow struct {
+	path, dir string
+	ref       []byte
+}
+
+type fileRow struct {
+	path, dir string
+	node      *proto.TreeNode
+}
+
+// level is a directory to diff and its flattened tree.
+type level struct {
+	dir  string
+	tree *proto.Tree
+}
+
+// descent is a node below a level the walk reads on.
+type descent struct {
+	path string
+	node *proto.TreeNode
+}
+
+// diffWorkers bounds the objects a level of the walk reads at once.
+const diffWorkers = 16
+
 // missing reports whether err is a lost object the walk goes around.
 func (d *treeDiff) missing(err error) bool {
 	return d.tolerant && errors.Is(err, backup.ErrNotFound)
 }
 
-// do plans a write.
-func (d *treeDiff) do(op func(ctx context.Context, c *ent.Client) error) {
-	d.ops = append(d.ops, op)
-}
-
-// apply makes the planned writes through c, in the order planned.
+// apply makes the planned writes through c. The closes go first: each
+// matches every open row of its path or directory, which must not take
+// in the rows the commit opens.
 func (d *treeDiff) apply(ctx context.Context, c *ent.Client) error {
-	for _, op := range d.ops {
-		if err := op(ctx, c); err != nil {
-			return err
-		}
+	err := inBatches(d.closeTrees, func(paths []string) error {
+		return c.Tree.Update().Where(tree.SetID(d.setID), tree.PathIn(paths...), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
+	if err != nil {
+		return err
 	}
 
-	return nil
+	err = inBatches(d.closeFiles, func(paths []string) error {
+		return c.File.Update().Where(file.SetID(d.setID), file.PathIn(paths...), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
+	if err != nil {
+		return err
+	}
+
+	err = inBatches(d.closeDirs, func(dirs []string) error {
+		err := c.File.Update().Where(file.SetID(d.setID), file.DirIn(dirs...), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		return c.Tree.Update().Where(tree.SetID(d.setID), tree.DirIn(dirs...), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	})
+	if err != nil {
+		return err
+	}
+
+	err = inBatches(d.trees, func(rows []treeRow) error {
+		builders := make([]*ent.TreeCreate, len(rows))
+		for i, r := range rows {
+			builders[i] = c.Tree.Create().SetSetID(d.setID).SetPath(r.path).SetDir(r.dir).SetValidFrom(d.at).SetRef(r.ref)
+		}
+
+		return c.Tree.CreateBulk(builders...).Exec(ctx)
+	})
+	if err != nil {
+		return err
+	}
+
+	err = inBatches(d.files, func(rows []fileRow) error {
+		builders := make([]*ent.FileCreate, len(rows))
+		for i, r := range rows {
+			info := r.node.GetStat()
+			builders[i] = c.File.Create().SetSetID(d.setID).SetPath(r.path).SetDir(r.dir).SetValidFrom(d.at).SetRef(r.node.GetRef().GetHash()).
+				SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(proto.PathComponent(info.GetUser())).SetGroup(proto.PathComponent(info.GetGroup())).SetSize(info.GetSize()).
+				SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget())
+		}
+
+		return c.File.CreateBulk(builders...).Exec(ctx)
+	})
+	if err != nil {
+		return err
+	}
+
+	return addSetRefs(ctx, c, d.setID, d.refs)
 }
 
 // ref plans recording that the set references an object, which makes it
 // readable.
 func (d *treeDiff) ref(hash []byte) {
-	d.do(func(ctx context.Context, c *ent.Client) error { return setRef(ctx, c, d.setID, hash) })
+	if d.referenced == nil {
+		d.referenced = make(map[string]bool)
+	}
+
+	if !d.referenced[string(hash)] {
+		d.referenced[string(hash)] = true
+		d.refs = append(d.refs, hash)
+	}
 }
 
 func setRef(ctx context.Context, c *ent.Client, setID int64, hash []byte) error {
@@ -535,34 +651,55 @@ func (d *treeDiff) flatten(ctx context.Context, dir string, ref *proto.Ref, t *p
 	return flat, nil
 }
 
-// refFile records a file object and, for one large enough to be split,
-// the sub-file objects it names.
-func (d *treeDiff) refFile(ctx context.Context, path string, node *proto.TreeNode) error {
-	d.ref(node.GetRef().GetHash())
-	if node.GetStat().GetSize() < backup.SplitFileSize {
-		return nil
+// refLarge records the sub-file objects the large files name, reading
+// them in parallel.
+func (d *treeDiff) refLarge(ctx context.Context, large []descent) error {
+	subs := make([][][]byte, len(large))
+	lost := make([]bool, len(large))
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(diffWorkers)
+
+	for i, f := range large {
+		grp.Go(func() error {
+			obj, err := d.store.Get(gctx, f.node.GetRef())
+			if d.missing(err) {
+				lost[i] = true
+				return nil
+			}
+
+			if err != nil {
+				return err
+			}
+
+			err = backup.SubFiles(gctx, d.store, obj.GetFile(), func(split *proto.Ref) error {
+				subs[i] = append(subs[i], split.GetHash())
+				return nil
+			})
+			if d.missing(err) {
+				lost[i] = true
+				return nil
+			}
+
+			return err
+		})
 	}
 
-	obj, err := d.store.Get(ctx, node.GetRef())
-	if d.missing(err) {
-		d.gaps = append(d.gaps, path)
-		return nil
-	}
-
-	if err != nil {
+	if err := grp.Wait(); err != nil {
 		return err
 	}
 
-	err = backup.SubFiles(ctx, d.store, obj.GetFile(), func(split *proto.Ref) error {
-		d.ref(split.GetHash())
-		return nil
-	})
-	if d.missing(err) {
-		d.gaps = append(d.gaps, path)
-		return nil
+	for i, f := range large {
+		for _, sub := range subs[i] {
+			d.ref(sub)
+		}
+
+		if lost[i] {
+			d.gaps = append(d.gaps, f.path)
+		}
 	}
 
-	return err
+	return nil
 }
 
 // sameFile reports whether an open row still describes the node, so its
@@ -576,65 +713,162 @@ func sameFile(row *ent.File, node *proto.TreeNode) bool {
 		bytes.Equal(row.LinkTarget, info.GetLinkTarget())
 }
 
-func (d *treeDiff) openTrees(ctx context.Context, dir string) (map[string][]byte, error) {
-	rows, err := d.read.Tree.Query().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).All(ctx)
-	if err != nil {
-		return nil, err
-	}
+// openTrees returns the refs of the open trees rows of the directories,
+// by directory and path.
+func (d *treeDiff) openTrees(ctx context.Context, dirs []string) (map[string]map[string][]byte, error) {
+	open := make(map[string]map[string][]byte, len(dirs))
 
-	open := make(map[string][]byte, len(rows))
-	for _, row := range rows {
-		open[row.Path] = row.Ref
-	}
-
-	return open, nil
-}
-
-func (d *treeDiff) openFiles(ctx context.Context, dir string) (map[string]*ent.File, error) {
-	rows, err := d.read.File.Query().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).All(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	open := make(map[string]*ent.File, len(rows))
-	for _, row := range rows {
-		open[row.Path] = row
-	}
-
-	return open, nil
-}
-
-func (d *treeDiff) closeTree(p string) {
-	d.do(func(ctx context.Context, c *ent.Client) error {
-		return c.Tree.Update().Where(tree.SetID(d.setID), tree.Path(p), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
-	})
-}
-
-func (d *treeDiff) closeFile(p string) {
-	d.do(func(ctx context.Context, c *ent.Client) error {
-		return c.File.Update().Where(file.SetID(d.setID), file.Path(p), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
-	})
-}
-
-// closeSubtree plans closing every open row below a directory that
-// vanished.
-func (d *treeDiff) closeSubtree(ctx context.Context, dir string) error {
-	children, err := d.openTrees(ctx, dir)
-	if err != nil {
-		return err
-	}
-
-	d.do(func(ctx context.Context, c *ent.Client) error {
-		err := c.File.Update().Where(file.SetID(d.setID), file.Dir(dir), file.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+	err := inBatches(dirs, func(batch []string) error {
+		rows, err := d.read.Tree.Query().Where(tree.SetID(d.setID), tree.DirIn(batch...), tree.ValidUntilIsNil()).All(ctx)
 		if err != nil {
 			return err
 		}
 
-		return c.Tree.Update().Where(tree.SetID(d.setID), tree.Dir(dir), tree.ValidUntilIsNil()).SetValidUntil(d.at).Exec(ctx)
+		for _, row := range rows {
+			if open[row.Dir] == nil {
+				open[row.Dir] = make(map[string][]byte)
+			}
+
+			open[row.Dir][row.Path] = row.Ref
+		}
+
+		return nil
 	})
 
-	for child := range children {
-		if err := d.closeSubtree(ctx, child); err != nil {
+	return open, err
+}
+
+// openFiles returns the open files rows of the directories, by directory
+// and path.
+func (d *treeDiff) openFiles(ctx context.Context, dirs []string) (map[string]map[string]*ent.File, error) {
+	open := make(map[string]map[string]*ent.File, len(dirs))
+
+	err := inBatches(dirs, func(batch []string) error {
+		rows, err := d.read.File.Query().Where(file.SetID(d.setID), file.DirIn(batch...), file.ValidUntilIsNil()).All(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, row := range rows {
+			if open[row.Dir] == nil {
+				open[row.Dir] = make(map[string]*ent.File)
+			}
+
+			open[row.Dir][row.Path] = row
+		}
+
+		return nil
+	})
+
+	return open, err
+}
+
+// closeSubtrees plans closing every open row below the directories.
+func (d *treeDiff) closeSubtrees(ctx context.Context, dirs []string) error {
+	for len(dirs) > 0 {
+		d.closeDirs = append(d.closeDirs, dirs...)
+
+		children, err := d.openTrees(ctx, dirs)
+		if err != nil {
+			return err
+		}
+
+		dirs = nil
+		for _, open := range children {
+			for child := range open {
+				dirs = append(dirs, child)
+			}
+		}
+	}
+
+	return nil
+}
+
+// walk plans the commit's flattened root tree a level of directories at
+// a time: their open rows are read together and their subtrees in
+// parallel.
+func (d *treeDiff) walk(ctx context.Context, root *proto.Tree) error {
+	next := []level{{dir: "", tree: root}}
+
+	for len(next) > 0 {
+		current := next
+		next = nil
+
+		dirs := make([]string, len(current))
+		for i, l := range current {
+			dirs[i] = l.dir
+		}
+
+		trees, err := d.openTrees(ctx, dirs)
+		if err != nil {
+			return err
+		}
+
+		files, err := d.openFiles(ctx, dirs)
+		if err != nil {
+			return err
+		}
+
+		var descend, large []descent
+		var vanished []string
+
+		for _, l := range current {
+			down, big, gone := d.dir(l, trees[l.dir], files[l.dir])
+			descend = append(descend, down...)
+			large = append(large, big...)
+			vanished = append(vanished, gone...)
+		}
+
+		if err := d.refLarge(ctx, large); err != nil {
+			return err
+		}
+
+		if err := d.closeSubtrees(ctx, vanished); err != nil {
+			return err
+		}
+
+		subtrees := make([]*proto.Object, len(descend))
+		grp, gctx := errgroup.WithContext(ctx)
+		grp.SetLimit(diffWorkers)
+
+		for i, sub := range descend {
+			grp.Go(func() error {
+				var err error
+				subtrees[i], err = d.store.Get(gctx, sub.node.GetRef())
+				if d.missing(err) {
+					return nil
+				}
+
+				if err == nil && subtrees[i].GetTree() == nil {
+					err = fmt.Errorf("%x is not a tree", sub.node.GetRef().GetHash())
+				}
+				return err
+			})
+		}
+
+		if err := grp.Wait(); err != nil {
+			return err
+		}
+
+		var unlisted []string
+
+		for i, sub := range descend {
+			if subtrees[i] == nil {
+				d.holes = append(d.holes, sub.path)
+				unlisted = append(unlisted, sub.path)
+
+				continue
+			}
+
+			flat, err := d.flatten(ctx, sub.path, sub.node.GetRef(), subtrees[i].GetTree())
+			if err != nil {
+				return err
+			}
+
+			next = append(next, level{dir: sub.path, tree: flat})
+		}
+
+		if err := d.closeSubtrees(ctx, unlisted); err != nil {
 			return err
 		}
 	}
@@ -642,24 +876,16 @@ func (d *treeDiff) closeSubtree(ctx context.Context, dir string) error {
 	return nil
 }
 
-func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
-	trees, err := d.openTrees(ctx, dir)
-	if err != nil {
-		return err
-	}
+// dir plans one directory against its open rows and returns the
+// directories to descend into, the large files to read and the
+// directories that vanished.
+func (d *treeDiff) dir(l level, trees map[string][]byte, files map[string]*ent.File) (descend, large []descent, vanished []string) {
+	seen := make(map[string]bool, len(l.tree.GetNodes()))
 
-	files, err := d.openFiles(ctx, dir)
-	if err != nil {
-		return err
-	}
-
-	seen := make(map[string]bool, len(t.Nodes))
-	var descend []*proto.TreeNode
-
-	for _, node := range t.GetNodes() {
+	for _, node := range l.tree.GetNodes() {
 		info := node.GetStat()
 
-		child := proto.JoinPath(dir, info.GetName())
+		child := proto.JoinPath(l.dir, info.GetName())
 		seen[child] = true
 
 		if info.IsDir() {
@@ -669,15 +895,12 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 			}
 
 			if open {
-				d.closeTree(child)
+				d.closeTrees = append(d.closeTrees, child)
 			}
 
-			ref := node.GetRef().GetHash()
-			d.do(func(ctx context.Context, c *ent.Client) error {
-				return c.Tree.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(ref).Exec(ctx)
-			})
+			d.trees = append(d.trees, treeRow{path: child, dir: l.dir, ref: node.GetRef().GetHash()})
+			descend = append(descend, descent{path: child, node: node})
 
-			descend = append(descend, node)
 			continue
 		}
 
@@ -687,93 +910,36 @@ func (d *treeDiff) dir(ctx context.Context, dir string, t *proto.Tree) error {
 		}
 
 		if open {
-			d.closeFile(child)
+			d.closeFiles = append(d.closeFiles, child)
 		}
 
-		ref := node.GetRef().GetHash()
-		d.do(func(ctx context.Context, c *ent.Client) error {
-			return c.File.Create().SetSetID(d.setID).SetPath(child).SetDir(dir).SetValidFrom(d.at).SetRef(ref).
-				SetMtimeNs(info.GetMtimeNs()).SetMode(info.GetMode()).SetUser(proto.PathComponent(info.GetUser())).SetGroup(proto.PathComponent(info.GetGroup())).SetSize(info.GetSize()).
-				SetType(uint32(info.GetType())).SetLinkTarget(info.GetLinkTarget()).Exec(ctx)
-		})
+		d.files = append(d.files, fileRow{path: child, dir: l.dir, node: node})
 
 		if info.GetType() == proto.NodeType_NODE_SYMLINK {
 			continue
 		}
 
-		err = d.refFile(ctx, child, node)
-		if err != nil {
-			return err
+		d.ref(node.GetRef().GetHash())
+
+		if info.GetSize() >= backup.SplitFileSize {
+			large = append(large, descent{path: child, node: node})
 		}
 	}
 
 	for p := range trees {
-		if seen[p] {
-			continue
-		}
-
-		d.closeTree(p)
-
-		if err := d.closeSubtree(ctx, p); err != nil {
-			return err
+		if !seen[p] {
+			d.closeTrees = append(d.closeTrees, p)
+			vanished = append(vanished, p)
 		}
 	}
 
 	for p := range files {
 		if !seen[p] {
-			d.closeFile(p)
+			d.closeFiles = append(d.closeFiles, p)
 		}
 	}
 
-	subtrees := make([]*proto.Object, len(descend))
-	grp, gctx := errgroup.WithContext(ctx)
-	grp.SetLimit(16)
-
-	for i, node := range descend {
-		i, node := i, node
-		grp.Go(func() error {
-			var err error
-			subtrees[i], err = d.store.Get(gctx, node.GetRef())
-			if d.missing(err) {
-				return nil
-			}
-
-			if err == nil && subtrees[i].GetTree() == nil {
-				err = fmt.Errorf("%x is not a tree", node.GetRef().GetHash())
-			}
-			return err
-		})
-	}
-
-	if err := grp.Wait(); err != nil {
-		return err
-	}
-
-	for i, node := range descend {
-		child := proto.JoinPath(dir, node.GetStat().GetName())
-
-		if subtrees[i] == nil {
-			d.holes = append(d.holes, child)
-
-			if err := d.closeSubtree(ctx, child); err != nil {
-				return err
-			}
-
-			continue
-		}
-
-		flat, err := d.flatten(ctx, child, node.GetRef(), subtrees[i].GetTree())
-		if err != nil {
-			return err
-		}
-
-		err = d.dir(ctx, child, flat)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return descend, large, vanished
 }
 
 // indexPin caches a pin and revives its target commit. A pin of a
@@ -900,21 +1066,36 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 	touched := map[int64][][]byte{}
 
 	if hw, ok := x.ObjectStore.(backup.HeaderWalker); ok {
+		var found []foundTombstone
+
+		apply := func() error {
+			marked, err := x.applyTombstones(ctx, found)
+			for setID, refs := range marked {
+				touched[setID] = append(touched[setID], refs...)
+			}
+
+			found = found[:0]
+
+			return err
+		}
+
 		err := hw.WalkHeaders(ctx, proto.ObjectType_TOMBSTONE, func(hdr *proto.ObjectHeader) error {
 			at := x.now()
 			if hdr.GetTimestamp() != nil {
 				at = hdr.GetTimestamp().AsTime()
 			}
 
-			ref := hdr.GetTombstoneFor().GetHash()
-
-			setID, err := x.applyTombstone(ctx, ref, at)
-			if setID != 0 {
-				touched[setID] = append(touched[setID], ref)
+			found = append(found, foundTombstone{ref: bytes.Clone(hdr.GetTombstoneFor().GetHash()), at: at})
+			if len(found) < objectBatch {
+				return nil
 			}
 
-			return err
+			return apply()
 		})
+		if err == nil && len(found) > 0 {
+			err = apply()
+		}
+
 		if err != nil && !errors.Is(err, backup.ErrNotImplemented) {
 			return err
 		}
@@ -1022,52 +1203,105 @@ func (x *Index) resetSetSequence(ctx context.Context) error {
 	return err
 }
 
-// applyTombstone records a tombstone found in the archives and marks the
-// commit or pin row it names when this database still has it live, unless
-// the commit was revived since; it returns the set of a commit it marked.
-func (x *Index) applyTombstone(ctx context.Context, ref []byte, at time.Time) (int64, error) {
-	live, err := x.client.CommitRow.Query().Where(commitrow.Ref(ref), commitrow.TombstonedAtIsNil()).Exist(ctx)
-	if err == nil && live {
-		live, err = x.revived(ctx, ref)
+// foundTombstone is a tombstone a rebuild found in the archives: the ref
+// it names and when it was written.
+type foundTombstone struct {
+	ref []byte
+	at  time.Time
+}
+
+// applyTombstones records tombstones found in the archives and marks the
+// commit or pin rows they name when this database still has them live,
+// unless a commit was revived since. Of several tombstones of one ref the
+// first counts. It returns the commits it marked, by set.
+func (x *Index) applyTombstones(ctx context.Context, found []foundTombstone) (map[int64][][]byte, error) {
+	at := make(map[string]time.Time, len(found))
+	var refs [][]byte
+
+	for _, t := range found {
+		if _, ok := at[string(t.ref)]; !ok {
+			at[string(t.ref)] = t.at
+			refs = append(refs, t.ref)
+		}
 	}
 
-	if err != nil || live {
-		return 0, err
+	live, err := x.client.CommitRow.Query().Where(commitrow.RefIn(refs...), commitrow.TombstonedAtIsNil()).Select(commitrow.FieldRef).All(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	var setID int64
+	revived := make(map[string]bool)
+	for _, row := range live {
+		again, err := x.revived(ctx, row.Ref)
+		if err != nil {
+			return nil, err
+		}
+
+		revived[string(row.Ref)] = again
+	}
+
+	applied := refs[:0:0]
+	for _, ref := range refs {
+		if !revived[string(ref)] {
+			applied = append(applied, ref)
+		}
+	}
+
+	if len(applied) == 0 {
+		return nil, nil
+	}
+
+	marked := map[int64][][]byte{}
 
 	err = x.tx(ctx, func(tx *ent.Tx) error {
 		c := tx.Client()
+		marked = map[int64][][]byte{}
 
-		err := recordDeleted(ctx, c, [][]byte{ref}, at)
+		deleted := make([]*ent.DeletedRefCreate, len(applied))
+		for i, ref := range applied {
+			deleted[i] = c.DeletedRef.Create().SetRef(ref).SetTombstonedAt(at[string(ref)])
+		}
+
+		if err := ignoreNoRows(c.DeletedRef.CreateBulk(deleted...).OnConflict().DoNothing().Exec(ctx)); err != nil {
+			return err
+		}
+
+		rows, err := c.CommitRow.Query().Where(commitrow.RefIn(applied...), commitrow.TombstonedAtIsNil()).All(ctx)
 		if err != nil {
 			return err
 		}
 
-		n, err := c.CommitRow.Update().Where(commitrow.Ref(ref), commitrow.TombstonedAtIsNil()).SetTombstonedAt(at).ClearPresence().Save(ctx)
+		var gone [][]byte
+		for _, row := range rows {
+			if err := c.CommitRow.UpdateOneID(row.ID).SetTombstonedAt(at[string(row.Ref)]).ClearPresence().Exec(ctx); err != nil {
+				return err
+			}
+
+			marked[row.SetID] = append(marked[row.SetID], row.Ref)
+			gone = append(gone, row.Ref)
+		}
+
+		if len(gone) > 0 {
+			if _, err := c.SetRef.Delete().Where(setref.RefIn(gone...)).Exec(ctx); err != nil {
+				return err
+			}
+		}
+
+		pins, err := c.Pin.Query().Where(pin.RefIn(applied...), pin.DeletedAtIsNil()).All(ctx)
 		if err != nil {
 			return err
 		}
 
-		if n > 0 {
-			row, err := c.CommitRow.Query().Where(commitrow.Ref(ref)).Only(ctx)
-			if err != nil {
-				return err
-			}
-
-			setID = row.SetID
-
-			_, err = c.SetRef.Delete().Where(setref.Ref(ref)).Exec(ctx)
-			if err != nil {
+		for _, p := range pins {
+			if err := c.Pin.UpdateOneID(p.ID).SetDeletedAt(at[string(p.Ref)]).Exec(ctx); err != nil {
 				return err
 			}
 		}
 
-		return c.Pin.Update().Where(pin.Ref(ref), pin.DeletedAtIsNil()).SetDeletedAt(at).Exec(ctx)
+		return nil
 	})
 
-	return setID, err
+	return marked, err
 }
 
 // References implements backup.RefScope: a commit, tree or file ref is
@@ -1377,20 +1611,30 @@ func (x *Index) FillMissingSizes(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
-	filled := 0
+	var filled atomic.Int64
+
+	grp, gctx := errgroup.WithContext(ctx)
+	grp.SetLimit(diffWorkers)
+
 	for _, row := range rows {
-		size, files, err := logicalSize(ctx, x.client, row.SetID, row.ReceivedAt)
-		if err != nil {
-			return filled, err
-		}
+		grp.Go(func() error {
+			size, files, err := logicalSize(gctx, x.client, row.SetID, row.ReceivedAt)
+			if err != nil {
+				return err
+			}
 
-		err = x.client.CommitRow.UpdateOneID(row.ID).SetLogicalSize(size).SetFileCount(files).Exec(ctx)
-		if err != nil {
-			return filled, err
-		}
+			err = x.client.CommitRow.UpdateOneID(row.ID).SetLogicalSize(size).SetFileCount(files).Exec(gctx)
+			if err != nil {
+				return err
+			}
 
-		filled++
+			filled.Add(1)
+
+			return nil
+		})
 	}
 
-	return filled, nil
+	err = grp.Wait()
+
+	return int(filled.Load()), err
 }

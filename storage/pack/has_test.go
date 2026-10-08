@@ -2,6 +2,7 @@ package pack
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/twcclan/goback/proto"
@@ -71,4 +72,35 @@ func TestARewrittenCopyStaysOlderThanTheTombstoneAfterIt(t *testing.T) {
 
 	requireHas(t, store, ctx, objects[0].Ref(), false, "the rewrite kept the copy's version")
 	requireHas(t, store, ctx, objects[1].Ref(), true, "an object without a tombstone")
+}
+
+func TestHasAllAnswersEachRefAsItsOwnHasWould(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	objects := makeTestData(t, 5)
+	kept, deleted, revived, pending, absent := objects[0], objects[1], objects[2], objects[3], objects[4]
+
+	for _, obj := range []*proto.Object{kept, deleted, revived} {
+		require.NoError(t, store.Put(ctx, obj))
+	}
+	require.NoError(t, store.Flush())
+
+	require.NoError(t, store.Delete(ctx, deleted.Ref()))
+	require.NoError(t, store.Delete(ctx, revived.Ref()))
+	require.NoError(t, store.Flush())
+	require.NoError(t, store.Delete(ctx, proto.TombstoneRef(revived.Ref())))
+	require.NoError(t, store.Flush())
+	require.NoError(t, store.Put(ctx, pending))
+
+	refs := []*proto.Ref{absent.Ref(), kept.Ref(), deleted.Ref(), revived.Ref(), pending.Ref(), kept.Ref()}
+
+	has, err := store.HasAll(ctx, refs)
+	require.NoError(t, err)
+	require.Equal(t, []bool{false, true, false, true, true, true}, has)
+
+	for i, ref := range refs {
+		requireHas(t, store, ctx, ref, has[i], "ref "+strconv.Itoa(i))
+	}
 }

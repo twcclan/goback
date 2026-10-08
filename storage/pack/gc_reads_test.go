@@ -11,6 +11,7 @@ import (
 	"github.com/twcclan/goback/proto"
 
 	"github.com/stretchr/testify/require"
+	pb "google.golang.org/protobuf/proto"
 )
 
 // countingStorage counts the reads of archive files, so a test can see how
@@ -142,4 +143,37 @@ func TestScanIndexYieldsTheStoredRecords(t *testing.T) {
 	}, nil, nil))
 
 	require.Equal(t, loaded, streamed, "streaming an index gives what loading it does")
+}
+
+func TestReadRecordsReadsNeighboursInOneRangeRead(t *testing.T) {
+	ctx := context.Background()
+	storage := &countingStorage{localArchiveStorage: newLocal(t.TempDir())}
+
+	store, err := NewPackStorage(WithArchiveStorage(storage), WithArchiveIndex(NewInMemoryIndex()), WithAtRestKey(atRestKey(t)))
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+
+	objects := makeTestData(t, 6)
+	for _, obj := range objects {
+		require.NoError(t, store.Put(ctx, obj))
+	}
+	require.NoError(t, store.Flush())
+
+	missing := proto.NewObject(&proto.Blob{Data: []byte("never stored")})
+	refs := []*proto.Ref{objects[4].Ref(), missing.Ref(), objects[0].Ref(), objects[2].Ref(), objects[4].Ref()}
+
+	before := storage.count()
+	read, err := store.ReadRecords(ctx, refs)
+	require.NoError(t, err)
+	require.Equal(t, 1, storage.count()-before, "records side by side come back in one read")
+
+	require.Nil(t, read[1], "an unknown ref is left to an ordinary read")
+	for _, i := range []int{0, 2, 3, 4} {
+		require.True(t, read[i].Ref().Equal(refs[i]))
+
+		got, err := store.Get(ctx, refs[i])
+		require.NoError(t, err)
+		require.True(t, pb.Equal(got, read[i]), fmt.Sprintf("ref %d reads as Get reads it", i))
+	}
 }

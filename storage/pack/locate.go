@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/twcclan/goback/backup"
@@ -105,26 +106,43 @@ func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]
 		return nil, nil
 	}
 
-	byArchive := make(map[*archive][]locatedRecord)
-
-	for i, ref := range refs {
-		a, rec, err := ps.committedCopy(ScopeOf(ctx), ref, true)
-		if err != nil {
-			return nil, err
-		}
-
-		if a == nil {
-			continue
-		}
-
-		byArchive[a] = append(byArchive[a], locatedRecord{index: i, rec: rec})
+	byArchive, err := ps.locateRecords(ScopeOf(ctx), refs)
+	if err != nil {
+		return nil, err
 	}
 
+	return ps.signRuns(ctx, signer, byArchive)
+}
+
+// locateRecords finds a live committed copy of each of refs in one lookup
+// and groups them by archive, each archive's records in offset order.
+func (ps *PackStorage) locateRecords(scope Scope, refs []*proto.Ref) (map[*archive][]locatedRecord, error) {
+	archives, records, err := ps.committedCopies(scope, refs, true)
+	if err != nil {
+		return nil, err
+	}
+
+	byArchive := make(map[*archive][]locatedRecord)
+
+	for i, a := range archives {
+		if a != nil {
+			byArchive[a] = append(byArchive[a], locatedRecord{index: i, rec: records[i]})
+		}
+	}
+
+	for _, located := range byArchive {
+		sort.Slice(located, func(i, j int) bool { return located[i].rec.Offset < located[j].rec.Offset })
+	}
+
+	return byArchive, nil
+}
+
+// signRuns signs the runs of byArchive, or returns none when the storage
+// cannot sign them.
+func (ps *PackStorage) signRuns(ctx context.Context, signer RangeSigner, byArchive map[*archive][]locatedRecord) ([]*proto.LocatedRun, error) {
 	var runs []*proto.LocatedRun
 
 	for a, records := range byArchive {
-		sort.Slice(records, func(i, j int) bool { return records[i].rec.Offset < records[j].rec.Offset })
-
 		for start := 0; start < len(records); {
 			end, span := runOf(records, start)
 
@@ -143,6 +161,88 @@ func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]
 	}
 
 	return runs, nil
+}
+
+var _ backup.RecordReader = (*PackStorage)(nil)
+
+// recordReaders bounds the runs one ReadRecords call reads at once.
+const recordReaders = 16
+
+// ReadRecords implements backup.RecordReader with one range read per run
+// of neighbouring records.
+func (ps *PackStorage) ReadRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.Object, error) {
+	ps.touchSessionOf(ctx)
+
+	byArchive, err := ps.locateRecords(ScopeOf(ctx), refs)
+	if err != nil {
+		return nil, err
+	}
+
+	objects := make([]*proto.Object, len(refs))
+
+	var reads sync.WaitGroup
+	slots := make(chan struct{}, recordReaders)
+
+	for a, located := range byArchive {
+		if !a.readOnlyNow() {
+			continue
+		}
+
+		var uncached []locatedRecord
+
+		for _, r := range located {
+			if cached := ps.getCache(ctx, refs[r.index]); cached != nil {
+				objects[r.index] = cached
+			} else {
+				uncached = append(uncached, r)
+			}
+		}
+
+		for start := 0; start < len(uncached); {
+			end, span := runOf(uncached, start)
+			run := uncached[start:end]
+
+			slots <- struct{}{}
+			reads.Go(func() {
+				defer func() { <-slots }()
+
+				ps.readRun(ctx, a, refs, run, span, objects)
+			})
+
+			start = end
+		}
+	}
+
+	reads.Wait()
+
+	return objects, nil
+}
+
+// readRun reads the records of one run in a single range read and fills
+// in their objects; one it cannot read stays nil.
+func (ps *PackStorage) readRun(ctx context.Context, a *archive, refs []*proto.Ref, run []locatedRecord, span int64, objects []*proto.Object) {
+	from := int64(run[0].rec.Offset)
+	start := time.Now()
+
+	buf, _, err := a.readSpan(from, span)
+	if err != nil {
+		ps.logger.Warn("reading a run of records failed, reading them one at a time", "archive", a.name, "offset", from, "length", span, "err", err)
+		return
+	}
+
+	latency := float64(time.Since(start)) / float64(time.Millisecond)
+
+	for _, r := range run {
+		offset := int64(r.rec.Offset) - from
+
+		obj, err := a.objectFromRecord(ctx, refs[r.index], r.rec, buf[offset:offset+int64(r.rec.Length)], latency)
+		if err != nil {
+			continue
+		}
+
+		objects[r.index] = obj
+		_ = ps.putWriteCache(ctx, obj, nil)
+	}
 }
 
 // runOf extends the run starting at start while the records stay close
