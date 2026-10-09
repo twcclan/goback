@@ -277,7 +277,7 @@ func initBucket(scheme string, u *url.URL, c *cli.Context) (backup.ObjectStore, 
 	}
 
 	return withIndex(c, func(x *sql.Index) (*pack.PackStorage, error) {
-		return storage.NewBucketObjectStore(bucket, x, StoreCache(c, "metadata"), append(options, pack.WithOwned(x))...)
+		return storage.NewBucketObjectStore(bucket, x, StoreCache(c, "metadata"), MetadataCacheSize(c), append(options, pack.WithOwned(x))...)
 	})
 }
 

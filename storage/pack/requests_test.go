@@ -333,3 +333,62 @@ func TestAServerServesWhatItCachesAndLocatesTheRest(t *testing.T) {
 	require.NoError(t, cache.Put(ctx, held))
 	require.Equal(t, len(blobs)-1, located(), "a part the cache holds is served")
 }
+
+// TestAServerReadsWhatItsBoundedCacheLetGoFromTheBucket pins that metadata a
+// full cache evicted is still served, read through from the bucket.
+func TestAServerReadsWhatItsBoundedCacheLetGoFromTheBucket(t *testing.T) {
+	ctx := context.Background()
+	storage := newRequestCounting(newMemBucket())
+
+	chain := makeChain(makeTestData(t, 10))
+
+	var metadataBytes int
+	for _, obj := range chain {
+		if obj.Type().Metadata() {
+			metadataBytes += len(obj.Bytes())
+		}
+	}
+
+	cache, err := badger.New(t.TempDir(), badger.WithCapacity(int64(metadataBytes/2)))
+	require.NoError(t, err)
+
+	store, err := NewPackStorage(
+		WithArchiveStorage(signedCounting{storage}),
+		WithArchiveIndex(NewInMemoryIndex()),
+		WithMetadataCache(cache),
+		WithCloseBeforeRead(true),
+	)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+
+	session, err := store.BeginSession(ctx, &backup.Session{AgentID: "agent", Set: "world"})
+	require.NoError(t, err)
+
+	var metadata []*proto.Object
+	for _, obj := range chain {
+		require.NoError(t, store.Put(session, obj))
+
+		if obj.Type().Metadata() {
+			metadata = append(metadata, obj)
+		}
+	}
+
+	require.NoError(t, store.Flush())
+	storage.take()
+
+	newest, oldest := metadata[len(metadata)-1], metadata[0]
+
+	_, err = store.Get(ctx, newest.Ref())
+	require.NoError(t, err)
+	require.Empty(t, storage.take(), "the newest is still cached")
+
+	held, err := cache.Has(ctx, oldest.Ref())
+	require.NoError(t, err)
+	require.False(t, held, "the oldest was evicted")
+
+	obj, err := store.Get(ctx, oldest.Ref())
+	require.NoError(t, err)
+	require.Equal(t, oldest.Bytes(), obj.Bytes())
+	require.NotEmpty(t, storage.take(), "an evicted object is read from the bucket")
+}

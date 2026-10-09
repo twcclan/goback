@@ -514,8 +514,9 @@ func NewBucketStore(bucket *blob.Bucket, options ...BucketOption) *BucketStore {
 
 // NewBucketObjectStore returns a pack store over a remote bucket that keeps
 // its archives in index and, if cacheDir is not empty, a local metadata
-// cache; extra pack options follow.
-func NewBucketObjectStore(bucket *blob.Bucket, index pack.ArchiveIndex, cacheDir string, extra ...pack.PackOption) (*pack.PackStorage, error) {
+// cache of at most cacheSize bytes (0 is unbounded); extra pack options
+// follow.
+func NewBucketObjectStore(bucket *blob.Bucket, index pack.ArchiveIndex, cacheDir string, cacheSize int64, extra ...pack.PackOption) (*pack.PackStorage, error) {
 	options := []pack.PackOption{
 		pack.WithArchiveStorage(NewBucketStore(bucket)),
 		pack.WithArchiveIndex(index),
@@ -533,7 +534,7 @@ func NewBucketObjectStore(bucket *blob.Bucket, index pack.ArchiveIndex, cacheDir
 			return nil, err
 		}
 
-		cache, err := badger.New(cacheDir)
+		cache, err := badger.New(cacheDir, badger.WithCapacity(cacheSize))
 		if err != nil {
 			return nil, err
 		}

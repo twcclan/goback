@@ -15,7 +15,7 @@ import (
 )
 
 // New opens or creates a Store at path.
-func New(path string) (*Store, error) {
+func New(path string, with ...Option) (*Store, error) {
 	opts := badger.DefaultOptions(path).
 		WithCompression(options.Snappy).
 		WithLogger(Logger)
@@ -25,16 +25,27 @@ func New(path string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{
-		db: db,
-	}, nil
+	s := &Store{db: db}
+	for _, option := range with {
+		option(s)
+	}
+
+	if s.lru != nil {
+		if err := s.lru.load(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("loading the cache's last uses: %w", err)
+		}
+	}
+
+	return s, nil
 }
 
 // Store keeps objects in badger, keyed by ref. Each value is the object
 // header, length-prefixed, followed by the stored bytes; the entry's user
 // meta byte carries the object type so Walk can filter without loading.
 type Store struct {
-	db *badger.DB
+	db  *badger.DB
+	lru *lru
 }
 
 func encodeEntry(hdr *proto.ObjectHeader, stored []byte) []byte {
@@ -75,8 +86,14 @@ func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 		return err
 	}
 
+	entry := badger.NewEntry(objectKey(hdr.Ref.Hash), encodeEntry(hdr, stored)).WithMeta(byte(hdr.Type))
+
+	if s.lru != nil {
+		return s.lru.put(s.db, entry)
+	}
+
 	return s.db.Update(func(txn *badger.Txn) error {
-		return txn.SetEntry(badger.NewEntry(objectKey(hdr.Ref.Hash), encodeEntry(hdr, stored)).WithMeta(byte(hdr.Type)))
+		return txn.SetEntry(entry)
 	})
 }
 
@@ -109,6 +126,10 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 		return nil, err
 	}
 
+	if s.lru != nil {
+		s.lru.use(s.db, ref.Hash)
+	}
+
 	return obj, nil
 }
 
@@ -116,6 +137,10 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	ctx, span := tracer.Start(ctx, "BadgerStore.Delete")
 	defer span.End()
+
+	if s.lru != nil {
+		return s.lru.delete(s.db, ref.Hash)
+	}
 
 	return s.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete(objectKey(ref.Hash))
@@ -195,6 +220,10 @@ func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
 
 // Close releases the database.
 func (s *Store) Close() error {
+	if s.lru != nil {
+		s.lru.flush(s.db)
+	}
+
 	return s.db.Close()
 }
 

@@ -92,6 +92,11 @@ func main() {
 			EnvVar: "GOBACK_CACHE_DIR",
 		},
 		cli.StringFlag{
+			Name:  "metadata-cache-size",
+			Usage: "size of a bucket's metadata cache under --cache-dir, past which the commits, trees and files least recently used are let go; 0 keeps them all",
+			Value: "1GiB",
+		},
+		cli.StringFlag{
 			Name:  "blob-cache-size",
 			Usage: "size the blob cache under --cache-dir is trimmed to after a backup or restore",
 			Value: "4GB",
