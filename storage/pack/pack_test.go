@@ -172,7 +172,7 @@ func TestCompactionKeepsAnsweringReaders(t *testing.T) {
 	require.Greater(t, len(before), 10)
 
 	compacted := make(chan error, 1)
-	go func() { compacted <- store.doCompaction() }()
+	go func() { compacted <- store.Compact(context.Background()) }()
 
 	ctx := context.Background()
 	for done := false; !done; {
@@ -237,7 +237,7 @@ func TestPackCompaction(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, len(archivesBefore), 1)
 
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	archivesAfter, _, err := store.archiveNames()
 	require.NoError(t, err)
@@ -287,7 +287,7 @@ func TestParallelCompactionKeepsOneCopyOfAnObjectSeveralArchivesHold(t *testing.
 	require.NoError(t, err)
 	require.Greater(t, len(before[string(refs[0].Hash)]), 1, "the test needs objects held more than once")
 
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	after, err := index.LocateCopies(refs, Scope{})
 	require.NoError(t, err)

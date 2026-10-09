@@ -19,7 +19,10 @@ type fakeStore struct {
 }
 
 func (f *fakeStore) Sweep(now time.Time) { f.sweeps.Add(1); f.lastSweep.Store(now) }
-func (f *fakeStore) Compact() error      { f.compactions.Add(1); return errors.New("disk full") }
+func (f *fakeStore) Compact(context.Context) error {
+	f.compactions.Add(1)
+	return errors.New("disk full")
+}
 
 type fakeCollector struct{ runs atomic.Int32 }
 

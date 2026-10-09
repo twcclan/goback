@@ -64,7 +64,7 @@ func TestARewrittenCopyStaysOlderThanTheTombstoneAfterIt(t *testing.T) {
 	require.NoError(t, store.Delete(ctx, objects[0].Ref()))
 	require.NoError(t, store.Flush())
 
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	loc, err := store.index.LocateObject(objects[0].Ref(), Scope{})
 	require.NoError(t, err)

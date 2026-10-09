@@ -43,8 +43,8 @@ type Closer interface {
 
 // CloseStore compacts a store that can and closes it.
 func CloseStore(store backup.ObjectStore) {
-	if c, ok := store.(interface{ Compact() error }); ok {
-		if err := c.Compact(); err != nil {
+	if c, ok := store.(interface{ Compact(context.Context) error }); ok {
+		if err := c.Compact(context.Background()); err != nil {
 			log.Printf("Compaction failed: %v", err)
 		}
 	}

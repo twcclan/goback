@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 
 	"github.com/pkg/errors"
@@ -45,6 +46,13 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 
 	report := &ScrubReport{Sealed: make(map[string]uint64)}
 
+	var size int64
+	for _, a := range archives {
+		size += int64(a.size)
+	}
+
+	phase := progress.Start(ctx, progress.OpScrub, progress.PhaseScrub, int64(len(archives)), size)
+
 	for _, a := range archives {
 		if err := ctx.Err(); err != nil {
 			return report, err
@@ -78,7 +86,10 @@ func (ps *PackStorage) Scrub(ctx context.Context) (*ScrubReport, error) {
 		if err != nil {
 			return report, errors.Wrapf(err, "scrubbing archive %s", a.name)
 		}
+
+		phase.Add(1, int64(a.size))
 	}
+	phase.Finish()
 
 	return report, nil
 }

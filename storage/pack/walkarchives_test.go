@@ -52,7 +52,7 @@ func TestWalkArchivesReadsOnlyTheArchivesNotSkipped(t *testing.T) {
 	require.Equal(t, []string{second.Ref().String()}, pins, "the skipped archive is not read")
 
 	known = names
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	names, pins = walk(known)
 	require.NotEmpty(t, names)

@@ -1047,7 +1047,7 @@ func TestATombstoneYieldsToWhatChangedAfterTheCommitFellDue(t *testing.T) {
 	require.NoError(t, f.x.client.CommitRow.Update().Where(commitrow.Ref(extended.Hash)).
 		SetExpiresAt(later.Add(time.Hour)).Exec(f.ctx))
 
-	written, err := f.x.writeTombstones(f.ctx, due, later)
+	written, err := f.x.writeTombstones(f.ctx, due, later, nil)
 	require.NoError(t, err)
 	require.Empty(t, written)
 	require.False(t, f.store.tombstoned(pinned))

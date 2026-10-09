@@ -42,7 +42,7 @@ func TestARewriteLooksEachObjectUpOncePerChunk(t *testing.T) {
 		}
 
 		index.asked.Store(0)
-		require.NoError(t, store.doCompaction())
+		require.NoError(t, store.Compact(context.Background()))
 
 		if chunk == 0 {
 			require.EqualValues(t, numObjects, index.asked.Load(), "one chunk asks for each object once")
@@ -103,7 +103,7 @@ func TestCompactionMergesOnlySmallArchivesAndNeverItsOwnOutput(t *testing.T) {
 	}
 	require.NotEmpty(t, large)
 
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	merged := sizes()
 	require.Contains(t, merged, large, "an archive that is not small stays")
@@ -112,7 +112,7 @@ func TestCompactionMergesOnlySmallArchivesAndNeverItsOwnOutput(t *testing.T) {
 		require.GreaterOrEqual(t, size, uint64(small), "%s came out small", name)
 	}
 
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 	require.Equal(t, merged, sizes(), "what compaction wrote is not merged again")
 
 	for _, object := range objects {
@@ -211,7 +211,7 @@ func TestARewriteRetiresItsInputsTogetherLeavingOutOneWhoseMarkerFailed(t *testi
 	require.Len(t, inputs, 4)
 
 	storage.refuse = inputs[0]
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	_, kept, err := index.LookupArchive(inputs[0])
 	require.NoError(t, err)

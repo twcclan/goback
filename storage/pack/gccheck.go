@@ -65,6 +65,7 @@ func (r *gcRun) confirmDrops(ctx context.Context) error {
 	opts.TempDir = filepath.Join(r.opts.TempDir, "goback-gc-check")
 
 	check := newGCRun(r.ps, opts, r.prev, r.reads)
+	check.check = true
 
 	if err := check.takeSnapshot(ctx); err != nil {
 		return err

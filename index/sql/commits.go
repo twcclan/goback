@@ -23,6 +23,7 @@ import (
 	"github.com/gobackio/goback/index/sql/ent/setref"
 	"github.com/gobackio/goback/index/sql/ent/tree"
 	"github.com/gobackio/goback/index/sql/mapping/gen"
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 
 	"entgo.io/ent/dialect"
@@ -1069,6 +1070,8 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 	// sets that lose a commit to a tombstone this database had not seen
 	touched := map[int64][][]byte{}
 
+	phase := progress.Start(ctx, progress.OpReIndex, progress.PhaseTombstones, 0, 0)
+
 	if hw, ok := x.ObjectStore.(backup.HeaderWalker); ok {
 		var found []foundTombstone
 
@@ -1090,6 +1093,7 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 			}
 
 			found = append(found, foundTombstone{ref: bytes.Clone(hdr.GetTombstoneFor().GetHash()), at: at})
+			phase.Add(1, 0)
 			if len(found) < objectBatch {
 				return nil
 			}
@@ -1117,7 +1121,11 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		}
 	}
 
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpReIndex, progress.PhasePins, 0, 0)
+
 	err := x.ObjectStore.Walk(ctx, true, proto.ObjectType_PIN, func(obj *proto.Object) error {
+		phase.Add(1, 0)
 		ref := obj.Ref()
 
 		gone, err := isDeleted(ctx, x.client, ref.Hash)
@@ -1131,9 +1139,13 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		return err
 	}
 
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpReIndex, progress.PhaseCommits, 0, 0)
+
 	var commits []pending
 
 	err = x.ObjectStore.Walk(ctx, true, proto.ObjectType_COMMIT, func(obj *proto.Object) error {
+		phase.Add(1, 0)
 		ref := obj.Ref()
 
 		gone, err := isDeleted(ctx, x.client, ref.Hash)
@@ -1159,7 +1171,12 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		return err
 	}
 
-	for _, group := range groupBySet(commits) {
+	phase.Finish()
+
+	groups := groupBySet(commits)
+	phase = progress.Start(ctx, progress.OpReIndex, progress.PhaseSets, int64(len(groups)), 0)
+
+	for _, group := range groups {
 		target, err := x.groupSet(ctx, group, false)
 		if err != nil {
 			return err
@@ -1175,7 +1192,12 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		if target.Placeholder {
 			report.Unnamed += counts[inOrder] + counts[tied]
 		}
+
+		phase.Add(1, 0)
 	}
+
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpReIndex, progress.PhasePolicies, 0, 0)
 
 	err = x.replayPolicies(ctx)
 	if err != nil {
@@ -1192,7 +1214,15 @@ func (x *Index) reIndex(ctx context.Context, report *backup.ReIndexReport) error
 		return err
 	}
 
-	return x.findDamage(ctx)
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpReIndex, progress.PhaseDamage, 0, 0)
+
+	if err := x.findDamage(ctx); err != nil {
+		return err
+	}
+	phase.Finish()
+
+	return nil
 }
 
 // resetSetSequence moves the set id sequence past the ids a rebuild

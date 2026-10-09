@@ -17,7 +17,7 @@ import (
 // Store is what the runner sweeps and compacts.
 type Store interface {
 	Sweep(now time.Time)
-	Compact() error
+	Compact(ctx context.Context) error
 }
 
 // Presence is an index that builds presence filters on demand.
@@ -140,7 +140,7 @@ func (r *Runner) Run(ctx context.Context) {
 		run   func(context.Context)
 	}{
 		{r.Schedule.Sweep, func(context.Context) { r.Sweep() }},
-		{r.Schedule.Compact, func(ctx context.Context) { r.Compact(); r.Reindex(ctx) }},
+		{r.Schedule.Compact, func(ctx context.Context) { r.Compact(ctx); r.Reindex(ctx) }},
 		{r.Schedule.Collect, func(ctx context.Context) { r.Collect(ctx); r.Reindex(ctx) }},
 		{r.Schedule.Retire, func(ctx context.Context) { r.Retire(ctx); r.Reindex(ctx) }},
 		{r.Schedule.Presence, func(ctx context.Context) { r.BuildPresence(ctx); r.MeasureSets(ctx) }},
@@ -214,7 +214,7 @@ func (r *Runner) Due(ctx context.Context) (Ran, error) {
 	}
 
 	if r.Store != nil && r.Schedule.Compact > 0 {
-		err := r.Store.Compact()
+		err := r.Store.Compact(ctx)
 		ran.Compacted = err == nil
 		errs = append(errs, err)
 	}
@@ -273,12 +273,12 @@ func (r *Runner) Sweep() {
 }
 
 // Compact rewrites small archives.
-func (r *Runner) Compact() {
+func (r *Runner) Compact(ctx context.Context) {
 	if r.Store == nil {
 		return
 	}
 
-	if err := r.Store.Compact(); err != nil {
+	if err := r.Store.Compact(ctx); err != nil {
 		r.logger().Error("compaction failed", "err", err)
 	}
 }

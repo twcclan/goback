@@ -76,7 +76,7 @@ func TestTombstonesAreFoundThroughCompactionAndRebuild(t *testing.T) {
 
 	present(packs, index, "written")
 
-	require.NoError(t, packs.Compact())
+	require.NoError(t, packs.Compact(context.Background()))
 	loc, err := index.LocateObject(proto.TombstoneRef(gone.Ref()), pack.Scope{})
 	require.NoError(t, err)
 	require.NotZero(t, loc.Record.CarriedTime, "the tombstone was rewritten")

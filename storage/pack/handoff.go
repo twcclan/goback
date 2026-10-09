@@ -13,6 +13,7 @@ import (
 	"github.com/bits-and-blooms/bitset"
 	"github.com/pkg/errors"
 
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 )
 
@@ -196,9 +197,11 @@ func (ps *PackStorage) rewrite(ctx context.Context, plan *sweepPlan, report *Rew
 
 	ps.logger.Info("gc rewriting a published plan", "generation", plan.Generation, "archives", len(group.candidates))
 
+	group.progress = progress.Start(ctx, progress.OpRewrite, progress.PhaseRewrite, int64(len(group.candidates)), int64(group.total))
 	if err := ps.compactGroup(ctx, group); err != nil {
 		return err
 	}
+	group.progress.Finish()
 
 	report.Swept += len(group.candidates)
 	report.ReclaimedObjects += group.droppedObjects

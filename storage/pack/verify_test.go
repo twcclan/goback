@@ -121,7 +121,7 @@ func TestCompactionRefusesCorruptSource(t *testing.T) {
 
 	// the flipped byte lands in a payload or in a header, depending on the
 	// random object sizes; either way the source is refused
-	err = store.doCompaction()
+	err = store.Compact(context.Background())
 	if !errors.Is(err, proto.ErrRefMismatch) {
 		require.ErrorContains(t, err, "parsing object header")
 	}

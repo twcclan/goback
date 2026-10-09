@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 
 	"github.com/bits-and-blooms/bitset"
@@ -32,6 +33,8 @@ type compactionGroup struct {
 	// class of a candidate's record at an index position, or -1; each
 	// class is written apart.
 	classes func(chunk []*archive) func(candidate *archive, pos int) int32
+	// progress counts the candidates rewritten and their bytes.
+	progress *progress.Phase
 
 	droppedObjects uint64
 	droppedBytes   uint64
@@ -41,11 +44,7 @@ type compactionGroup struct {
 // Compact merges the small committed archives into archives at the root
 // once they add up to a batch, or are more than MinimumCandidates, and
 // returns when it is done. What it writes is too large to be merged again.
-func (ps *PackStorage) Compact() error {
-	return ps.doCompaction()
-}
-
-func (ps *PackStorage) doCompaction() error {
+func (ps *PackStorage) Compact(ctx context.Context) error {
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
@@ -69,7 +68,11 @@ func (ps *PackStorage) doCompaction() error {
 	if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.compaction.batch() {
 		ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total))
 
-		return ps.compactGroup(context.Background(), group)
+		group.progress = progress.Start(ctx, progress.OpCompact, progress.PhaseRewrite, int64(len(group.candidates)), int64(group.total))
+		if err := ps.compactGroup(ctx, group); err != nil {
+			return err
+		}
+		group.progress.Finish()
 	}
 
 	return nil
@@ -602,6 +605,8 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 	rw.done++
 	done, total := rw.done, len(rw.group.candidates)
 	rw.mtx.Unlock()
+
+	rw.group.progress.Add(1, int64(candidate.size))
 
 	if done%progressEvery == 0 {
 		elapsed := time.Since(rw.started)

@@ -45,7 +45,7 @@ var Command = cli.Command{
 			Name:  "compact",
 			Usage: "Rewrite small archives into full-sized ones",
 			Action: action(func(m *members) {
-				if err := m.store().Compact(); err != nil {
+				if err := m.store().Compact(common.Context(m.c)); err != nil {
 					common.Fatal(err)
 				}
 

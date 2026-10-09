@@ -20,6 +20,7 @@ import (
 	"github.com/gobackio/goback/index/sql/ent/setref"
 	"github.com/gobackio/goback/index/sql/ent/tree"
 	"github.com/gobackio/goback/index/sql/ent/walkedarchive"
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -610,6 +611,8 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 		}
 	}()
 
+	phase := progress.Start(ctx, progress.OpRetire, progress.PhaseDue, 0, 0)
+
 	held, err := x.restoreLeases(ctx)
 	if err != nil {
 		return nil, err
@@ -640,7 +643,10 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 		}
 	}
 
-	written, err := x.writeTombstones(ctx, eligible, now)
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpRetire, progress.PhaseTombstones, int64(len(eligible)), 0)
+
+	written, err := x.writeTombstones(ctx, eligible, now, phase)
 	if err != nil {
 		return nil, err
 	}
@@ -658,6 +664,8 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 	}
 
 	phases.done("flush")
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpRetire, progress.PhaseRows, int64(len(written)), 0)
 
 	var retired []index.Retired
 	sets := make(map[int64][][]byte)
@@ -677,6 +685,8 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 				return retired, err
 			}
 
+			phase.Add(int64(len(chunk)), 0)
+
 			for _, row := range marked {
 				r, err := retiredOf(row, names[setID])
 				if err != nil {
@@ -690,12 +700,16 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 	}
 
 	phases.done("mark")
+	phase.Finish()
+	phase = progress.Start(ctx, progress.OpRetire, progress.PhasePrune, int64(len(sets)), 0)
 
 	prunes, pctx := errgroup.WithContext(ctx)
 	prunes.SetLimit(pruneWorkers)
 
 	for setID, refs := range sets {
 		prunes.Go(func() error {
+			defer phase.Add(1, 0)
+
 			if err := x.pruneRefs(pctx, setID, refs); err != nil {
 				return err
 			}
@@ -709,6 +723,7 @@ func (x *Index) RetireCommits(ctx context.Context, now time.Time) ([]index.Retir
 	}
 
 	phases.done("prune")
+	phase.Finish()
 
 	return retired, x.closeEmptySets(ctx)
 }
@@ -1045,7 +1060,7 @@ const retireBatch = 500
 // locks, passing over those a pin, an undelete or another run got to
 // first, then writes their tombstones, and returns the commits it wrote.
 // A claimed commit whose tombstone failed is written by the next run.
-func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now time.Time) ([]*ent.CommitRow, error) {
+func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now time.Time, phase *progress.Phase) ([]*ent.CommitRow, error) {
 	_, canErase := storeAs[backup.Eraser](x.ObjectStore)
 	for _, c := range due {
 		if c.Edges.Set.Erase && !canErase {
@@ -1125,6 +1140,7 @@ func (x *Index) writeTombstones(ctx context.Context, due []*ent.CommitRow, now t
 		}
 
 		written = append(written, done...)
+		phase.Add(int64(len(chunk)), 0)
 	}
 
 	return written, nil

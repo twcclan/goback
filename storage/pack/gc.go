@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/progress"
 	"github.com/gobackio/goback/proto"
 
 	"github.com/bits-and-blooms/bitset"
@@ -276,6 +277,9 @@ type gcRun struct {
 	erased    []refKey
 	runDir    string
 	resumed   int
+	// check is whether the run is the confirmation of another, whose
+	// mark it reports as PhaseConfirm
+	check bool
 
 	roots      []gcRoot
 	tombstones []gcTombstone
@@ -406,10 +410,12 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		report.Objects += uint64(ga.count)
 	}
 
+	phase := progress.Start(ctx, progress.OpCollect, progress.PhaseRoots, 0, 0)
 	if err := run.collectRoots(ctx); err != nil {
 		return nil, err
 	}
 	report.Roots = len(run.roots)
+	phase.Finish()
 
 	ps.logger.Info("gc took a snapshot", "generation", run.gen, "archives", report.Archives, "objects", report.Objects,
 		"roots", report.Roots, "untombed", len(run.untombed), "took", time.Since(started).Round(time.Millisecond))
@@ -426,6 +432,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	gcMarkDuration.Record(ctx, markTook.Seconds())
 
 	mergeStart := time.Now()
+	phase = progress.Start(ctx, progress.OpCollect, progress.PhaseMerge, 0, 0)
 	report.SetBytes = run.setBytes
 	report.SetDeduplicated = run.setDeduplicated
 	report.SetAlone, report.SetExclusive = run.setAlone, run.setExclusive
@@ -454,6 +461,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 		}
 	}
 	mergeTook := time.Since(mergeStart)
+	phase.Finish()
 	gcMergeDuration.Record(ctx, mergeTook.Seconds())
 
 	live.close()
@@ -506,9 +514,11 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 
 	if report.SweepSkipped == "" && opts.Handoff {
+		phase := progress.Start(ctx, progress.OpCollect, progress.PhasePublish, 0, 0)
 		if report.Published, err = run.publish(); err != nil {
 			return nil, err
 		}
+		phase.Finish()
 	} else if report.SweepSkipped == "" {
 		sweepStart := time.Now()
 		if err := run.sweep(ctx, report); err != nil {
@@ -538,6 +548,7 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	}
 
 	purgeStart := time.Now()
+	phase = progress.Start(ctx, progress.OpCollect, progress.PhasePurge, 0, 0)
 	report.Purged, err = ps.PurgeQuarantine(opts.Quarantine, opts.Now)
 	if err != nil {
 		return nil, errors.Wrap(err, "purging the quarantine")
@@ -547,6 +558,8 @@ func (ps *PackStorage) Collect(ctx context.Context, opts CollectOptions) (*Colle
 	if err != nil {
 		return nil, errors.Wrap(err, "measuring the quarantine")
 	}
+
+	phase.Finish()
 
 	ps.logger.Info("gc purged the quarantine", "generation", run.gen, "purged", report.Purged,
 		"retired", humanize.Bytes(report.RetiredBytes), "took", time.Since(purgeStart).Round(time.Millisecond))
@@ -625,16 +638,24 @@ func (r *gcRun) takeSnapshot(ctx context.Context) error {
 
 	indexes := make([]IndexFile, len(archives))
 
+	var phase *progress.Phase
+	if !r.check {
+		phase = progress.Start(ctx, progress.OpCollect, progress.PhaseSnapshot, int64(len(archives)), 0)
+	}
+
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(r.opts.Readers)
 
 	for i, a := range archives {
 		if idx, ok := r.reads.indexes[a.name]; ok {
 			indexes[i] = idx
+			phase.Add(1, 0)
 			continue
 		}
 
 		grp.Go(func() error {
+			defer phase.Add(1, 0)
+
 			if err := gctx.Err(); err != nil {
 				return err
 			}
@@ -653,6 +674,7 @@ func (r *gcRun) takeSnapshot(ctx context.Context) error {
 	if err := grp.Wait(); err != nil {
 		return err
 	}
+	phase.Finish()
 
 	r.located = make(map[refKey]placed)
 
@@ -1166,6 +1188,12 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 	var group int64
 	visited := newVisitedSet()
 
+	name := progress.PhaseMark
+	if r.check {
+		name = progress.PhaseConfirm
+	}
+
+	phase := progress.Start(ctx, progress.OpCollect, name, int64(len(batches)), 0)
 	started, logged := time.Now(), time.Now()
 
 	for batch, roots := range batches {
@@ -1181,6 +1209,7 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 
 		if done[batch] {
 			r.resumed++
+			phase.Add(1, 0)
 			continue
 		}
 
@@ -1218,7 +1247,10 @@ func (r *gcRun) mark(ctx context.Context) (*liveRuns, error) {
 				return nil, err
 			}
 		}
+
+		phase.Add(1, 0)
 	}
+	phase.Finish()
 
 	return live, nil
 }
@@ -1828,9 +1860,11 @@ func (r *gcRun) sweep(ctx context.Context, report *CollectReport) error {
 
 	r.ps.logger.Info("gc sweeping archives", "count", len(group.candidates))
 
+	group.progress = progress.Start(ctx, progress.OpCollect, progress.PhaseSweep, int64(len(group.candidates)), int64(group.total))
 	if err := r.ps.compactGroup(ctx, group); err != nil {
 		return err
 	}
+	group.progress.Finish()
 
 	report.Swept += len(group.candidates)
 	report.ReclaimedObjects += group.droppedObjects

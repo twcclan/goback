@@ -352,7 +352,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	require.Equal(t, []bool{true, true, true, true, true}, inSession(t, store, all...))
 
 	before := timestamps(t, store)
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 
 	merged := []bool{false, false, false, false, false}
 	require.Equal(t, merged, inSession(t, store, all...))
@@ -383,7 +383,7 @@ func TestCompactionMergesSessionsIntoTheRoot(t *testing.T) {
 	require.Empty(t, markers, "the markers go with the archives they marked")
 
 	// a second run finds every object in place
-	require.NoError(t, store.doCompaction())
+	require.NoError(t, store.Compact(context.Background()))
 	require.Equal(t, merged, inSession(t, store, all...))
 	keptTimestamps(t, after, timestamps(t, store))
 
@@ -466,7 +466,7 @@ func TestOpenOverAFreshIndexKeepsALiveSessionPending(t *testing.T) {
 	requireVisible(t, rebuilt, backup.WithSession(context.Background(), session), objects[0], true)
 	requireVisible(t, rebuilt, context.Background(), objects[0], false)
 
-	require.NoError(t, rebuilt.doCompaction())
+	require.NoError(t, rebuilt.Compact(context.Background()))
 
 	after, _, err := rebuilt.archiveNames()
 	require.NoError(t, err)
