@@ -34,6 +34,8 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-credentials
       GOBACK_POSTGRES_SPOOL: /var/lib/goback/spool
+      # postgres wal keeps the trees it writes here, so the next run reads none
+      GOBACK_CACHE_DIR: /var/lib/goback/cache
       PGHOST: /var/run/postgresql
     secrets:
       - goback-key

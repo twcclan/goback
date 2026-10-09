@@ -1,12 +1,15 @@
 package postgres
 
 import (
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/blobcache"
 	"github.com/gobackio/goback/backup/postgres"
 	"github.com/gobackio/goback/cmd/goback/commands/common"
+	"github.com/gobackio/goback/storage/cache"
 
 	"github.com/urfave/cli"
 )
@@ -15,6 +18,10 @@ var baseSetFlag = cli.StringFlag{
 	Name:  "base-set",
 	Usage: "set the cluster's base backups go to",
 }
+
+// treeCacheSize bounds the commits and trees kept under --cache-dir; the
+// latest commit's are read every run, so they are never the ones let go.
+const treeCacheSize = 256 << 20
 
 var walCmd = cli.Command{
 	Name:  "wal",
@@ -46,10 +53,22 @@ func walAction(c *cli.Context) error {
 	sessions, _ := store.(backup.SessionStore)
 	spool := postgres.Spool{Dir: c.String("spool")}
 
+	objects := backup.ObjectStore(index)
+
+	var trees *blobcache.Cache
+	if dir := common.StoreCache(c, "backup"); dir != "" {
+		var err error
+		if trees, err = blobcache.Open(dir, "trees", treeCacheSize); err != nil {
+			return fmt.Errorf("opening the tree cache: %w", err)
+		}
+
+		objects = cache.New(trees, index)
+	}
+
 	run := &postgres.WALBackup{
 		Walker: &backup.Walker{
 			Index:       index,
-			Objects:     index,
+			Objects:     objects,
 			Sessions:    sessions,
 			Set:         c.GlobalString("set"),
 			AgentID:     common.AgentID(c),
@@ -67,6 +86,12 @@ func walAction(c *cli.Context) error {
 	result, err := run.Run(common.Context(c))
 	if err != nil {
 		return err
+	}
+
+	if trees != nil {
+		if _, err := trees.Sweep(); err != nil {
+			log.Printf("sweeping the tree cache: %v", err)
+		}
 	}
 
 	if result == nil {
