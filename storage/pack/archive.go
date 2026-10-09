@@ -884,7 +884,12 @@ func (a *archive) closeWriter() (IndexFile, int64, error) {
 	// the read handle may have been opened against the upload in flight;
 	// reads must now come from what the storage holds
 	_ = a.readFile.Close()
-	a.readFile, err = a.storage.Open(a.archiveName())
+	if written, ok := a.writeFile.(*hashedWriter); ok {
+		// what was uploaded says how big it is without asking the storage
+		a.readFile, err = OpenListed(a.storage, ListedFile{Name: a.archiveName(), Size: written.written})
+	} else {
+		a.readFile, err = a.storage.Open(a.archiveName())
+	}
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "Failed reopening archive for reading")
 	}

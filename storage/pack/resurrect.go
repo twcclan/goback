@@ -18,7 +18,7 @@ var commitAfterResurrect func()
 // reference outside its own archives, and when a collection sealed
 // tombstones since the session began, it copies whatever those condemn
 // under the skipped refs into the session.
-func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *proto.Ref) error {
+func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *proto.Object) error {
 	skipped, err := ps.skippedRefs(ctx, ws, commit)
 	if err != nil || len(skipped) == 0 {
 		return err
@@ -35,7 +35,7 @@ func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *
 	// collection either reads them or sealed before; they stay the
 	// session's, so no other session relies on them before the copies
 	// below are made
-	for _, ref := range append([]*proto.Ref{commit}, tombstoned...) {
+	for _, ref := range append([]*proto.Ref{commit.Ref()}, tombstoned...) {
 		if err := ps.putTombstone(ctx, ws, proto.TombstoneRef(ref), false); err != nil {
 			return fmt.Errorf("taking back the tombstones of what session %s relied on: %w", ws.id, err)
 		}
@@ -45,12 +45,12 @@ func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *
 		return err
 	}
 
-	marker, err := ps.readBeginMarker(ws.id)
+	since, err := ps.sealedAtBegin(ws)
 	if err != nil {
 		return err
 	}
 
-	sealed, err := ps.sealedSince(marker.Sealed)
+	sealed, err := ps.sealedSince(since)
 	if err != nil || len(sealed) == 0 {
 		return err
 	}
@@ -69,10 +69,25 @@ func (ps *PackStorage) resurrect(ctx context.Context, ws *writeSession, commit *
 	return ps.flushSession(ws)
 }
 
+// sealedAtBegin returns the generation the session's begin marker
+// records.
+func (ps *PackStorage) sealedAtBegin(ws *writeSession) (uint64, error) {
+	if ws.began {
+		return ws.sealed, nil
+	}
+
+	marker, err := ps.readBeginMarker(ws.id)
+	if err != nil {
+		return 0, err
+	}
+
+	return marker.Sealed, nil
+}
+
 // skippedRefs walks down from the commit while the objects are the
 // session's own and returns the refs it reaches outside them: what the
 // session deduplicated.
-func (ps *PackStorage) skippedRefs(ctx context.Context, ws *writeSession, commit *proto.Ref) ([]*proto.Ref, error) {
+func (ps *PackStorage) skippedRefs(ctx context.Context, ws *writeSession, commit *proto.Object) ([]*proto.Ref, error) {
 	pending, err := ps.index.PendingArchives(ws.id)
 	if err != nil {
 		return nil, err
@@ -84,8 +99,9 @@ func (ps *PackStorage) skippedRefs(ctx context.Context, ws *writeSession, commit
 	}
 
 	scope := ScopeOf(ctx)
-	seen := map[string]bool{string(commit.Hash): true}
-	frontier := []*proto.Ref{commit}
+	root := commit.Ref()
+	seen := map[string]bool{string(root.Hash): true}
+	frontier := []*proto.Ref{root}
 
 	var skipped []*proto.Ref
 
@@ -108,9 +124,12 @@ func (ps *PackStorage) skippedRefs(ctx context.Context, ws *writeSession, commit
 				continue
 			}
 
-			obj, err := ps.Get(ctx, ref)
-			if err != nil {
-				return nil, fmt.Errorf("reading %x of session %s: %w", ref.Hash, ws.id, err)
+			obj := commit
+			if !ref.Equal(root) {
+				obj, err = ps.Get(ctx, ref)
+				if err != nil {
+					return nil, fmt.Errorf("reading %x of session %s: %w", ref.Hash, ws.id, err)
+				}
 			}
 
 			for _, child := range backup.References(obj) {

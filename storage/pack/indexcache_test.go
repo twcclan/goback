@@ -2,6 +2,8 @@ package pack
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,5 +92,35 @@ func TestTheIndexCacheServesIndexesWithTheirCreationTime(t *testing.T) {
 		gotCreated, err := got.indexCreated()
 		require.NoError(t, err)
 		require.Equal(t, wantCreated, gotCreated, "archive %s", name)
+	}
+}
+
+func TestAnIndexTheStoreWroteIsCachedAsTheStorageKeptIt(t *testing.T) {
+	bucket := newMemBucket()
+	dir := t.TempDir()
+
+	store, err := NewPackStorage(WithArchiveStorage(bucket.view()), WithArchiveIndex(NewInMemoryIndex()), WithIndexCache(dir))
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+
+	putAll(t, store, makeChain(makeTestData(t, 5)))
+
+	names, _, err := store.archiveNames()
+	require.NoError(t, err)
+	require.NotEmpty(t, names)
+
+	for _, name := range names {
+		a, err := store.archiveByName(name)
+		require.NoError(t, err)
+
+		kept := bucket.files[a.indexName()]
+		cached, err := os.ReadFile(filepath.Join(dir, a.indexName()))
+		require.NoError(t, err)
+		require.Equal(t, kept.data, cached)
+
+		info, err := os.Stat(filepath.Join(dir, a.indexName()))
+		require.NoError(t, err)
+		require.True(t, kept.created.Equal(info.ModTime()), "cached %s, stored %s", info.ModTime(), kept.created)
 	}
 }

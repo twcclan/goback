@@ -21,6 +21,10 @@ type writeSession struct {
 	id        string
 	session   *backup.Session
 	placement Placement
+	// sealed is the generation the session's begin marker records, known
+	// without reading the marker when began is set
+	sealed uint64
+	began  bool
 
 	mtx       sync.Mutex
 	archive   *archive
@@ -124,8 +128,11 @@ func (ps *PackStorage) BeginSession(ctx context.Context, s *backup.Session) (con
 		return nil, err
 	}
 
+	ws := newWriteSession(s)
+	ws.sealed, ws.began = sealed, true
+
 	ps.sessionsMtx.Lock()
-	ps.sessions[s.ID] = newWriteSession(s)
+	ps.sessions[s.ID] = ws
 	ps.sessionsMtx.Unlock()
 
 	return backup.WithSession(ctx, s), nil
@@ -153,6 +160,11 @@ func (ps *PackStorage) endSession(id string) error {
 		return err
 	}
 
+	return ps.closeSession(id, outcome)
+}
+
+// closeSession drops a session whose end marker holds outcome.
+func (ps *PackStorage) closeSession(id string, outcome sessionOutcome) error {
 	ps.sessionsMtx.Lock()
 	ws := ps.sessions[id]
 	delete(ps.sessions, id)

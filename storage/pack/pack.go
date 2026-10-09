@@ -501,7 +501,7 @@ func (ps *PackStorage) put(ctx context.Context, object *proto.Object) error {
 	ps.touchSession(ws)
 
 	if object.Type() == proto.ObjectType_COMMIT {
-		err := ps.commit(ctx, ws, object.Ref())
+		err := ps.commit(ctx, ws, object)
 		if err != nil {
 			ps.refuse(ctx, ws, object.Ref(), err)
 
@@ -544,7 +544,7 @@ func (ps *PackStorage) refuse(ctx context.Context, ws *writeSession, ref *proto.
 // archive is finalized and its archives flip to committed. A session with
 // an archive that failed to finalize cannot commit: the objects it
 // acknowledged are in no index. A commit ends the session.
-func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, ref *proto.Ref) error {
+func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, commit *proto.Object) error {
 	if err := ws.failed(); err != nil {
 		return fmt.Errorf("session %s lost an archive: %w", ws.id, err)
 	}
@@ -565,7 +565,7 @@ func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, ref *proto.
 		}
 	}
 
-	if err := ps.resurrect(ctx, ws, ref); err != nil {
+	if err := ps.resurrect(ctx, ws, commit); err != nil {
 		// what the session relied on is gone, so it can never commit; once
 		// it has ended, marks no longer keep what its un-tombstones take back
 		if errors.Is(err, backup.ErrSessionLost) {
@@ -610,7 +610,7 @@ func (ps *PackStorage) commit(ctx context.Context, ws *writeSession, ref *proto.
 	}
 	ps.mtx.RUnlock()
 
-	return ps.endSession(ws.id)
+	return ps.closeSession(ws.id, sessionCommitted)
 }
 
 // releasePending drops the pending entries of an archive once the archive

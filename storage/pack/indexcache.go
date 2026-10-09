@@ -65,8 +65,66 @@ func (c *indexCache) Open(name string) (File, error) {
 	return os.Open(c.path(name))
 }
 
-// keep copies src under the cache and closes it. It reports false when
-// the file cannot be kept, as one still being written cannot.
+// written is where the cache holds what this process wrote to name until
+// it learns the time the storage stamped it with.
+func (c *indexCache) written(name string) string {
+	return c.path(name) + ".written"
+}
+
+// Create keeps a copy of an index file as it is written, so reading it
+// back takes only its creation time from the storage.
+func (c *indexCache) Create(name string) (File, error) {
+	file, err := c.ArchiveStorage.Create(name)
+	if err != nil || !strings.HasSuffix(name, IndexExt) {
+		return file, err
+	}
+
+	path := c.written(name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return file, nil
+	}
+
+	copied, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return file, nil
+	}
+
+	return &teeFile{File: file, copied: copied, path: path}, nil
+}
+
+// teeFile writes a copy of a file to the cache beside the storage, and
+// keeps it once the storage took the whole file.
+type teeFile struct {
+	File
+	copied *os.File
+	path   string
+	failed bool
+}
+
+func (t *teeFile) Write(p []byte) (int, error) {
+	n, err := t.File.Write(p)
+	if !t.failed {
+		_, copyErr := t.copied.Write(p[:n])
+		t.failed = copyErr != nil
+	}
+
+	return n, err
+}
+
+func (t *teeFile) Close() error {
+	err := t.File.Close()
+
+	copyErr := t.copied.Close()
+	if err != nil || copyErr != nil || t.failed || os.Rename(t.copied.Name(), t.path) != nil {
+		_ = os.Remove(t.copied.Name())
+	}
+
+	return err
+}
+
+// keep copies src under the cache and closes it, from what this process
+// wrote to it when that is the whole file. It reports false when the file
+// cannot be kept, as one still being written cannot.
 func (c *indexCache) keep(name string, src File) (bool, error) {
 	defer src.Close()
 
@@ -79,6 +137,17 @@ func (c *indexCache) keep(name string, src File) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
+
+	modified := info.ModTime().Truncate(time.Microsecond)
+
+	written := c.written(name)
+	if copied, err := os.Stat(written); err == nil && copied.Size() == info.Size() {
+		if err := os.Chtimes(written, modified, modified); err == nil {
+			return true, os.Rename(written, path)
+		}
+	}
+
+	_ = os.Remove(written)
 
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
 	if err != nil {
@@ -99,7 +168,6 @@ func (c *indexCache) keep(name string, src File) (bool, error) {
 		return false, fmt.Errorf("caching index %s: read %d of %d bytes", name, copied, info.Size())
 	}
 
-	modified := info.ModTime().Truncate(time.Microsecond)
 	if err := os.Chtimes(tmp.Name(), modified, modified); err != nil {
 		return false, err
 	}
@@ -112,6 +180,7 @@ func (c *indexCache) Delete(name string) error {
 
 	if strings.HasSuffix(name, IndexExt) {
 		_ = os.Remove(c.path(name))
+		_ = os.Remove(c.written(name))
 	}
 
 	return err
