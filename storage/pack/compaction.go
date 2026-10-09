@@ -3,6 +3,7 @@ package pack
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -39,12 +40,60 @@ type compactionGroup struct {
 	droppedObjects uint64
 	droppedBytes   uint64
 	copiedBytes    uint64
+
+	// counted as the rewrite goes, under its mutex, so a stopped one still
+	// reports what it finished
+	retired, written           int
+	retiredBytes, writtenBytes uint64
+	moved, superseded          uint64
+}
+
+// CompactReport summarizes one Compact. Alongside an error it counts what
+// the compaction finished before it stopped.
+type CompactReport struct {
+	// Candidates counts the small committed archives Compact found, and
+	// CandidateBytes what they take up; it merges them only once they add
+	// up to a batch or are more than MinimumCandidates.
+	Candidates     int
+	CandidateBytes uint64
+	// Rewritten counts the candidates rewritten and retired, and ReadBytes
+	// what they took up.
+	Rewritten int
+	ReadBytes uint64
+	// Written counts the archives written, and WrittenBytes what they take
+	// up.
+	Written      int
+	WrittenBytes uint64
+	// Moved counts the objects copied into the written archives, and
+	// CopiedBytes their bytes.
+	Moved       uint64
+	CopiedBytes uint64
+	// Superseded counts the objects not copied because another copy,
+	// outside the candidates or written by the same run, stands in for them.
+	Superseded uint64
+	// ReclaimedBytes is ReadBytes less WrittenBytes, or zero.
+	ReclaimedBytes uint64
+	Duration       time.Duration
+}
+
+// Summary renders the report as a line for a log or an operator.
+func (r *CompactReport) Summary() string {
+	if r.Rewritten == 0 {
+		return fmt.Sprintf("Compaction merged nothing: %d small archives (%s)", r.Candidates, humanize.Bytes(r.CandidateBytes))
+	}
+
+	return fmt.Sprintf("Compaction rewrote %d of %d small archives (%s) into %d (%s): moved %d objects (%s), %d superseded, reclaimed %s, %s",
+		r.Rewritten, r.Candidates, humanize.Bytes(r.ReadBytes), r.Written, humanize.Bytes(r.WrittenBytes), r.Moved, humanize.Bytes(r.CopiedBytes),
+		r.Superseded, humanize.Bytes(r.ReclaimedBytes), r.Duration.Round(time.Millisecond))
 }
 
 // Compact merges the small committed archives into archives at the root
 // once they add up to a batch, or are more than MinimumCandidates, and
-// returns when it is done. What it writes is too large to be merged again.
-func (ps *PackStorage) Compact(ctx context.Context) error {
+// returns what it did when it is done. What it writes is too large to be
+// merged again.
+func (ps *PackStorage) Compact(ctx context.Context) (*CompactReport, error) {
+	started := time.Now()
+
 	ps.compactorMtx.Lock()
 	defer ps.compactorMtx.Unlock()
 
@@ -65,17 +114,38 @@ func (ps *PackStorage) Compact(ctx context.Context) error {
 	}
 	ps.mtx.RUnlock()
 
+	report := &CompactReport{Candidates: len(group.candidates), CandidateBytes: group.total}
+
 	if len(group.candidates) > ps.compaction.MinimumCandidates || group.total >= ps.compaction.batch() {
 		ps.logger.Info("compacting archives", "count", len(group.candidates), "size", humanize.Bytes(group.total))
 
 		group.progress = progress.Start(ctx, progress.OpCompact, progress.PhaseRewrite, int64(len(group.candidates)), int64(group.total))
-		if err := ps.compactGroup(ctx, group); err != nil {
-			return err
+		err := ps.compactGroup(ctx, group)
+
+		group.report(report)
+		report.Duration = time.Since(started)
+
+		if err != nil {
+			return report, err
 		}
+
 		group.progress.Finish()
 	}
 
-	return nil
+	report.Duration = time.Since(started)
+
+	return report, nil
+}
+
+// report fills in what the group's rewrite did.
+func (g *compactionGroup) report(r *CompactReport) {
+	r.Rewritten, r.ReadBytes = g.retired, g.retiredBytes
+	r.Written, r.WrittenBytes = g.written, g.writtenBytes
+	r.Moved, r.CopiedBytes, r.Superseded = g.moved, g.copiedBytes, g.superseded
+
+	if r.ReadBytes > r.WrittenBytes {
+		r.ReclaimedBytes = r.ReadBytes - r.WrittenBytes
+	}
 }
 
 // compactionChunk is how many candidates a rewrite takes at a time unless
@@ -158,11 +228,10 @@ func (ps *PackStorage) compactGroup(ctx context.Context, group *compactionGroup)
 		}
 	}
 
-	group.copiedBytes = rw.copied
-	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(rw.copied)))
+	span.SetAttributes(attribute.Int64("dropped_objects", int64(group.droppedObjects)), attribute.Int64("copied_bytes", int64(group.copiedBytes)))
 
 	ps.logger.Info("rewrote archives", "archives", len(group.candidates), "dropped", group.droppedObjects, "saved", humanize.Bytes(group.droppedBytes),
-		"copied", humanize.Bytes(rw.copied), "took", time.Since(rw.started).Round(time.Second))
+		"copied", humanize.Bytes(group.copiedBytes), "took", time.Since(rw.started).Round(time.Second))
 
 	return nil
 }
@@ -180,7 +249,6 @@ type rewrite struct {
 	outputs  []*archive
 	obsolete []*archive
 	done     int
-	copied   uint64
 	// unmarked names the copied objects their input's last mark result
 	// left unreachable, and that result's generation
 	unmarked map[string]uint64
@@ -291,7 +359,12 @@ func (rw *rewrite) chunk(ctx context.Context, chunk []*archive, workers int) err
 		byName[a.name] = indexes[i]
 	}
 
-	rw.ps.retireRewritten(obsolete, byName)
+	retired, retiredBytes := rw.ps.retireRewritten(obsolete, byName)
+
+	rw.mtx.Lock()
+	rw.group.retired += retired
+	rw.group.retiredBytes += retiredBytes
+	rw.mtx.Unlock()
 
 	return nil
 }
@@ -374,8 +447,9 @@ func (rw *rewrite) lookUp(ctx context.Context, chunk []*archive, workers int) ([
 
 // retireRewritten retires the inputs of a rewrite whose outputs are
 // indexed, so readers that still land on one find their copy elsewhere;
-// indexes holds the index of each input by name.
-func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]IndexFile) {
+// indexes holds the index of each input by name. It returns how many it
+// retired and what they took up.
+func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]IndexFile) (int, uint64) {
 	marked := make([]bool, len(obsolete))
 	now := time.Now()
 
@@ -400,12 +474,14 @@ func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]I
 
 	var names []string
 	var retired []IndexFile
+	var size uint64
 
 	for i, archive := range obsolete {
 		if !marked[i] {
 			continue
 		}
 
+		size += archive.size
 		ps.retireArchive(archive)
 
 		if e := archive.Close(); e != nil {
@@ -417,7 +493,7 @@ func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]I
 	}
 
 	if len(names) == 0 {
-		return
+		return 0, 0
 	}
 
 	if err := ps.index.DeleteArchives(names); err != nil {
@@ -443,6 +519,8 @@ func (ps *PackStorage) retireRewritten(obsolete []*archive, indexes map[string]I
 	_ = grp.Wait()
 
 	ps.archivesDeleted(names)
+
+	return len(names), size
 }
 
 // progressEvery is how many rewritten archives pass between progress logs.
@@ -545,7 +623,7 @@ func (rw *rewrite) abort() {
 // outside the group stands in for.
 func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive, idx IndexFile, standIn map[string]bool, data []byte) error {
 	started := time.Now()
-	var copied uint64
+	var copied, moved, superseded uint64
 
 	mark := candidate.gcResult()
 
@@ -562,6 +640,7 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 		}
 
 		if standIn[string(hdr.Ref.Hash)] {
+			superseded++
 			return nil
 		}
 
@@ -573,6 +652,7 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 
 		pos := idx.position(hdr.Ref.Hash)
 		if !rw.claim(hdr.Ref.Hash, mark, pos) {
+			superseded++
 			return nil
 		}
 
@@ -586,6 +666,7 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 		}
 
 		copied += uint64(length)
+		moved++
 
 		version := idx[pos].Version(candidate.created)
 
@@ -601,7 +682,9 @@ func (rw *rewrite) candidate(ctx context.Context, worker int, candidate *archive
 
 	rw.mtx.Lock()
 	rw.obsolete = append(rw.obsolete, candidate)
-	rw.copied += copied
+	rw.group.copiedBytes += copied
+	rw.group.moved += moved
+	rw.group.superseded += superseded
 	rw.done++
 	done, total := rw.done, len(rw.group.candidates)
 	rw.mtx.Unlock()
@@ -731,6 +814,8 @@ func (o *rewriteOutput) finish() error {
 
 	o.rw.mtx.Lock()
 	o.rw.outputs = append(o.rw.outputs, a)
+	o.rw.group.written++
+	o.rw.group.writtenBytes += a.size
 	o.rw.mtx.Unlock()
 
 	return nil

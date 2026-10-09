@@ -45,12 +45,13 @@ var Command = cli.Command{
 			Name:  "compact",
 			Usage: "Rewrite small archives into full-sized ones",
 			Action: action(func(m *members) {
-				if err := m.store().Compact(common.Context(m.c)); err != nil {
+				report, err := m.store().Compact(common.Context(m.c))
+				if err != nil {
 					common.Fatal(err)
 				}
 
 				common.Reindex(m.c, m.index)
-				common.Result(common.Done{Action: "compacted"}, func() {})
+				common.Result(common.View.Compact(report), func() { log.Print(report.Summary()) })
 			}),
 		},
 		{
@@ -162,13 +163,22 @@ func due(m *members) {
 	ran, err := runner.Due(common.Context(m.c))
 
 	view := common.View.Maintenance(ran)
+	if ran.Compacted != nil {
+		report := common.View.Compact(ran.Compacted)
+		view.Compacted = &report
+	}
+
 	if ran.Collected != nil {
 		report := common.View.Report(ran.Collected)
 		view.Collected = &report
 	}
 
 	common.Result(view, func() {
-		log.Printf("Swept: %t, compacted: %t, retired %d commits, built %d presence filters, measured %d sets", ran.Swept, ran.Compacted, ran.Retired, ran.Presence, ran.Measured)
+		log.Printf("Swept: %t, retired %d commits, built %d presence filters, measured %d sets", ran.Swept, ran.Retired, ran.Presence, ran.Measured)
+
+		if ran.Compacted != nil {
+			log.Print(ran.Compacted.Summary())
+		}
 
 		if ran.Collected != nil {
 			gc.Log(ran.Collected)

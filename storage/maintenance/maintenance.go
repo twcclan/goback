@@ -17,7 +17,7 @@ import (
 // Store is what the runner sweeps and compacts.
 type Store interface {
 	Sweep(now time.Time)
-	Compact(ctx context.Context) error
+	Compact(ctx context.Context) (*pack.CompactReport, error)
 }
 
 // Presence is an index that builds presence filters on demand.
@@ -184,8 +184,11 @@ func (r *Runner) Run(ctx context.Context) {
 
 // Ran is what one pass of Due did.
 type Ran struct {
-	Swept, Compacted  bool
+	Swept             bool
 	Retired, Presence int
+	// Compacted is nil when no compaction ran; alongside a failed one it
+	// counts what that finished.
+	Compacted *pack.CompactReport
 	// Measured is how many sets had their sizes measured.
 	Measured int
 	// Collected is nil when no collection was due.
@@ -214,8 +217,8 @@ func (r *Runner) Due(ctx context.Context) (Ran, error) {
 	}
 
 	if r.Store != nil && r.Schedule.Compact > 0 {
-		err := r.Store.Compact(ctx)
-		ran.Compacted = err == nil
+		report, err := r.Store.Compact(ctx)
+		ran.Compacted = report
 		errs = append(errs, err)
 	}
 
@@ -278,7 +281,7 @@ func (r *Runner) Compact(ctx context.Context) {
 		return
 	}
 
-	if err := r.Store.Compact(ctx); err != nil {
+	if _, err := r.Store.Compact(ctx); err != nil {
 		r.logger().Error("compaction failed", "err", err)
 	}
 }

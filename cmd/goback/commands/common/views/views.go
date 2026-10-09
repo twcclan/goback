@@ -41,7 +41,11 @@ type Mapper interface {
 	// field:Seconds from:"Duration" using:"Seconds"
 	Report(in *pack.CollectReport) ReportView
 
+	// field:Seconds from:"Duration" using:"Seconds"
+	Compact(in *pack.CompactReport) CompactView
+
 	// field:Collected from:"-"
+	// field:Compacted from:"-"
 	Maintenance(in maintenance.Ran) MaintenanceView
 
 	// field:Seconds from:"Took" using:"Seconds"
@@ -236,6 +240,21 @@ type ReportView struct {
 	Unattributed         uint64           `json:"unattributed"`
 }
 
+// CompactView is a compaction report as JSON output shows it.
+type CompactView struct {
+	Candidates     int     `json:"candidates"`
+	CandidateBytes uint64  `json:"candidate_bytes"`
+	Rewritten      int     `json:"rewritten"`
+	ReadBytes      uint64  `json:"read_bytes"`
+	Written        int     `json:"written"`
+	WrittenBytes   uint64  `json:"written_bytes"`
+	Moved          uint64  `json:"moved"`
+	CopiedBytes    uint64  `json:"copied_bytes"`
+	Superseded     uint64  `json:"superseded"`
+	ReclaimedBytes uint64  `json:"reclaimed_bytes"`
+	Seconds        float64 `json:"seconds"`
+}
+
 // OrphanCommitView is a commit the store holds that the index has no row
 // for, as JSON output shows it.
 type OrphanCommitView struct {
@@ -268,11 +287,11 @@ type IndexedSetView struct {
 	Behind      int       `json:"behind"`
 }
 
-// MaintenanceView is what goback maintain did; collected is absent when
-// no collection was due.
+// MaintenanceView is what goback maintain did; compacted and collected
+// are absent when that job did not run.
 type MaintenanceView struct {
 	Swept     bool            `json:"swept"`
-	Compacted bool            `json:"compacted"`
+	Compacted *CompactView    `json:"compacted,omitempty"`
 	Retired   int             `json:"retired"`
 	Presence  int             `json:"presence"`
 	Measured  int             `json:"measured"`

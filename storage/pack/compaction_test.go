@@ -25,6 +25,15 @@ func (a *askingIndex) LocateCopies(refs []*proto.Ref, scope Scope) (map[string][
 	return a.InMemoryIndex.LocateCopies(refs, scope)
 }
 
+func compact(t testing.TB, ctx context.Context, store *PackStorage) *CompactReport {
+	t.Helper()
+
+	report, err := store.Compact(ctx)
+	require.NoError(t, err)
+
+	return report
+}
+
 func TestARewriteLooksEachObjectUpOncePerChunk(t *testing.T) {
 	objects := makeTestData(t, numObjects)
 
@@ -42,7 +51,7 @@ func TestARewriteLooksEachObjectUpOncePerChunk(t *testing.T) {
 		}
 
 		index.asked.Store(0)
-		require.NoError(t, store.Compact(context.Background()))
+		compact(t, context.Background(), store)
 
 		if chunk == 0 {
 			require.EqualValues(t, numObjects, index.asked.Load(), "one chunk asks for each object once")
@@ -95,25 +104,61 @@ func TestCompactionMergesOnlySmallArchivesAndNeverItsOwnOutput(t *testing.T) {
 		return out
 	}
 
+	var objectsIn int
+	store.mtx.RLock()
+	for _, a := range store.archives {
+		if a.size < small {
+			idx, err := a.getIndex()
+			require.NoError(t, err)
+			objectsIn += len(idx)
+		}
+	}
+	store.mtx.RUnlock()
+
+	before := sizes()
+
 	var large string
-	for name, size := range sizes() {
+	var candidates int
+	var candidateBytes uint64
+	for name, size := range before {
 		if size >= small {
 			large = name
+		} else {
+			candidates++
+			candidateBytes += size
 		}
 	}
 	require.NotEmpty(t, large)
 
-	require.NoError(t, store.Compact(context.Background()))
+	report := compact(t, context.Background(), store)
 
 	merged := sizes()
 	require.Contains(t, merged, large, "an archive that is not small stays")
 
+	var written int
+	var writtenBytes uint64
 	for name, size := range merged {
 		require.GreaterOrEqual(t, size, uint64(small), "%s came out small", name)
+
+		if _, ok := before[name]; !ok {
+			written++
+			writtenBytes += size
+		}
 	}
 
-	require.NoError(t, store.Compact(context.Background()))
+	require.Equal(t, candidates, report.Candidates)
+	require.Equal(t, candidateBytes, report.CandidateBytes)
+	require.Equal(t, candidates, report.Rewritten)
+	require.Equal(t, candidateBytes, report.ReadBytes)
+	require.Equal(t, written, report.Written)
+	require.Equal(t, writtenBytes, report.WrittenBytes)
+	require.EqualValues(t, objectsIn, report.Moved+report.Superseded)
+	require.EqualValues(t, max(int64(candidateBytes)-int64(writtenBytes), 0), report.ReclaimedBytes)
+
+	report = compact(t, context.Background(), store)
 	require.Equal(t, merged, sizes(), "what compaction wrote is not merged again")
+	require.Zero(t, report.Rewritten)
+	require.Zero(t, report.Written)
 
 	for _, object := range objects {
 		got, err := store.Get(context.Background(), object.Ref())
@@ -211,7 +256,7 @@ func TestARewriteRetiresItsInputsTogetherLeavingOutOneWhoseMarkerFailed(t *testi
 	require.Len(t, inputs, 4)
 
 	storage.refuse = inputs[0]
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	_, kept, err := index.LookupArchive(inputs[0])
 	require.NoError(t, err)

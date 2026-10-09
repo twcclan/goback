@@ -19,9 +19,9 @@ type fakeStore struct {
 }
 
 func (f *fakeStore) Sweep(now time.Time) { f.sweeps.Add(1); f.lastSweep.Store(now) }
-func (f *fakeStore) Compact(context.Context) error {
+func (f *fakeStore) Compact(context.Context) (*pack.CompactReport, error) {
 	f.compactions.Add(1)
-	return errors.New("disk full")
+	return &pack.CompactReport{Candidates: 3}, errors.New("disk full")
 }
 
 type fakeCollector struct{ runs atomic.Int32 }
@@ -141,7 +141,7 @@ func TestDueRunsEveryJobPastAFailingOne(t *testing.T) {
 	ran, err := r.Due(context.Background())
 	require.ErrorContains(t, err, "disk full")
 	require.True(t, ran.Swept)
-	require.False(t, ran.Compacted)
+	require.Equal(t, 3, ran.Compacted.Candidates, "a failed compaction still reports what it found")
 	require.Equal(t, 2, ran.Retired)
 	require.Len(t, ran.Reindexed, 1, "what the jobs churned is reindexed after them")
 }

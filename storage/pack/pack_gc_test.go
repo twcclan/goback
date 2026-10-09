@@ -452,7 +452,7 @@ func TestCollectReclaimsACommitWhoseTombstoneACompactionMovedFirst(t *testing.T)
 	commit := gone[len(gone)-1].Ref()
 	require.NoError(t, store.Delete(ctx, commit))
 	require.NoError(t, store.Flush())
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	tomb := proto.TombstoneRef(commit)
 	found, err := store.index.LocateTombstones([]*proto.Ref{tomb}, Scope{})
@@ -567,7 +567,7 @@ func TestCollectCarriesTheErasureClockThroughARewrite(t *testing.T) {
 
 	before, _, err := store.archiveNames()
 	require.NoError(t, err)
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 	after, _, err := store.archiveNames()
 	require.NoError(t, err)
 	require.NotEqual(t, before, after, "the rewrite replaced the archives")
@@ -1009,7 +1009,7 @@ func TestCompactionBetweenCollectionsKeepsTheUnreachableCounting(t *testing.T) {
 	_, err := store.Collect(ctx, gcOptions(t, 0))
 	require.NoError(t, err)
 
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 	requirePresent(t, store, unreachable, false)
 	requirePresent(t, store, reachable, true)
 

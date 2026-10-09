@@ -300,7 +300,7 @@ func (sim *simulation) run(steps int) {
 		case roll < 85:
 			sim.retire()
 		case roll < 90:
-			require.NoError(sim.t, sim.maintainer.Compact(context.Background()))
+			compact(sim.t, context.Background(), sim.maintainer)
 		case roll < 93:
 			sim.maintainer.Sweep(time.Now().Add(simLease))
 		case roll < 97:

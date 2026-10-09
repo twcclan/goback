@@ -85,7 +85,7 @@ func TestCompactAndScrubReportArchivesAndBytes(t *testing.T) {
 	}
 
 	ctx, check := recordProgress(t, progress.OpCompact)
-	require.NoError(t, store.Compact(ctx))
+	compact(t, ctx, store)
 	check(progress.PhaseRewrite)
 
 	ctx, check = recordProgress(t, progress.OpScrub)

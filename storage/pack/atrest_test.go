@@ -138,7 +138,7 @@ func TestAtRestCompactionResealsUnderTheKey(t *testing.T) {
 
 	store = newTestStore(t, base, WithAtRestKey(key), WithCompaction(CompactionConfig{MinimumCandidates: 2}))
 	t.Cleanup(func() { _ = store.Close() })
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	require.NoError(t, store.WalkHeaders(ctx, proto.ObjectType_BLOB, func(hdr *proto.ObjectHeader) error {
 		require.Equal(t, key.ID(), hdr.AtRestKeyId)
@@ -186,7 +186,7 @@ func TestRotationOpensTheRetiredKeyAndResealsOnRewrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(len(objects)), report.Sealed[hex.EncodeToString(old.ID())])
 
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	report, err = store.Scrub(ctx)
 	require.NoError(t, err)

@@ -38,6 +38,26 @@ func (m MapperImpl) Commit(in *proto.Commit) views.CommitView {
 	}
 }
 
+func (m MapperImpl) Compact(in *pack.CompactReport) views.CompactView {
+	if in == nil {
+		return views.CompactView{}
+	}
+
+	return views.CompactView{
+		Candidates:     in.Candidates,
+		CandidateBytes: in.CandidateBytes,
+		Rewritten:      in.Rewritten,
+		ReadBytes:      in.ReadBytes,
+		Written:        in.Written,
+		WrittenBytes:   in.WrittenBytes,
+		Moved:          in.Moved,
+		CopiedBytes:    in.CopiedBytes,
+		Superseded:     in.Superseded,
+		ReclaimedBytes: in.ReclaimedBytes,
+		Seconds:        views.Seconds(in.Duration),
+	}
+}
+
 func (m MapperImpl) IndexedSet(in index.IndexedSet) views.IndexedSetView {
 
 	return views.IndexedSetView{
@@ -63,7 +83,6 @@ func (m MapperImpl) Maintenance(in maintenance.Ran) views.MaintenanceView {
 
 	return views.MaintenanceView{
 		Swept:     in.Swept,
-		Compacted: in.Compacted,
 		Retired:   in.Retired,
 		Presence:  in.Presence,
 		Measured:  in.Measured,

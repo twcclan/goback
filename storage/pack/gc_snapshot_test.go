@@ -30,7 +30,7 @@ func newScenarioStore(t *testing.T) (*PackStorage, []*proto.Object) {
 	ctx := context.Background()
 
 	gone, _ := retiredChain(t, store)
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	chain := unreferencedChain(t, store)
 	sctx, _ := beginSession(t, store, "agent-a")

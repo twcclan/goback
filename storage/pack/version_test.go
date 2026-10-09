@@ -97,7 +97,7 @@ func TestARewriteKeepsTheVersionsOfWhatItMoves(t *testing.T) {
 	moved, _, err := store.archiveNames()
 	require.NoError(t, err)
 
-	require.NoError(t, store.Compact(context.Background()))
+	compact(t, context.Background(), store)
 
 	after, _, err := store.archiveNames()
 	require.NoError(t, err)
