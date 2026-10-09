@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gobackio/goback/backup"
 	"github.com/gobackio/goback/proto"
@@ -9,40 +10,76 @@ import (
 )
 
 var _ backup.ObjectStore = (*Store)(nil)
+var _ backup.TreeFetcher = (*Store)(nil)
+var _ backup.Keeper = (*Store)(nil)
 var _ wrapped.Wrapper = (*Store)(nil)
 
-// New layers cache over wrapped for its commits, trees and files.
-func New(cache backup.ObjectStore, wrapped backup.ObjectStore) *Store {
+// Copies holds a Store's copies of objects by ref. *blobcache.Cache is one
+// on disk, Memory one for a single process, and InStore adapts an object
+// store.
+type Copies interface {
+	// Get returns the copy of ref, if there is one.
+	Get(ref *proto.Ref) (*proto.Object, bool)
+	// Put keeps obj as the copy of ref.
+	Put(ref *proto.Ref, obj *proto.Object) error
+	// Drop forgets the copy of ref.
+	Drop(ref *proto.Ref)
+}
+
+// New layers copies over wrapped for its commits, trees and files.
+func New(copies Copies, wrapped backup.ObjectStore) *Store {
 	return &Store{
-		cache:   cache,
+		cache:   copies,
 		wrapped: wrapped,
 	}
 }
 
-// Store serves metadata objects from cache before wrapped, filling the cache
-// on reads and writes; cache failures are ignored.
+// Store serves metadata objects from its copies before wrapped, filling them
+// on reads and writes; failures to keep a copy are ignored. Objects are
+// immutable by ref, so a copy is never stale; what is newest is still the
+// wrapped store's to say.
 type Store struct {
-	cache   backup.ObjectStore
+	cache   Copies
 	wrapped backup.ObjectStore
 }
 
 // Unwrap implements wrapped.Wrapper.
 func (s *Store) Unwrap() backup.ObjectStore { return s.wrapped }
 
+func (s *Store) keep(obj *proto.Object) {
+	if obj.Type().Metadata() {
+		_ = s.cache.Put(obj.Ref(), obj)
+	}
+}
+
 // Put implements backup.ObjectStore.
 func (s *Store) Put(ctx context.Context, object *proto.Object) error {
 	err := s.wrapped.Put(ctx, object)
-
-	if err == nil && object.Type().Metadata() {
-		_ = s.cache.Put(ctx, object)
+	if err == nil {
+		s.keep(object)
 	}
 
 	return err
 }
 
-// GetTree forwards to the wrapped store's prefetch, if it has one, and keeps
-// the fetched trees so the walker's later Gets are served locally.
+// Keep implements backup.Keeper.
+func (s *Store) Keep(ctx context.Context, obj *proto.Object) {
+	s.keep(obj)
+
+	if keeper, ok := s.wrapped.(backup.Keeper); ok {
+		keeper.Keep(ctx, obj)
+	}
+}
+
+// GetTree serves the tree at ref and its splits from the copies when it
+// holds them all, and otherwise forwards to the wrapped store's prefetch,
+// if it has one, keeping what it fetched. Trees below are left to later
+// calls.
 func (s *Store) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error) {
+	if objects, ok := s.cachedTree(ref); ok {
+		return objects, nil
+	}
+
 	fetcher, ok := s.wrapped.(backup.TreeFetcher)
 	if !ok {
 		return nil, backup.ErrNotImplemented
@@ -54,30 +91,51 @@ func (s *Store) GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([
 	}
 
 	for _, obj := range objects {
-		if obj.Type().Metadata() {
-			_ = s.cache.Put(ctx, obj)
-		}
+		s.keep(obj)
 	}
 
 	return objects, nil
 }
 
+func (s *Store) cachedTree(ref *proto.Ref) ([]*proto.Object, bool) {
+	root, ok := s.cache.Get(ref)
+	if !ok {
+		return nil, false
+	}
+
+	objects := []*proto.Object{root}
+
+	for _, split := range root.GetTree().GetSplits() {
+		obj, ok := s.cache.Get(split)
+		if !ok {
+			return nil, false
+		}
+
+		objects = append(objects, obj)
+	}
+
+	return objects, true
+}
+
 // Get implements backup.ObjectStore.
 func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
-	obj, _ := s.cache.Get(ctx, ref)
-
-	if obj != nil {
+	if obj, ok := s.cache.Get(ref); ok {
 		return obj, nil
 	}
 
-	return s.wrapped.Get(ctx, ref)
+	obj, err := s.wrapped.Get(ctx, ref)
+	if err == nil {
+		s.keep(obj)
+	}
+
+	return obj, err
 }
 
 // Delete implements backup.ObjectStore.
 func (s *Store) Delete(ctx context.Context, ref *proto.Ref) error {
 	err := s.wrapped.Delete(ctx, ref)
 	if err == nil {
-		_ = s.cache.Delete(ctx, ref)
+		s.cache.Drop(ref)
 	}
 
 	return err
@@ -90,10 +148,71 @@ func (s *Store) Walk(ctx context.Context, b bool, objectType proto.ObjectType, r
 
 // Has implements backup.ObjectStore.
 func (s *Store) Has(ctx context.Context, ref *proto.Ref) (bool, error) {
-	has, err := s.cache.Has(ctx, ref)
-	if err == nil && has {
-		return has, err
+	if _, ok := s.cache.Get(ref); ok {
+		return true, nil
 	}
 
 	return s.wrapped.Has(ctx, ref)
+}
+
+// Memory is Copies held in memory for as long as it is referenced.
+type Memory struct {
+	mtx     sync.Mutex
+	objects map[string]*proto.Object
+}
+
+// NewMemory returns empty Copies in memory.
+func NewMemory() *Memory {
+	return &Memory{objects: map[string]*proto.Object{}}
+}
+
+// Get implements Copies.
+func (m *Memory) Get(ref *proto.Ref) (*proto.Object, bool) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	obj, ok := m.objects[string(ref.GetHash())]
+
+	return obj, ok
+}
+
+// Put implements Copies.
+func (m *Memory) Put(ref *proto.Ref, obj *proto.Object) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	m.objects[string(ref.GetHash())] = obj
+
+	return nil
+}
+
+// Drop implements Copies.
+func (m *Memory) Drop(ref *proto.Ref) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	delete(m.objects, string(ref.GetHash()))
+}
+
+// InStore keeps Copies in an object store such as a local badger store.
+func InStore(store backup.ObjectStore) Copies {
+	return storeCopies{store}
+}
+
+type storeCopies struct {
+	store backup.ObjectStore
+}
+
+func (c storeCopies) Get(ref *proto.Ref) (*proto.Object, bool) {
+	obj, err := c.store.Get(context.Background(), ref)
+
+	return obj, err == nil && obj != nil
+}
+
+func (c storeCopies) Put(_ *proto.Ref, obj *proto.Object) error {
+	return c.store.Put(context.Background(), obj)
+}
+
+func (c storeCopies) Drop(ref *proto.Ref) {
+	_ = c.store.Delete(context.Background(), ref)
 }

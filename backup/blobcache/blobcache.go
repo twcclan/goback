@@ -1,4 +1,4 @@
-// Package blobcache keeps copies of stored blobs on local disk, keyed by
+// Package blobcache keeps copies of stored objects on local disk, keyed by
 // ref and verified on every read.
 package blobcache
 

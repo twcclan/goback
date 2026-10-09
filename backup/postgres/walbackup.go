@@ -10,6 +10,7 @@ import (
 
 	"github.com/gobackio/goback/backup"
 	"github.com/gobackio/goback/proto"
+	"github.com/gobackio/goback/storage/cache"
 )
 
 // WALBackup commits the spool to the WAL set. Every commit holds each WAL
@@ -44,6 +45,11 @@ func (b *WALBackup) Run(ctx context.Context) (*backup.WalkResult, error) {
 	}
 
 	w := b.Walker
+
+	// the walk diffs against the commit and tree previous reads
+	objects := w.Objects
+	w.Objects = cache.New(cache.NewMemory(), objects)
+	defer func() { w.Objects = objects }()
 
 	held, systemID, err := b.previous(ctx)
 	if err != nil {

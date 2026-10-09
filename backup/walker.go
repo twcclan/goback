@@ -43,6 +43,13 @@ type TreeFetcher interface {
 	GetTree(ctx context.Context, ref *proto.Ref, maxDepth uint32) ([]*proto.Object, error)
 }
 
+// Keeper is implemented by object stores that keep copies of what they
+// serve. Keep hands one an object written around it, such as the commit a
+// walker writes through the index.
+type Keeper interface {
+	Keep(ctx context.Context, obj *proto.Object)
+}
+
 // Walker builds a commit by diffing a directory against the set's latest
 // commit, reading and uploading only what changed.
 type Walker struct {
@@ -542,6 +549,10 @@ func (w *Walker) putCommit(ctx context.Context, tree *proto.Ref, partial bool) (
 	err := w.Index.Put(ctx, obj)
 	if err != nil {
 		return nil, nil, fmt.Errorf("storing commit: %w", err)
+	}
+
+	if keeper, ok := w.Objects.(Keeper); ok {
+		keeper.Keep(ctx, obj)
 	}
 
 	return obj.Ref(), commit, nil

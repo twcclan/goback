@@ -109,7 +109,7 @@ func runNew(c *cli.Context) error {
 		}
 		defer treeCache.Close()
 
-		objects = cache.New(treeCache, index)
+		objects = cache.New(cache.InStore(treeCache), index)
 	}
 
 	sessions, _ := store.(backup.SessionStore)

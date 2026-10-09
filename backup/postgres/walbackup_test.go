@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -10,9 +11,12 @@ import (
 	"time"
 
 	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/backup/blobcache"
+	"github.com/gobackio/goback/backup/storekey"
 	"github.com/gobackio/goback/index/sql"
 	"github.com/gobackio/goback/proto"
 	"github.com/gobackio/goback/storage"
+	"github.com/gobackio/goback/storage/cache"
 	"github.com/gobackio/goback/storage/pack"
 
 	"github.com/stretchr/testify/require"
@@ -152,23 +156,29 @@ func TestWALFromAnotherClusterOrWithAGapStaysInTheSpool(t *testing.T) {
 	require.Equal(t, []string{skipped}, f.spooled())
 }
 
-// treeCounting counts the trees read one at a time, and streams a tree
-// with its splits in one call as a remote store does.
-type treeCounting struct {
+// readCounting counts the commits and trees read from the store, and
+// streams a tree with its splits in one call as a remote store does.
+type readCounting struct {
 	*sql.Index
-	reads atomic.Int64
+	commits, trees, getTrees atomic.Int64
 }
 
-func (c *treeCounting) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+func (c *readCounting) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
 	obj, err := c.Index.Get(ctx, ref)
-	if obj.Type() == proto.ObjectType_TREE {
-		c.reads.Add(1)
+
+	switch obj.Type() {
+	case proto.ObjectType_COMMIT:
+		c.commits.Add(1)
+	case proto.ObjectType_TREE:
+		c.trees.Add(1)
 	}
 
 	return obj, err
 }
 
-func (c *treeCounting) GetTree(ctx context.Context, ref *proto.Ref, _ uint32) ([]*proto.Object, error) {
+func (c *readCounting) GetTree(ctx context.Context, ref *proto.Ref, _ uint32) ([]*proto.Object, error) {
+	c.getTrees.Add(1)
+
 	var objects []*proto.Object
 
 	for queue := []*proto.Ref{ref}; len(queue) > 0; queue = queue[1:] {
@@ -184,7 +194,33 @@ func (c *treeCounting) GetTree(ctx context.Context, ref *proto.Ref, _ uint32) ([
 	return objects, nil
 }
 
-func TestAWALCommitReadsThePreviousTreeInOneCall(t *testing.T) {
+func (c *readCounting) reads() int64 {
+	return c.commits.Load() + c.trees.Load() + c.getTrees.Load()
+}
+
+func (f *walFixture) runOver(objects backup.ObjectStore, key *storekey.Key) (*backup.WalkResult, error) {
+	b := &WALBackup{
+		Walker:  &backup.Walker{Index: f.index, Objects: objects, Set: "db-wal", AgentID: "a", Root: f.spool.Dir, Workers: 2, Key: key},
+		Spool:   f.spool,
+		BaseSet: "db-base",
+		Window:  14 * 24 * time.Hour,
+		Now:     func() time.Time { return f.now },
+	}
+
+	return b.Run(f.ctx)
+}
+
+// cached is the store a new process sees with the tree cache in dir.
+func (f *walFixture) cached(dir string, store backup.ObjectStore) backup.ObjectStore {
+	f.t.Helper()
+
+	trees, err := blobcache.Open(dir, "trees", 0)
+	require.NoError(f.t, err)
+
+	return cache.New(trees, store)
+}
+
+func TestAWALCommitReadsThePreviousCommitAndTreeOnce(t *testing.T) {
 	f := newWALFixture(t)
 
 	for n := uint64(1); n <= 600; n++ {
@@ -196,17 +232,95 @@ func TestAWALCommitReadsThePreviousTreeInOneCall(t *testing.T) {
 
 	f.archive(601, 42)
 
-	objects := &treeCounting{Index: f.index}
-	b := &WALBackup{
-		Walker:  &backup.Walker{Index: f.index, Objects: objects, Set: "db-wal", AgentID: "a", Root: f.spool.Dir, Workers: 2},
-		Spool:   f.spool,
-		BaseSet: "db-base",
-		Window:  14 * 24 * time.Hour,
-		Now:     func() time.Time { return f.now },
-	}
-
-	result, err := b.Run(f.ctx)
+	objects := &readCounting{Index: f.index}
+	result, err := f.runOver(objects, nil)
 	require.NoError(t, err)
 	require.Len(t, f.held(result), 601)
-	require.Zero(t, objects.reads.Load(), "the previous tree's splits were read one by one")
+	require.Equal(t, int64(1), objects.commits.Load())
+	require.Equal(t, int64(1), objects.getTrees.Load())
+	require.Zero(t, objects.trees.Load(), "the previous tree's splits were read one by one")
+}
+
+func TestSteadyWALCommitsReadNoCommitOrTreeFromTheStore(t *testing.T) {
+	f := newWALFixture(t)
+	dir := t.TempDir()
+
+	for n := uint64(1); n <= 600; n++ {
+		f.archive(n, 42)
+	}
+
+	_, err := f.run()
+	require.NoError(t, err)
+
+	for n := uint64(601); n <= 603; n++ {
+		f.archive(n, 42)
+
+		objects := &readCounting{Index: f.index}
+		result, err := f.runOver(f.cached(dir, objects), nil)
+		require.NoError(t, err)
+		require.Len(t, f.held(result), int(n))
+
+		if n == 601 {
+			require.Equal(t, int64(2), objects.reads(), "a cold cache reads the commit and its tree once")
+			continue
+		}
+
+		require.Zero(t, objects.reads(), "commit %d read what the last one wrote", n)
+	}
+}
+
+func TestAWALCommitOverAnotherAgentsCommitReadsItFromTheStore(t *testing.T) {
+	f := newWALFixture(t)
+	dir := t.TempDir()
+
+	one := f.archive(1, 42)
+	_, err := f.runOver(f.cached(dir, f.index), nil)
+	require.NoError(t, err)
+
+	two := f.archive(2, 42)
+	_, err = f.run()
+	require.NoError(t, err)
+
+	three := f.archive(3, 42)
+	objects := &readCounting{Index: f.index}
+	result, err := f.runOver(f.cached(dir, objects), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{one, two, three}, f.held(result))
+	require.Equal(t, int64(1), objects.commits.Load(), "the newest commit is the store's to say")
+	require.Equal(t, int64(1), objects.getTrees.Load())
+}
+
+func TestASealedWALSetsTreeCacheHoldsNoNames(t *testing.T) {
+	f := newWALFixture(t)
+	dir := t.TempDir()
+
+	key, err := storekey.Generate("s1")
+	require.NoError(t, err)
+
+	f.archive(1, 42)
+	middle := f.archive(2, 42)
+	f.archive(3, 42)
+
+	_, err = f.runOver(f.cached(dir, f.index), key)
+	require.NoError(t, err)
+
+	f.archive(4, 42)
+	_, err = f.runOver(f.cached(dir, f.index), key)
+	require.NoError(t, err)
+
+	var files int
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NotContains(t, string(data), middle, "%s holds a name in the clear", path)
+		files++
+
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotZero(t, files)
 }
