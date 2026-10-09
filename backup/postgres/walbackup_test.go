@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gobackio/goback/backup"
 	"github.com/gobackio/goback/index/sql"
+	"github.com/gobackio/goback/proto"
 	"github.com/gobackio/goback/storage"
 	"github.com/gobackio/goback/storage/pack"
 
@@ -148,4 +150,63 @@ func TestWALFromAnotherClusterOrWithAGapStaysInTheSpool(t *testing.T) {
 	_, err = f.run()
 	require.ErrorIs(t, err, ErrGap)
 	require.Equal(t, []string{skipped}, f.spooled())
+}
+
+// treeCounting counts the trees read one at a time, and streams a tree
+// with its splits in one call as a remote store does.
+type treeCounting struct {
+	*sql.Index
+	reads atomic.Int64
+}
+
+func (c *treeCounting) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	obj, err := c.Index.Get(ctx, ref)
+	if obj.Type() == proto.ObjectType_TREE {
+		c.reads.Add(1)
+	}
+
+	return obj, err
+}
+
+func (c *treeCounting) GetTree(ctx context.Context, ref *proto.Ref, _ uint32) ([]*proto.Object, error) {
+	var objects []*proto.Object
+
+	for queue := []*proto.Ref{ref}; len(queue) > 0; queue = queue[1:] {
+		obj, err := c.Index.Get(ctx, queue[0])
+		if err != nil {
+			return nil, err
+		}
+
+		objects = append(objects, obj)
+		queue = append(queue, obj.GetTree().GetSplits()...)
+	}
+
+	return objects, nil
+}
+
+func TestAWALCommitReadsThePreviousTreeInOneCall(t *testing.T) {
+	f := newWALFixture(t)
+
+	for n := uint64(1); n <= 600; n++ {
+		f.archive(n, 42)
+	}
+
+	_, err := f.run()
+	require.NoError(t, err)
+
+	f.archive(601, 42)
+
+	objects := &treeCounting{Index: f.index}
+	b := &WALBackup{
+		Walker:  &backup.Walker{Index: f.index, Objects: objects, Set: "db-wal", AgentID: "a", Root: f.spool.Dir, Workers: 2},
+		Spool:   f.spool,
+		BaseSet: "db-base",
+		Window:  14 * 24 * time.Hour,
+		Now:     func() time.Time { return f.now },
+	}
+
+	result, err := b.Run(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, f.held(result), 601)
+	require.Zero(t, objects.reads.Load(), "the previous tree's splits were read one by one")
 }

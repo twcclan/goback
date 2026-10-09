@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gobackio/goback/backup"
+	"github.com/gobackio/goback/proto"
 )
 
 // WALBackup commits the spool to the WAL set. Every commit holds each WAL
@@ -135,12 +136,17 @@ func (b *WALBackup) previous(ctx context.Context) ([]string, uint64, error) {
 		}
 	}
 
-	key, err := backup.CommitKey(ctx, w.Objects, commit, w.Key)
+	trees, err := prefetch(ctx, w.Objects, commit.GetTree())
 	if err != nil {
 		return nil, 0, err
 	}
 
-	tree, err := backup.OpenTree(ctx, w.Objects, commit.GetTree(), key, nil)
+	key, err := backup.CommitKey(ctx, trees, commit, w.Key)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	tree, err := backup.OpenTree(ctx, trees, commit.GetTree(), key, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -151,6 +157,44 @@ func (b *WALBackup) previous(ctx context.Context) ([]string, uint64, error) {
 	}
 
 	return names, systemID, nil
+}
+
+// prefetch serves the tree at ref and its splits from one GetTree where
+// the store streams trees: a WAL set's tree splits into hundreds.
+func prefetch(ctx context.Context, store backup.Getter, ref *proto.Ref) (backup.Getter, error) {
+	fetcher, ok := store.(backup.TreeFetcher)
+	if !ok {
+		return store, nil
+	}
+
+	objects, err := fetcher.GetTree(ctx, ref, 0)
+	if errors.Is(err, backup.ErrNotImplemented) {
+		return store, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	fetched := prefetched{Getter: store, objects: make(map[string]*proto.Object, len(objects))}
+	for _, obj := range objects {
+		fetched.objects[string(obj.Ref().Hash)] = obj
+	}
+
+	return fetched, nil
+}
+
+type prefetched struct {
+	backup.Getter
+	objects map[string]*proto.Object
+}
+
+func (p prefetched) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) {
+	if obj, ok := p.objects[string(ref.GetHash())]; ok {
+		return obj, nil
+	}
+
+	return p.Getter.Get(ctx, ref)
 }
 
 func (b *WALBackup) checkSpooled(name string, systemID uint64) (uint64, uint64, error) {
