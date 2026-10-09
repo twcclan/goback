@@ -222,42 +222,16 @@ func (s *Store) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, error) 
 	return offered(ref, object, err)
 }
 
-// Read answers like Get, except that a store able to address its bytes
-// says where they are instead of serving them. Exactly one of the object
-// and the location is set.
-func (s *Store) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
-	if err := s.readable(ctx, ref); err != nil {
-		return nil, nil, err
-	}
-
-	locator, ok := s.Index.(backup.Locator)
-	if !ok {
-		object, err := s.Index.Get(ctx, ref)
-		object, err = offered(ref, object, err)
-
-		return object, nil, err
-	}
-
-	object, location, err := locator.Read(ctx, ref)
-	if err == nil && location != nil {
-		return nil, location, nil
-	}
-
-	object, err = offered(ref, object, err)
-
-	return object, nil, err
-}
-
 const (
-	// treeBatch is how many trees Tree locates at once.
+	// treeBatch is how many trees Tree reads at once.
 	treeBatch = 1024
 	// treeWorkers bounds the tree reads one Tree call has in flight.
 	treeWorkers = 16
 )
 
 // Tree walks the tree at ref breadth-first, its splits, and the trees of
-// directories below it down to maxDepth levels, handing fn runs of those
-// the index can locate and the rest as objects.
+// directories below it down to maxDepth levels, handing fn each of them
+// in walk order.
 func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn func(*proto.GetTreeResponse) error) error {
 	if err := s.readable(ctx, ref); err != nil {
 		return err
@@ -266,55 +240,9 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 	type pending struct {
 		ref   *proto.Ref
 		depth uint32
-		obj   *proto.Object
 	}
 
-	locator, _ := s.Index.(backup.RecordLocator)
 	queue := []*pending{{ref: ref}}
-	walked := 0
-
-	flush := func(batch []*pending) error {
-		located := make(map[int]bool)
-
-		if locator != nil {
-			refs := make([]*proto.Ref, len(batch))
-			for i, next := range batch {
-				refs[i] = next.ref
-			}
-
-			runs, err := locator.LocateRecords(ctx, refs)
-			if err != nil {
-				return fmt.Errorf("locating trees below %x: %w", ref.GetHash(), err)
-			}
-
-			for _, run := range runs {
-				for _, record := range run.Records {
-					located[int(record.Index)] = true
-					record.Index += uint32(walked)
-				}
-			}
-
-			if len(runs) > 0 {
-				if err := fn(&proto.GetTreeResponse{Runs: runs}); err != nil {
-					return err
-				}
-			}
-		}
-
-		for i, next := range batch {
-			if located[i] {
-				continue
-			}
-
-			if err := fn(&proto.GetTreeResponse{Ref: next.ref, Object: next.obj}); err != nil {
-				return err
-			}
-		}
-
-		walked += len(batch)
-
-		return nil
-	}
 
 	for read := 0; read < len(queue); {
 		batch := queue[read:min(read+treeBatch, len(queue))]
@@ -330,11 +258,13 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 		}
 
 		for i, next := range batch {
-			next.obj = objects[i]
-
-			tree := next.obj.GetTree()
+			tree := objects[i].GetTree()
 			if tree == nil {
 				return fmt.Errorf("%w: object %x is not a tree", ErrInvalidRequest, next.ref.GetHash())
+			}
+
+			if err := fn(&proto.GetTreeResponse{Ref: next.ref, Object: objects[i]}); err != nil {
+				return err
 			}
 
 			for _, split := range tree.Splits {
@@ -353,15 +283,9 @@ func (s *Store) Tree(ctx context.Context, ref *proto.Ref, maxDepth uint32, fn fu
 		}
 
 		read += len(batch)
-
-		for read-walked >= treeBatch {
-			if err := flush(queue[walked : walked+treeBatch]); err != nil {
-				return err
-			}
-		}
 	}
 
-	return flush(queue[walked:])
+	return nil
 }
 
 // readTrees reads the objects of refs, in one lookup and a range read per

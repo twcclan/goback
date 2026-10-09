@@ -1004,13 +1004,9 @@ func (r *Server) GetTree(request *proto.GetTreeRequest, stream proto.Store_GetTr
 
 // Get implements proto.StoreServer.
 func (r *Server) Get(ctx context.Context, request *proto.GetRequest) (*proto.GetResponse, error) {
-	object, location, err := r.store.Read(ctx, request.Ref)
+	object, err := r.store.Get(ctx, request.Ref)
 	if err != nil {
 		return nil, ToStatus(err)
-	}
-
-	if location != nil {
-		return &proto.GetResponse{Body: &proto.GetResponse_Location{Location: location}}, nil
 	}
 
 	return &proto.GetResponse{Body: &proto.GetResponse_Object{Object: object}}, nil

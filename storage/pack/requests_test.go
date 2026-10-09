@@ -10,12 +10,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gobackio/goback/backup"
 	"github.com/gobackio/goback/proto"
 	"github.com/gobackio/goback/storage/badger"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // requestCounting counts what a bucket under the storage would be sent:
@@ -241,4 +243,93 @@ func TestACommitAsksTheBucketForLittleBeyondWhatItWrites(t *testing.T) {
 	for request, n := range counts {
 		require.LessOrEqualf(t, n, most[request], "%s in %s", request, formatCounts(counts))
 	}
+}
+
+// signedCounting is a counting storage that also signs ranges, as the
+// bucket under a server does; signing asks the bucket nothing.
+type signedCounting struct{ *requestCounting }
+
+func (signedCounting) SignRange(_ context.Context, name string, offset, length int64, ttl time.Duration) (*proto.Location, error) {
+	return &proto.Location{Url: name, Length: length, Expires: timestamppb.New(time.Now().Add(ttl))}, nil
+}
+
+// TestAServerServesWhatItCachesAndLocatesTheRest pins that a store with a
+// metadata cache, as a server runs it, answers commits, trees and files
+// without asking the bucket and hands out only parts as locations.
+func TestAServerServesWhatItCachesAndLocatesTheRest(t *testing.T) {
+	ctx := context.Background()
+	storage := newRequestCounting(newMemBucket())
+
+	cache, err := badger.New(t.TempDir())
+	require.NoError(t, err)
+
+	store, err := NewPackStorage(
+		WithArchiveStorage(signedCounting{storage}),
+		WithArchiveIndex(NewInMemoryIndex()),
+		WithMetadataCache(cache),
+		WithIndexCache(t.TempDir()),
+		WithCloseBeforeRead(true),
+	)
+	require.NoError(t, err)
+	require.NoError(t, store.Open())
+	t.Cleanup(func() { _ = store.Close() })
+
+	session, err := store.BeginSession(ctx, &backup.Session{AgentID: "agent", Set: "world"})
+	require.NoError(t, err)
+
+	var metadata, blobs []*proto.Ref
+	for _, obj := range makeChain(makeTestData(t, 10)) {
+		require.NoError(t, store.Put(session, obj))
+
+		if obj.Type().Metadata() {
+			metadata = append(metadata, obj.Ref())
+		} else {
+			blobs = append(blobs, obj.Ref())
+		}
+	}
+
+	require.NoError(t, store.Flush())
+	storage.take()
+
+	for _, ref := range metadata {
+		_, err := store.Get(ctx, ref)
+		require.NoError(t, err)
+	}
+
+	read, err := store.ReadRecords(ctx, metadata)
+	require.NoError(t, err)
+	require.NotContains(t, read, (*proto.Object)(nil))
+
+	runs, err := store.LocateRecords(ctx, metadata)
+	require.NoError(t, err)
+	require.Empty(t, runs, "metadata is served, never located")
+	require.Empty(t, storage.take(), "cached metadata asks the bucket nothing")
+
+	require.NoError(t, cache.Delete(ctx, metadata[0]))
+	_, err = store.Get(ctx, metadata[0])
+	require.NoError(t, err)
+	require.NotEmpty(t, storage.take(), "uncached metadata is read through")
+	_, err = store.Get(ctx, metadata[0])
+	require.NoError(t, err)
+	require.Empty(t, storage.take(), "into the cache")
+
+	located := func() int {
+		runs, err := store.LocateRecords(ctx, blobs)
+		require.NoError(t, err)
+
+		n := 0
+		for _, run := range runs {
+			n += len(run.GetRecords())
+		}
+
+		return n
+	}
+
+	require.Equal(t, len(blobs), located(), "parts go out as locations")
+	require.Empty(t, storage.take(), "locating parts asks the bucket nothing")
+
+	held, err := store.Get(ctx, blobs[0])
+	require.NoError(t, err)
+	require.NoError(t, cache.Put(ctx, held))
+	require.Equal(t, len(blobs)-1, located(), "a part the cache holds is served")
 }

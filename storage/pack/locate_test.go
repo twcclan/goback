@@ -102,63 +102,36 @@ func locatable(t *testing.T, extra ...PackOption) (*PackStorage, func() *PackSto
 	}
 }
 
-func TestReadAnswersWithALocation(t *testing.T) {
-	ctx := context.Background()
-	store, settle := locatable(t)
-
-	blob := proto.NewObject(&proto.Blob{Data: []byte("save data")})
-	require.NoError(t, store.Put(ctx, blob))
-
-	file := proto.NewObject(&proto.File{Parts: []*proto.FilePart{{Length: 9, Ref: blob.Ref()}}})
-	require.NoError(t, store.Put(ctx, file))
-
-	store = settle()
-
-	object, location, err := store.Read(ctx, file.Ref())
-	require.NoError(t, err)
-	require.Nil(t, object, "the bytes are not served when they can be addressed")
-	require.NotNil(t, location)
-	require.NotZero(t, location.GetExpires().AsTime())
-
-	fetched := follow(t, location)
-	require.True(t, fetched.Ref().Equal(file.Ref()), "the location yields the object asked for")
-	require.EqualValues(t, 9, fetched.GetFile().GetParts()[0].GetLength())
-
-	// a blob is never addressed, because an ordinary read would refuse it
-	object, location, err = store.Read(ctx, blob.Ref())
-	require.NoError(t, err)
-	require.Nil(t, location)
-	require.NotNil(t, object)
-}
-
-func TestALocationCarriesTheKeyToItsArchiveOnly(t *testing.T) {
+func TestARunCarriesTheKeyToItsArchiveOnly(t *testing.T) {
 	ctx := context.Background()
 	key := atRestKey(t)
 	store, settle := locatable(t, WithAtRestKey(key))
 
-	first := proto.NewObject(&proto.File{Inline: []byte("first archive")})
+	first := proto.NewObject(&proto.Blob{Data: []byte("first archive")})
 	require.NoError(t, store.Put(ctx, first))
 	store = settle()
 
-	second := proto.NewObject(&proto.File{Inline: []byte("second archive")})
+	second := proto.NewObject(&proto.Blob{Data: []byte("second archive")})
 	require.NoError(t, store.Put(ctx, second))
 	store = settle()
 
-	_, one, err := store.Read(ctx, first.Ref())
-	require.NoError(t, err)
-	require.NotNil(t, one, "a record sealed at rest is handed out with its archive's key")
-	require.NotEmpty(t, one.GetAtRestKey())
+	located := func(ref *proto.Ref) *proto.Location {
+		runs, err := store.LocateRecords(ctx, []*proto.Ref{ref})
+		require.NoError(t, err)
+		require.Len(t, runs, 1)
 
-	_, two, err := store.Read(ctx, second.Ref())
-	require.NoError(t, err)
-	require.NotNil(t, two)
+		return runs[0].GetLocation()
+	}
+
+	one, two := located(first.Ref()), located(second.Ref())
+	require.NotEmpty(t, one.GetAtRestKey(), "a record sealed at rest is handed out with its archive's key")
 
 	record := fetch(t, one)
 	require.NotContains(t, string(record), "first archive", "the bucket holds the record sealed")
 	require.True(t, follow(t, one).Ref().Equal(first.Ref()))
 	require.True(t, follow(t, two).Ref().Equal(second.Ref()))
 
-	_, err = DecodeRecord(fetch(t, two), one.GetAtRestKey())
+	_, err := DecodeRecord(fetch(t, two), one.GetAtRestKey())
 	require.Error(t, err, "one archive's key does not open another")
 
 	_, err = DecodeRecord(record, nil)
@@ -168,23 +141,6 @@ func TestALocationCarriesTheKeyToItsArchiveOnly(t *testing.T) {
 	var whole bytes.Buffer
 	require.NoError(t, insecurecleartextkeyset.Write(key.handle, keyset.NewBinaryWriter(&whole)))
 	require.NotEqual(t, whole.Bytes(), one.GetAtRestKey())
-}
-
-func TestReadWithoutASignerServesTheBytes(t *testing.T) {
-	ctx := context.Background()
-
-	store, err := NewPackStorage(WithArchiveStorage(newLocal(t.TempDir())), WithArchiveIndex(NewInMemoryIndex()))
-	require.NoError(t, err)
-	require.NoError(t, store.Open())
-	t.Cleanup(func() { _ = store.Close() })
-
-	file := proto.NewObject(&proto.File{Inline: []byte("small enough")})
-	require.NoError(t, store.Put(ctx, file))
-
-	object, location, err := store.Read(ctx, file.Ref())
-	require.NoError(t, err)
-	require.Nil(t, location)
-	require.NotNil(t, object)
 }
 
 func TestLocateRecordsRunsNeighbouringRecordsTogether(t *testing.T) {
@@ -222,7 +178,7 @@ func TestLocateRecordsRunsNeighbouringRecordsTogether(t *testing.T) {
 		require.True(t, object.Ref().Equal(refs[record.GetIndex()]), "each record is the ref it names")
 	}
 
-	require.ElementsMatch(t, []int{0, 1, 2, 3, 5}, located, "an unknown ref is left to an ordinary read")
+	require.ElementsMatch(t, []int{0, 1, 2, 5}, located, "metadata and an unknown ref are left to an ordinary read")
 }
 
 func TestARunEndsAtAGapOrItsSpan(t *testing.T) {

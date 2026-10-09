@@ -3,6 +3,7 @@ package pack
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -15,10 +16,6 @@ import (
 // bytes it holds.
 var ErrNoSignedURL = errors.New("this storage hands out no URLs")
 
-// locationTTL is how long a location is good for. It is short on purpose:
-// one is minted to be followed at once, not carried around.
-const locationTTL = time.Minute
-
 // A RangeSigner is an ArchiveStorage whose files can be fetched directly,
 // one byte range at a time.
 type RangeSigner interface {
@@ -28,66 +25,14 @@ type RangeSigner interface {
 	SignRange(ctx context.Context, name string, offset, length int64, ttl time.Duration) (*proto.Location, error)
 }
 
-var _ backup.Locator = (*PackStorage)(nil)
-
-// Read implements backup.Locator. An object sitting in an archive that
-// can be addressed is answered as a location, carrying the archive's key
-// when it is sealed at rest; everything else is read and answered as the
-// object.
-func (ps *PackStorage) Read(ctx context.Context, ref *proto.Ref) (*proto.Object, *proto.Location, error) {
-	location, err := ps.locate(ctx, ref)
-	if err != nil || location != nil {
-		return nil, location, err
-	}
-
-	object, err := ps.Get(ctx, ref)
-
-	return object, nil, err
-}
-
-func (ps *PackStorage) locate(ctx context.Context, ref *proto.Ref) (*proto.Location, error) {
-	signer, ok := ps.storage.(RangeSigner)
-	if !ok {
-		return nil, nil
-	}
-
-	a, rec, err := ps.committedCopy(ScopeOf(ctx), ref, true)
-	if err != nil || a == nil {
-		return nil, err
-	}
-
-	// a location says nothing about what it addresses, so the caller must
-	// not be sent to bytes an ordinary read would have refused
-	switch proto.ObjectType(rec.Type) {
-	case proto.ObjectType_COMMIT, proto.ObjectType_TREE, proto.ObjectType_FILE:
-	default:
-		return nil, nil
-	}
-
-	location, err := signer.SignRange(ctx, a.archiveName(), int64(rec.Offset), int64(rec.Length), locationTTL)
-	if errors.Is(err, ErrNoSignedURL) {
-		return nil, nil
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if a.atRest != nil {
-		location.AtRestKey = a.atRest.shared
-	}
-
-	return location, nil
-}
-
 const (
 	// runGap is how far apart two records may sit and still share a run;
 	// runSpan bounds the bytes one run covers.
 	runGap  = 64 << 10
 	runSpan = 16 << 20
 
-	// runTTL outlasts locationTTL because a reader follows a file's runs
-	// a few at a time, so the last of them waits behind the others.
+	// runTTL is long enough for a reader that follows a file's runs a
+	// few at a time, so the last of them waits behind the others.
 	runTTL = 15 * time.Minute
 )
 
@@ -99,7 +44,8 @@ type locatedRecord struct {
 }
 
 // LocateRecords implements backup.RecordLocator for objects in archives
-// the storage can sign ranges of.
+// the storage can sign ranges of. A commit, tree or file, and any object
+// the cache holds, is never located: the store serves those itself.
 func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error) {
 	signer, ok := ps.storage.(RangeSigner)
 	if !ok {
@@ -111,7 +57,33 @@ func (ps *PackStorage) LocateRecords(ctx context.Context, refs []*proto.Ref) ([]
 		return nil, err
 	}
 
+	for a, located := range byArchive {
+		located = slices.DeleteFunc(located, func(r locatedRecord) bool { return ps.serves(ctx, refs[r.index], r.rec) })
+		if len(located) == 0 {
+			delete(byArchive, a)
+		} else {
+			byArchive[a] = located
+		}
+	}
+
 	return ps.signRuns(ctx, signer, byArchive)
+}
+
+// serves reports whether the store answers ref itself rather than
+// locating it: metadata always, as it is small and read through into the
+// cache, and anything else when the cache already holds it.
+func (ps *PackStorage) serves(ctx context.Context, ref *proto.Ref, rec *IndexRecord) bool {
+	if proto.ObjectType(rec.Type).Metadata() {
+		return true
+	}
+
+	if ps.cache == nil {
+		return false
+	}
+
+	held, err := ps.cache.Has(ctx, ref)
+
+	return err == nil && held
 }
 
 // locateRecords finds a live committed copy of each of refs in one lookup

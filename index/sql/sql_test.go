@@ -452,35 +452,6 @@ func sameInstant(t *testing.T, got *time.Time, want time.Time) {
 	require.True(t, got.Equal(want), "got %s, want %s", got, want)
 }
 
-// locating is a store that answers every read with a location.
-type locating struct {
-	*memStore
-	location *proto.Location
-}
-
-func (l locating) Read(context.Context, *proto.Ref) (*proto.Object, *proto.Location, error) {
-	return nil, l.location, nil
-}
-
-func TestReadPassesOnWhatTheStoreAnswers(t *testing.T) {
-	ctx := context.Background()
-	store := newMemStore()
-
-	object := proto.NewObject(&proto.File{Inline: []byte("inline")})
-	require.NoError(t, store.Put(ctx, object))
-
-	got, location, err := openIndex(t, store).Read(ctx, object.Ref())
-	require.NoError(t, err)
-	require.Nil(t, location, "a store that cannot address its bytes serves them")
-	require.True(t, got.Ref().Equal(object.Ref()))
-
-	placed := &proto.Location{Url: "https://example.invalid/record", Length: 12}
-	got, location, err = openIndex(t, locating{memStore: store, location: placed}).Read(ctx, object.Ref())
-	require.NoError(t, err)
-	require.Nil(t, got)
-	require.Equal(t, placed.GetUrl(), location.GetUrl())
-}
-
 func reindexErr(_ backup.ReIndexReport, err error) error {
 	return err
 }

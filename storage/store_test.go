@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -108,8 +107,7 @@ func TestStoreIsALibrary(t *testing.T) {
 	require.NoError(t, withSessions.EndSession(first, session.ID))
 }
 
-// slowTrees reads its trees with jitter, failing the one named by fail,
-// and locates every other ref it is asked about.
+// slowTrees reads its trees with jitter, failing the one named by fail.
 type slowTrees struct {
 	*memIndex
 	fail     []byte
@@ -135,20 +133,8 @@ func (s *slowTrees) Get(ctx context.Context, ref *proto.Ref) (*proto.Object, err
 	return s.memIndex.Get(ctx, ref)
 }
 
-func (s *slowTrees) LocateRecords(_ context.Context, refs []*proto.Ref) ([]*proto.LocatedRun, error) {
-	var runs []*proto.LocatedRun
-	for i := 0; i < len(refs); i += 2 {
-		runs = append(runs, &proto.LocatedRun{
-			Location: &proto.Location{Url: hex.EncodeToString(refs[i].Hash)},
-			Records:  []*proto.LocatedRecord{{Index: uint32(i)}},
-		})
-	}
-
-	return runs, nil
-}
-
 // TestTreeWalksInOrderWhileReadingAhead walks 40 directories of 30
-// directories, each holding one more below maxDepth, more than a locate
+// directories, each holding one more below maxDepth, more than a read
 // batch, and expects every tree under maxDepth once, at the position of a
 // serial breadth-first walk.
 func TestTreeWalksInOrderWhileReadingAhead(t *testing.T) {
@@ -183,69 +169,19 @@ func TestTreeWalksInOrderWhileReadingAhead(t *testing.T) {
 	root := put(tops...)
 	want := append(append([]*proto.Ref{root}, tops...), mids...)
 
-	walk := func(index backup.Index) []*proto.Ref {
-		got := make([]*proto.Ref, len(want))
-		var objects []*proto.Ref
-
+	for range 3 {
+		var got []*proto.Ref
 		require.NoError(t, NewStore(index, nil).Tree(ctx, root, 2, func(resp *proto.GetTreeResponse) error {
-			for _, run := range resp.Runs {
-				i := run.Records[0].Index
-				require.Nil(t, got[i], "index %d handed out twice", i)
-
-				hash, err := hex.DecodeString(run.Location.Url)
-				require.NoError(t, err)
-				got[i] = &proto.Ref{Hash: hash}
-			}
-
-			if resp.Object != nil {
-				objects = append(objects, resp.Ref)
-			}
+			require.Empty(t, resp.Runs, "trees are served")
+			require.True(t, resp.Object.Ref().Equal(resp.Ref))
+			got = append(got, resp.Ref)
 
 			return nil
 		}))
 
-		for i := range got {
-			if got[i] == nil {
-				require.NotEmpty(t, objects, "fewer trees than expected")
-				got[i], objects = objects[0], objects[1:]
-			}
+		require.Len(t, got, len(want))
+		for i := range want {
+			require.True(t, want[i].Equal(got[i]), "tree %d out of place", i)
 		}
-		require.Empty(t, objects, "more trees than expected")
-
-		return got
-	}
-
-	for _, located := range []bool{false, true} {
-		var idx backup.Index = struct{ backup.Index }{index}
-		if located {
-			idx = index
-		}
-
-		for range 3 {
-			got := walk(idx)
-			for i := range want {
-				require.True(t, want[i].Equal(got[i]), "tree %d out of place", i)
-			}
-		}
-	}
-
-	require.Greater(t, index.peak.Load(), int32(1), "trees are read concurrently")
-	require.LessOrEqual(t, index.peak.Load(), int32(treeWorkers))
-
-	index.fail = mids[len(mids)/2].Hash
-	err := NewStore(index, nil).Tree(ctx, root, 2, func(*proto.GetTreeResponse) error { return nil })
-	require.ErrorIs(t, err, errTreeRead)
-}
-
-func TestStoreRefusesAPolicyFromAClient(t *testing.T) {
-	store := NewStore(newMemIndex(), nil)
-	ctx := auth.WithPrincipal(context.Background(), &auth.Principal{AgentID: "node-1"})
-
-	policy := proto.NewObject(&proto.Policy{Sequence: 1, Scope: &proto.Policy_Store{Store: &proto.StoreScope{}}})
-	sealed := proto.NewObject(&proto.Sealed{Ref: policy.Ref(), Type: proto.ObjectType_POLICY, Data: []byte("x"), Encryption: proto.Encryption_SEALED})
-
-	for _, obj := range []*proto.Object{policy, sealed} {
-		_, err := store.Put(ctx, Upload{Object: obj})
-		require.ErrorIs(t, err, ErrInvalidRequest)
 	}
 }

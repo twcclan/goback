@@ -585,31 +585,28 @@ func newTreeFixture(tb testing.TB, dirs, subs, files int) (*restoreFixture, *pro
 
 // BenchmarkRemoteGetTree prefetches a tree of 64 directories of 16
 // directories of 64 files two levels deep, as a backup does its base
-// commit, the trees served by the store or read from the bucket.
+// commit.
 func BenchmarkRemoteGetTree(b *testing.B) {
 	f, root := sync.OnceValues(func() (*restoreFixture, *proto.Ref) { return newTreeFixture(b, 64, 16, 64) })()
 
 	for _, l := range append([]link{{}}, benchLinks...) {
-		for _, mode := range []string{"proxied", "located"} {
-			b.Run(mode+"/"+l.String(), func(b *testing.B) {
-				client, seen := serveShaped(b, f, l, mode == "located")
-				b.ResetTimer()
+		b.Run(l.String(), func(b *testing.B) {
+			client, seen := serveShaped(b, f, l, true)
+			b.ResetTimer()
 
-				for range b.N {
-					objects, err := client.GetTree(context.Background(), root, 2)
-					require.NoError(b, err)
-					require.Len(b, objects, 1+64+64*16)
-				}
+			for range b.N {
+				objects, err := client.GetTree(context.Background(), root, 2)
+				require.NoError(b, err)
+				require.Len(b, objects, 1+64+64*16)
+			}
 
-				b.ReportMetric(float64(seen.received.Load())/float64(b.N), "wire-B/op")
-				b.ReportMetric(float64(seen.served.Load())/float64(b.N), "served-B/op")
-				b.ReportMetric(float64(seen.fetches.Load())/float64(b.N), "fetches/op")
-			})
-		}
+			b.ReportMetric(float64(seen.received.Load())/float64(b.N), "wire-B/op")
+			b.ReportMetric(float64(seen.served.Load())/float64(b.N), "served-B/op")
+		})
 	}
 }
 
-func TestGetTreeReadsLocatedTreesFromTheBucket(t *testing.T) {
+func TestGetTreeServesTreesTheBucketCouldBeAskedFor(t *testing.T) {
 	f, root := newTreeFixture(t, 3, 4, 5)
 
 	for _, located := range []bool{false, true} {
@@ -632,11 +629,10 @@ func TestGetTreeReadsLocatedTreesFromTheBucket(t *testing.T) {
 
 		require.Equal(t, 3+3*4, dirs, "every directory's tree is among them")
 
-		if located {
-			require.NotZero(t, seen.fetches.Load(), "the trees come from the bucket")
-		} else {
-			require.Zero(t, seen.fetches.Load())
-		}
+		_, err = client.Get(context.Background(), root)
+		require.NoError(t, err)
+
+		require.Zero(t, seen.fetches.Load(), "the server serves trees itself")
 	}
 }
 
@@ -661,10 +657,7 @@ func TestWalkTreeReadsTheWholeTreeInOneCall(t *testing.T) {
 		require.Equal(t, 3*4*5, files)
 
 		require.EqualValues(t, 1, seen.calls.Load(), "one GetTree")
-
-		if located {
-			require.LessOrEqual(t, seen.fetches.Load(), int64(1), "the trees sit side by side in one run")
-		}
+		require.Zero(t, seen.fetches.Load())
 	}
 }
 
